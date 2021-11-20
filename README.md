@@ -7,7 +7,7 @@ We are either going to use Redis or Memcached to implement the communication and
 Either way, there will be another Python program running alongside the Redis/Memcached server on the reducer, implementing the reducer logic and interfacing with the Redis/Memcached server with a client library. Although everything should eventually be event driven (if using my embedded K-V store, they definitely have to be), currently it doesn't have to be. In fact we can probably just do this.
 
 while True:  
-   redis.sub_channel.get_all_messages()  
+   redis.sub_channel.get_all_messages() or memcached.get_messages(mailbox)  
    if new_message():  
       things_to_send = execute_reducer()  
       remove_message_from_mailbox()  
