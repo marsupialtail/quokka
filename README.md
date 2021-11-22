@@ -20,4 +20,6 @@ while True:
 
 The code to set up a Redis server should be common infrastructure. Perhaps there should also be a common library on top of the async Redis client that polls messages and trigger some user defined reducer function. The user defined reducer function can be some arbitrary Python file. There needs to be some kind of coordination mechanism 
 
+https://stackoverflow.com/questions/57949871/how-to-set-get-pandas-dataframes-into-redis-using-pyarrow/57986261#57986261
+
 Both Redis and Memcached would work. Redis is the clear winner because 1) support for atomic transactions 2) doesn't delete stuff by default 3) keyspace alerts, though we might not need it at the moment 4) more flexible data structures that makes implementing mailbox easier.
