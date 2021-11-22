@@ -6,6 +6,8 @@ We are either going to use Redis to implement the communication and storage laye
 
 Either way, there will be another Python program running alongside the Redis server on the reducer, implementing the reducer logic and interfacing with the Redis server with a client library. Although everything should eventually be event driven (if using my embedded K-V store, they definitely have to be), currently it doesn't have to be. In fact we can probably just do this.
 
+For simplicity, each task node will host two Redis servers. One for mailbox and one for its internal state. 
+
 while True:  
    redis.atomic_get_del_messages_from_mailbox() 
    if new_message():  
