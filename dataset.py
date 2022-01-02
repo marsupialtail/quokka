@@ -1,23 +1,27 @@
 import pandas as pd
-from io import BytesIO
+from io import BytesIO, StringIO
 import boto3
 
-class CSVDataset:
+class InputCSVDataset:
 
-    def __init__(self, bucket, key, names) -> None:
+    def __init__(self, bucket, key, names, id) -> None:
 
         self.s3 = boto3.client('s3') # needs boto3 client
         self.bucket = bucket
         self.key = key
         self.num_mappers = None
         self.names = names
+        self.id = id
+    
+    def set_num_mappers(self, num_mappers):
+        self.num_mappers = num_mappers
         self.length, self.adjusted_splits = self.get_csv_attributes()
-        
 
-    def get_csv_attributes(self, splits = 16, window = 1024):
+    def get_csv_attributes(self, window = 1024):
 
-        if self.num_mappers is not None:
-            splits = self.num_mappers
+        if self.num_mappers is None:
+            raise Exception
+        splits = 16
 
         response = self.s3.head_object(
             Bucket=self.bucket,
@@ -49,9 +53,12 @@ class CSVDataset:
             else:
                 adjusted_splits.append(start + last_newline)
         
+        adjusted_splits[-1] = length 
+        
+        print(length, adjusted_splits)
         return length, adjusted_splits
 
-    def get_next_batch(self, mapper_id, stride=1024 * 16): #default is to get 16 KB batches at a time. 
+    def get_next_batch(self, mapper_id, stride=1024 * 48): #default is to get 16 KB batches at a time. 
         
         if self.num_mappers is None:
             raise Exception("I need to know the total number of mappers you are planning on using.")
@@ -61,6 +68,7 @@ class CSVDataset:
         assert mapper_id < self.num_mappers + 1
         chunks = splits // self.num_mappers
         start = self.adjusted_splits[chunks * mapper_id]
+        
         if mapper_id == self.num_mappers - 1:
             end = self.adjusted_splits[splits - 1]
         else:
@@ -68,9 +76,10 @@ class CSVDataset:
 
         print(start, end)
         pos = start
-        while pos < end:
-            resp = self.s3.get_object(Bucket='yugan',Key='quote.csv', Range='bytes={}-{}'.format(pos,min(pos+stride,end)))['Body'].read()
+        while pos < end-1:
+            resp = self.s3.get_object(Bucket=self.bucket,Key=self.key, Range='bytes={}-{}'.format(pos,min(pos+stride,end)))['Body'].read()
             last_newline = resp.rfind(bytes('\n','utf-8'))
+            #import pdb;pdb.set_trace()
             
             if last_newline == -1:
                 raise Exception
@@ -78,3 +87,54 @@ class CSVDataset:
                 resp = resp[:last_newline]
                 pos += last_newline
                 yield pd.read_csv(BytesIO(resp), names =self.names )
+
+
+class OutputCSVDataset:
+
+    def __init__(self, bucket, key, id) -> None:
+
+        self.s3 = boto3.client('s3') # needs boto3 client
+        self.bucket = bucket
+        self.key = key
+        self.id = id
+        self.num_reducers = None
+
+        self.multipart_upload = self.s3.create_multipart_upload(
+            Bucket=bucket,
+            Key=key,
+        )
+
+        self.parts = []
+
+    def set_num_reducer(self, num_reducer):
+        self.num_reducers = num_reducer
+        chunks = 10000 // num_reducer
+        self.reducer_current_part = [(i * chunks + 1) for i in range(num_reducer)]
+        self.reducer_partno_limit = self.reducer_current_part[1:] + [10000]
+
+    def upload_chunk(self, df, reducer_id):
+        if self.num_reducers is None:
+            raise Exception("I need to know the number of reducers")
+
+        current_part = self.reducer_current_part[reducer_id]
+        if current_part == self.reducer_partno_limit[reducer_id] - 1:
+            raise Exception("ran out of part numbers")
+        
+        csv_buffer = StringIO()
+        df.to_csv(csv_buffer, header = (True if current_part == 1 else False))
+        
+        uploadPart = self.s3.upload_part(
+            Bucket = self.bucket, 
+            Key = self.key, 
+            UploadId = self.multipart_upload['UploadId'],
+            PartNumber = current_part,
+            Body = csv_buffer.getvalue()
+        )
+
+        self.reducer_current_part[reducer_id] += 1
+        
+        self.parts.append({
+            'PartNumber': current_part,
+            'ETag': uploadPart['ETag']
+        })
+        
