@@ -7,6 +7,86 @@ import pandas as pd
 from io import BytesIO
 from dataset import * 
 import pyarrow as pa
+import copy
+
+'''
+What the person should be able to write in the high level API
+
+qc = QuokkaContext()
+quotes = qc.InputCSVDataset("yugan","a.csv", ["key","avalue1", "avalue2"], 0)
+trades = qc.InputCSVDataset('yugan',"b.csv",["key","bvalue1","bvalue2"], 1)
+
+result = quotes.merge(trades) --defines the computation
+
+# these will cache the result in the Redis clusters on the reducers. 
+result.start() -- starts the computation
+result.get_current() -- current result, only useful for aggregations etc. 
+result.join() -- await finish of computation, synchronous
+
+What the person should be able to do in the low level API
+qc = QuokkaContext()
+quotes = qc.InputCSVDataset("yugan","a.csv", ["key","avalue1", "avalue2"], 0)
+trades = qc.InputCSVDataset('yugan',"b.csv",["key","bvalue1","bvalue2"], 1)
+
+Class Mapper(qc.statelessTask):
+	Def __init__():
+        pass
+
+    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
+	Def execute(input_batch : pd.DataFrame , stream_id: int) -> "dict[int, pd.DataFrame]":
+        res = dict(tuple(batch.groupby("key"))) 
+        return res  
+
+mapper = Mapper()
+
+# right now there probably can only be several kinds of DSVs, pd.DataFrame(), numpy.Array(), List or Dict
+dsv1 = qc.DSV(pd.DataFrame())
+dsv2 = qc.DSV(pd.DataFrame())
+
+Class Reducer(qc.statefulTask):
+	Def __init__(dsv1, dsv2):
+		self.dsvs = [dsv1, dsv2]
+
+    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
+	Def execute(input_batch, stream_id):
+        if stream_id == 0:
+		    self.dsvs[0].append(input_batch)
+            return input_batch.merge(self.dsvs[1].local_partition())
+
+        elif stream_id == 1:
+            self.dsvs[1].append(input_batch)
+            return input_batch.merge(self.dsvs[0].local_partition())
+
+reducer = Reducer(dsv1, dsv2)
+
+Alternatively, if you don't want the runtime to redistribute the state variables, you can just use stateless tasks here too
+
+Class Reducer(qc.statelessTask):
+	Def __init__(dsv1, dsv2):
+		self.state0 = pd.DataFrame()
+        self.state1 = pd.DataFrame()
+
+    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
+	Def execute(input_batch, stream_id):
+        if stream_id == 0:
+		    self.state0 = pd.concat([self.state0, batch])
+            return input_batch.merge(self.state1.local_partition())
+
+        elif stream_id == 1:
+            self.state1 = pd.concat([self.state1, batch])
+            return input_batch.merge(self.state0.local_partition())
+
+reducer = Reducer(dsv1, dsv2)
+
+mapped_quotes_stream = qc.stateless_task(InputStreams = [quotes], FunctionObject = mapper, parallelism = 2) #parallelism is an optional parameter
+mapped_trades_stream = qc.stateless_task(InputStreams = [trades], FunctionObject = mapper, parallelism = 2)
+
+joined_stream = qc.stateful_task(InputStreams = [mapped_quotes_stream, mapped_trades_stream], FunctionObject = reducer)
+task_handle = joined_stream.to_csv("yugan","test.csv")
+task_handle.join()
+
+'''
+
 
 NUM_REDUCER = 2
 MAILBOX_MEM_LIMIT = 1024 * 1024 # 1MB
@@ -24,7 +104,7 @@ def mapper_runtime(data: InputCSVDataset, mapper_id: int, mapper):
     
     input_generator = data.get_next_batch(mapper_id)
     
-    redisClients = {}
+    redisClients = {i: redis.Redis(host='localhost', port=6379, db=i) for i in range(NUM_REDUCER)}
 
     # what you want is an event loop based implementation with:
     # rule that produces batches to a queue
@@ -37,19 +117,20 @@ def mapper_runtime(data: InputCSVDataset, mapper_id: int, mapper):
         
         result = mapper(batch)
 
-        for key in result:
+        messages = {i : [] for i in range(NUM_REDUCER)}
 
-            print(key)
+        for key in result:
 
             # we need to replace this simple fixed hash function with something dynamic and synchronized.
             # the first version can just be a multiprocessing.Value which is NUM_REDUCER
             target = int(key) % NUM_REDUCER 
             payload = result[key]
-            payload_size = payload.memory_usage().sum()
+            messages[target].append(payload)
 
-            if target not in redisClients:
-                redisClients[target] = redis.Redis(host='localhost', port=6379, db=target)
-            
+        for target in range(NUM_REDUCER):
+
+            payload = pd.concat(messages[target])
+            payload_size = payload.memory_usage().sum()
             r = redisClients[target]
 
             while True:
@@ -82,7 +163,7 @@ def mapper_runtime(data: InputCSVDataset, mapper_id: int, mapper):
 
     
 
-def reducer_runtime(data: OutputCSVDataset, reducer_id : int):
+def reducer_runtime(data: OutputCSVDataset, reducer_id : int, left : list):
 
     import pandas as pd
 
@@ -96,7 +177,6 @@ def reducer_runtime(data: OutputCSVDataset, reducer_id : int):
     stateA = pd.DataFrame()
     stateB = pd.DataFrame()
     temp_results = pd.DataFrame()
-    left = [0,0,1]
 
     # we have a problem here, in which we are continuously appending to a state variable
     # this is pretty bad from a memory management perspective, especially in Python
@@ -164,30 +244,30 @@ def join():
 
     results = OutputCSVDataset("yugan","test.csv",0)
 
-    quotes.set_num_mappers(2)
-    quotes1.set_num_mappers(2)
+    quotes.set_num_mappers(1)
+    #quotes1.set_num_mappers(2)
     trades.set_num_mappers(1)
     results.set_num_reducer(1)
 
     p1 = Process(target = mapper_runtime, args=(quotes, 0, mapper, ))
-    p5 = Process(target = mapper_runtime, args=(quotes1, 1, mapper, ))
+    #p5 = Process(target = mapper_runtime, args=(quotes1, 1, mapper, ))
 
     p2 = Process(target = mapper_runtime, args=(trades, 0, mapper, ))
-    p3 = Process(target = reducer_runtime, args=(results, 0, ))
-    p4 = Process(target = reducer_runtime, args=(results, 1, ))
+    p3 = Process(target = reducer_runtime, args=(results, 0, [0,1]))
+    p4 = Process(target = reducer_runtime, args=(results, 1, [0,1]))
 
 
     p1.start()
     p2.start()
     p3.start()
     p4.start()
-    p5.start()
+    #p5.start()
 
     p1.join()
     p2.join()
     p3.join()
     p4.join()
-    p5.join()
+    #p5.join()
 
 import time
 start = time.time()
