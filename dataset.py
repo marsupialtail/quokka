@@ -46,6 +46,7 @@ class InputCSVDataset:
             potential_split = potential_splits[i]
             start = max(0,potential_split - window)
             end = min(potential_split + window, length)
+            
             resp = self.s3.get_object(Bucket=self.bucket,Key=self.key, Range='bytes={}-{}'.format(start, end))['Body'].read()
             last_newline = resp.rfind(bytes('\n','utf-8'))
             if last_newline == -1:
@@ -77,6 +78,8 @@ class InputCSVDataset:
         print(start, end)
         pos = start
         while pos < end-1:
+            print(pos)
+            print(min(pos+stride,end))
             resp = self.s3.get_object(Bucket=self.bucket,Key=self.key, Range='bytes={}-{}'.format(pos,min(pos+stride,end)))['Body'].read()
             last_newline = resp.rfind(bytes('\n','utf-8'))
             #import pdb;pdb.set_trace()

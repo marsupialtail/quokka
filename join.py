@@ -8,7 +8,7 @@ from io import BytesIO
 from dataset import * 
 import pyarrow as pa
 
-NUM_REDUCER = 1
+NUM_REDUCER = 2
 MAILBOX_MEM_LIMIT = 1024 * 1024 # 1MB
 WRITE_MEM_LIMIT = 10 * 1024 * 1024 # 10MB
 context = pa.default_serialization_context()
@@ -38,6 +38,9 @@ def mapper_runtime(data: InputCSVDataset, mapper_id: int, mapper):
         result = mapper(batch)
 
         for key in result:
+
+            print(key)
+
             # we need to replace this simple fixed hash function with something dynamic and synchronized.
             # the first version can just be a multiprocessing.Value which is NUM_REDUCER
             target = int(key) % NUM_REDUCER 
@@ -93,7 +96,7 @@ def reducer_runtime(data: OutputCSVDataset, reducer_id : int):
     stateA = pd.DataFrame()
     stateB = pd.DataFrame()
     temp_results = pd.DataFrame()
-    left = {0,1}
+    left = [0,0,1]
 
     # we have a problem here, in which we are continuously appending to a state variable
     # this is pretty bad from a memory management perspective, especially in Python
@@ -156,24 +159,37 @@ def join():
     # their parts list at the end and do a complete multipart upload.
 
     quotes = InputCSVDataset("yugan","a.csv", ["key","avalue1", "avalue2"], 0)
+    quotes1 = InputCSVDataset("yugan","a.csv", ["key","avalue1", "avalue2"], 0)
     trades = InputCSVDataset('yugan',"b.csv",["key","bvalue1","bvalue2"], 1)
 
     results = OutputCSVDataset("yugan","test.csv",0)
 
-    quotes.set_num_mappers(1)
+    quotes.set_num_mappers(2)
+    quotes1.set_num_mappers(2)
     trades.set_num_mappers(1)
     results.set_num_reducer(1)
 
     p1 = Process(target = mapper_runtime, args=(quotes, 0, mapper, ))
+    p5 = Process(target = mapper_runtime, args=(quotes1, 1, mapper, ))
+
     p2 = Process(target = mapper_runtime, args=(trades, 0, mapper, ))
     p3 = Process(target = reducer_runtime, args=(results, 0, ))
+    p4 = Process(target = reducer_runtime, args=(results, 1, ))
+
 
     p1.start()
     p2.start()
     p3.start()
+    p4.start()
+    p5.start()
 
     p1.join()
     p2.join()
     p3.join()
+    p4.join()
+    p5.join()
 
+import time
+start = time.time()
 join()
+print(time.time()-start)
