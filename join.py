@@ -7,7 +7,7 @@ import pandas as pd
 from io import BytesIO
 from dataset import * 
 import pyarrow as pa
-import copy
+import time
 
 '''
 What the person should be able to write in the high level API
@@ -103,6 +103,10 @@ def mapper(batch: pd.DataFrame ) -> "dict[int, pd.DataFrame]":
 def mapper_runtime(data: InputCSVDataset, mapper_id: int, mapper):
     
     input_generator = data.get_next_batch(mapper_id)
+    all_time = time.time()
+    redis_time = 0
+    mapper_time = 0
+    package_time = 0
     
     redisClients = {i: redis.Redis(host='localhost', port=6379, db=i) for i in range(NUM_REDUCER)}
 
@@ -115,9 +119,13 @@ def mapper_runtime(data: InputCSVDataset, mapper_id: int, mapper):
 
     for batch in input_generator:
         
+        start = time.time()
         result = mapper(batch)
+        mapper_time += time.time() - start
 
         messages = {i : [] for i in range(NUM_REDUCER)}
+
+        package_start = time.time()
 
         for key in result:
 
@@ -149,10 +157,14 @@ def mapper_runtime(data: InputCSVDataset, mapper_id: int, mapper):
                     pipeline.set("mailbox-mem-used",int(available + payload_size))
                     pipeline.lpush("mailbox-id",data.id)
                     pipeline.lpush("mailbox",context.serialize(payload).to_buffer().to_pybytes())
+                    start = time.time()
                     results = pipeline.execute()
+                    redis_time += time.time() - start
                     if False in results:
                         raise Exception
                     break
+        
+        package_time += time.time() - package_start
     
     # how do I notify people I am done
     for r in redisClients:
@@ -160,15 +172,24 @@ def mapper_runtime(data: InputCSVDataset, mapper_id: int, mapper):
         redisClients[r].lpush("mailbox","done")
         redisClients[r].lpush("mailbox-id",data.id)
         print("Im'done")
+    
+    print("mapper redis time", redis_time)
+    print("mapper mapper time", mapper_time)
+    print("mapper package time", package_time)
+    print("mapper total time", time.time() - all_time)
+
 
     
 
 def reducer_runtime(data: OutputCSVDataset, reducer_id : int, left : list):
 
-    import pandas as pd
+    #import pandas as pd
 
     r = redis.Redis(host='localhost', port=6379, db=reducer_id)
     r.set("mailbox-mem-used",0)
+
+    redis_time = 0
+    total_time = time.time()
 
     # what you really want is an event loop implementation with:
     # rule to dequeue from mailbox and mailbox id and write to output queue
@@ -194,7 +215,9 @@ def reducer_runtime(data: OutputCSVDataset, reducer_id : int, left : list):
             pipeline = r.pipeline()
             pipeline.rpop("mailbox")
             pipeline.rpop("mailbox-id")
+            start = time.time()
             [first, second] = pipeline.execute()
+            redis_time += time.time() - start
             
             df_id = int(second)
 
@@ -229,8 +252,10 @@ def reducer_runtime(data: OutputCSVDataset, reducer_id : int, left : list):
     
     if len(temp_results) > 0:
         print(len(temp_results))
-        temp_results.to_csv("result.csv")
+        #temp_results.to_csv("result.csv")
         #data.upload_chunk(temp_results, reducer_id)
+    print("reducer redis time", redis_time)
+    print("reducer total time," ,time.time() - total_time)
 
 
 def join():
@@ -256,6 +281,7 @@ def join():
     p3 = Process(target = reducer_runtime, args=(results, 0, [0,1]))
     p4 = Process(target = reducer_runtime, args=(results, 1, [0,1]))
 
+    start = time.time()
 
     p1.start()
     p2.start()
@@ -268,8 +294,6 @@ def join():
     p3.join()
     p4.join()
     #p5.join()
+    print(time.time()-start)
 
-import time
-start = time.time()
 join()
-print(time.time()-start)

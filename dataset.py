@@ -59,7 +59,7 @@ class InputCSVDataset:
         print(length, adjusted_splits)
         return length, adjusted_splits
 
-    def get_next_batch(self, mapper_id, stride=1024 * 48): #default is to get 16 KB batches at a time. 
+    def get_next_batch(self, mapper_id, stride=1024 * 2): #default is to get 16 KB batches at a time. 
         
         if self.num_mappers is None:
             raise Exception("I need to know the total number of mappers you are planning on using.")
