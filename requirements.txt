@@ -1,0 +1,5 @@
+pyarrow==2.0.0
+redis
+boto3
+pandas
+
