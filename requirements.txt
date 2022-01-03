@@ -1,5 +1,5 @@
 pyarrow==2.0.0
 redis
-boto3
-pandas
+boto3==1.17.24
+pandas==1.2.2
 
