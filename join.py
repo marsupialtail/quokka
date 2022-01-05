@@ -1,8 +1,8 @@
+from collections import deque
 from io import BytesIO
 from typing import Dict
 import redis 
 from multiprocessing import Pool, Process, Value
-import boto3 
 import pandas as pd
 from io import BytesIO
 from dataset import * 
@@ -87,8 +87,7 @@ task_handle.join()
 
 '''
 
-
-NUM_REDUCER = 2
+NUM_REDUCER = 1
 MAILBOX_MEM_LIMIT = 1024 * 1024 # 1MB
 WRITE_MEM_LIMIT = 10 * 1024 * 1024 # 10MB
 context = pa.default_serialization_context()
@@ -108,7 +107,13 @@ def mapper_runtime(data: InputCSVDataset, mapper_id: int, mapper):
     mapper_time = 0
     package_time = 0
     
-    redisClients = {i: redis.Redis(host='localhost', port=6379, db=i) for i in range(NUM_REDUCER)}
+    r = redis.Redis(host='localhost', port=6379, db=0)
+    p = r.pubsub(ignore_subscribe_messages=True)
+
+    consumer_full ={i:False for i in range(NUM_REDUCER)}
+    
+    for target in range(NUM_REDUCER):
+        p.subscribe("reducer-full-" + str(target))
 
     # what you want is an event loop based implementation with:
     # rule that produces batches to a queue
@@ -135,30 +140,30 @@ def mapper_runtime(data: InputCSVDataset, mapper_id: int, mapper):
             payload = result[key]
             messages[target].append(payload)
 
+
+        # check if the mailbox is full. if it is full then just spin on this.
+
         for target in range(NUM_REDUCER):
 
             payload = pd.concat(messages[target])
-            payload_size = payload.memory_usage().sum()
-            r = redisClients[target]
 
             while True:
-                # check if the mailbox is full. if it is full then just spin on this.
-
-                available = r.get("mailbox-mem-used")
-                if available is None:
-                    continue
-                available = int(available)
-                # there is a potential problem here where two clients both conclude that there is available space,
-                # when there is room for only one of them. But let's ignore this for now. 
                 
-                if available < MAILBOX_MEM_LIMIT:
+                if consumer_full[target]:
+                    full_message = p.get_message()
+                    if full_message is None:
+                        pass
+                    elif full_message['data'].decode("utf-8") == "full":
+                        continue
+                    elif full_message['data'].decode("utf-8") == "free":
+                        consumer_full[target] = False
+                else:
                     pipeline = r.pipeline()
-                    
-                    pipeline.set("mailbox-mem-used",int(available + payload_size))
-                    pipeline.lpush("mailbox-id",data.id)
-                    pipeline.lpush("mailbox",context.serialize(payload).to_buffer().to_pybytes())
+                    pipeline.publish("mailbox-" + str(target), context.serialize(payload).to_buffer().to_pybytes())
+                    pipeline.publish("mailbox-id-" + str(target) ,data.id)
                     start = time.time()
                     results = pipeline.execute()
+                    print(results)
                     redis_time += time.time() - start
                     if False in results:
                         raise Exception
@@ -167,10 +172,9 @@ def mapper_runtime(data: InputCSVDataset, mapper_id: int, mapper):
         package_time += time.time() - package_start
     
     # how do I notify people I am done
-    for r in redisClients:
-        
-        redisClients[r].lpush("mailbox","done")
-        redisClients[r].lpush("mailbox-id",data.id)
+    for target in range(NUM_REDUCER):
+        r.publish("mailbox-" + str(target), "done")
+        r.publish("mailbox-id-" + str(target) ,data.id)
         print("Im'done")
     
     print("mapper redis time", redis_time)
@@ -185,8 +189,8 @@ def reducer_runtime(data: OutputCSVDataset, reducer_id : int, left : list):
 
     #import pandas as pd
 
-    r = redis.Redis(host='localhost', port=6379, db=reducer_id)
-    r.set("mailbox-mem-used",0)
+    r = redis.Redis(host='localhost', port=6379, db=0)
+    r1 = redis.Redis(host='localhost', port=6379, db=0)
 
     redis_time = 0
     total_time = time.time()
@@ -206,20 +210,26 @@ def reducer_runtime(data: OutputCSVDataset, reducer_id : int, left : list):
 
     # in this prototype we are just going to use stateA and stateB and pd.concat everytime. Perf will be trash
 
+    p = r.pubsub(ignore_subscribe_messages=True)
+    #p1 = r1.pubsub(ignore_subscribe_messages=True)
+    p.subscribe("mailbox-" + str(reducer_id), "mailbox-id-"+str(reducer_id))
+
+    mailbox = deque()
+    mailbox_id = deque()
+
     while len(left) > 0:
-
-        available = r.llen("mailbox")
-
-        if available:
-
-            pipeline = r.pipeline()
-            pipeline.rpop("mailbox")
-            pipeline.rpop("mailbox-id")
-            start = time.time()
-            [first, second] = pipeline.execute()
-            redis_time += time.time() - start
             
-            df_id = int(second)
+        message = p.get_message()
+        if message is None:
+            continue
+        if message['channel'].decode('utf-8') == "mailbox-" + str(reducer_id):
+            mailbox.append(message['data'])
+        elif message['channel'].decode('utf-8') == "mailbox-id-" + str(reducer_id):
+            mailbox_id.append(int(message['data']))
+        
+        if len(mailbox) > 0 and len(mailbox_id) > 0:
+            first = mailbox.popleft()
+            df_id = mailbox_id.popleft()
 
             results = None
 
@@ -229,8 +239,6 @@ def reducer_runtime(data: OutputCSVDataset, reducer_id : int, left : list):
             else:
                 batch = context.deserialize(first)
                 #print(len(batch),df_id)
-                if r.decrby("mailbox-mem-used",int(batch.memory_usage().sum())) is False:
-                    raise Exception
 
                 if df_id == 0:
                     if len(stateB) > 0:
@@ -279,20 +287,20 @@ def join():
 
     p2 = Process(target = mapper_runtime, args=(trades, 0, mapper, ))
     p3 = Process(target = reducer_runtime, args=(results, 0, [0,1]))
-    p4 = Process(target = reducer_runtime, args=(results, 1, [0,1]))
+    #p4 = Process(target = reducer_runtime, args=(results, 1, [0,1]))
 
     start = time.time()
 
     p1.start()
     p2.start()
     p3.start()
-    p4.start()
+    #p4.start()
     #p5.start()
 
     p1.join()
     p2.join()
     p3.join()
-    p4.join()
+    #p4.join()
     #p5.join()
     print(time.time()-start)
 
