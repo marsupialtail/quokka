@@ -3,7 +3,7 @@ from dataset import *
 import redis
 import pyarrow as pa
 import pandas as pd
-from multiprocessing import Process
+from multiprocessing import Process, Value
 import time
 '''
 
@@ -21,9 +21,11 @@ WRITE_MEM_LIMIT = 10 * 1024 * 1024
 
 class Stream:
 
-    def __init__(self, source_node_id) -> None:
+    def __init__(self, source_node_id, source_parallelism) -> None:
         
         self.source = source_node_id
+        self.source_parallelism = source_parallelism
+        self.done_sources = Value('i',0)
         self.targets = []
         self.r = redis.Redis(host='localhost', port=6379, db=0)
 
@@ -59,14 +61,17 @@ class Stream:
                         if False in results:
                             raise Exception
     def done(self):
-        for target, parallelism in self.targets:
-            for channel in range(parallelism):
-                pipeline = self.r.pipeline()
-                pipeline.publish("mailbox-"+str(target) + "-" + str(channel),"done")
-                pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.source)
-                results = pipeline.execute()
-                if False in results:
-                    raise Exception
+        with self.done_sources.get_lock():
+            self.done_sources.value += 1
+        if self.done_sources.value == self.source_parallelism:
+            for target, parallelism in self.targets:
+                for channel in range(parallelism):
+                    pipeline = self.r.pipeline()
+                    pipeline.publish("mailbox-"+str(target) + "-" + str(channel),"done")
+                    pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.source)
+                    results = pipeline.execute()
+                    if False in results:
+                        raise Exception
 
 
 class TaskGraph:
@@ -78,7 +83,7 @@ class TaskGraph:
     def new_input_csv(self, bucket, key, names, parallelism):
         tasknode = InputCSVNode([],None,self.current_node, parallelism=parallelism)
         tasknode.set_name(bucket,key,names)
-        output_stream = Stream(self.current_node)
+        output_stream = Stream(self.current_node, parallelism)
         tasknode.output_stream = output_stream
         self.nodes[self.current_node] = tasknode
         self.current_node += 1
@@ -94,7 +99,7 @@ class TaskGraph:
             mapping[stream.source] = key
         tasknode = StatelessTaskNode(streams, functionObject, self.current_node, parallelism)
         tasknode.physical_to_logical_stream_mapping = mapping
-        output_stream = Stream(self.current_node)
+        output_stream = Stream(self.current_node, parallelism)
         tasknode.output_stream = output_stream
         self.nodes[self.current_node] = tasknode
         self.current_node += 1
@@ -233,7 +238,6 @@ class InputCSVNode(TaskNode):
         input_generator = self.input_csv_datasets[id].get_next_batch(id)
         for batch in input_generator:
             self.output_stream.push(batch)
-        print("i'm done here")
         self.output_stream.done()
 
 
@@ -241,10 +245,10 @@ class InputCSVNode(TaskNode):
 
 task_graph = TaskGraph()
 
-quotes = task_graph.new_input_csv("yugan","a.csv",["key","avalue1", "avalue2"],1)
+quotes = task_graph.new_input_csv("yugan","a.csv",["key","avalue1", "avalue2"],2)
 trades = task_graph.new_input_csv("yugan","b.csv",["key","avalue1", "avalue2"],1)
 join_executor = JoinExecutor()
-output_stream = task_graph.new_stateless_node({0:quotes,1:trades},join_executor,1)
+output_stream = task_graph.new_stateless_node({0:quotes,1:trades},join_executor,2)
 task_graph.initialize()
 
 start = time.time()
