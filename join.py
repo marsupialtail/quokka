@@ -190,7 +190,6 @@ def reducer_runtime(data: OutputCSVDataset, reducer_id : int, left : list):
     #import pandas as pd
 
     r = redis.Redis(host='localhost', port=6379, db=0)
-    r1 = redis.Redis(host='localhost', port=6379, db=0)
 
     redis_time = 0
     total_time = time.time()
@@ -277,16 +276,16 @@ def join():
 
     results = OutputCSVDataset("yugan","test.csv",0)
 
-    quotes.set_num_mappers(1)
-    #quotes1.set_num_mappers(2)
+    quotes.set_num_mappers(2)
+    quotes1.set_num_mappers(2)
     trades.set_num_mappers(1)
     results.set_num_reducer(1)
 
     p1 = Process(target = mapper_runtime, args=(quotes, 0, mapper, ))
-    #p5 = Process(target = mapper_runtime, args=(quotes1, 1, mapper, ))
+    p5 = Process(target = mapper_runtime, args=(quotes1, 1, mapper, ))
 
     p2 = Process(target = mapper_runtime, args=(trades, 0, mapper, ))
-    p3 = Process(target = reducer_runtime, args=(results, 0, [0,1]))
+    p3 = Process(target = reducer_runtime, args=(results, 0, [0,0,1]))
     #p4 = Process(target = reducer_runtime, args=(results, 1, [0,1]))
 
     start = time.time()
@@ -295,13 +294,13 @@ def join():
     p2.start()
     p3.start()
     #p4.start()
-    #p5.start()
+    p5.start()
 
     p1.join()
     p2.join()
     p3.join()
     #p4.join()
-    #p5.join()
+    p5.join()
     print(time.time()-start)
 
 join()
