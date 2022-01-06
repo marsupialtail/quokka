@@ -5,6 +5,7 @@ import pyarrow as pa
 import pandas as pd
 from multiprocessing import Process, Value
 import time
+
 '''
 
 In this system, there are two things. The first are task nodes and the second are streams. They can be defined more or less
@@ -17,7 +18,6 @@ Since each stream can have only one input, we are just going to use the source n
 '''
 
 context = pa.default_serialization_context()
-WRITE_MEM_LIMIT = 10 * 1024 * 1024
 
 class Stream:
 
@@ -81,8 +81,7 @@ class TaskGraph:
         self.nodes = {}
     
     def new_input_csv(self, bucket, key, names, parallelism):
-        tasknode = InputCSVNode([],None,self.current_node, parallelism=parallelism)
-        tasknode.set_name(bucket,key,names)
+        tasknode = InputCSVNode(bucket,key,names, parallelism)
         output_stream = Stream(self.current_node, parallelism)
         tasknode.output_stream = output_stream
         self.nodes[self.current_node] = tasknode
@@ -146,32 +145,6 @@ class TaskNode:
     def execute(self):
         pass
 
-class JoinExecutor:
-    def __init__(self):
-        self.state0 = pd.DataFrame()
-        self.state1 = pd.DataFrame()
-        self.temp_results = pd.DataFrame()
-
-    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
-    def execute(self,batch, stream_id):
-        results = None
-
-        if stream_id == 0:
-            if len(self.state1) > 0:
-                results = batch.merge(self.state1,on='key',how='inner',suffixes=('_a','_b'))
-            self.state0 = pd.concat([self.state0, batch])
-             
-        elif stream_id == 1:
-            if len(self.state0) > 0:
-                results = self.state0.merge(batch,on='key',how='inner',suffixes=('_a','_b'))
-            self.state1 = pd.concat([self.state1, batch])
-        
-        if results is not None:
-            self.temp_results = pd.concat([self.temp_results, results])
-            print(len(self.temp_results))
-        if self.temp_results.memory_usage().sum() > WRITE_MEM_LIMIT:
-            print(len(self.temp_results))
-
 
 class StatelessTaskNode(TaskNode):
 
@@ -222,10 +195,11 @@ class StatelessTaskNode(TaskNode):
 
 class InputCSVNode(TaskNode):
 
-    def set_name(self,bucket, key, names):
+    def __init__(self,bucket, key, names, parallelism):
         self.bucket = bucket
         self.key = key
         self.names = names
+        self.parallelism = parallelism
 
     def initialize(self):
         if self.bucket is None:
@@ -239,19 +213,3 @@ class InputCSVNode(TaskNode):
         for batch in input_generator:
             self.output_stream.push(batch)
         self.output_stream.done()
-
-
-
-
-task_graph = TaskGraph()
-
-quotes = task_graph.new_input_csv("yugan","a.csv",["key","avalue1", "avalue2"],2)
-trades = task_graph.new_input_csv("yugan","b.csv",["key","avalue1", "avalue2"],1)
-join_executor = JoinExecutor()
-output_stream = task_graph.new_stateless_node({0:quotes,1:trades},join_executor,2)
-task_graph.initialize()
-
-start = time.time()
-task_graph.run()
-print("total time ", time.time() - start)
-#import pdb;pdb.set_trace()
