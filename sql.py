@@ -24,6 +24,6 @@ class JoinExecutor:
         
         if results is not None:
             self.temp_results = pd.concat([self.temp_results, results])
-            print(len(self.temp_results))
+            print("temp results",len(self.temp_results))
         if self.temp_results.memory_usage().sum() > WRITE_MEM_LIMIT:
             print(len(self.temp_results))

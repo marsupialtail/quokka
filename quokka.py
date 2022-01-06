@@ -68,7 +68,7 @@ class Stream:
                         results = pipeline.execute()
                         print(results)
                         if False in results:
-                            raise Exception
+                            raise Exception(results)
     def done(self):
         with self.done_sources.get_lock():
             self.done_sources.value += 1
@@ -84,22 +84,15 @@ class Stream:
 
 class TaskNode:
 
-    def __init__(self, streams, functionObject, id, parallelism) -> None:
+    def __init__(self, streams, functionObject, id, parallelism, mapping, output_stream) -> None:
         self.functionObjects = [functionObject for i in range(parallelism)]
         self.input_streams = streams
-        self.output_stream = None
+        self.output_stream = output_stream
         self.id = id
         self.parallelism = parallelism
         # this maps what the system's stream_id is to what the user called the stream when they created the task node
-        self.physical_to_logical_stream_mapping = {}
-        pass
-
-    # stream is going to be a Ray future
-    def set_output_stream(self,stream):
-        self.output_stream = stream
-
-    def set_mapping(self, mapping):
         self.physical_to_logical_stream_mapping = mapping
+        pass
 
     def get_parallelism(self):
         return self.parallelism
@@ -162,11 +155,12 @@ class StatelessTaskNode(TaskNode):
 @ray.remote
 class InputCSVNode(TaskNode):
 
-    def __init__(self,bucket, key, names, parallelism):
+    def __init__(self,bucket, key, names, parallelism, output_stream):
         self.bucket = bucket
         self.key = key
         self.names = names
         self.parallelism = parallelism
+        self.output_stream = output_stream
 
     def initialize(self):
         if self.bucket is None:
@@ -189,9 +183,8 @@ class TaskGraph:
         self.nodes = {}
     
     def new_input_csv(self, bucket, key, names, parallelism):
-        tasknode = InputCSVNode.remote(bucket,key,names, parallelism)
         output_stream = Stream.remote(self.current_node, parallelism)
-        ray.get(tasknode.set_output_stream.remote(output_stream))
+        tasknode = [InputCSVNode.remote(bucket,key,names, parallelism, output_stream) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.current_node += 1
         return output_stream
@@ -205,10 +198,8 @@ class TaskGraph:
                 raise Exception("stream source not registered")
             ray.get(stream.append_to_targets.remote((self.current_node,parallelism)))
             mapping[source] = key
-        tasknode = StatelessTaskNode.remote(streams, functionObject, self.current_node, parallelism)
-        ray.get(tasknode.set_mapping.remote(mapping))
         output_stream = Stream.remote(self.current_node, parallelism)
-        ray.get(tasknode.set_output_stream.remote(output_stream))
+        tasknode = [StatelessTaskNode.remote(streams, functionObject, self.current_node, parallelism, mapping, output_stream) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.current_node += 1
         return output_stream
@@ -219,14 +210,15 @@ class TaskGraph:
         return 
     
     def initialize(self):
-        ray.get([self.nodes[node].initialize.remote() for node in self.nodes])
+        ray.get([node.initialize.remote() for node_id in self.nodes for node in self.nodes[node_id] ])
     
     def run(self):
         processes = []
         for key in self.nodes:
             node = self.nodes[key]
-            for replica in range(ray.get(node.get_parallelism.remote())):
-                processes.append(node.execute.remote(replica))
+            for i in range(len(node)):
+                replica = node[i]
+                processes.append(replica.execute.remote(i))
         ray.get(processes)
 
 
