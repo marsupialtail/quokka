@@ -3,10 +3,11 @@ import pandas as pd
 WRITE_MEM_LIMIT = 10 * 1024 * 1024
 
 class JoinExecutor:
-    def __init__(self):
+    def __init__(self, key):
         self.state0 = pd.DataFrame()
         self.state1 = pd.DataFrame()
         self.temp_results = pd.DataFrame()
+        self.key = key
 
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batch, stream_id):
