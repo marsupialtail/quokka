@@ -3,3 +3,4 @@ redis
 boto3==1.17.24
 pandas==1.2.2
 numpy==1.19.4
+python==3.7
