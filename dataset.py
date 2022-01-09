@@ -75,11 +75,8 @@ class InputCSVDataset:
         else:
             end = self.adjusted_splits[chunks * mapper_id + chunks] 
 
-        print(start, end)
         pos = start
         while pos < end-1:
-            print(pos)
-            print(min(pos+stride,end))
             resp = self.s3.get_object(Bucket=self.bucket,Key=self.key, Range='bytes={}-{}'.format(pos,min(pos+stride,end)))['Body'].read()
             last_newline = resp.rfind(bytes('\n','utf-8'))
             #import pdb;pdb.set_trace()
