@@ -67,7 +67,6 @@ class Stream:
                         pipeline.publish("mailbox-"+str(target) + "-" + str(channel),context.serialize(payload).to_buffer().to_pybytes())
                         pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.source)
                         results = pipeline.execute()
-                        print(results)
                         if False in results:
                             raise Exception(results)
     def done(self):
@@ -221,6 +220,3 @@ class TaskGraph:
                 replica = node[i]
                 processes.append(replica.execute.remote(i))
         ray.get(processes)
-
-
-
