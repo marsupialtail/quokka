@@ -90,6 +90,8 @@ task_handle.join()
 NUM_REDUCER = 1
 MAILBOX_MEM_LIMIT = 1024 * 1024 # 1MB
 WRITE_MEM_LIMIT = 10 * 1024 * 1024 # 10MB
+
+# TO DO -- address DeprecationWarning
 context = pa.default_serialization_context()
 
 def mapper(batch: pd.DataFrame ) -> "dict[int, pd.DataFrame]":
