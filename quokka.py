@@ -3,10 +3,11 @@ from dataset import *
 import redis
 import pyarrow as pa
 import pandas as pd
-from multiprocessing import Process, Value
+#from multiprocessing import Process, Value
 import time
 import ray
-ray.init(ignore_reinit_error=True)
+ray.init(ignore_reinit_error=True,address='auto', _redis_password='5241590000000000')
+ray.timeline("profile.json")
 
 '''
 
@@ -28,9 +29,9 @@ class Stream:
         
         self.source = source_node_id
         self.source_parallelism = source_parallelism
-        self.done_sources = Value('i',0)
+        self.done_sources = 0
         self.targets = []
-        self.r = redis.Redis(host='localhost', port=6379, db=0)
+        self.r = redis.Redis(host='localhost', port=6800, db=0)
 
         pass    
 
@@ -40,7 +41,9 @@ class Stream:
     def append_to_targets(self,tup):
         self.targets.append(tup)
 
-    def push(self, data):
+    def push(self, data, columns=None):
+
+        print("stream psuh start",time.time())
 
         if len(self.targets) == 0:
             raise Exception
@@ -48,6 +51,7 @@ class Stream:
         else:
             # iterate over downstream task nodes, each of which may contain inner parallelism
             # distribution strategy depends on data type as well as partition function
+            data = pd.DataFrame(data,columns = columns, copy=False)
             if type(data) == pd.core.frame.DataFrame:
                 data = dict(tuple(data.groupby("key")))
 
@@ -68,10 +72,12 @@ class Stream:
                         results = pipeline.execute()
                         if False in results:
                             raise Exception(results)
+        
+        print("stream psuh end",time.time())
     def done(self):
-        with self.done_sources.get_lock():
-            self.done_sources.value += 1
-        if self.done_sources.value == self.source_parallelism:
+        
+        self.done_sources += 1
+        if self.done_sources == self.source_parallelism:
             for target, parallelism in self.targets:
                 for channel in range(parallelism):
                     pipeline = self.r.pipeline()
@@ -113,8 +119,9 @@ class StatelessTaskNode(TaskNode):
     def execute(self, my_id):
 
         # this needs to change
+        print("task start",time.time())
 
-        r = redis.Redis(host='localhost', port=6379, db=0)
+        r = redis.Redis(host='localhost', port=6800, db=0)
         p = r.pubsub(ignore_subscribe_messages=True)
         p.subscribe("mailbox-" + str(self.id) + "-" + str(my_id), "mailbox-id-" + str(self.id) + "-" + str(my_id))
 
@@ -149,7 +156,8 @@ class StatelessTaskNode(TaskNode):
                         pass
         
         ray.get(self.output_stream.done.remote())
-            
+        print("task end",time.time())
+    
             
 @ray.remote
 class InputCSVNode(TaskNode):
@@ -169,10 +177,12 @@ class InputCSVNode(TaskNode):
             dataset.set_num_mappers(self.parallelism)
     
     def execute(self, id):
+        print("input_csv start",time.time())
         input_generator = self.input_csv_datasets[id].get_next_batch(id)
         for batch in input_generator:
-            ray.get(self.output_stream.push.remote(batch))
+            ray.get(self.output_stream.push.remote(batch.to_numpy(copy=False),batch.columns))
         ray.get(self.output_stream.done.remote())
+        print("input_csv end",time.time())
 
 
 class TaskGraph:
