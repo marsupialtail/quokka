@@ -1,0 +1,14 @@
+# virtual environments for python and julia
+venv/
+.playground/
+
+# ipynb checkpoints
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
+
+# latex temp files
+**/latex-output/*.*
+
+**/.DS_Store
+
+**/__pycache__/**
