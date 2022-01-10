@@ -4,8 +4,7 @@ try:
 except:
     pass
 
-findspark.init()
-
+findspark.init(spark_home='/home/ziheng/anaconda3/envs/neurodb/lib/python3.7/site-packages/pyspark')
 from pyspark import SparkContext
 from pyspark import SparkConf
 from pyspark.sql import SparkSession
