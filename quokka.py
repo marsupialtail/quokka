@@ -3,10 +3,11 @@ from dataset import *
 import redis
 import pyarrow as pa
 import pandas as pd
-from multiprocessing import Process, Value
+#from multiprocessing import Process, Value
 import time
 import ray
 ray.init(ignore_reinit_error=True)
+#ray.timeline("profile.json")
 
 '''
 
@@ -19,28 +20,37 @@ indepednently from one another. The Task
 Since each stream can have only one input, we are just going to use the source node id as the stream id. All ids are thus unique. 
 '''
 
+# TO DO -- address DeprecationWarning
 context = pa.default_serialization_context()
+    
 
-@ray.remote
-class Stream:
+class TaskNode:
 
-    def __init__(self, source_node_id, source_parallelism) -> None:
-        
-        self.source = source_node_id
-        self.source_parallelism = source_parallelism
-        self.done_sources = Value('i',0)
+    def __init__(self, streams, functionObject, id, parallelism, mapping, source_parallelism) -> None:
+        self.functionObjects = [functionObject for i in range(parallelism)]
+        self.input_streams = streams
+        self.id = id
+        self.parallelism = parallelism
         self.targets = []
-        self.r = redis.Redis(host='localhost', port=6379, db=0)
-
-        pass    
-
-    def get_source(self):
-        return self.source
+        # this maps what the system's stream_id is to what the user called the stream when they created the task node
+        self.physical_to_logical_stream_mapping = mapping
+        self.source_parallelism = source_parallelism
+        self.r = redis.Redis(host='localhost', port=6800, db=0)
+        pass
 
     def append_to_targets(self,tup):
         self.targets.append(tup)
 
-    def push(self, data):
+    def initialize(self):
+        pass
+
+    def execute(self):
+        pass
+
+
+    def push(self, data, columns=None):
+
+        print("stream psuh start",time.time())
 
         if len(self.targets) == 0:
             raise Exception
@@ -64,43 +74,22 @@ class Stream:
                         # print("not checking if target is full. This will break with larger joins for sure.")
                         pipeline = self.r.pipeline()
                         pipeline.publish("mailbox-"+str(target) + "-" + str(channel),context.serialize(payload).to_buffer().to_pybytes())
-                        pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.source)
+                        pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
                         results = pipeline.execute()
                         if False in results:
                             raise Exception(results)
+        
+        print("stream psuh end",time.time())
+
     def done(self):
-        with self.done_sources.get_lock():
-            self.done_sources.value += 1
-        if self.done_sources.value == self.source_parallelism:
-            for target, parallelism in self.targets:
-                for channel in range(parallelism):
-                    pipeline = self.r.pipeline()
-                    pipeline.publish("mailbox-"+str(target) + "-" + str(channel),"done")
-                    pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.source)
-                    results = pipeline.execute()
-                    if False in results:
-                        raise Exception
-
-class TaskNode:
-
-    def __init__(self, streams, functionObject, id, parallelism, mapping, output_stream) -> None:
-        self.functionObjects = [functionObject for i in range(parallelism)]
-        self.input_streams = streams
-        self.output_stream = output_stream
-        self.id = id
-        self.parallelism = parallelism
-        # this maps what the system's stream_id is to what the user called the stream when they created the task node
-        self.physical_to_logical_stream_mapping = mapping
-        pass
-
-    def get_parallelism(self):
-        return self.parallelism
-
-    def initialize(self):
-        pass
-
-    def execute(self):
-        pass
+        for target, parallelism in self.targets:
+            for channel in range(parallelism):
+                pipeline = self.r.pipeline()
+                pipeline.publish("mailbox-"+str(target) + "-" + str(channel),"done")
+                pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
+                results = pipeline.execute()
+                if False in results:
+                    raise Exception
 
 @ray.remote
 class StatelessTaskNode(TaskNode):
@@ -113,9 +102,9 @@ class StatelessTaskNode(TaskNode):
     def execute(self, my_id):
 
         # this needs to change
+        print("task start",time.time())
 
-        r = redis.Redis(host='localhost', port=6379, db=0)
-        p = r.pubsub(ignore_subscribe_messages=True)
+        p = self.r.pubsub(ignore_subscribe_messages=True)
         p.subscribe("mailbox-" + str(self.id) + "-" + str(my_id), "mailbox-id-" + str(self.id) + "-" + str(my_id))
 
         assert my_id < self.parallelism
@@ -123,8 +112,6 @@ class StatelessTaskNode(TaskNode):
         mailbox = deque()
         mailbox_id = deque()
 
-        if self.output_stream is None:
-            raise Exception
         while len(self.input_streams) > 0:
             message = p.get_message()
             if message is None:
@@ -138,28 +125,37 @@ class StatelessTaskNode(TaskNode):
                 first = mailbox.popleft()
                 stream_id = mailbox_id.popleft()
                 if len(first) < 10 and first.decode("utf-8") == "done":
-                    self.input_streams.pop(self.physical_to_logical_stream_mapping[stream_id])
-                    print("done", self.physical_to_logical_stream_mapping[stream_id])
+
+                    # the responsibility for checking how many executors this input stream has is now resting on the consumer.
+
+                    self.source_parallelism[stream_id] -= 1
+                    if self.source_parallelism[stream_id] == 0:
+                        self.input_streams.pop(self.physical_to_logical_stream_mapping[stream_id])
+                        print("done", self.physical_to_logical_stream_mapping[stream_id])
                 else:
                     batch = context.deserialize(first)
                     results = self.functionObjects[my_id].execute(batch, self.physical_to_logical_stream_mapping[stream_id])
                     if results is not None:
-                        ray.get(self.output_stream.push.remote(results))
+                        self.push(results)
                     else:
                         pass
         
-        ray.get(self.output_stream.done.remote())
-            
+        self.done()
+        print("task end",time.time())
+    
             
 @ray.remote
 class InputCSVNode(TaskNode):
 
-    def __init__(self,bucket, key, names, parallelism, output_stream):
+    def __init__(self,id, bucket, key, names, parallelism):
+        self.id = id
         self.bucket = bucket
         self.key = key
         self.names = names
         self.parallelism = parallelism
-        self.output_stream = output_stream
+        self.targets= []
+        self.r = redis.Redis(host='localhost', port=6800, db=0)
+
 
     def initialize(self):
         if self.bucket is None:
@@ -169,10 +165,12 @@ class InputCSVNode(TaskNode):
             dataset.set_num_mappers(self.parallelism)
     
     def execute(self, id):
+        print("input_csv start",time.time())
         input_generator = self.input_csv_datasets[id].get_next_batch(id)
         for batch in input_generator:
-            ray.get(self.output_stream.push.remote(batch))
-        ray.get(self.output_stream.done.remote())
+            self.push(batch)
+        self.done()
+        print("input_csv end",time.time())
 
 
 class TaskGraph:
@@ -180,28 +178,30 @@ class TaskGraph:
     def __init__(self) -> None:
         self.current_node = 0
         self.nodes = {}
+        self.node_parallelism = {}
     
     def new_input_csv(self, bucket, key, names, parallelism):
-        output_stream = Stream.remote(self.current_node, parallelism)
-        tasknode = [InputCSVNode.remote(bucket,key,names, parallelism, output_stream) for i in range(parallelism)]
+        tasknode = [InputCSVNode.remote(self.current_node, bucket,key,names, parallelism) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
+        self.node_parallelism[self.current_node] = parallelism
         self.current_node += 1
-        return output_stream
+        return self.current_node - 1
     
     def new_stateless_node(self, streams, functionObject, parallelism):
         mapping = {}
+        source_parallelism = {}
         for key in streams:
-            stream = streams[key]
-            source = ray.get(stream.get_source.remote())
+            source = streams[key]
             if source not in self.nodes:
                 raise Exception("stream source not registered")
-            ray.get(stream.append_to_targets.remote((self.current_node,parallelism)))
+            ray.get([i.append_to_targets.remote((self.current_node, parallelism)) for i in self.nodes[source]])
             mapping[source] = key
-        output_stream = Stream.remote(self.current_node, parallelism)
-        tasknode = [StatelessTaskNode.remote(streams, functionObject, self.current_node, parallelism, mapping, output_stream) for i in range(parallelism)]
+            source_parallelism[source] = self.node_parallelism[source]
+        tasknode = [StatelessTaskNode.remote(streams, functionObject, self.current_node, parallelism, mapping, source_parallelism) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
+        self.node_parallelism[self.current_node] = parallelism
         self.current_node += 1
-        return output_stream
+        return self.current_node - 1
     
     def new_output_csv(self):
 

@@ -1,6 +1,11 @@
 pyarrow==2.0.0
-redis
+redis==4.1.0
 boto3==1.17.24
-pandas
-numpy==1.19.4
-ray
+pandas==1.2.2
+numpy==1.19.2
+python==3.7
+ray==1.9.1
+
+# Java8
+# apache-spark 3.2.0 (Hadoop 3.3.1)
+findspark==1.4.2
