@@ -1,7 +1,7 @@
 import pandas as pd
 from io import BytesIO, StringIO
 import boto3
-
+import time
 class InputCSVDataset:
 
     def __init__(self, bucket, key, names, id) -> None:
@@ -35,7 +35,9 @@ class InputCSVDataset:
 
         # the first value is going to be the start of the second row 
         # -- we assume there's a header and skip it!
+
         resp = self.s3.get_object(Bucket=self.bucket,Key=self.key, Range='bytes={}-{}'.format(0, window))['Body'].read()
+
         first_newline = resp.find(bytes('\n','utf-8'))
         if first_newline == -1:
             raise Exception
@@ -77,8 +79,11 @@ class InputCSVDataset:
 
         pos = start
         while pos < end-1:
+
             resp = self.s3.get_object(Bucket=self.bucket,Key=self.key, Range='bytes={}-{}'.format(pos,min(pos+stride,end)))['Body'].read()
+
             last_newline = resp.rfind(bytes('\n','utf-8'))
+
             #import pdb;pdb.set_trace()
             
             if last_newline == -1:
@@ -86,7 +91,10 @@ class InputCSVDataset:
             else:
                 resp = resp[:last_newline]
                 pos += last_newline
-                yield pd.read_csv(BytesIO(resp), names =self.names )
+                print("start convert,",time.time())
+                bump = pd.read_csv(BytesIO(resp), names =self.names )
+                print("done convert,",time.time())
+                yield bump
 
 
 class OutputCSVDataset:
