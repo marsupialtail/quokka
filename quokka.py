@@ -61,7 +61,7 @@ class Stream:
                     for channel in range(parallelism):
                         payload = pd.concat(messages[channel])
                         # don't worry about target being full for now.
-                        print("not checking if target is full. This will break with larger joins for sure.")
+                        # print("not checking if target is full. This will break with larger joins for sure.")
                         pipeline = self.r.pipeline()
                         pipeline.publish("mailbox-"+str(target) + "-" + str(channel),context.serialize(payload).to_buffer().to_pybytes())
                         pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.source)
