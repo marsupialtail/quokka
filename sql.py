@@ -27,3 +27,5 @@ class JoinExecutor:
             self.temp_results.extend(results)
             print("temp results",sum([len(i) for i in self.temp_results]))
         print("execute,",time.time()-start)
+        # if sum([i.memory_usage() for i in self.temp_results]) > WRITE_MEM_LIMIT:
+        #     print(len(self.temp_results))
