@@ -27,7 +27,7 @@ context = pa.default_serialization_context()
 class TaskNode:
 
     def __init__(self, streams, functionObject, id, parallelism, mapping, source_parallelism) -> None:
-        self.functionObjects = [functionObject for i in range(parallelism)]
+        self.functionObject = functionObject
         self.input_streams = streams
         self.id = id
         self.parallelism = parallelism
@@ -59,17 +59,9 @@ class TaskNode:
             # iterate over downstream task nodes, each of which may contain inner parallelism
             # distribution strategy depends on data type as well as partition function
             if type(data) == pd.core.frame.DataFrame:
-                data = dict(tuple(data.groupby("key")))
-
                 for target, parallelism in self.targets:
-                    messages = {i : [] for i in range(parallelism)}
-                    for key in data:
-                        # replace with some real partition function
-                        channel = int(key) % parallelism
-                        payload = data[key]
-                        messages[channel].append(payload)
                     for channel in range(parallelism):
-                        payload = pd.concat(messages[channel])
+                        payload = data[data.key % parallelism == channel]
                         # don't worry about target being full for now.
                         # print("not checking if target is full. This will break with larger joins for sure.")
                         pipeline = self.r.pipeline()
@@ -134,12 +126,13 @@ class StatelessTaskNode(TaskNode):
                         print("done", self.physical_to_logical_stream_mapping[stream_id])
                 else:
                     batch = context.deserialize(first)
-                    results = self.functionObjects[my_id].execute(batch, self.physical_to_logical_stream_mapping[stream_id])
-                    if results is not None:
-                        self.push(results)
+                    results = self.functionObject.execute(batch, self.physical_to_logical_stream_mapping[stream_id], my_id)
+                    if results is not None and len(self.targets) > 0:
+                        for result in results:
+                            self.push(result)
                     else:
                         pass
-        
+        self.functionObject.done(my_id)
         self.done()
         print("task end",time.time())
     
