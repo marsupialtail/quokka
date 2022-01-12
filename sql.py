@@ -1,6 +1,6 @@
 import pandas as pd
 import time
-WRITE_MEM_LIMIT = 10 * 1024 * 1024
+WRITE_MEM_LIMIT = 16 * 1024 * 1024
 
 class OutputCSVExecutor:
     def __init__(self, parallelism, bucket, prefix) -> None:
@@ -14,7 +14,12 @@ class OutputCSVExecutor:
         
         #self.num += 1
         self.dfs.append(batch)
-        
+        if sum([i.memory_usage().sum() for i in self.dfs]) > WRITE_MEM_LIMIT:
+            name = "s3://" + self.bucket + "/" + self.prefix + "-" + str(self.num * self.parallelism + executor_id) + ".csv"
+            pd.concat(self.dfs).to_csv(name)
+            self.num += 1
+            self.dfs = []
+
     def done(self,executor_id):
         name = "s3://" + self.bucket + "/" + self.prefix + "-" + str(self.num * self.parallelism + executor_id) + ".csv"
         pd.concat(self.dfs).to_csv(name)
