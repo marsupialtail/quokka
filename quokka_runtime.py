@@ -1,12 +1,16 @@
 from collections import deque
 from dataset import * 
+from sql import JoinExecutor, OutputCSVExecutor
 import redis
 import pyarrow as pa
 import pandas as pd
 #from multiprocessing import Process, Value
 import time
 import ray
-ray.init(ignore_reinit_error=True)
+import os
+#parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+#os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
+ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka"})
 #ray.timeline("profile.json")
 
 '''
@@ -26,7 +30,7 @@ context = pa.default_serialization_context()
 
 class TaskNode:
 
-    def __init__(self, streams, functionObject, id, parallelism, mapping, source_parallelism) -> None:
+    def __init__(self, streams, functionObject, id, parallelism, mapping, source_parallelism, ip) -> None:
         self.functionObject = functionObject
         self.input_streams = streams
         self.id = id
@@ -36,10 +40,13 @@ class TaskNode:
         self.physical_to_logical_stream_mapping = mapping
         self.source_parallelism = source_parallelism
         self.r = redis.Redis(host='localhost', port=6800, db=0)
+        self.target_rs = {}
         pass
 
     def append_to_targets(self,tup):
-        self.targets.append(tup)
+        node_id, parallelism, ip = tup
+        self.targets.append((node_id,parallelism))
+        self.target_rs[node_id] = redis.Redis(host=ip, port=6800, db=0)
 
     def initialize(self):
         pass
@@ -63,8 +70,8 @@ class TaskNode:
                     for channel in range(parallelism):
                         payload = data[data.key % parallelism == channel]
                         # don't worry about target being full for now.
-                        # print("not checking if target is full. This will break with larger joins for sure.")
-                        pipeline = self.r.pipeline()
+                        print("not checking if target is full. This will break with larger joins for sure.")
+                        pipeline = self.target_rs[target].pipeline()
                         pipeline.publish("mailbox-"+str(target) + "-" + str(channel),context.serialize(payload).to_buffer().to_pybytes())
                         pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
                         results = pipeline.execute()
@@ -76,7 +83,7 @@ class TaskNode:
     def done(self):
         for target, parallelism in self.targets:
             for channel in range(parallelism):
-                pipeline = self.r.pipeline()
+                pipeline = self.target_rs[target].pipeline()
                 pipeline.publish("mailbox-"+str(target) + "-" + str(channel),"done")
                 pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
                 results = pipeline.execute()
@@ -140,7 +147,7 @@ class StatelessTaskNode(TaskNode):
 @ray.remote
 class InputCSVNode(TaskNode):
 
-    def __init__(self,id, bucket, key, names, parallelism):
+    def __init__(self,id, bucket, key, names, parallelism, ip):
         self.id = id
         self.bucket = bucket
         self.key = key
@@ -148,7 +155,7 @@ class InputCSVNode(TaskNode):
         self.parallelism = parallelism
         self.targets= []
         self.r = redis.Redis(host='localhost', port=6800, db=0)
-
+        self.target_rs = {}
 
     def initialize(self):
         if self.bucket is None:
@@ -173,33 +180,33 @@ class TaskGraph:
         self.nodes = {}
         self.node_parallelism = {}
     
-    def new_input_csv(self, bucket, key, names, parallelism):
-        tasknode = [InputCSVNode.remote(self.current_node, bucket,key,names, parallelism) for i in range(parallelism)]
+    def new_input_csv(self, bucket, key, names, parallelism, ip='localhost'):
+        tasknode = [InputCSVNode.options(resources={"node:172.31.16.185" : 0.01}).remote(self.current_node, bucket,key,names, parallelism, ip) for i in range(parallelism)]
+        #tasknode = [InputCSVNode.remote(self.current_node, bucket,key,names, parallelism, ip) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.node_parallelism[self.current_node] = parallelism
         self.current_node += 1
         return self.current_node - 1
     
-    def new_stateless_node(self, streams, functionObject, parallelism):
+    def new_stateless_node(self, streams, functionObject, parallelism, ip='172.31.48.233'):
         mapping = {}
         source_parallelism = {}
         for key in streams:
             source = streams[key]
             if source not in self.nodes:
                 raise Exception("stream source not registered")
-            ray.get([i.append_to_targets.remote((self.current_node, parallelism)) for i in self.nodes[source]])
+            import sys
+            print(sys.path)
+            ray.get([i.append_to_targets.remote((self.current_node, parallelism, ip)) for i in self.nodes[source]])
             mapping[source] = key
             source_parallelism[source] = self.node_parallelism[source]
-        tasknode = [StatelessTaskNode.remote(streams, functionObject, self.current_node, parallelism, mapping, source_parallelism) for i in range(parallelism)]
+        tasknode = [StatelessTaskNode.options(resources={"node:" + ip : 0.01}).remote(streams, functionObject, self.current_node, parallelism, mapping, source_parallelism, ip) for i in range(parallelism)]
+        #tasknode = [StatelessTaskNode.remote(streams, functionObject, self.current_node, parallelism, mapping, source_parallelism, ip) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.node_parallelism[self.current_node] = parallelism
         self.current_node += 1
         return self.current_node - 1
-    
-    def new_output_csv(self):
 
-        # this does not return anything
-        return 
     
     def initialize(self):
         ray.get([node.initialize.remote() for node_id in self.nodes for node in self.nodes[node_id] ])
@@ -212,3 +219,19 @@ class TaskGraph:
                 replica = node[i]
                 processes.append(replica.execute.remote(i))
         ray.get(processes)
+'''
+task_graph = TaskGraph()
+
+quotes = task_graph.new_input_csv("yugan","a-big.csv",["key"] + ["avalue" + str(i) for i in range(100)],2)
+trades = task_graph.new_input_csv("yugan","b-big.csv",["key"] + ["bvalue" + str(i) for i in range(100)],2)
+join_executor = JoinExecutor("key")
+output_stream = task_graph.new_stateless_node({0:quotes,1:trades},join_executor,4)
+#output_executor = OutputCSVExecutor(4,"yugan","result")
+#wrote = task_graph.new_stateless_node({0:output_stream},output_executor,4)
+
+task_graph.initialize()
+
+start = time.time()
+task_graph.run()
+print("total time ", time.time() - start)
+'''
