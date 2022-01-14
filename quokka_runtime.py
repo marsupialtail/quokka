@@ -181,14 +181,16 @@ class TaskGraph:
         self.node_parallelism = {}
     
     def new_input_csv(self, bucket, key, names, parallelism, ip='localhost'):
-        tasknode = [InputCSVNode.options(resources={"node:172.31.16.185" : 0.01}).remote(self.current_node, bucket,key,names, parallelism, ip) for i in range(parallelism)]
-        #tasknode = [InputCSVNode.remote(self.current_node, bucket,key,names, parallelism, ip) for i in range(parallelism)]
+        if ip != 'localhost':
+            tasknode = [InputCSVNode.options(resources={"node:" + ip : 0.01}).remote(self.current_node, bucket,key,names, parallelism, ip) for i in range(parallelism)]
+        else:
+            tasknode = [InputCSVNode.options(resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).remote(self.current_node, bucket,key,names, parallelism, ip) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.node_parallelism[self.current_node] = parallelism
         self.current_node += 1
         return self.current_node - 1
     
-    def new_stateless_node(self, streams, functionObject, parallelism, ip='172.31.48.233'):
+    def new_stateless_node(self, streams, functionObject, parallelism, ip='localhost'):
         mapping = {}
         source_parallelism = {}
         for key in streams:
@@ -200,8 +202,10 @@ class TaskGraph:
             ray.get([i.append_to_targets.remote((self.current_node, parallelism, ip)) for i in self.nodes[source]])
             mapping[source] = key
             source_parallelism[source] = self.node_parallelism[source]
-        tasknode = [StatelessTaskNode.options(resources={"node:" + ip : 0.01}).remote(streams, functionObject, self.current_node, parallelism, mapping, source_parallelism, ip) for i in range(parallelism)]
-        #tasknode = [StatelessTaskNode.remote(streams, functionObject, self.current_node, parallelism, mapping, source_parallelism, ip) for i in range(parallelism)]
+        if ip != 'localhost':
+            tasknode = [StatelessTaskNode.options(resources={"node:" + ip : 0.01}).remote(streams, functionObject, self.current_node, parallelism, mapping, source_parallelism, ip) for i in range(parallelism)]
+        else:
+            tasknode = [StatelessTaskNode.options(resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(streams, functionObject, self.current_node, parallelism, mapping, source_parallelism, ip) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.node_parallelism[self.current_node] = parallelism
         self.current_node += 1
