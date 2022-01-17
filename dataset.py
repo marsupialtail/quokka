@@ -1,3 +1,4 @@
+import pyarrow.csv as csv
 import pandas as pd
 from io import BytesIO, StringIO
 import boto3
@@ -93,7 +94,8 @@ class InputCSVDataset:
                 resp = resp[:last_newline]
                 pos += last_newline
                 print("start convert,",time.time())
-                bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
+                #bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
+                bump = csv.read_csv(BytesIO(resp),read_options = csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)).to_pandas() 
                 print("done convert,",time.time())
                 yield bump
 

@@ -8,6 +8,7 @@ import pandas as pd
 import time
 import ray
 import os
+import pickle
 #parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
 ray.init(ignore_reinit_error=True) # do this locally
@@ -26,7 +27,7 @@ Since each stream can have only one input, we are just going to use the source n
 '''
 
 # TO DO -- address DeprecationWarning
-context = pa.default_serialization_context()
+#context = pa.default_serialization_context()
     
 
 class TaskNode:
@@ -73,7 +74,9 @@ class TaskNode:
                         # don't worry about target being full for now.
                         print("not checking if target is full. This will break with larger joins for sure.")
                         pipeline = self.target_rs[target].pipeline()
-                        pipeline.publish("mailbox-"+str(target) + "-" + str(channel),context.serialize(payload).to_buffer().to_pybytes())
+                        #pipeline.publish("mailbox-"+str(target) + "-" + str(channel),context.serialize(payload).to_buffer().to_pybytes())
+                        pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
+
                         pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
                         results = pipeline.execute()
                         if False in results:
@@ -133,7 +136,7 @@ class StatelessTaskNode(TaskNode):
                         self.input_streams.pop(self.physical_to_logical_stream_mapping[stream_id])
                         print("done", self.physical_to_logical_stream_mapping[stream_id])
                 else:
-                    batch = context.deserialize(first)
+                    batch = pickle.loads(first)
                     results = self.functionObject.execute(batch, self.physical_to_logical_stream_mapping[stream_id], my_id)
                     if results is not None and len(self.targets) > 0:
                         for result in results:
@@ -188,9 +191,9 @@ class TaskGraph:
     
     def new_input_csv(self, bucket, key, names, parallelism, ip='localhost',batch_func=None, sep = ","):
         if ip != 'localhost':
-            tasknode = [InputCSVNode.options(resources={"node:" + ip : 0.01}).remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func,sep = sep) for i in range(parallelism)]
+            tasknode = [InputCSVNode.options(num_cpus=0.01, resources={"node:" + ip : 0.01}).remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func,sep = sep) for i in range(parallelism)]
         else:
-            tasknode = [InputCSVNode.options(resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func, sep = sep) for i in range(parallelism)]
+            tasknode = [InputCSVNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func, sep = sep) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.node_parallelism[self.current_node] = parallelism
         self.current_node += 1

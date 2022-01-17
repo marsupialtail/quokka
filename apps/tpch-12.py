@@ -1,4 +1,6 @@
 import sys
+sys.path.append("/home/ubuntu/quokka/")
+import datetime
 import time
 from quokka_runtime import TaskGraph
 from sql import JoinExecutor, OutputCSVExecutor
@@ -38,8 +40,8 @@ class CustomJoinExecutor:
         if len(results) > 0:
             aggs = []
             for df in results:
-                df["high"] = ((df["o_orderpriority"] == "1-URGENT") + (df["o_orderpriority"] == "2-HIGH")).astype(int)
-                df["low"] = ((df["o_orderpriority"] != "1-URGENT") * (df["o_orderpriority"] != "2-HIGH")).astype(int)
+                df["high"] = ((df["o_orderpriority"] == "1-URGENT") | (df["o_orderpriority"] == "2-HIGH")).astype(int)
+                df["low"] = ((df["o_orderpriority"] != "1-URGENT") & (df["o_orderpriority"] != "2-HIGH")).astype(int)
                 aggs.append(df.groupby("l_shipmode").agg({'high':['sum'],'low':['sum']}))
             for i in range(1,len(aggs)):
                 aggs[0] = aggs[0].add(aggs[i],fill_value=0)
@@ -51,18 +53,18 @@ class CustomJoinExecutor:
 
 lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
 "l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
-"l_shipmode","l_comment"]
+"l_shipmode","l_comment", "null"]
 order_scheme = ["o_orderkey", "o_custkey","o_orderstatus","o_totalprice","o_orderdate","o_orderpriority","o_clerk",
-"o_shippriority","o_comment"]
+"o_shippriority","o_comment", "null"]
 
 orders_filter = lambda x: x[["o_orderkey","o_orderpriority"]]
 lineitem_filter = lambda x: x[((x.l_shipmode == "MAIL") | (x.l_shipmode == "SHIP")) & (x.l_commitdate < x.l_receiptdate) 
-& (x.l_shipdate < x.l_commitdate) & (x.l_receiptdate >= "1994-01-01") & (x.l_receiptdate < "1995-1-1")][["l_orderkey","l_shipmode"]]
+& (x.l_shipdate < x.l_commitdate) & (x.l_receiptdate >= datetime.date(1994,1,1)) & (x.l_receiptdate < datetime.date(1995,1,1))][["l_orderkey","l_shipmode"]]
 
 #quotes = task_graph.new_input_csv("yugan","a-big.csv",["key"] + ["avalue" + str(i) for i in range(100)],2,ip="172.31.16.185")
-orders = task_graph.new_input_csv("tpc-h-small","orders.tbl",order_scheme,2,batch_func=orders_filter, sep="|")
+orders = task_graph.new_input_csv("tpc-h-small","orders.tbl",order_scheme,8,batch_func=orders_filter, sep="|")
 #trades = task_graph.new_input_csv("yugan","b-big.csv",["key"] + ["bvalue" + str(i) for i in range(100)],2,ip="172.31.16.185")
-lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme,2,batch_func=lineitem_filter, sep="|")
+lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme,8,batch_func=lineitem_filter, sep="|")
 join_executor = CustomJoinExecutor(left_on="o_orderkey",right_on="l_orderkey")
 #output_stream = task_graph.new_stateless_node({0:quotes,1:trades},join_executor,4,ip="172.31.48.233")
 output_stream = task_graph.new_stateless_node({0:orders,1:lineitem},join_executor,4, {0:"o_orderkey", 1:"l_orderkey"})
