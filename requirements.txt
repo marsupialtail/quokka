@@ -1,4 +1,4 @@
-pyarrow==2.0.0
+pyarrow==6.0.1
 redis==4.1.0
 boto3==1.17.24
 pandas==1.2.2

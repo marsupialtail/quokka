@@ -1,10 +1,11 @@
+import pyarrow.csv as csv
 import pandas as pd
 from io import BytesIO, StringIO
 import boto3
-
+import time
 class InputCSVDataset:
 
-    def __init__(self, bucket, key, names, id) -> None:
+    def __init__(self, bucket, key, names, id, sep= ",") -> None:
 
         self.s3 = boto3.client('s3') # needs boto3 client
         self.bucket = bucket
@@ -12,6 +13,7 @@ class InputCSVDataset:
         self.num_mappers = None
         self.names = names
         self.id = id
+        self.sep = sep
     
     def set_num_mappers(self, num_mappers):
         self.num_mappers = num_mappers
@@ -35,7 +37,9 @@ class InputCSVDataset:
 
         # the first value is going to be the start of the second row 
         # -- we assume there's a header and skip it!
+
         resp = self.s3.get_object(Bucket=self.bucket,Key=self.key, Range='bytes={}-{}'.format(0, window))['Body'].read()
+
         first_newline = resp.find(bytes('\n','utf-8'))
         if first_newline == -1:
             raise Exception
@@ -59,7 +63,7 @@ class InputCSVDataset:
         print(length, adjusted_splits)
         return length, adjusted_splits
 
-    def get_next_batch(self, mapper_id, stride=1024 * 32): #default is to get 16 KB batches at a time. 
+    def get_next_batch(self, mapper_id, stride=1024 * 1024 * 64): #default is to get 16 KB batches at a time. 
         
         if self.num_mappers is None:
             raise Exception("I need to know the total number of mappers you are planning on using.")
@@ -77,8 +81,11 @@ class InputCSVDataset:
 
         pos = start
         while pos < end-1:
+
             resp = self.s3.get_object(Bucket=self.bucket,Key=self.key, Range='bytes={}-{}'.format(pos,min(pos+stride,end)))['Body'].read()
+
             last_newline = resp.rfind(bytes('\n','utf-8'))
+
             #import pdb;pdb.set_trace()
             
             if last_newline == -1:
@@ -86,7 +93,11 @@ class InputCSVDataset:
             else:
                 resp = resp[:last_newline]
                 pos += last_newline
-                yield pd.read_csv(BytesIO(resp), names =self.names )
+                print("start convert,",time.time())
+                #bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
+                bump = csv.read_csv(BytesIO(resp),read_options = csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)).to_pandas() 
+                print("done convert,",time.time())
+                yield bump
 
 
 class OutputCSVDataset:
