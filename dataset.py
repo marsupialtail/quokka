@@ -4,7 +4,7 @@ import boto3
 import time
 class InputCSVDataset:
 
-    def __init__(self, bucket, key, names, id) -> None:
+    def __init__(self, bucket, key, names, id, sep= ",") -> None:
 
         self.s3 = boto3.client('s3') # needs boto3 client
         self.bucket = bucket
@@ -12,6 +12,7 @@ class InputCSVDataset:
         self.num_mappers = None
         self.names = names
         self.id = id
+        self.sep = sep
     
     def set_num_mappers(self, num_mappers):
         self.num_mappers = num_mappers
@@ -92,7 +93,7 @@ class InputCSVDataset:
                 resp = resp[:last_newline]
                 pos += last_newline
                 print("start convert,",time.time())
-                bump = pd.read_csv(BytesIO(resp), names =self.names )
+                bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
                 print("done convert,",time.time())
                 yield bump
 

@@ -26,11 +26,19 @@ class OutputCSVExecutor:
         print("done")
 
 class JoinExecutor:
-    def __init__(self, key):
+    def __init__(self, on = None, left_on = None, right_on = None):
         self.state0 = []
         self.state1 = []
         self.temp_results = []
-        self.key = key
+        if on is not None:
+            assert left_on is None and right_on is None
+            self.left_on = on
+            self.right_on = on
+        else:
+            assert left_on is not None and right_on is not None
+            self.left_on = left_on
+            self.right_on = right_on
+
 
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batch, stream_id, executor_id):
@@ -38,12 +46,12 @@ class JoinExecutor:
         start = time.time()        
         if stream_id == 0:
             if len(self.state1) > 0:
-                results = [batch.merge(i,on='key',how='inner',suffixes=('_a','_b')) for i in self.state1]
+                results = [batch.merge(i,left_on = self.left_on, right_on = self.right_on ,how='inner',suffixes=('_a','_b')) for i in self.state1]
             self.state0.append(batch)
              
         elif stream_id == 1:
             if len(self.state0) > 0:
-                results = [i.merge(batch,on='key',how='inner',suffixes=('_a','_b')) for i in self.state0]
+                results = [i.merge(batch,left_on = self.left_on, right_on = self.right_on ,how='inner',suffixes=('_a','_b')) for i in self.state0]
             self.state1.append(batch)
         
         if len(results) > 0:

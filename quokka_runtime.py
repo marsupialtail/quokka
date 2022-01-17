@@ -10,7 +10,8 @@ import ray
 import os
 #parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
-ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka"})
+ray.init(ignore_reinit_error=True) # do this locally
+#ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ziheng/quokka-dev"})
 #ray.timeline("profile.json")
 
 '''
@@ -147,7 +148,7 @@ class StatelessTaskNode(TaskNode):
 @ray.remote
 class InputCSVNode(TaskNode):
 
-    def __init__(self,id, bucket, key, names, parallelism, ip):
+    def __init__(self,id, bucket, key, names, parallelism, batch_func=None, sep = ","):
         self.id = id
         self.bucket = bucket
         self.key = key
@@ -156,11 +157,13 @@ class InputCSVNode(TaskNode):
         self.targets= []
         self.r = redis.Redis(host='localhost', port=6800, db=0)
         self.target_rs = {}
+        self.batch_func = batch_func
+        self.sep = sep
 
     def initialize(self):
         if self.bucket is None:
             raise Exception
-        self.input_csv_datasets = [InputCSVDataset(self.bucket, self.key, self.names,0) for i in range(self.parallelism)]
+        self.input_csv_datasets = [InputCSVDataset(self.bucket, self.key, self.names,0, sep = self.sep) for i in range(self.parallelism)]
         for dataset in self.input_csv_datasets:
             dataset.set_num_mappers(self.parallelism)
     
@@ -168,7 +171,10 @@ class InputCSVNode(TaskNode):
         print("input_csv start",time.time())
         input_generator = self.input_csv_datasets[id].get_next_batch(id)
         for batch in input_generator:
-            self.push(batch)
+            if self.batch_func is not None:
+                self.push(self.batch_func(batch))
+            else:
+                self.push(batch)
         self.done()
         print("input_csv end",time.time())
 
@@ -180,11 +186,11 @@ class TaskGraph:
         self.nodes = {}
         self.node_parallelism = {}
     
-    def new_input_csv(self, bucket, key, names, parallelism, ip='localhost'):
+    def new_input_csv(self, bucket, key, names, parallelism, ip='localhost',batch_func=None, sep = ","):
         if ip != 'localhost':
-            tasknode = [InputCSVNode.options(resources={"node:" + ip : 0.01}).remote(self.current_node, bucket,key,names, parallelism, ip) for i in range(parallelism)]
+            tasknode = [InputCSVNode.options(resources={"node:" + ip : 0.01}).remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func,sep = sep) for i in range(parallelism)]
         else:
-            tasknode = [InputCSVNode.options(resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).remote(self.current_node, bucket,key,names, parallelism, ip) for i in range(parallelism)]
+            tasknode = [InputCSVNode.options(resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func, sep = sep) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.node_parallelism[self.current_node] = parallelism
         self.current_node += 1
