@@ -143,7 +143,9 @@ class StatelessTaskNode(TaskNode):
                             self.push(result)
                     else:
                         pass
-        self.functionObject.done(my_id)
+        obj_done =  self.functionObject.done(my_id) 
+        if obj_done is not None:
+            self.push(obj_done)
         self.done()
         print("task end",time.time())
     

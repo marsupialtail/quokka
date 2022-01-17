@@ -60,3 +60,18 @@ class JoinExecutor:
     
     def done(self,executor_id):
         print("temp results",sum([len(i) for i in self.temp_results]))
+
+class AggExecutor:
+    def __init__(self, fill_value = 0):
+        self.state = None
+        self.fill_value = fill_value
+
+    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
+    def execute(self,batch, stream_id, executor_id):
+        if self.state is None:
+            self.state = batch 
+        else:
+            self.state = self.state.add(batch, fill_value = self.fill_value)
+    
+    def done(self,executor_id):
+        print(self.state)
