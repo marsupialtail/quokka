@@ -21,12 +21,11 @@ class CustomJoinExecutor:
             assert left_on is not None and right_on is not None
             self.left_on = left_on
             self.right_on = right_on
-
+        self.agg_result = None
 
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batch, stream_id, executor_id):
         results = []
-        start = time.time()        
         if stream_id == 0:
             if len(self.state1) > 0:
                 results = [batch.merge(i,left_on = self.left_on, right_on = self.right_on ,how='inner',suffixes=('_a','_b')) for i in self.state1]
@@ -45,9 +44,14 @@ class CustomJoinExecutor:
                 aggs.append(df.groupby("l_shipmode").agg({'high':['sum'],'low':['sum']}))
             for i in range(1,len(aggs)):
                 aggs[0] = aggs[0].add(aggs[i],fill_value=0)
-            return aggs[0].copy()
+            if self.agg_result is None:
+                self.agg_result = aggs[0]
+            else:
+                self.agg_result = self.agg_result.add(aggs[0],fill_value = 0)
+            return None
     
     def done(self,executor_id):
+        print(self.agg_result)
         print("done " + str(executor_id))
 
 
