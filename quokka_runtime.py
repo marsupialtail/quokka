@@ -70,7 +70,10 @@ class TaskNode:
             if type(data) == pd.core.frame.DataFrame:
                 for target, parallelism, partition_key in self.targets:
                     for channel in range(parallelism):
-                        payload = data[data[partition_key] % parallelism == channel]
+                        if partition_key is not None:
+                            payload = data[data[partition_key] % parallelism == channel]
+                        else:
+                            payload = data
                         # don't worry about target being full for now.
                         print("not checking if target is full. This will break with larger joins for sure.")
                         pipeline = self.target_rs[target].pipeline()

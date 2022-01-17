@@ -71,7 +71,7 @@ lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme
 join_executor = CustomJoinExecutor(left_on="o_orderkey",right_on="l_orderkey")
 output_stream = task_graph.new_stateless_node({0:orders,1:lineitem},join_executor,4, {0:"o_orderkey", 1:"l_orderkey"})
 agg_executor = AggExecutor()
-agged = task_graph.new_stateless_node({0:output_stream}, agg_executor, 1, {0:"high"})
+agged = task_graph.new_stateless_node({0:output_stream}, agg_executor, 1, {0:None})
 #output_executor = OutputCSVExecutor(4,"yugan","result")
 #wrote = task_graph.new_stateless_node({0:output_stream},output_executor,4)
 
