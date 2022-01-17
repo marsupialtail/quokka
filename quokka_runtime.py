@@ -45,8 +45,8 @@ class TaskNode:
         pass
 
     def append_to_targets(self,tup):
-        node_id, parallelism, ip = tup
-        self.targets.append((node_id,parallelism))
+        node_id, parallelism, ip, partition_key = tup
+        self.targets.append((node_id,parallelism, partition_key))
         self.target_rs[node_id] = redis.Redis(host=ip, port=6800, db=0)
 
     def initialize(self):
@@ -56,7 +56,7 @@ class TaskNode:
         pass
 
 
-    def push(self, data, columns=None):
+    def push(self, data):
 
         print("stream psuh start",time.time())
 
@@ -67,9 +67,9 @@ class TaskNode:
             # iterate over downstream task nodes, each of which may contain inner parallelism
             # distribution strategy depends on data type as well as partition function
             if type(data) == pd.core.frame.DataFrame:
-                for target, parallelism in self.targets:
+                for target, parallelism, partition_key in self.targets:
                     for channel in range(parallelism):
-                        payload = data[data.key % parallelism == channel]
+                        payload = data[data[partition_key] % parallelism == channel]
                         # don't worry about target being full for now.
                         print("not checking if target is full. This will break with larger joins for sure.")
                         pipeline = self.target_rs[target].pipeline()
@@ -82,7 +82,7 @@ class TaskNode:
         print("stream psuh end",time.time())
 
     def done(self):
-        for target, parallelism in self.targets:
+        for target, parallelism, _ in self.targets:
             for channel in range(parallelism):
                 pipeline = self.target_rs[target].pipeline()
                 pipeline.publish("mailbox-"+str(target) + "-" + str(channel),"done")
@@ -196,7 +196,7 @@ class TaskGraph:
         self.current_node += 1
         return self.current_node - 1
     
-    def new_stateless_node(self, streams, functionObject, parallelism, ip='localhost'):
+    def new_stateless_node(self, streams, functionObject, parallelism, partition_key, ip='localhost'):
         mapping = {}
         source_parallelism = {}
         for key in streams:
@@ -205,7 +205,7 @@ class TaskGraph:
                 raise Exception("stream source not registered")
             import sys
             print(sys.path)
-            ray.get([i.append_to_targets.remote((self.current_node, parallelism, ip)) for i in self.nodes[source]])
+            ray.get([i.append_to_targets.remote((self.current_node, parallelism, ip, partition_key[key])) for i in self.nodes[source]])
             mapping[source] = key
             source_parallelism[source] = self.node_parallelism[source]
         if ip != 'localhost':
