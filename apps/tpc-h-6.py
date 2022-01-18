@@ -14,7 +14,7 @@ lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quanti
 "l_shipmode","l_comment", "null"]
 
 def lineitem_filter(df):
-    filtered_df = df[(df.l_shipdate > "1994-01-01") & (df.l_discount >= 0.05) & (df.l_discount <= 0.07) & (df.l_quantity < 24)]
+    filtered_df = df[(df.l_shipdate > datetime.date(1994,1,1)) & (df.l_discount >= 0.05) & (df.l_discount <= 0.07) & (df.l_quantity < 24)]
     filtered_df["product"] = filtered_df.l_extendedprice * filtered_df.l_discount
     return pd.DataFrame([filtered_df["product"].sum()],columns=['sum'])
 
