@@ -21,12 +21,25 @@ result = df.merge(df1,on="key",how="inner").compute()
 result.to_parquet("s3://yugan/dask-result.parquet")
 print(time.time()-start)
 '''
+
+lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
+"l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
+"l_shipmode","l_comment"]
+order_scheme = ["o_orderkey", "o_custkey","o_orderstatus","o_totalprice","o_orderdate","o_orderpriority","o_clerk",
+"o_shippriority","o_comment"]
+
+def do_6():
+
+    start = time.time()
+    lineitem = dd.read_csv("s3://tpc-h-small/lineitem.tbl",sep="|", header = 0)
+    df = lineitem.rename(columns=dict(zip(lineitem.columns, lineitem_scheme)))
+    filtered_df = df.loc[(df.l_shipdate > "1994-01-01") & (df.l_discount >= 0.05) & (df.l_discount <= 0.07) & (df.l_quantity < 24)]
+    filtered_df['product'] = filtered_df.l_extendedprice * filtered_df.l_discount
+    print(filtered_df.product.sum().compute())
+    print(time.time() - start)
+
 def do_12():
-    lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
-    "l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
-    "l_shipmode","l_comment"]
-    order_scheme = ["o_orderkey", "o_custkey","o_orderstatus","o_totalprice","o_orderdate","o_orderpriority","o_clerk",
-    "o_shippriority","o_comment"]
+
     start = time.time()
     orders = dd.read_csv("s3://tpc-h-small/orders.tbl",sep="|",header = 0)
     lineitem = dd.read_csv("s3://tpc-h-small/lineitem.tbl",sep="|", header = 0)
@@ -45,5 +58,7 @@ def do_12():
     
     print(time.time() - start)
 
+if int(sys.argv[1]) == 6:
+    do_6()
 if int(sys.argv[1]) == 12:
     do_12()

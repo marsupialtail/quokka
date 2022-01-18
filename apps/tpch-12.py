@@ -51,7 +51,6 @@ class CustomJoinExecutor:
             return None
     
     def done(self,executor_id):
-        print(self.agg_result)
         print("done " + str(executor_id))
         return self.agg_result
 
