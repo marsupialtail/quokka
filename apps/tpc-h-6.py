@@ -15,9 +15,7 @@ lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quanti
 
 def lineitem_filter(df):
     filtered_df = df[(df.l_shipdate > datetime.date(1994,1,1)) & (df.l_discount >= 0.05) & (df.l_discount <= 0.07) & (df.l_quantity < 24)]
-    filtered_df["product"] = filtered_df.l_extendedprice * filtered_df.l_discount
-    return pd.DataFrame([filtered_df["product"].sum()],columns=['sum'])
-
+    return pd.DataFrame([ (filtered_df.l_extendedprice * filtered_df.l_discount).sum()],columns=['sum'])
 lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme,8,batch_func=lineitem_filter, sep="|")
 agg_executor = AggExecutor()
 agged = task_graph.new_stateless_node({0:lineitem}, agg_executor, 1, {0:None})
