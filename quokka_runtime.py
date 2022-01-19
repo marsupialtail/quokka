@@ -156,34 +156,58 @@ class StatelessTaskNode(TaskNode):
 @ray.remote
 class InputCSVNode(TaskNode):
 
-    def __init__(self,id, bucket, key, names, parallelism, batch_func=None, sep = ","):
+    def __init__(self,id, bucket, key, names, parallelism, batch_func=None, sep = ",", dependent_map = {}):
         self.id = id
         self.bucket = bucket
         self.key = key
         self.names = names
         self.parallelism = parallelism
         self.targets= []
-        self.r = redis.Redis(host='localhost', port=6800, db=0)
         self.target_rs = {}
         self.batch_func = batch_func
         self.sep = sep
+        self.r = redis.Redis(host='localhost', port=6800, db=0)
+        self.dependent_rs = {}
+        self.dependent_parallelism = {}
+        for key in dependent_map:
+            self.dependent_parallelism[key] = dependent_map[key][1]
+            r = redis.Redis(host=dependent_map[key][0], port=6800, db=0)
+            p = r.pubsub(ignore_subscribe_messages=True)
+            p.subscribe("input-done-" + str(key))
+            self.dependent_rs[key] = p
+        
 
     def initialize(self):
         if self.bucket is None:
             raise Exception
-        self.input_csv_datasets = [InputCSVDataset(self.bucket, self.key, self.names,0, sep = self.sep) for i in range(self.parallelism)]
-        for dataset in self.input_csv_datasets:
-            dataset.set_num_mappers(self.parallelism)
+        self.input_csv_dataset = InputCSVDataset(self.bucket, self.key, self.names,0, sep = self.sep) 
+        self.input_csv_dataset.set_num_mappers(self.parallelism)
     
     def execute(self, id):
+
+        undone_dependencies = len(self.dependent_rs)
+        while undone_dependencies > 0:
+            time.sleep(0.01) # be nice
+            for dependent_node in self.dependent_rs:
+                message = self.dependent_rs[dependent_node].get_message()
+                if message is not None:
+                    if message['data'].decode("utf-8") == "done":
+                        self.dependent_parallelism[dependent_node] -= 1
+                        if self.dependent_parallelism[dependent_node] == 0:
+                            undone_dependencies -= 1
+                    else:
+                        raise Exception(message['data'])
+
         print("input_csv start",time.time())
-        input_generator = self.input_csv_datasets[id].get_next_batch(id)
+        input_generator = self.input_csv_dataset.get_next_batch(id)
+
         for batch in input_generator:
             if self.batch_func is not None:
                 self.push(self.batch_func(batch))
             else:
                 self.push(batch)
         self.done()
+        self.r.publish("input-done-" + str(self.id), "done")
         print("input_csv end",time.time())
 
 
@@ -193,14 +217,24 @@ class TaskGraph:
         self.current_node = 0
         self.nodes = {}
         self.node_parallelism = {}
+        self.node_ips = {}
     
-    def new_input_csv(self, bucket, key, names, parallelism, ip='localhost',batch_func=None, sep = ","):
+    def new_input_csv(self, bucket, key, names, parallelism, ip='localhost',batch_func=None, sep = ",", dependents = []):
+        
+        dependent_map = {}
+        if len(dependents) > 0:
+            for node in dependents:
+                dependent_map[node] = (self.node_ips[node], self.node_parallelism[node])
+        
         if ip != 'localhost':
-            tasknode = [InputCSVNode.options(num_cpus=0.01, resources={"node:" + ip : 0.01}).remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func,sep = sep) for i in range(parallelism)]
+            tasknode = [InputCSVNode.options(num_cpus=0.01, resources={"node:" + ip : 0.01}).
+            remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func,sep = sep, dependent_map = dependent_map) for i in range(parallelism)]
         else:
-            tasknode = [InputCSVNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func, sep = sep) for i in range(parallelism)]
+            tasknode = [InputCSVNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).
+            remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func, sep = sep, dependent_map = dependent_map) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.node_parallelism[self.current_node] = parallelism
+        self.node_ips[self.current_node] = ip
         self.current_node += 1
         return self.current_node - 1
     
@@ -222,6 +256,7 @@ class TaskGraph:
             tasknode = [StatelessTaskNode.options(resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(streams, functionObject, self.current_node, parallelism, mapping, source_parallelism, ip) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.node_parallelism[self.current_node] = parallelism
+        self.node_ips[self.current_node] = ip
         self.current_node += 1
         return self.current_node - 1
 
