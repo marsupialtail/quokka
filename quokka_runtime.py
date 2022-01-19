@@ -183,7 +183,7 @@ class StatelessTaskNode(TaskNode):
         if self.update_targets() and obj_done is not None:
             self.push(obj_done)
         self.done()
-        self.r.publish(time.time(), "node-done-"+str(self.id),str(my_id))
+        self.r.publish("node-done-"+str(self.id),str(my_id))
         print("task end",time.time())
     
             
