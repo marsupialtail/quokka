@@ -92,36 +92,37 @@ class TaskNode:
 
         print("stream psuh start",time.time())
 
-        if len(self.targets) == 0:
-            raise Exception
+        if not self.update_targets():
+            print("stream psuh end",time.time())
+            return False
         
-        else:
-            # iterate over downstream task nodes, each of which may contain inner parallelism
-            # distribution strategy depends on data type as well as partition function
-            if type(data) == pd.core.frame.DataFrame:
-                for target in self.alive_targets:
-                    original_parallelism, partition_key = self.targets[target]
-                    for channel in self.alive_targets[target]:
-                        if partition_key is not None:
-                            payload = data[data[partition_key] % original_parallelism == channel]
-                        else:
-                            payload = data
-                        # don't worry about target being full for now.
-                        print("not checking if target is full. This will break with larger joins for sure.")
-                        pipeline = self.target_rs[target].pipeline()
-                        #pipeline.publish("mailbox-"+str(target) + "-" + str(channel),context.serialize(payload).to_buffer().to_pybytes())
-                        pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
+        if type(data) == pd.core.frame.DataFrame:
+            for target in self.alive_targets:
+                original_parallelism, partition_key = self.targets[target]
+                for channel in self.alive_targets[target]:
+                    if partition_key is not None:
+                        payload = data[data[partition_key] % original_parallelism == channel]
+                    else:
+                        payload = data
+                    # don't worry about target being full for now.
+                    print("not checking if target is full. This will break with larger joins for sure.")
+                    pipeline = self.target_rs[target].pipeline()
+                    #pipeline.publish("mailbox-"+str(target) + "-" + str(channel),context.serialize(payload).to_buffer().to_pybytes())
+                    pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
 
-                        pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
-                        results = pipeline.execute()
-                        if False in results:
-                            if (target, channel) not in self.strikes:
-                                raise Exception
-                            self.strikes.remove((target, channel))
-        
+                    pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
+                    results = pipeline.execute()
+                    if False in results:
+                        if (target, channel) not in self.strikes:
+                            raise Exception
+                        self.strikes.remove((target, channel))
+
         print("stream psuh end",time.time())
+        return True
 
     def done(self):
+        if not self.update_targets():
+            return False
         for target in self.alive_targets:
             for channel in self.alive_targets[target]:
                 pipeline = self.target_rs[target].pipeline()
@@ -132,6 +133,7 @@ class TaskNode:
                     if (target, channel) not in self.strikes:
                         raise Exception
                     self.strikes.remove((target, channel))
+        return True
 @ray.remote
 class StatelessTaskNode(TaskNode):
 
@@ -183,18 +185,17 @@ class StatelessTaskNode(TaskNode):
                     if results is not None and len(self.targets) > 0:
                         break_out = False                        
                         for result in results:
-                            if self.update_targets() is False:
+                            if self.push(result) is False:
                                 break_out = True
                                 break
-                            self.push(result)
                         if break_out:
                             break
                     else:
                         pass
         obj_done =  self.functionObject.done(my_id) 
-        if self.update_targets() and obj_done is not None:
+        if obj_done is not None:
             self.push(obj_done)
-        self.update_targets()
+        
         self.done()
         self.r.publish("node-done-"+str(self.id),str(my_id))
         print("task end",time.time())
@@ -253,13 +254,12 @@ class InputCSVNode(TaskNode):
         input_generator = self.input_csv_dataset.get_next_batch(id)
 
         for batch in input_generator:
-            if self.update_targets() is False:
-                break
+            
             if self.batch_func is not None:
                 self.push(self.batch_func(batch))
             else:
                 self.push(batch)
-        self.update_targets()
+
         self.done()
         self.r.publish("input-done-" + str(self.id), "done")
         print("input_csv end",time.time())
