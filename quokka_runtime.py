@@ -181,10 +181,14 @@ class StatelessTaskNode(TaskNode):
                     if hasattr(self.functionObject, 'early_termination') and self.functionObject.early_termination: 
                         break
                     if results is not None and len(self.targets) > 0:
-                        if self.update_targets() is False:
-                            break
+                        break_out = False                        
                         for result in results:
+                            if self.update_targets() is False:
+                                break_out = True
+                                break
                             self.push(result)
+                        if break_out:
+                            break
                     else:
                         pass
         obj_done =  self.functionObject.done(my_id) 
