@@ -110,7 +110,7 @@ class TaskNode:
                         pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
                         results = pipeline.execute()
                         if False in results:
-                            print("noone listened to my message")
+                            print(time.time(), "noone listened to my message")
         
         print("stream psuh end",time.time())
 
@@ -122,7 +122,7 @@ class TaskNode:
                 pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
                 results = pipeline.execute()
                 if False in results:
-                    print("noone listened to my message")
+                    print(time.time(), "noone listened to my message")
 
 @ray.remote
 class StatelessTaskNode(TaskNode):
@@ -183,7 +183,7 @@ class StatelessTaskNode(TaskNode):
         if self.update_targets() and obj_done is not None:
             self.push(obj_done)
         self.done()
-        self.r.publish("node-done-"+str(self.id),str(my_id))
+        self.r.publish(time.time(), "node-done-"+str(self.id),str(my_id))
         print("task end",time.time())
     
             
