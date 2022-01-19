@@ -194,6 +194,7 @@ class StatelessTaskNode(TaskNode):
         obj_done =  self.functionObject.done(my_id) 
         if self.update_targets() and obj_done is not None:
             self.push(obj_done)
+        self.update_targets()
         self.done()
         self.r.publish("node-done-"+str(self.id),str(my_id))
         print("task end",time.time())
@@ -258,6 +259,7 @@ class InputCSVNode(TaskNode):
                 self.push(self.batch_func(batch))
             else:
                 self.push(batch)
+        self.update_targets()
         self.done()
         self.r.publish("input-done-" + str(self.id), "done")
         print("input_csv end",time.time())
