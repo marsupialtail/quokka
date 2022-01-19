@@ -208,6 +208,7 @@ class InputCSVNode(TaskNode):
         self.target_rs = {}
         self.target_ps = {}
         self.alive_targets = {}
+        self.strikes = set()
 
         self.batch_func = batch_func
         self.sep = sep
