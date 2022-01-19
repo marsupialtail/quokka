@@ -48,6 +48,9 @@ class TaskNode:
         # track the targets that are still alive
         self.alive_targets = {}
 
+        # you are only allowed to send a message to a done target once. More than once is unforgivable.
+        self.strikes = set()
+
         pass
 
     def append_to_targets(self,tup):
@@ -57,6 +60,8 @@ class TaskNode:
         self.target_ps[node_id] = self.target_rs[node_id].pubsub(ignore_subscribe_messages = True)
         self.target_ps[node_id].subscribe("node-done-"+str(node_id))
         self.alive_targets[node_id] = {i for i in range(parallelism)}
+        for i in range(parallelism):
+            self.strikes.add((node_id, i))
 
     def initialize(self):
         pass
@@ -110,7 +115,9 @@ class TaskNode:
                         pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
                         results = pipeline.execute()
                         if False in results:
-                            print(time.time(), "noone listened to my message")
+                            if (target, channel) not in self.strikes:
+                                raise Exception
+                            self.strikes.remove((target, channel))
         
         print("stream psuh end",time.time())
 
@@ -122,8 +129,9 @@ class TaskNode:
                 pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
                 results = pipeline.execute()
                 if False in results:
-                    print(time.time(), "noone listened to my message")
-
+                    if (target, channel) not in self.strikes:
+                        raise Exception
+                    self.strikes.remove((target, channel))
 @ray.remote
 class StatelessTaskNode(TaskNode):
 
@@ -183,7 +191,7 @@ class StatelessTaskNode(TaskNode):
         if self.update_targets() and obj_done is not None:
             self.push(obj_done)
         self.done()
-        self.r.publish(time.time(), "node-done-"+str(self.id),str(my_id))
+        self.r.publish("node-done-"+str(self.id),str(my_id))
         print("task end",time.time())
     
             
