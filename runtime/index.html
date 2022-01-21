@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  
+  <link rel="shortcut icon" href="../img/favicon.ico">
+  <title>Quokka Runtime API - Quokka</title>
+  <link rel="stylesheet" href="../css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="../css/theme_extra.css" type="text/css" />
+  <link rel="stylesheet" href="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/github.min.css">
+  
+  <script>
+    // Current page data
+    var mkdocs_page_name = "Quokka Runtime API";
+    var mkdocs_page_input_path = "runtime.md";
+    var mkdocs_page_url = null;
+  </script>
+  
+  <script src="../js/jquery-2.1.1.min.js" defer></script>
+  <script src="../js/modernizr-2.8.3.min.js" defer></script>
+  <script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/highlight.min.js"></script>
+  <script>hljs.initHighlightingOnLoad();</script> 
+  
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+      <div class="wy-side-nav-search">
+        <a href=".." class="icon icon-home"> Quokka</a>
+        <div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+	<ul class="current">
+	  
+          
+            <li class="toctree-l1">
+		
+    <a class="" href="..">Home</a>
+	    </li>
+          
+            <li class="toctree-l1 current">
+		
+    <a class="current" href="./">Quokka Runtime API</a>
+    <ul class="subnav">
+            
+    <li class="toctree-l2"><a href="#quokka-runtime-api-documentation">Quokka Runtime API documentation</a></li>
+    
+        <ul>
+        
+            <li><a class="toctree-l3" href="#programming-model">Programming Model</a></li>
+        
+            <li><a class="toctree-l3" href="#taskgraph-api">TaskGraph API</a></li>
+        
+            <li><a class="toctree-l3" href="#writing-your-own-stateless-executor-object">Writing Your Own (Stateless) Executor Object</a></li>
+        
+        </ul>
+    
+
+    </ul>
+	    </li>
+          
+            <li class="toctree-l1">
+		
+    <a class="" href="../dataframe/">DataFrame API</a>
+	    </li>
+          
+        </ul>
+      </div>
+      &nbsp;
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" role="navigation" aria-label="top navigation">
+        <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+        <a href="..">Quokka</a>
+      </nav>
+
+      
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href="..">Docs</a> &raquo;</li>
+    
+      
+    
+    <li>Quokka Runtime API</li>
+    <li class="wy-breadcrumbs-aside">
+      
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main">
+            <div class="section">
+              
+                <h1 id="quokka-runtime-api-documentation">Quokka Runtime API documentation</h1>
+<h2 id="programming-model">Programming Model</h2>
+<p>The Quokka lower-level runtime API (henceforth referred to as the runtime API) allows you to construct a <strong>task graph</strong> of <strong>nodes</strong>, which each perform a specific task. This is very similar to other DAG-based processing frameworks such as <a href="https://spark.apache.org/docs/latest/">Apache Spark</a> or <a href="https://www.tensorflow.org/">Tensorflow</a>. For example, you can write the following code in the runtime API to execute TPC-H query 6:</p>
+<pre><code class="python">    task_graph = TaskGraph()
+    lineitem = task_graph.new_input_csv(bucket,key,lineitem_scheme,8,batch_func=lineitem_filter, sep=&quot;|&quot;)
+    agg_executor = AggExecutor()
+    agged = task_graph.new_stateless_node({0:lineitem}, agg_executor, 1, {0:None})
+    task_graph.initialize()
+    task_graph.run()
+</code></pre>
+
+<p>There are perhaps a couple of things to note here. Firstly, there are two types of nodes in the runtime API. There are <strong>input nodes</strong>, declared with APIs such as <code>new_input_csv</code> or <code>new_input_parquet</code>, which interface with the external world (you can define where they will read their data), and <strong>task nodes</strong>, declared with APIS such as <code>new_stateless_node</code> or <code>new_stateful_node</code> (not yet supported), which take as input the outputs generated from another node in the task graph, either an input node or another task node. In the example code above, we see that the task node <code>agged</code> depends on the outputs from the input node <code>lineitem</code>. Note that there are no special "output nodes", they are implemented as task nodes. </p>
+<p>Quokka's task graph follows push-based execution. This means that a node does not wait for its downstream dependencies to ask for data, but instead actively <em>pushes</em> data to its downstream dependencies whenever some intermediate results become available. <strong>In short, execution proceeds as follows</strong>: input nodes read batches of data from a specified source, and pushes those batches to downstream task nodes. A task node exposes a handler to process incoming batches as they arrive, possibly updating some internal state (as an actor in an actor model), and for each input batch possibly produces an output batch for its own downstream dependencies. The programmer is expected to supply this handler function as an <strong>executor object</strong> (more details later). Quokka provides a library of pre-implemented executor objects that the programmer can use for SQL, ML and graph analytics.</p>
+<p>An input node completes execution when there's no more inputs to be read or if all of its downstream dependencies have completed execution. A task node completes execution when:</p>
+<ul>
+<li>all of its upstream sources have completed execution</li>
+<li>if its execution handler decides to terminate early based on the input batch and its state (e.g. for a task node that executes the limit operator in a limit query, it might keep as local state the buffered output, and decide to terminate when that output size surpasses the limit number)</li>
+<li>if all its downstream dependencies have completed execution.</li>
+</ul>
+<p>By default, all task nodes start execution at once. This does not necessarily mean that they will start processing data, this means that they will all start waiting for input batches from their upstream sources to arrive. One could specify that an input node delay execution until another input node has finished. For example to implement a hash join one might want to stream in one table to build the hash table, then stream in the other table for probing. However, one cannot specify that a task node delay execution.</p>
+<p>Each task node can have multiple physical executors, sometimes referred to as <strong>channels</strong>. This is a form of intra-operator parallelism, as opposed to the inter-operator parallelism that results from all task nodes executing at the same time. These physical executors all execute the same handler function, but on different portions of the input batch, partitioned by a user-specified partition key. A Spark-like map reduce with M mappers and R reducers would be implemented in Quokka as a single mapper task node and a single reducer task node, where the mapper task node has M channels and the reducer task node has R channels. In the example above, we specified that the input node <code>lineitem</code> has 8 channels, and the task node <code>agged</code> has only 1 channel. The partition key was not specified (<code>{0:None}</code>) since there is no parallelism, thus no need for partitioning. </p>
+<p>The runtime API is meant to be very flexible and support all manners of batch and stream processing. For example, one could specify an input node that listens to a Kafka stream, some task nodes which processes batches of data from that stream, and an output node that writes to another Kafka stream. In this case, since the input node will never terminate, and assuming the other nodes do not trigger early termination, the task graph will always be running.</p>
+<p>As a result of this flexibility, it requires quite a lot of knowledge for efficient utilization. As a result, we aim to provide higher level APIs to support common batch and streaming tasks in SQL, machine learning and graph analytics. <strong>Most programmers are not expected to program at the runtime API level, but rather make use of the pre-packaged higher-level APIs.</strong></p>
+<h2 id="taskgraph-api">TaskGraph API</h2>
+<h4 id="new_input_csv-bucket-key-names-parallelism-iplocalhostbatch_funcnone-sep-dependents-stride-64-1024-1024">new_input_csv (bucket, key, names, parallelism, ip='localhost',batch_func=None, sep = ",", dependents = [], stride = 64 * 1024 * 1024)</h4>
+<p>Currently, new_input_csv only supports reading a CSV in batches from an AWS S3 bucket.</p>
+<p><strong>Required arguments in order:</strong></p>
+<ul>
+<li><strong>bucket</strong>: str. AWS S3 bucket</li>
+<li><strong>key</strong>: str. AWS S3 key</li>
+<li><strong>names</strong>: list of str. Column names. Note that if your rows ends with a delimiter value, such as in TPC-H, you will have to end this list with a placeholder such as "null". Look at the TPC-H code examples under apps.</li>
+<li><strong>parallelism</strong>: int. the runtime API expects the programmer to explicitly state the amount of intra-op parallelism to expose. 8 is typically a good number.</li>
+</ul>
+<p><strong>Keyword arguments:</strong></p>
+<ul>
+<li><strong>ip</strong>: str. the IP address of the physical machine the input node should be placed. Defaults to local execution.</li>
+<li><strong>batch_func</strong>: function. the user can optionally pass in a function to execute on the input CSV chunk before it's passed off to downstream dependents. Currently the input CSV is parsed into a Pandas Dataframe, so batch_func can be <em>any</em> Python function that can take a Pandas Dataframe as input and produces a Pandas Dataframe. This can be done to perform predicate pushdown for SQL for example.</li>
+<li><strong>sep</strong>: str. delimiter</li>
+<li><strong>dependents</strong>: list of int. an input node can depend on other input nodes, i.e. only start once another input node is done. For example to implement as hash join where one input might depend on another, one could do the following: </li>
+</ul>
+<pre><code class="python">    a = new_input_csv(...)
+    b = new_input_csv(...,dependents=[a])
+</code></pre>
+
+<ul>
+<li><strong>stide</strong>: int. how many bytes to read from the input S3 file to read at a time, default to 64 MB.</li>
+</ul>
+<p><strong>Returns</strong>: a node id which is a handle to this input node, that can be used as the sources argument for task nodes or dependents arguments for other input nodes.</p>
+<h4 id="new_input_parquetbucket-key-names-parallelism-columns-skip_conditions-iplocalhostbatch_funcnone-sep-dependents-stride-64-1024-1024">new_input_parquet(bucket, key, names, parallelism, columns, skip_conditions, ip='localhost',batch_func=None, sep = ",", dependents = [], stride = 64 * 1024 * 1024)</h4>
+<p>Not yet implemented.</p>
+<h4 id="new_stateless_nodesources-functionobject-parallelism-partition_key-iplocalhost">new_stateless_node(sources, functionObject, parallelism, partition_key, ip='localhost')</h4>
+<p>Instantiate a new task node with an executor object that defines the handler function which runs on each incoming batch.</p>
+<p><strong>Required arguments in order:</strong></p>
+<ul>
+<li><strong>sources</strong>: dict of int -&gt; int. the upstream sources that feed batches to this task node. Expects a dictionary, where the keys are integers and values are node ids (also stored as integers). This in effect names the source nodes. i.e. if you specify <code>{0: source_node_id_x, 1:source_node_id_y}</code>, from the perspective of this task node you are calling the batches coming from source_node_id_x source 0 and the batches coming from node_id_y source 1. You will make use of these identifiers writing the executor class's handler function for incoming batches. </li>
+<li><strong>functionObject</strong>: an executor object which defines the input batch handler function. More details on this in the next section. You can write your own or use a pre-supplied one from the sql, ml or graph packages.</li>
+<li><strong>parallelism</strong>: int. the runtime API expects the programmer to explicitly state the amount of intra-op parallelism to expose. Think carefully about this choice. Computationally intensive tasks might benefit from parallelism, while simple tasks such as aggregation might not.</li>
+<li><strong>partition_key</strong>: dict of int -&gt; in. This argument expects a dictionary with a key for each key in the sources dict. It describes how the input batches should be partitioned amongst the channels. If the value is None, then the input batch is copied and broadcast to all channels. Otherwise, currently each channel receives the sub-batch input_batch[input_batch.partition_key % parallelism == channel_id]. If this partition key is not in the input batch's columns from the specified source node, a runtime error would ensue. </li>
+</ul>
+<p><strong>Keyword arguments:</strong></p>
+<ul>
+<li><strong>ip</strong>: str. the IP address of the physical machine the input node should be placed. Defaults to local execution.</li>
+</ul>
+<h2 id="writing-your-own-stateless-executor-object">Writing Your Own (Stateless) Executor Object</h2>
+<p>The best place to learn how to write your own executor object classes is by looking at the available executor object classes in the SQL library. In short, an executor class is simply a child class of this base class: </p>
+<pre><code class="python">class StatelessExecutor:
+
+    def __init__(self) -&gt; None:
+        raise NotImplementedError
+
+    def early_termination(self):
+        self.early_termination = True
+
+    def execute(self,batch,stream_id, executor_id):
+        raise NotImplementedError
+
+    def done(self,executor_id):
+        raise NotImplementedError
+</code></pre>
+
+<p>The Stateless</p>
+              
+            </div>
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+        <a href="../dataframe/" class="btn btn-neutral float-right" title="DataFrame API">Next <span class="icon icon-circle-arrow-right"></span></a>
+      
+      
+        <a href=".." class="btn btn-neutral" title="Home"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+    
+  </div>
+
+  Built with <a href="http://www.mkdocs.org">MkDocs</a> using a <a href="https://github.com/snide/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+      
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" style="cursor: pointer">
+    <span class="rst-current-version" data-toggle="rst-current-version">
+      
+      
+        <span><a href=".." style="color: #fcfcfc;">&laquo; Previous</a></span>
+      
+      
+        <span style="margin-left: 15px"><a href="../dataframe/" style="color: #fcfcfc">Next &raquo;</a></span>
+      
+    </span>
+</div>
+    <script>var base_url = '..';</script>
+    <script src="../js/theme.js" defer></script>
+      <script src="../search/main.js" defer></script>
+
+</body>
+</html>
