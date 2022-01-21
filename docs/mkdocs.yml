@@ -1,0 +1,5 @@
+site_name: MkLorum
+nav:
+        - Home: index.md
+        - Text: text.md
+theme: readthedocs

@@ -2,7 +2,17 @@ import pandas as pd
 import time
 WRITE_MEM_LIMIT = 16 * 1024 * 1024
 
-class OutputCSVExecutor:
+class StatelessExecutor:
+    def __init__(self) -> None:
+        raise NotImplementedError
+    def early_termination(self):
+        self.early_termination = True
+    def execute(self,batch,stream_id, executor_id):
+        raise NotImplementedError
+    def done(self,executor_id):
+        raise NotImplementedError
+
+class OutputCSVExecutor(StatelessExecutor):
     def __init__(self, parallelism, bucket, prefix) -> None:
         self.num = 0
         self.parallelism = parallelism
@@ -25,7 +35,7 @@ class OutputCSVExecutor:
         pd.concat(self.dfs).to_csv(name)
         print("done")
 
-class JoinExecutor:
+class JoinExecutor(StatelessExecutor):
     def __init__(self, on = None, left_on = None, right_on = None):
         self.state0 = []
         self.state1 = []
@@ -56,12 +66,13 @@ class JoinExecutor:
         
         if len(results) > 0:
             self.temp_results.extend(results)
+            
             return results
     
     def done(self,executor_id):
         print("temp results",sum([len(i) for i in self.temp_results]))
 
-class AggExecutor:
+class AggExecutor(StatelessExecutor):
     def __init__(self, fill_value = 0):
         self.state = None
         self.fill_value = fill_value
@@ -75,3 +86,17 @@ class AggExecutor:
     
     def done(self,executor_id):
         print(self.state)
+
+class LimitExecutor(StatelessExecutor):
+    def __init__(self, limit) -> None:
+        self.limit = limit
+        self.state = []
+
+    def execute(self, batch, stream_id, executor_id):
+        self.state.append(batch)
+        length = sum([len(i) for i in self.state])
+        if length > self.limit:
+            self.early_termination()
+    
+    def done(self):
+        print(pd.concat(self.state)[:self.limit])
