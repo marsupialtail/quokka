@@ -204,7 +204,7 @@ class StatelessTaskNode(TaskNode):
 @ray.remote
 class InputCSVNode(TaskNode):
 
-    def __init__(self,id, bucket, key, names, parallelism, batch_func=None, sep = ",", dependent_map = {}):
+    def __init__(self,id, bucket, key, names, parallelism, batch_func=None, sep = ",", stride = 64 * 1024 * 1024, dependent_map = {}):
         self.id = id
         self.bucket = bucket
         self.key = key
@@ -218,6 +218,7 @@ class InputCSVNode(TaskNode):
 
         self.batch_func = batch_func
         self.sep = sep
+        self.stride = stride
         self.r = redis.Redis(host='localhost', port=6800, db=0)
         self.dependent_rs = {}
         self.dependent_parallelism = {}
@@ -232,7 +233,7 @@ class InputCSVNode(TaskNode):
     def initialize(self):
         if self.bucket is None:
             raise Exception
-        self.input_csv_dataset = InputCSVDataset(self.bucket, self.key, self.names,0, sep = self.sep) 
+        self.input_csv_dataset = InputCSVDataset(self.bucket, self.key, self.names,0, sep = self.sep, stride = self.stride) 
         self.input_csv_dataset.set_num_mappers(self.parallelism)
     
     def execute(self, id):
@@ -273,7 +274,7 @@ class TaskGraph:
         self.node_parallelism = {}
         self.node_ips = {}
     
-    def new_input_csv(self, bucket, key, names, parallelism, ip='localhost',batch_func=None, sep = ",", dependents = []):
+    def new_input_csv(self, bucket, key, names, parallelism, ip='localhost',batch_func=None, sep = ",", dependents = [], stride= 64 * 1024 * 1024):
         
         dependent_map = {}
         if len(dependents) > 0:
@@ -282,10 +283,10 @@ class TaskGraph:
         
         if ip != 'localhost':
             tasknode = [InputCSVNode.options(num_cpus=0.01, resources={"node:" + ip : 0.01}).
-            remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func,sep = sep, dependent_map = dependent_map) for i in range(parallelism)]
+            remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func,sep = sep, dependent_map = dependent_map, stride= stride) for i in range(parallelism)]
         else:
             tasknode = [InputCSVNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).
-            remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func, sep = sep, dependent_map = dependent_map) for i in range(parallelism)]
+            remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func, sep = sep, dependent_map = dependent_map, stride = stride) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.node_parallelism[self.current_node] = parallelism
         self.node_ips[self.current_node] = ip

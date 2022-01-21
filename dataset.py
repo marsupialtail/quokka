@@ -5,7 +5,7 @@ import boto3
 import time
 class InputCSVDataset:
 
-    def __init__(self, bucket, key, names, id, sep= ",") -> None:
+    def __init__(self, bucket, key, names, id, sep= ",", stride = 64 * 1024 * 1024) -> None:
 
         self.s3 = boto3.client('s3') # needs boto3 client
         self.bucket = bucket
@@ -14,6 +14,7 @@ class InputCSVDataset:
         self.names = names
         self.id = id
         self.sep = sep
+        self.stride = stride
     
     def set_num_mappers(self, num_mappers):
         self.num_mappers = num_mappers
@@ -63,7 +64,7 @@ class InputCSVDataset:
         print(length, adjusted_splits)
         return length, adjusted_splits
 
-    def get_next_batch(self, mapper_id, stride=1024 * 1024 * 64): #default is to get 16 KB batches at a time. 
+    def get_next_batch(self, mapper_id): #default is to get 16 KB batches at a time. 
         
         if self.num_mappers is None:
             raise Exception("I need to know the total number of mappers you are planning on using.")
@@ -82,7 +83,7 @@ class InputCSVDataset:
         pos = start
         while pos < end-1:
 
-            resp = self.s3.get_object(Bucket=self.bucket,Key=self.key, Range='bytes={}-{}'.format(pos,min(pos+stride,end)))['Body'].read()
+            resp = self.s3.get_object(Bucket=self.bucket,Key=self.key, Range='bytes={}-{}'.format(pos,min(pos+self.stride,end)))['Body'].read()
 
             last_newline = resp.rfind(bytes('\n','utf-8'))
 
