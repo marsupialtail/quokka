@@ -1,5 +1,6 @@
 site_name: MkLorum
 nav:
         - Home: index.md
-        - Text: text.md
+        - Quokka Runtime API: runtime.md
 theme: readthedocs
+

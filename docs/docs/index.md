@@ -1,6 +1,6 @@
-# NeuroDB Introduction
+# Quokka Introduction
 
-For full documentation visit [mkdocs.org](https://mkdocs.org).
+Quokka
 
 ## Commands
 
@@ -10,8 +10,8 @@ For full documentation visit [mkdocs.org](https://mkdocs.org).
 * `mkdocs help` - Print this help message.
 
 ## Project layout
-
-    mkdocs.yml    # The configuration file.
-    docs/
-        index.md  # The documentation homepage.
-        ...       # Other markdown pages, images and other files.
+~~~python
+    a=1 
+    b=2
+    c
+~~~
