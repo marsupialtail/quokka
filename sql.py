@@ -5,7 +5,7 @@ WRITE_MEM_LIMIT = 16 * 1024 * 1024
 class StatelessExecutor:
     def __init__(self) -> None:
         raise NotImplementedError
-    def early_termination(self):
+    def set_early_termination(self):
         self.early_termination = True
     def execute(self,batch,stream_id, executor_id):
         raise NotImplementedError
@@ -53,7 +53,6 @@ class JoinExecutor(StatelessExecutor):
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batch, stream_id, executor_id):
         results = []
-        start = time.time()        
         if stream_id == 0:
             if len(self.state1) > 0:
                 results = [batch.merge(i,left_on = self.left_on, right_on = self.right_on ,how='inner',suffixes=('_a','_b')) for i in self.state1]
@@ -65,12 +64,10 @@ class JoinExecutor(StatelessExecutor):
             self.state1.append(batch)
         
         if len(results) > 0:
-            self.temp_results.extend(results)
-            
             return results
     
     def done(self,executor_id):
-        print("temp results",sum([len(i) for i in self.temp_results]))
+        print("done join ", executor_id)
 
 class AggExecutor(StatelessExecutor):
     def __init__(self, fill_value = 0):
@@ -96,7 +93,17 @@ class LimitExecutor(StatelessExecutor):
         self.state.append(batch)
         length = sum([len(i) for i in self.state])
         if length > self.limit:
-            self.early_termination()
+            self.set_early_termination()
     
     def done(self):
         print(pd.concat(self.state)[:self.limit])
+
+class CountExecutor(StatelessExecutor):
+    def __init__(self) -> None:
+        self.state = 0
+
+    def execute(self, batch, stream_id, executor_id):
+        self.state += len(batch)
+    
+    def done(self, executor_id):
+        print("COUNT:", self.state)

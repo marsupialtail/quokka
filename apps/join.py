@@ -3,7 +3,7 @@ sys.path.append("/home/ubuntu/quokka/")
 
 import time
 from quokka_runtime import TaskGraph
-from sql import JoinExecutor, OutputCSVExecutor
+from sql import JoinExecutor, OutputCSVExecutor, CountExecutor
 import ray
 import os
 task_graph = TaskGraph()
@@ -15,6 +15,8 @@ trades = task_graph.new_input_csv("yugan","b-big.csv",["key"] + ["bvalue" + str(
 join_executor = JoinExecutor(on="key")
 #output_stream = task_graph.new_stateless_node({0:quotes,1:trades},join_executor,4,ip="172.31.48.233")
 output_stream = task_graph.new_stateless_node({0:quotes,1:trades},join_executor,4,{0:"key", 1:"key"})
+count_executor = CountExecutor()
+counted = task_graph.new_stateless_node({0:output_stream}, count_executor, 1, {0:None})
 #output_executor = OutputCSVExecutor(4,"yugan","result")
 #wrote = task_graph.new_stateless_node({0:output_stream},output_executor,4)
 

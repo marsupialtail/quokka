@@ -283,10 +283,10 @@ class TaskGraph:
         
         if ip != 'localhost':
             tasknode = [InputCSVNode.options(num_cpus=0.01, resources={"node:" + ip : 0.01}).
-            remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func,sep = sep, dependent_map = dependent_map, stride= stride) for i in range(parallelism)]
+            remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func,sep = sep, stride= stride, dependent_map = dependent_map, ) for i in range(parallelism)]
         else:
             tasknode = [InputCSVNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).
-            remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func, sep = sep, dependent_map = dependent_map, stride = stride) for i in range(parallelism)]
+            remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func, sep = sep, stride = stride, dependent_map = dependent_map, ) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.node_parallelism[self.current_node] = parallelism
         self.node_ips[self.current_node] = ip
