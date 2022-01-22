@@ -3,7 +3,7 @@ sys.path.append("/home/ubuntu/quokka/")
 import datetime
 import time
 from quokka_runtime import TaskGraph
-from sql import JoinExecutor, OutputCSVExecutor
+from sql import AggExecutor
 import ray
 import os
 task_graph = TaskGraph()
@@ -51,8 +51,8 @@ class CustomJoinExecutor:
             return None
     
     def done(self,executor_id):
-        print(self.agg_result)
         print("done " + str(executor_id))
+        return self.agg_result
 
 
 lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
@@ -65,13 +65,12 @@ orders_filter = lambda x: x[["o_orderkey","o_orderpriority"]]
 lineitem_filter = lambda x: x[((x.l_shipmode == "MAIL") | (x.l_shipmode == "SHIP")) & (x.l_commitdate < x.l_receiptdate) 
 & (x.l_shipdate < x.l_commitdate) & (x.l_receiptdate >= datetime.date(1994,1,1)) & (x.l_receiptdate < datetime.date(1995,1,1))][["l_orderkey","l_shipmode"]]
 
-#quotes = task_graph.new_input_csv("yugan","a-big.csv",["key"] + ["avalue" + str(i) for i in range(100)],2,ip="172.31.16.185")
 orders = task_graph.new_input_csv("tpc-h-small","orders.tbl",order_scheme,8,batch_func=orders_filter, sep="|")
-#trades = task_graph.new_input_csv("yugan","b-big.csv",["key"] + ["bvalue" + str(i) for i in range(100)],2,ip="172.31.16.185")
 lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme,8,batch_func=lineitem_filter, sep="|")
 join_executor = CustomJoinExecutor(left_on="o_orderkey",right_on="l_orderkey")
-#output_stream = task_graph.new_stateless_node({0:quotes,1:trades},join_executor,4,ip="172.31.48.233")
 output_stream = task_graph.new_stateless_node({0:orders,1:lineitem},join_executor,4, {0:"o_orderkey", 1:"l_orderkey"})
+agg_executor = AggExecutor()
+agged = task_graph.new_stateless_node({0:output_stream}, agg_executor, 1, {0:None})
 #output_executor = OutputCSVExecutor(4,"yugan","result")
 #wrote = task_graph.new_stateless_node({0:output_stream},output_executor,4)
 

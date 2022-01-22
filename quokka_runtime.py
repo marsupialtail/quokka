@@ -37,18 +37,31 @@ class TaskNode:
         self.input_streams = streams
         self.id = id
         self.parallelism = parallelism
-        self.targets = []
+        self.targets = {}
         # this maps what the system's stream_id is to what the user called the stream when they created the task node
         self.physical_to_logical_stream_mapping = mapping
         self.source_parallelism = source_parallelism
         self.r = redis.Redis(host='localhost', port=6800, db=0)
         self.target_rs = {}
+        self.target_ps = {}
+
+        # track the targets that are still alive
+        self.alive_targets = {}
+
+        # you are only allowed to send a message to a done target once. More than once is unforgivable.
+        self.strikes = set()
+
         pass
 
     def append_to_targets(self,tup):
         node_id, parallelism, ip, partition_key = tup
-        self.targets.append((node_id,parallelism, partition_key))
+        self.targets[node_id] = (parallelism, partition_key)
         self.target_rs[node_id] = redis.Redis(host=ip, port=6800, db=0)
+        self.target_ps[node_id] = self.target_rs[node_id].pubsub(ignore_subscribe_messages = True)
+        self.target_ps[node_id].subscribe("node-done-"+str(node_id))
+        self.alive_targets[node_id] = {i for i in range(parallelism)}
+        for i in range(parallelism):
+            self.strikes.add((node_id, i))
 
     def initialize(self):
         pass
@@ -56,44 +69,71 @@ class TaskNode:
     def execute(self):
         pass
 
+    # determines if there are still targets alive, returns True or False. 
+    def update_targets(self):
+
+        for target_node in self.target_ps:
+            while True:
+                message = self.target_ps[target_node].get_message()
+                
+                if message is not None:
+                    print(message['data'])
+                    self.alive_targets[target_node].remove(int(message['data']))
+                    if len(self.alive_targets[target_node]) == 0:
+                        self.alive_targets.pop(target_node)
+                else:
+                    break 
+        if len(self.alive_targets) > 0:
+            return True
+        else:
+            return False
 
     def push(self, data):
 
         print("stream psuh start",time.time())
 
-        if len(self.targets) == 0:
-            raise Exception
+        if not self.update_targets():
+            print("stream psuh end",time.time())
+            return False
         
-        else:
-            # iterate over downstream task nodes, each of which may contain inner parallelism
-            # distribution strategy depends on data type as well as partition function
-            if type(data) == pd.core.frame.DataFrame:
-                for target, parallelism, partition_key in self.targets:
-                    for channel in range(parallelism):
-                        payload = data[data[partition_key] % parallelism == channel]
-                        # don't worry about target being full for now.
-                        print("not checking if target is full. This will break with larger joins for sure.")
-                        pipeline = self.target_rs[target].pipeline()
-                        #pipeline.publish("mailbox-"+str(target) + "-" + str(channel),context.serialize(payload).to_buffer().to_pybytes())
-                        pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
+        if type(data) == pd.core.frame.DataFrame:
+            for target in self.alive_targets:
+                original_parallelism, partition_key = self.targets[target]
+                for channel in self.alive_targets[target]:
+                    if partition_key is not None:
+                        payload = data[data[partition_key] % original_parallelism == channel]
+                    else:
+                        payload = data
+                    # don't worry about target being full for now.
+                    print("not checking if target is full. This will break with larger joins for sure.")
+                    pipeline = self.target_rs[target].pipeline()
+                    #pipeline.publish("mailbox-"+str(target) + "-" + str(channel),context.serialize(payload).to_buffer().to_pybytes())
+                    pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
 
-                        pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
-                        results = pipeline.execute()
-                        if False in results:
-                            raise Exception(results)
-        
+                    pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
+                    results = pipeline.execute()
+                    if False in results:
+                        if (target, channel) not in self.strikes:
+                            raise Exception
+                        self.strikes.remove((target, channel))
+
         print("stream psuh end",time.time())
+        return True
 
     def done(self):
-        for target, parallelism, _ in self.targets:
-            for channel in range(parallelism):
+        if not self.update_targets():
+            return False
+        for target in self.alive_targets:
+            for channel in self.alive_targets[target]:
                 pipeline = self.target_rs[target].pipeline()
                 pipeline.publish("mailbox-"+str(target) + "-" + str(channel),"done")
                 pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
                 results = pipeline.execute()
                 if False in results:
-                    raise Exception
-
+                    if (target, channel) not in self.strikes:
+                        raise Exception
+                    self.strikes.remove((target, channel))
+        return True
 @ray.remote
 class StatelessTaskNode(TaskNode):
 
@@ -115,7 +155,9 @@ class StatelessTaskNode(TaskNode):
         mailbox = deque()
         mailbox_id = deque()
 
+
         while len(self.input_streams) > 0:
+
             message = p.get_message()
             if message is None:
                 continue
@@ -138,47 +180,89 @@ class StatelessTaskNode(TaskNode):
                 else:
                     batch = pickle.loads(first)
                     results = self.functionObject.execute(batch, self.physical_to_logical_stream_mapping[stream_id], my_id)
+                    if hasattr(self.functionObject, 'early_termination') and self.functionObject.early_termination: 
+                        break
                     if results is not None and len(self.targets) > 0:
+                        break_out = False                        
                         for result in results:
-                            self.push(result)
+                            if self.push(result) is False:
+                                break_out = True
+                                break
+                        if break_out:
+                            break
                     else:
                         pass
-        self.functionObject.done(my_id)
+        obj_done =  self.functionObject.done(my_id) 
+        if obj_done is not None:
+            self.push(obj_done)
+        
         self.done()
+        self.r.publish("node-done-"+str(self.id),str(my_id))
         print("task end",time.time())
     
             
 @ray.remote
 class InputCSVNode(TaskNode):
 
-    def __init__(self,id, bucket, key, names, parallelism, batch_func=None, sep = ","):
+    def __init__(self,id, bucket, key, names, parallelism, batch_func=None, sep = ",", stride = 64 * 1024 * 1024, dependent_map = {}):
         self.id = id
         self.bucket = bucket
         self.key = key
         self.names = names
         self.parallelism = parallelism
-        self.targets= []
-        self.r = redis.Redis(host='localhost', port=6800, db=0)
+        self.targets= {}
         self.target_rs = {}
+        self.target_ps = {}
+        self.alive_targets = {}
+        self.strikes = set()
+
         self.batch_func = batch_func
         self.sep = sep
+        self.stride = stride
+        self.r = redis.Redis(host='localhost', port=6800, db=0)
+        self.dependent_rs = {}
+        self.dependent_parallelism = {}
+        for key in dependent_map:
+            self.dependent_parallelism[key] = dependent_map[key][1]
+            r = redis.Redis(host=dependent_map[key][0], port=6800, db=0)
+            p = r.pubsub(ignore_subscribe_messages=True)
+            p.subscribe("input-done-" + str(key))
+            self.dependent_rs[key] = p
+        
 
     def initialize(self):
         if self.bucket is None:
             raise Exception
-        self.input_csv_datasets = [InputCSVDataset(self.bucket, self.key, self.names,0, sep = self.sep) for i in range(self.parallelism)]
-        for dataset in self.input_csv_datasets:
-            dataset.set_num_mappers(self.parallelism)
+        self.input_csv_dataset = InputCSVDataset(self.bucket, self.key, self.names,0, sep = self.sep, stride = self.stride) 
+        self.input_csv_dataset.set_num_mappers(self.parallelism)
     
     def execute(self, id):
+
+        undone_dependencies = len(self.dependent_rs)
+        while undone_dependencies > 0:
+            time.sleep(0.01) # be nice
+            for dependent_node in self.dependent_rs:
+                message = self.dependent_rs[dependent_node].get_message()
+                if message is not None:
+                    if message['data'].decode("utf-8") == "done":
+                        self.dependent_parallelism[dependent_node] -= 1
+                        if self.dependent_parallelism[dependent_node] == 0:
+                            undone_dependencies -= 1
+                    else:
+                        raise Exception(message['data'])
+
         print("input_csv start",time.time())
-        input_generator = self.input_csv_datasets[id].get_next_batch(id)
+        input_generator = self.input_csv_dataset.get_next_batch(id)
+
         for batch in input_generator:
+            
             if self.batch_func is not None:
                 self.push(self.batch_func(batch))
             else:
                 self.push(batch)
+
         self.done()
+        self.r.publish("input-done-" + str(self.id), "done")
         print("input_csv end",time.time())
 
 
@@ -188,14 +272,24 @@ class TaskGraph:
         self.current_node = 0
         self.nodes = {}
         self.node_parallelism = {}
+        self.node_ips = {}
     
-    def new_input_csv(self, bucket, key, names, parallelism, ip='localhost',batch_func=None, sep = ","):
+    def new_input_csv(self, bucket, key, names, parallelism, ip='localhost',batch_func=None, sep = ",", dependents = [], stride= 64 * 1024 * 1024):
+        
+        dependent_map = {}
+        if len(dependents) > 0:
+            for node in dependents:
+                dependent_map[node] = (self.node_ips[node], self.node_parallelism[node])
+        
         if ip != 'localhost':
-            tasknode = [InputCSVNode.options(num_cpus=0.01, resources={"node:" + ip : 0.01}).remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func,sep = sep) for i in range(parallelism)]
+            tasknode = [InputCSVNode.options(num_cpus=0.01, resources={"node:" + ip : 0.01}).
+            remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func,sep = sep, stride= stride, dependent_map = dependent_map, ) for i in range(parallelism)]
         else:
-            tasknode = [InputCSVNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func, sep = sep) for i in range(parallelism)]
+            tasknode = [InputCSVNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).
+            remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func, sep = sep, stride = stride, dependent_map = dependent_map, ) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.node_parallelism[self.current_node] = parallelism
+        self.node_ips[self.current_node] = ip
         self.current_node += 1
         return self.current_node - 1
     
@@ -217,6 +311,7 @@ class TaskGraph:
             tasknode = [StatelessTaskNode.options(resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(streams, functionObject, self.current_node, parallelism, mapping, source_parallelism, ip) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.node_parallelism[self.current_node] = parallelism
+        self.node_ips[self.current_node] = ip
         self.current_node += 1
         return self.current_node - 1
 
