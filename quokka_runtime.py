@@ -158,17 +158,21 @@ class StatelessTaskNode(TaskNode):
 
         while len(self.input_streams) > 0:
 
-            message = p.get_message()
-            if message is None:
-                continue
-            if message['channel'].decode('utf-8') == "mailbox-" + str(self.id) + "-" + str(my_id):
-                mailbox.append(message['data'])
-            elif message['channel'].decode('utf-8') ==  "mailbox-id-" + str(self.id) + "-" + str(my_id):
-                mailbox_id.append(int(message['data']))
             
-            if len(mailbox) > 0 and len(mailbox_id) > 0:
+            while True:
+                message = p.get_message()
+                if message is None:
+                    break
+                if message['channel'].decode('utf-8') == "mailbox-" + str(self.id) + "-" + str(my_id):
+                    mailbox.append(message['data'])
+                elif message['channel'].decode('utf-8') ==  "mailbox-id-" + str(self.id) + "-" + str(my_id):
+                    mailbox_id.append(int(message['data']))
+            
+            my_batches = {}
+            while len(mailbox) > 0 and len(mailbox_id) > 0:
                 first = mailbox.popleft()
                 stream_id = mailbox_id.popleft()
+
                 if len(first) < 10 and first.decode("utf-8") == "done":
 
                     # the responsibility for checking how many executors this input stream has is now resting on the consumer.
@@ -178,7 +182,14 @@ class StatelessTaskNode(TaskNode):
                         self.input_streams.pop(self.physical_to_logical_stream_mapping[stream_id])
                         print("done", self.physical_to_logical_stream_mapping[stream_id])
                 else:
-                    batch = pickle.loads(first)
+                    if stream_id in my_batches:
+                        my_batches[stream_id].append(pickle.loads(first))
+                    else:
+                        my_batches[stream_id] = [pickle.loads(first)]
+
+            for stream_id in my_batches:
+
+                    batch = pd.concat(my_batches[stream_id])
                     results = self.functionObject.execute(batch, self.physical_to_logical_stream_mapping[stream_id], my_id)
                     if hasattr(self.functionObject, 'early_termination') and self.functionObject.early_termination: 
                         break
@@ -192,6 +203,7 @@ class StatelessTaskNode(TaskNode):
                             break
                     else:
                         pass
+    
         obj_done =  self.functionObject.done(my_id) 
         if obj_done is not None:
             self.push(obj_done)
