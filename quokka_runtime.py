@@ -32,26 +32,18 @@ Since each stream can have only one input, we are just going to use the source n
 
 class TaskNode:
 
-    def __init__(self, streams, functionObject, id, parallelism, mapping, source_parallelism, ip) -> None:
-        self.functionObject = functionObject
-        self.input_streams = streams
+    def __init__(self, id, parallelism):
         self.id = id
         self.parallelism = parallelism
         self.targets = {}
-        # this maps what the system's stream_id is to what the user called the stream when they created the task node
-        self.physical_to_logical_stream_mapping = mapping
-        self.source_parallelism = source_parallelism
         self.r = redis.Redis(host='localhost', port=6800, db=0)
         self.target_rs = {}
         self.target_ps = {}
 
         # track the targets that are still alive
         self.alive_targets = {}
-
         # you are only allowed to send a message to a done target once. More than once is unforgivable.
         self.strikes = set()
-
-        pass
 
     def append_to_targets(self,tup):
         node_id, parallelism, ip, partition_key = tup
@@ -64,10 +56,12 @@ class TaskNode:
             self.strikes.add((node_id, i))
 
     def initialize(self):
-        pass
+        # child classes must override this method
+        raise NotImplementedError
 
     def execute(self):
-        pass
+        # child classes must override this method
+        raise NotImplementedError
 
     # determines if there are still targets alive, returns True or False. 
     def update_targets(self):
@@ -139,6 +133,19 @@ class StatelessTaskNode(TaskNode):
 
     # this is for one of the parallel threads
 
+    def __init__(self, streams, functionObject, id, parallelism, mapping, source_parallelism, ip) -> None:
+
+        super().__init__(id, parallelism)
+
+        self.functionObject = functionObject
+        self.input_streams = streams
+        
+        # this maps what the system's stream_id is to what the user called the stream when they created the task node
+        self.physical_to_logical_stream_mapping = mapping
+        self.source_parallelism = source_parallelism
+        
+        self.ip = ip
+
     def initialize(self):
         pass
 
@@ -155,10 +162,8 @@ class StatelessTaskNode(TaskNode):
         mailbox = deque()
         mailbox_id = deque()
 
-
         while len(self.input_streams) > 0:
 
-            
             while True:
                 message = p.get_message()
                 if message is None:
@@ -193,6 +198,10 @@ class StatelessTaskNode(TaskNode):
                     results = self.functionObject.execute(batch, self.physical_to_logical_stream_mapping[stream_id], my_id)
                     if hasattr(self.functionObject, 'early_termination') and self.functionObject.early_termination: 
                         break
+
+                    # this is a very subtle point. You will only breakout if length of self.target, i.e. the original length of 
+                    # target list is bigger than 0. So you had somebody to send to but now you don't
+
                     if results is not None and len(self.targets) > 0:
                         break_out = False                        
                         for result in results:
@@ -212,26 +221,11 @@ class StatelessTaskNode(TaskNode):
         self.r.publish("node-done-"+str(self.id),str(my_id))
         print("task end",time.time())
     
-            
-@ray.remote
-class InputCSVNode(TaskNode):
 
-    def __init__(self,id, bucket, key, names, parallelism, batch_func=None, sep = ",", stride = 64 * 1024 * 1024, dependent_map = {}):
-        self.id = id
-        self.bucket = bucket
-        self.key = key
-        self.names = names
-        self.parallelism = parallelism
-        self.targets= {}
-        self.target_rs = {}
-        self.target_ps = {}
-        self.alive_targets = {}
-        self.strikes = set()
+class InputNode(TaskNode):
 
-        self.batch_func = batch_func
-        self.sep = sep
-        self.stride = stride
-        self.r = redis.Redis(host='localhost', port=6800, db=0)
+    def __init__(self, id, parallelism, dependent_map = {}):
+        super().__init__(id, parallelism)
         self.dependent_rs = {}
         self.dependent_parallelism = {}
         for key in dependent_map:
@@ -240,13 +234,6 @@ class InputCSVNode(TaskNode):
             p = r.pubsub(ignore_subscribe_messages=True)
             p.subscribe("input-done-" + str(key))
             self.dependent_rs[key] = p
-        
-
-    def initialize(self):
-        if self.bucket is None:
-            raise Exception
-        self.input_csv_dataset = InputCSVDataset(self.bucket, self.key, self.names,0, sep = self.sep, stride = self.stride) 
-        self.input_csv_dataset.set_num_mappers(self.parallelism)
     
     def execute(self, id):
 
@@ -263,8 +250,8 @@ class InputCSVNode(TaskNode):
                     else:
                         raise Exception(message['data'])
 
-        print("input_csv start",time.time())
-        input_generator = self.input_csv_dataset.get_next_batch(id)
+        print("input node start",time.time())
+        input_generator = self.accessor.get_next_batch(id)
 
         for batch in input_generator:
             
@@ -275,8 +262,27 @@ class InputCSVNode(TaskNode):
 
         self.done()
         self.r.publish("input-done-" + str(self.id), "done")
-        print("input_csv end",time.time())
+        print("input node end",time.time())
 
+@ray.remote
+class InputS3CSVNode(InputNode):
+
+    def __init__(self,id, bucket, key, names, parallelism, batch_func=None, sep = ",", stride = 64 * 1024 * 1024, dependent_map = {}):
+        super().__init__(id, parallelism, dependent_map)
+        
+        self.bucket = bucket
+        self.key = key
+        self.names = names
+
+        self.batch_func = batch_func
+        self.sep = sep
+        self.stride = stride
+
+    def initialize(self):
+        if self.bucket is None:
+            raise Exception
+        self.accessor = InputCSVDataset(self.bucket, self.key, self.names,0, sep = self.sep, stride = self.stride) 
+        self.accessor.set_num_mappers(self.parallelism)
 
 class TaskGraph:
     # this keeps the logical dependency DAG between tasks 
@@ -294,10 +300,10 @@ class TaskGraph:
                 dependent_map[node] = (self.node_ips[node], self.node_parallelism[node])
         
         if ip != 'localhost':
-            tasknode = [InputCSVNode.options(num_cpus=0.01, resources={"node:" + ip : 0.01}).
+            tasknode = [InputS3CSVNode.options(num_cpus=0.01, resources={"node:" + ip : 0.01}).
             remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func,sep = sep, stride= stride, dependent_map = dependent_map, ) for i in range(parallelism)]
         else:
-            tasknode = [InputCSVNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).
+            tasknode = [InputS3CSVNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).
             remote(self.current_node, bucket,key,names, parallelism, batch_func = batch_func, sep = sep, stride = stride, dependent_map = dependent_map, ) for i in range(parallelism)]
         self.nodes[self.current_node] = tasknode
         self.node_parallelism[self.current_node] = parallelism
