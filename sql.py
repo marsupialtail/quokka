@@ -83,6 +83,7 @@ class AggExecutor(StatelessExecutor):
 
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batch, stream_id, executor_id):
+        #print("AGGREGATING",batch,self.state)
         if self.state is None:
             self.state = batch 
         else:

@@ -96,6 +96,7 @@ class TaskNode:
                 for channel in self.alive_targets[target]:
                     if partition_key is not None:
                         payload = data[data[partition_key] % original_parallelism == channel]
+                        print("payload size ",payload.memory_usage().sum(), channel)
                     else:
                         payload = data
                     # don't worry about target being full for now.
@@ -193,8 +194,8 @@ class StatelessTaskNode(TaskNode):
                         my_batches[stream_id] = [pickle.loads(first)]
 
             for stream_id in my_batches:
-
-                    batch = pd.concat(my_batches[stream_id])
+                for batch in my_batches[stream_id]:
+                    #batch = pd.concat(my_batches[stream_id])
                     results = self.functionObject.execute(batch, self.physical_to_logical_stream_mapping[stream_id], my_id)
                     if hasattr(self.functionObject, 'early_termination') and self.functionObject.early_termination: 
                         break

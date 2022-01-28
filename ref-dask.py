@@ -31,7 +31,7 @@ order_scheme = ["o_orderkey", "o_custkey","o_orderstatus","o_totalprice","o_orde
 def do_6():
 
     start = time.time()
-    lineitem = dd.read_csv("s3://tpc-h-small/lineitem.tbl",sep="|", header = 0)
+    lineitem = dd.read_csv("s3://tpc-h-csv/lineitem/lineitem.tbl.1",sep="|", header = 0)
     df = lineitem.rename(columns=dict(zip(lineitem.columns, lineitem_scheme)))
     filtered_df = df.loc[(df.l_shipdate > "1994-01-01") & (df.l_discount >= 0.05) & (df.l_discount <= 0.07) & (df.l_quantity < 24)]
     filtered_df['product'] = filtered_df.l_extendedprice * filtered_df.l_discount
@@ -41,8 +41,10 @@ def do_6():
 def do_12():
 
     start = time.time()
-    orders = dd.read_csv("s3://tpc-h-small/orders.tbl",sep="|",header = 0)
-    lineitem = dd.read_csv("s3://tpc-h-small/lineitem.tbl",sep="|", header = 0)
+    orders = dd.read_csv("s3://tpc-h-small/orders-skewed.tbl",sep="|",header = 0)
+    lineitem = dd.read_csv("s3://tpc-h-small/lineitem-skewed.tbl",sep="|", header = 0)
+    #orders = dd.read_csv("s3://tpc-h-csv/orders/orders.tbl.1",sep="|",header = 0)
+    #lineitem = dd.read_csv("s3://tpc-h-csv/lineitem/lineitem.tbl.1",sep="|", header = 0)
     orders = orders.rename(columns=dict(zip(orders.columns, order_scheme)))
     lineitem = lineitem.rename(columns=dict(zip(lineitem.columns, lineitem_scheme)))
     
