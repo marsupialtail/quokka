@@ -194,24 +194,23 @@ class StatelessTaskNode(TaskNode):
 
             for stream_id in my_batches:
 
-                    batch = pd.concat(my_batches[stream_id])
-                    results = self.functionObject.execute(batch, self.physical_to_logical_stream_mapping[stream_id], my_id)
-                    if hasattr(self.functionObject, 'early_termination') and self.functionObject.early_termination: 
-                        break
+                results = self.functionObject.execute(my_batches[stream_id], self.physical_to_logical_stream_mapping[stream_id], my_id)
+                if hasattr(self.functionObject, 'early_termination') and self.functionObject.early_termination: 
+                    break
 
-                    # this is a very subtle point. You will only breakout if length of self.target, i.e. the original length of 
-                    # target list is bigger than 0. So you had somebody to send to but now you don't
+                # this is a very subtle point. You will only breakout if length of self.target, i.e. the original length of 
+                # target list is bigger than 0. So you had somebody to send to but now you don't
 
-                    if results is not None and len(self.targets) > 0:
-                        break_out = False                        
-                        for result in results:
-                            if self.push(result) is False:
-                                break_out = True
-                                break
-                        if break_out:
+                if results is not None and len(self.targets) > 0:
+                    break_out = False                        
+                    for result in results:
+                        if self.push(result) is False:
+                            break_out = True
                             break
-                    else:
-                        pass
+                    if break_out:
+                        break
+                else:
+                    pass
     
         obj_done =  self.functionObject.done(my_id) 
         if obj_done is not None:
@@ -283,6 +282,8 @@ class InputS3CSVNode(InputNode):
             raise Exception
         self.accessor = InputCSVDataset(self.bucket, self.key, self.names,0, sep = self.sep, stride = self.stride) 
         self.accessor.set_num_mappers(self.parallelism)
+
+
 
 class TaskGraph:
     # this keeps the logical dependency DAG between tasks 
