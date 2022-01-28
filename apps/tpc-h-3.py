@@ -17,15 +17,16 @@ def batch_func1(results):
 def batch_func2(results):
     aggs = []
     for df in results:
-        df["product"] = df["l_extended_price"] * (1 - df["l_discount"])
-        aggs.append(df.groupby("l_orderkey", "o_orderdate", "o_shippriority").agg(revenue = ('product','sum')))
+        print(df.columns)
+        df["product"] = df["l_extendedprice"] * (1 - df["l_discount"])
+        aggs.append(df.groupby(["l_orderkey", "o_orderdate", "o_shippriority"]).agg(revenue = ('product','sum')))
     for i in range(1,len(aggs)):
         aggs[0] = aggs[0].add(aggs[i],fill_value=0)
     
     return [aggs[0]]
 
 def final_func(state):
-    return state.sort_values('revenue')[:10]
+    return state.sort_values(['revenue','o_orderdate'],ascending = [False,True])[:10]
 
 lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
 "l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
@@ -40,7 +41,7 @@ customer_filter = lambda x: x[x.c_mktsegment == 'BUILDING'][["c_custkey"]]
 
 orders = task_graph.new_input_csv("tpc-h-small","orders.tbl",order_scheme,4,batch_func=orders_filter, sep="|")
 lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme,4,batch_func=lineitem_filter, sep="|")
-customers = task_graph.new_input_csv("tpc-h-small","customers.tbl", customer_scheme, 4, batch_func=customer_filter, sep="|")
+customers = task_graph.new_input_csv("tpc-h-small","customer.tbl", customer_scheme, 4, batch_func=customer_filter, sep="|")
 
 # join order picked by hand, might not be  the best one!
 join_executor1 = JoinExecutor(left_on = "c_custkey", right_on = "o_custkey",batch_func=batch_func1)
