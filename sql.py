@@ -36,7 +36,9 @@ class OutputCSVExecutor(StatelessExecutor):
         print("done")
 
 class JoinExecutor(StatelessExecutor):
-    def __init__(self, on = None, left_on = None, right_on = None):
+    # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
+    # batch func must return a list of dfs too
+    def __init__(self, on = None, left_on = None, right_on = None, batch_func = None):
         self.state0 = []
         self.state1 = []
         self.temp_results = []
@@ -48,6 +50,8 @@ class JoinExecutor(StatelessExecutor):
             assert left_on is not None and right_on is not None
             self.left_on = left_on
             self.right_on = right_on
+        
+        self.batch_func = batch_func
 
 
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
@@ -64,7 +68,10 @@ class JoinExecutor(StatelessExecutor):
             self.state1.append(batch)
         
         if len(results) > 0:
-            return results
+            if self.batch_func is not None:
+                return self.batch_func(results)
+            else:
+                return results
     
     def done(self,executor_id):
         print("done join ", executor_id)
@@ -107,3 +114,7 @@ class CountExecutor(StatelessExecutor):
     
     def done(self, executor_id):
         print("COUNT:", self.state)
+
+class MergeSortedExecutor(StatelessExecutor):
+    def __init__(self) -> None:
+        self.state = None
