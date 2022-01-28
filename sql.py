@@ -80,9 +80,10 @@ class JoinExecutor(StatelessExecutor):
         print("done join ", executor_id)
 
 class AggExecutor(StatelessExecutor):
-    def __init__(self, fill_value = 0):
+    def __init__(self, fill_value = 0, final_func = None):
         self.state = None
         self.fill_value = fill_value
+        self.final_func = final_func
 
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
@@ -94,7 +95,10 @@ class AggExecutor(StatelessExecutor):
                 self.state = self.state.add(batch, fill_value = self.fill_value)
     
     def done(self,executor_id):
-        print(self.state)
+        if self.final_func:
+            print(self.final_func(self.state))
+        else:
+            print(self.state)
 
 class LimitExecutor(StatelessExecutor):
     def __init__(self, limit) -> None:
