@@ -20,9 +20,10 @@ class OutputCSVExecutor(StatelessExecutor):
         self.prefix = prefix
         self.dfs =[]
         pass
-    def execute(self,batch,stream_id, executor_id):
+    def execute(self,batches,stream_id, executor_id):
         
         #self.num += 1
+        batch = pd.concat(batches)
         self.dfs.append(batch)
         if sum([i.memory_usage().sum() for i in self.dfs]) > WRITE_MEM_LIMIT:
             name = "s3://" + self.bucket + "/" + self.prefix + "-" + str(self.num * self.parallelism + executor_id) + ".csv"
@@ -55,7 +56,9 @@ class JoinExecutor(StatelessExecutor):
 
 
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
-    def execute(self,batch, stream_id, executor_id):
+    def execute(self,batches, stream_id, executor_id):
+
+        batch = pd.concat(batches)
         results = []
         if stream_id == 0:
             if len(self.state1) > 0:
@@ -82,12 +85,13 @@ class AggExecutor(StatelessExecutor):
         self.fill_value = fill_value
 
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
-    def execute(self,batch, stream_id, executor_id):
-        #print("AGGREGATING",batch,self.state)
-        if self.state is None:
-            self.state = batch 
-        else:
-            self.state = self.state.add(batch, fill_value = self.fill_value)
+    def execute(self,batches, stream_id, executor_id):
+
+        for batch in batches:
+            if self.state is None:
+                self.state = batch 
+            else:
+                self.state = self.state.add(batch, fill_value = self.fill_value)
     
     def done(self,executor_id):
         print(self.state)
@@ -97,7 +101,9 @@ class LimitExecutor(StatelessExecutor):
         self.limit = limit
         self.state = []
 
-    def execute(self, batch, stream_id, executor_id):
+    def execute(self, batches, stream_id, executor_id):
+
+        batch = pd.concat(batches)
         self.state.append(batch)
         length = sum([len(i) for i in self.state])
         if length > self.limit:
@@ -110,8 +116,8 @@ class CountExecutor(StatelessExecutor):
     def __init__(self) -> None:
         self.state = 0
 
-    def execute(self, batch, stream_id, executor_id):
-        self.state += len(batch)
+    def execute(self, batches, stream_id, executor_id):
+        self.state += sum(len(batch) for batch in batches)
     
     def done(self, executor_id):
         print("COUNT:", self.state)
