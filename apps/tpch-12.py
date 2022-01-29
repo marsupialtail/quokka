@@ -30,7 +30,7 @@ lineitem_filter = lambda x: x[((x.l_shipmode == "MAIL") | (x.l_shipmode == "SHIP
 
 orders = task_graph.new_input_csv("tpc-h-small","orders.tbl",order_scheme,8,batch_func=orders_filter, sep="|")
 lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme,8,batch_func=lineitem_filter, sep="|")
-join_executor = JoinExecutor(left_on="o_orderkey",right_on="l_orderkey", batch_func=batch_func)
+join_executor = JoinExecutor(left_on="o_orderkey",right_on="l_orderkey", batch_func=batch_func, left_primary = True)
 output_stream = task_graph.new_stateless_node({0:orders,1:lineitem},join_executor,4, {0:"o_orderkey", 1:"l_orderkey"})
 agg_executor = AggExecutor()
 agged = task_graph.new_stateless_node({0:output_stream}, agg_executor, 1, {0:None})
