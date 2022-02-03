@@ -3,7 +3,7 @@ sys.path.append("/home/ubuntu/quokka/")
 import datetime
 import time
 from quokka_runtime import TaskGraph
-from sql import AggExecutor, JoinExecutor
+from sql import AggExecutor, OOCJoinExecutor
 import ray
 import os
 task_graph = TaskGraph()
@@ -46,8 +46,8 @@ lineitem = task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl.1",lineit
 customers = task_graph.new_input_csv("tpc-h-csv","customer/customer.tbl.1", customer_scheme, 4, batch_func=customer_filter, sep="|")
 
 # join order picked by hand, might not be  the best one!
-join_executor1 = JoinExecutor(left_on = "c_custkey", right_on = "o_custkey",batch_func=batch_func1, left_primary = True)
-join_executor2 = JoinExecutor(left_on="o_orderkey",right_on="l_orderkey",batch_func=batch_func2, left_primary = True)
+join_executor1 = OOCJoinExecutor(left_on = "c_custkey", right_on = "o_custkey",batch_func=batch_func1, left_primary = True)
+join_executor2 = OOCJoinExecutor(left_on="o_orderkey",right_on="l_orderkey",batch_func=batch_func2, left_primary = True)
 temp = task_graph.new_stateless_node({0:customers,1:orders},join_executor1,2, {0:"c_custkey", 1:"o_custkey"})
 joined = task_graph.new_stateless_node({0:temp, 1: lineitem},join_executor2, 2, {0: "o_orderkey", 1:"l_orderkey"})
 
