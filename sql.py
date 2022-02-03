@@ -39,7 +39,7 @@ class OutputCSVExecutor(StatelessExecutor):
 class JoinExecutor(StatelessExecutor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
-    def __init__(self, on = None, left_on = None, right_on = None, batch_func = None):
+    def __init__(self, on = None, left_on = None, right_on = None, left_primary = False, right_primary = False, batch_func = None):
         self.state0 = []
         self.state1 = []
         self.temp_results = []
@@ -52,23 +52,52 @@ class JoinExecutor(StatelessExecutor):
             self.left_on = left_on
             self.right_on = right_on
         
+        self.left_primary = left_primary
+        self.right_primary = right_primary
+
+        # keys that will never be seen again, safe to delete from the state on the other side
+        self.left_gone_keys = set()
+        self.right_gone_keys = set()
+
         self.batch_func = batch_func
+        self.epoch = 0
 
 
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
-
+        print("STATE SIZE:", (sum([i.memory_usage().sum() for i in self.state0]) + sum([i.memory_usage().sum() for i in self.state1])) / 1024 / 1024)
+        print("STATE LEN:", len(self.state0), len(self.state1))
         batch = pd.concat(batches)
         results = []
+
+        self.epoch += 1
+
+        # state compaction
+        if self.epoch % 20 == 0:
+            if len(self.state0) > 10:
+                self.state0 = [pd.concat(self.state0)]
+            if len(self.state1) > 10:
+                self.state1 = [pd.concat(self.state1)]
+            
+            if len(self.left_gone_keys) > 0:
+                print("compacting right state!", len(self.left_gone_keys))
+                self.state1 = [i[~i[self.right_on].isin(self.left_gone_keys)].copy() for i in self.state1]
+            if len(self.right_gone_keys) > 0:
+                self.state0 = [i[~i[self.left_on].isin(self.right_gone_keys)].copy() for i in self.state0]
+
         if stream_id == 0:
             if len(self.state1) > 0:
                 results = [batch.merge(i,left_on = self.left_on, right_on = self.right_on ,how='inner',suffixes=('_a','_b')) for i in self.state1]
             self.state0.append(batch)
+            if self.left_primary:
+                self.left_gone_keys = self.left_gone_keys | set(batch[self.left_on])
              
         elif stream_id == 1:
             if len(self.state0) > 0:
                 results = [i.merge(batch,left_on = self.left_on, right_on = self.right_on ,how='inner',suffixes=('_a','_b')) for i in self.state0]
             self.state1.append(batch)
+            if self.right_primary:
+                self.right_gone_keys = self.right_gone_keys | set(batch[self.right_on])
         
         if len(results) > 0:
             if self.batch_func is not None:

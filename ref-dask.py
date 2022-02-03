@@ -54,7 +54,9 @@ def do_3(size):
     result = temp.merge(filtered_lineitems, left_on = "o_orderkey", right_on = "l_orderkey")[["l_orderkey","o_orderdate","o_shippriority","l_extendedprice","l_discount"]]
     result["product"] = result.l_extendedprice * (1 - result.l_discount)
     result = result.groupby(['l_orderkey','o_orderdate','o_shippriority']).agg({'product':'sum'})
-    import pdb;pdb.set_trace()
+    result = result.nlargest(n = 10, columns = 'product').compute()
+    print(result)
+    print(time.time() - start)
 
 def do_6(size):
 

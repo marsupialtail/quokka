@@ -17,7 +17,6 @@ def batch_func1(results):
 def batch_func2(results):
     aggs = []
     for df in results:
-        print(df.columns)
         df["product"] = df["l_extendedprice"] * (1 - df["l_discount"])
         aggs.append(df.groupby(["l_orderkey", "o_orderdate", "o_shippriority"]).agg(revenue = ('product','sum')))
     for i in range(1,len(aggs)):
@@ -39,13 +38,16 @@ orders_filter = lambda x: x[x.o_orderdate < datetime.date(1995,3,3)][["o_orderke
 lineitem_filter = lambda x: x[x.l_shipdate > datetime.date(1995,3,15)][["l_orderkey","l_extendedprice","l_discount"]]
 customer_filter = lambda x: x[x.c_mktsegment == 'BUILDING'][["c_custkey"]]
 
-orders = task_graph.new_input_csv("tpc-h-small","orders.tbl",order_scheme,4,batch_func=orders_filter, sep="|")
-lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme,4,batch_func=lineitem_filter, sep="|")
-customers = task_graph.new_input_csv("tpc-h-small","customer.tbl", customer_scheme, 4, batch_func=customer_filter, sep="|")
+#orders = task_graph.new_input_csv("tpc-h-small","orders.tbl",order_scheme,4,batch_func=orders_filter, sep="|")
+#lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme,8,batch_func=lineitem_filter, sep="|")
+#customers = task_graph.new_input_csv("tpc-h-small","customer.tbl", customer_scheme, 4, batch_func=customer_filter, sep="|")
+orders = task_graph.new_input_csv("tpc-h-csv","orders/orders.tbl.1",order_scheme,4,batch_func=orders_filter, sep="|")
+lineitem = task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl.1",lineitem_scheme,8,batch_func=lineitem_filter, sep="|")
+customers = task_graph.new_input_csv("tpc-h-csv","customer/customer.tbl.1", customer_scheme, 4, batch_func=customer_filter, sep="|")
 
 # join order picked by hand, might not be  the best one!
-join_executor1 = JoinExecutor(left_on = "c_custkey", right_on = "o_custkey",batch_func=batch_func1)
-join_executor2 = JoinExecutor(left_on="o_orderkey",right_on="l_orderkey",batch_func=batch_func2)
+join_executor1 = JoinExecutor(left_on = "c_custkey", right_on = "o_custkey",batch_func=batch_func1, left_primary = True)
+join_executor2 = JoinExecutor(left_on="o_orderkey",right_on="l_orderkey",batch_func=batch_func2, left_primary = True)
 temp = task_graph.new_stateless_node({0:customers,1:orders},join_executor1,2, {0:"c_custkey", 1:"o_custkey"})
 joined = task_graph.new_stateless_node({0:temp, 1: lineitem},join_executor2, 2, {0: "o_orderkey", 1:"l_orderkey"})
 
