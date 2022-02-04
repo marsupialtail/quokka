@@ -12,8 +12,8 @@ import os
 import pickle
 #parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 #os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
-ray.init(ignore_reinit_error=True) # do this locally
-#ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ziheng/quokka-dev"})
+#ray.init(ignore_reinit_error=True) # do this locally
+ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
 #ray.timeline("profile.json")
 
 '''
@@ -53,7 +53,7 @@ class TaskNode:
         node_id, channel_to_ip, partition_key = tup
 
         unique_ips = set(channel_to_ip.values())
-        redis_clients = {i: redis.Redis(host=i, port=6800, db=0) for i in unique_ips}
+        redis_clients = {i: redis.Redis(host=i, port=6800, db=0) if i != ray.util.get_node_ip_address() else redis.Redis(host='localhost', port = 6800, db=0) for i in unique_ips}
         self.targets[node_id] = (channel_to_ip, partition_key)
         self.target_rs[node_id] = {}
         self.target_ps[node_id] = []
@@ -150,6 +150,7 @@ class TaskNode:
                 results = pipeline.execute()
                 if False in results:
                     if (target, channel) not in self.strikes:
+                        print(target,channel)
                         raise Exception
                     self.strikes.remove((target, channel))
         return True
@@ -280,6 +281,7 @@ class InputNode(TaskNode):
         for batch in input_generator:
             
             if self.batch_func is not None:
+                #print(batch.l_shipdate)
                 self.push(self.batch_func(batch))
             else:
                 self.push(batch)
@@ -324,6 +326,10 @@ class TaskGraph:
         start_dict = {ips[k]: starts[k] for k in range(len(ips))}
         lists_to_merge =  [ {i: ip for i in range(start_dict[ip], start_dict[ip] + ip_to_num_channel[ip])} for ip in ips ]
         channel_to_ip = {k: v for d in lists_to_merge for k, v in d.items()}
+        for key in channel_to_ip:
+            if channel_to_ip[key] == 'localhost':
+                channel_to_ip[key] = ray.worker._global_node.address.split(":")[0] 
+
         return channel_to_ip
 
     def new_input_csv(self, bucket, key, names, ip_to_num_channel, batch_func=None, sep = ",", dependents = [], stride= 64 * 1024 * 1024):
@@ -354,7 +360,6 @@ class TaskGraph:
     def new_stateless_node(self, streams, functionObject, ip_to_num_channel, partition_key):
         
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
-        
         # this is the mapping of physical node id to the key the user called in streams. i.e. if you made a node, task graph assigns it an internal id #
         # then if you set this node as the input of this new stateless node and do streams = {0: node}, then mapping will be {0: the internal id of that node}
         mapping = {}

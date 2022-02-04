@@ -51,7 +51,7 @@ class InputCSVDataset:
 
         if self.num_mappers is None:
             raise Exception
-        splits = 16
+        splits = 64
 
         response = self.s3.head_object(
             Bucket=self.bucket,
