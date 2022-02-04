@@ -20,7 +20,7 @@ def lineitem_filter(df):
     return pd.DataFrame([ (filtered_df.l_extendedprice * filtered_df.l_discount).sum()],columns=['sum'])
 
 #lineitem = task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl.1",lineitem_scheme,8,batch_func=lineitem_filter, sep="|")
-lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme,8,batch_func=lineitem_filter, sep="|")
+lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme,{'localhost':8},batch_func=lineitem_filter, sep="|")
 agg_executor = AggExecutor()
 agged = task_graph.new_stateless_node({0:lineitem}, agg_executor, 1, {0:None})
 
