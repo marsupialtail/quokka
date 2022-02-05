@@ -12,21 +12,10 @@ class PersistentStateVariable:
         # ok this requires careful thinking. We must not allow two executors on the same machine to have the same filepath.
         # the filepath is based on a random number, so chances of collision is very small. 
         # in addiiton, mkdir is supposed to be atomic for the OS, so this will work.
-        if not os.path.isdir("/tmp/quokka"):
-            os.mkdir("/tmp/quokka")
-
-        while True:
-            try:
-                random_number =  int(np.random.random() * 1000000)
-                filepath = "/tmp/quokka/" + str(random_number)
-                os.mkdir(filepath)
-                self.filepath = filepath
-                break
-            except FileExistsError:
-                continue
 
         self.in_memory_state = []
         self.disk_state = []
+        self.filepath = None
     
     def get_current_mem(self):
         return sum([i.memory_usage().sum() for i in self.in_memory_state])
@@ -35,6 +24,18 @@ class PersistentStateVariable:
         if self.get_current_mem() + batch.memory_usage().sum() < self.max_mem:
             self.in_memory_state.append(batch)
         else:
+            if not os.path.isdir("/tmp/quokka"):
+                os.mkdir("/tmp/quokka")
+            if self.filepath is None:
+                while True:
+                    try:
+                        random_number =  int(np.random.random() * 1000000)
+                        filepath = "/tmp/quokka/" + str(random_number)
+                        os.mkdir(filepath)
+                        self.filepath = filepath
+                        break
+                    except FileExistsError:
+                        continue
             filepath = None
             # each actor can have multiple physical instantiations. we must not allow any of those physical instantaions
             # to share as well
