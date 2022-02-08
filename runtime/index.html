@@ -121,6 +121,7 @@
               
                 <h1 id="quokka-runtime-api-documentation">Quokka Runtime API documentation</h1>
 <h2 id="programming-model">Programming Model</h2>
+<p>A note about the name: the name is inspired by the Apache Flink icon, which is a chipmunk. A quokka is a marsupial that resembles a chipmunk.</p>
 <p>The Quokka lower-level runtime API (henceforth referred to as the runtime API) allows you to construct a <strong>task graph</strong> of <strong>nodes</strong>, which each perform a specific task. This is very similar to other DAG-based processing frameworks such as <a href="https://spark.apache.org/docs/latest/">Apache Spark</a> or <a href="https://www.tensorflow.org/">Tensorflow</a>. For example, you can write the following code in the runtime API to execute TPC-H query 6:</p>
 <pre><code class="language-python">    task_graph = TaskGraph()
     lineitem = task_graph.new_input_csv(bucket,key,lineitem_scheme,8,batch_func=lineitem_filter, sep=&quot;|&quot;)
