@@ -69,14 +69,6 @@ class TaskNode:
         for i in channel_to_ip:
             self.strikes.add((node_id,i))
 
-        # self.targets[node_id] = (parallelism, partition_key)
-        # self.target_rs[node_id] = redis.Redis(host=ip, port=6800, db=0)
-        # self.target_ps[node_id] = self.target_rs[node_id].pubsub(ignore_subscribe_messages = True)
-        # self.target_ps[node_id].subscribe("node-done-"+str(node_id))
-        # self.alive_targets[node_id] = {i for i in range(parallelism)}
-        # for i in range(parallelism):
-        #     self.strikes.add((node_id, i))
-
     def initialize(self):
         # child classes must override this method
         raise NotImplementedError
@@ -119,8 +111,13 @@ class TaskNode:
                 original_channel_to_ip, partition_key = self.targets[target]
                 for channel in self.alive_targets[target]:
                     if partition_key is not None:
-                        payload = data[data[partition_key] % len(original_channel_to_ip) == channel]
-                        print("payload size ",payload.memory_usage().sum(), channel)
+                        if type(partition_key) == "str":
+                            payload = data[data[partition_key] % len(original_channel_to_ip) == channel]
+                            print("payload size ",payload.memory_usage().sum(), channel)
+                        elif callable(partition_key):
+                            payload = partition_key(data, channel)
+                        else:
+                            raise Exception("Can't understand partition strategy")
                     else:
                         payload = data
                     # don't worry about target being full for now.
