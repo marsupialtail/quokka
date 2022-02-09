@@ -111,7 +111,8 @@ class TaskNode:
                 original_channel_to_ip, partition_key = self.targets[target]
                 for channel in self.alive_targets[target]:
                     if partition_key is not None:
-                        if type(partition_key) == "str":
+
+                        if type(partition_key) == str:
                             payload = data[data[partition_key] % len(original_channel_to_ip) == channel]
                             print("payload size ",payload.memory_usage().sum(), channel)
                         elif callable(partition_key):
