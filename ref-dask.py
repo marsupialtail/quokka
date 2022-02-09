@@ -1,3 +1,5 @@
+import pandas as pd
+import numpy as np
 import dask.dataframe as dd
 import time
 import sys
@@ -27,22 +29,64 @@ lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quanti
 "l_shipmode","l_comment"]
 order_scheme = ["o_orderkey", "o_custkey","o_orderstatus","o_totalprice","o_orderdate","o_orderpriority","o_clerk",
 "o_shippriority","o_comment"]
+customer_scheme = ["c_custkey","c_name","c_address","c_nationkey","c_phone","c_acctbal","c_mktsegment","c_comment"]
 
-def do_6():
+def do_3(size):
+    start = time.time()
+    
+    if size == "small":
+        orders = dd.read_csv("s3://tpc-h-small/orders.tbl",sep="|",header = 0)
+        lineitem = dd.read_csv("s3://tpc-h-small/lineitem.tbl",sep="|", header = 0)
+        customer = dd.read_csv("s3://tpc-h-small/customer.tbl",sep="|", header =0)
+    elif size == "big":
+        lineitem = dd.read_csv("s3://tpc-h-csv/lineitem/lineitem.tbl.1",sep="|", header = 0)
+        orders = dd.read_csv("s3://tpc-h-csv/orders/orders.tbl.1",sep="|",header = 0)
+        customer = dd.read_csv("s3://tpc-h-csv/customer/customer.tbl.1",sep="|", header =0)
+    else:
+        raise Exception
+
+    orders = orders.rename(columns=dict(zip(orders.columns, order_scheme)))
+    lineitem = lineitem.rename(columns=dict(zip(lineitem.columns, lineitem_scheme)))
+    customer = customer.rename(columns=dict(zip(customer.columns, customer_scheme)))
+    
+    filtered_customer = customer.loc[customer.c_mktsegment == "BUILDING"][["c_custkey"]]
+    filtered_orders = orders[orders.o_orderdate < "1995-03-03"][["o_orderkey","o_custkey","o_shippriority", "o_orderdate"]]
+    filtered_lineitems = lineitem[lineitem.l_shipdate > "1995-03-15"][["l_orderkey","l_extendedprice","l_discount"]]
+    temp = filtered_customer.merge(filtered_orders, left_on="c_custkey", right_on="o_custkey")[["o_orderkey","o_shippriority", "o_orderdate"]]
+    result = temp.merge(filtered_lineitems, left_on = "o_orderkey", right_on = "l_orderkey")[["l_orderkey","o_orderdate","o_shippriority","l_extendedprice","l_discount"]]
+    result["product"] = result.l_extendedprice * (1 - result.l_discount)
+    result = result.groupby(['l_orderkey','o_orderdate','o_shippriority']).agg({'product':'sum'})
+    result = result.nlargest(n = 10, columns = 'product').compute()
+    print(result)
+    print(time.time() - start)
+
+def do_6(size):
 
     start = time.time()
-    lineitem = dd.read_csv("s3://tpc-h-small/lineitem.tbl",sep="|", header = 0)
+    if size == "small":
+        lineitem = dd.read_csv("s3://tpc-h-small/lineitem.tbl",sep="|", header = 0)
+    elif size == "big":
+        lineitem = dd.read_csv("s3://tpc-h-csv/lineitem/lineitem.tbl.1",sep="|", header = 0)
+    else:
+        raise Exception
     df = lineitem.rename(columns=dict(zip(lineitem.columns, lineitem_scheme)))
     filtered_df = df.loc[(df.l_shipdate > "1994-01-01") & (df.l_discount >= 0.05) & (df.l_discount <= 0.07) & (df.l_quantity < 24)]
     filtered_df['product'] = filtered_df.l_extendedprice * filtered_df.l_discount
     print(filtered_df.product.sum().compute())
     print(time.time() - start)
 
-def do_12():
+def do_12(size):
 
     start = time.time()
-    orders = dd.read_csv("s3://tpc-h-small/orders.tbl",sep="|",header = 0)
-    lineitem = dd.read_csv("s3://tpc-h-small/lineitem.tbl",sep="|", header = 0)
+    if size == "small":
+        orders = dd.read_csv("s3://tpc-h-small/orders.tbl",sep="|",header = 0)
+        lineitem = dd.read_csv("s3://tpc-h-small/lineitem.tbl",sep="|", header = 0)
+    elif size == "big":
+        lineitem = dd.read_csv("s3://tpc-h-csv/lineitem/lineitem.tbl.1",sep="|", header = 0)
+        orders = dd.read_csv("s3://tpc-h-csv/orders/orders.tbl.1",sep="|",header = 0)
+    else:
+        raise Exception
+
     orders = orders.rename(columns=dict(zip(orders.columns, order_scheme)))
     lineitem = lineitem.rename(columns=dict(zip(lineitem.columns, lineitem_scheme)))
     
@@ -58,7 +102,22 @@ def do_12():
     
     print(time.time() - start)
 
+def do_matmul(size):
+
+    start = time.time()
+    if size == "small":
+        A = pd.read_csv("s3://yugan/matrix.csv")
+        matrix = A.to_numpy()[:,1:]
+        print(matrix.shape)
+        print(np.sum(np.dot(matrix,np.transpose(matrix))))
+    print(time.time() - start)
+
+
+if int(sys.argv[1]) == 3:
+    do_3(sys.argv[2])
 if int(sys.argv[1]) == 6:
-    do_6()
+    do_6(sys.argv[2])
 if int(sys.argv[1]) == 12:
-    do_12()
+    do_12(sys.argv[2])
+if int(sys.argv[1]) == 0:
+    do_matmul(sys.argv[2])

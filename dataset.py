@@ -1,8 +1,35 @@
 import pyarrow.csv as csv
+import pyarrow.parquet as pq
 import pandas as pd
 from io import BytesIO, StringIO
 import boto3
 import time
+
+# use this if you have a lot of small parquet files
+class InputMultiParquetDataset:
+
+    def __init__(self, bucket, prefix, columns = None, filters = None) -> None:
+        self.s3 = boto3.client('s3')
+        self.bucket = bucket
+        z = self.s3.list_objects_v2(Bucket = bucket,Prefix=prefix)
+        self.files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
+        self.num_mappers = None
+        self.columns = columns
+        self.filters = filters
+        while 'NextContinuationToken' in z.keys():
+            z = self.s3.list_objects_v2(Bucket = "tpc-h-parquet",Prefix="lineitem",ContinuationToken = z['NextContinuationToken'])
+            self.files.extend([i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")])
+    
+    def set_num_mappers(self, num_mappers):
+        self.num_mappers = num_mappers
+
+    def get_next_batch(self, mapper_id):
+        curr_pos = mapper_id 
+        while curr_pos < len(self.files):
+            a = pq.read_table("s3://" + self.bucket + "/" + self.files[curr_pos],columns=self.columns, filters = self.filters).to_pandas()
+            curr_pos += self.num_mappers
+            yield a
+
 class InputCSVDataset:
 
     def __init__(self, bucket, key, names, id, sep= ",", stride = 64 * 1024 * 1024) -> None:
@@ -20,11 +47,11 @@ class InputCSVDataset:
         self.num_mappers = num_mappers
         self.length, self.adjusted_splits = self.get_csv_attributes()
 
-    def get_csv_attributes(self, window = 1024):
+    def get_csv_attributes(self, window = 1024 * 32):
 
         if self.num_mappers is None:
             raise Exception
-        splits = 16
+        splits = 64
 
         response = self.s3.head_object(
             Bucket=self.bucket,
