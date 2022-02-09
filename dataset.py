@@ -53,7 +53,7 @@ class InputCSVDataset:
         self.num_mappers = num_mappers
         self.length, self.adjusted_splits = self.get_csv_attributes()
 
-    def get_csv_attributes(self, window = 1024):
+    def get_csv_attributes(self, window = 1024 * 32):
 
         if self.num_mappers is None:
             raise Exception

@@ -1,3 +1,5 @@
+import pandas as pd
+import numpy as np
 import dask.dataframe as dd
 import time
 import sys
@@ -100,9 +102,22 @@ def do_12(size):
     
     print(time.time() - start)
 
+def do_matmul(size):
+
+    start = time.time()
+    if size == "small":
+        A = pd.read_csv("s3://yugan/matrix.csv")
+        matrix = A.to_numpy()[:,1:]
+        print(matrix.shape)
+        print(np.sum(np.dot(matrix,np.transpose(matrix))))
+    print(time.time() - start)
+
+
 if int(sys.argv[1]) == 3:
     do_3(sys.argv[2])
 if int(sys.argv[1]) == 6:
     do_6(sys.argv[2])
 if int(sys.argv[1]) == 12:
     do_12(sys.argv[2])
+if int(sys.argv[1]) == 0:
+    do_matmul(sys.argv[2])
