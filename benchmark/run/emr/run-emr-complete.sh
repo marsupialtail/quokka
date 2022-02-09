@@ -13,8 +13,8 @@ bash $WORKING_PATH/launch-emr.sh $REPO_PATH
 
 . $WORKING_PATH/get-cluster_id.sh "WAITING STARTING RUNNING"
 
-# bash $WORKING_PATH/step/emr-pyspark-join_00.sh
+bash $WORKING_PATH/step/emr-pyspark-join_00.sh
 
-# bash $WORKING_PATH/step/emr-pyspark-tpch_06.sh
+bash $WORKING_PATH/step/emr-pyspark-tpch_06.sh
 
 bash $WORKING_PATH/step/emr-pyspark-tpch_12.sh
