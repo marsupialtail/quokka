@@ -307,7 +307,22 @@ class InputS3CSVNode(InputNode):
         self.accessor = InputCSVDataset(self.bucket, self.key, self.names,0, sep = self.sep, stride = self.stride) 
         self.accessor.set_num_mappers(len(self.channel_to_ip))
 
+@ray.remote
+class InputS3MultiParquetNode(InputNode):
 
+    def __init__(self, id, bucket, key, channel_to_ip, columns = None, batch_func=None, dependent_map={}):
+        super().__init__(id, channel_to_ip, dependent_map)
+
+        self.bucket = bucket
+        self.key = key
+        self.columns = columns
+        self.batch_func = batch_func
+    
+    def initialize(self):
+        if self.bucket is None:
+            raise Exception
+        self.accessor = InputMultiParquetDataset(self.bucket, self.key, columns = self.columns)
+        self.accessor.set_num_mappers(len(self.channel_to_ip))
 
 class TaskGraph:
     # this keeps the logical dependency DAG between tasks 
@@ -329,13 +344,16 @@ class TaskGraph:
 
         return channel_to_ip
 
-    def new_input_csv(self, bucket, key, names, ip_to_num_channel, batch_func=None, sep = ",", dependents = [], stride= 64 * 1024 * 1024):
-        
+    def return_dependent_map(self, dependents):
         dependent_map = {}
         if len(dependents) > 0:
             for node in dependents:
                 dependent_map[node] = (self.node_ips[node], len(self.node_channel_to_ip[node]))
+        return dependent_map
+
+    def new_input_csv(self, bucket, key, names, ip_to_num_channel, batch_func=None, sep = ",", dependents = [], stride= 64 * 1024 * 1024):
         
+        dependent_map = self.return_dependent_map(dependents)
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
 
         tasknode = []
@@ -348,6 +366,30 @@ class TaskGraph:
                 tasknode.extend([InputS3CSVNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).
                 remote(self.current_node, bucket,key,names, channel_to_ip, batch_func = batch_func, sep = sep,
                 stride = stride, dependent_map = dependent_map, ) for i in range(ip_to_num_channel[ip])])
+        
+        self.nodes[self.current_node] = tasknode
+        self.node_channel_to_ip[self.current_node] = channel_to_ip
+        self.node_ips[self.current_node] = ip
+        self.current_node += 1
+        return self.current_node - 1
+    
+
+    def new_input_multiparquet(self, bucket, key,  ip_to_num_channel, batch_func=None, columns = None, dependents = []):
+        
+        dependent_map = self.return_dependent_map(dependents)
+        channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
+
+        tasknode = []
+        for ip in ip_to_num_channel:
+            if ip != 'localhost':
+                tasknode.extend([InputS3MultiParquetNode.options(num_cpus=0.01, resources={"node:" + ip : 0.01}).
+                remote(self.current_node, bucket,key,channel_to_ip, columns = columns,
+                 batch_func = batch_func,dependent_map = dependent_map) for i in range(ip_to_num_channel[ip])])
+            else:
+                tasknode.extend([InputS3MultiParquetNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).
+                remote(self.current_node, bucket,key,channel_to_ip, columns = columns,
+                 batch_func = batch_func, dependent_map = dependent_map) for i in range(ip_to_num_channel[ip])])
+        
         self.nodes[self.current_node] = tasknode
         self.node_channel_to_ip[self.current_node] = channel_to_ip
         self.node_ips[self.current_node] = ip
