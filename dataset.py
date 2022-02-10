@@ -8,6 +8,11 @@ import time
 # use this if you have a lot of small parquet files
 class InputMultiParquetDataset:
 
+    # filter pushdown could be profitable in the future, especially when you can skip entire Parquet files
+    # but when you can't it seems like you still read in the entire thing anyways
+    # might as well do the filtering at the Pandas step. Also you need to map filters to the DNF form of tuples, which could be 
+    # an interesting project in itself. Time for an intern?
+    
     def __init__(self, bucket, prefix, columns = None, filters = None) -> None:
         self.s3 = boto3.client('s3')
         self.bucket = bucket
@@ -24,6 +29,7 @@ class InputMultiParquetDataset:
         self.num_mappers = num_mappers
 
     def get_next_batch(self, mapper_id):
+        assert self.num_mappers is not None
         curr_pos = mapper_id 
         while curr_pos < len(self.files):
             a = pq.read_table("s3://" + self.bucket + "/" + self.files[curr_pos],columns=self.columns, filters = self.filters).to_pandas()
