@@ -4,6 +4,8 @@
 
 A note about the name: the name is inspired by the Apache Flink icon, which is a chipmunk. A quokka is a marsupial that resembles a chipmunk.
 
+### Overview
+
 The Quokka lower-level runtime API (henceforth referred to as the runtime API) allows you to construct a **task graph** of **nodes**, which each perform a specific task. This is very similar to other DAG-based processing frameworks such as [Apache Spark](https://spark.apache.org/docs/latest/) or [Tensorflow](https://www.tensorflow.org/). For example, you can write the following code in the runtime API to execute TPC-H query 6:
 ~~~python
     task_graph = TaskGraph()
@@ -63,6 +65,30 @@ While in general there are many ways to achieve this kind of behavior as long as
 
 Note that there is in fact a non-monotonic domain-specific optimization we can make that will preserve confluence in the case of a primary key join. Any input streamed in from stream0 can guarantee that any future records from that table will not have the same key value. Thus all state1 related to the record’s key can be safely deleted. Quokka currently does not implement this optimization.
 
+### Datasets and Streams
+
+Now we have introduced the concepts of non-blocking and blocking operators, we can understand in detail how a Quokka program executes. In the overview section, it seems like the entire Quokka DAG is executed in a push-based fashion. This is not true. While enabling push-based execution accounts for most of the benefits of Quokka, some kinds of processing are not amenable to push-based processing or cannot benefit from it. Quokka does not re-invent the wheel here and uses the resilient distributed datasets (RDD) concept from Spark, which is an amazing idea. 
+
+In particular, we notice that blocking operators are not amenable to push-based execution, since they have to materialize their entire state before pushing results to their children. Blocking operators could be introduced by operations like aggregations and sort, or simply by user command when they wish to materialize data with `.materialize()` (similar to `.cache()` semantics in Spark or `.compute()` semantics in Dask). 
+
+Such blocking operators will produce a **Dataset** in Quokka, while non-blocking operators will produce a **Stream**. Downstream operators could depend on both upstream datasets and streams. The difference is that the upstream dataset need to be completely materialized when an operator starts executing, while a stream is just a promise that batches of data will be produced at some point in the future in any order. In other words, from the perspective of the operator, it can pull data from an upstream dataset and expects data to be pushed to it from the stream. 
+
+In practice, a Quokka DAG can consist of many blocking operators and non-blocking operators organized in complicated ways. For example, here is the DAG for a PageRank application:
+
+![pagerank](Pagerank.png)
+
+Quokka decomposes the computation into stages, with each stage ending in the creation of a Dataset. In this case the computation will be broken into two stages, the first of which consists of the nonblocking input sparse matrix read and caching (the upper row). The second will be the bottom row. The second stage depends on the first one, so it will be launched after the first one has completed. This is very similar to how stages in Spark work. (Note that strictly speaking, every stage has to start from a Dataset too. In this case the input nodes depend on Datasets that are pre-created in S3 or Disk, and are abbreviated in this graph.)
+
+Similarly to an RDD, Quokka represents a Dataset as a collection of immutable objects, and some associated metadata on those objects, which is itself an immutable object. The objects are all stored on a shared-memory object store with persistence (currently RocksDB). 
+
+When you use `task_graph.add_blocking_task_node` in Quokka, a Dataset object will be returned. You can use this Dataset object in downstream operators. Quokka guarantees that by the time the downstream operators execute, all the Datasets that they depend on would have been materialized in this object store. 
+
+The stock Dataset class in Quokka exposes some convenience methods such as an iterator to iterate through the objects. The user could also interact directly with the object store after looking up metadata from the Dataset object. There are more specialized Dataset class implementations in Quokka like KVDataset or RangeDataset which corresponds to hash-based partitioning or range-based partitioning of objects that expose more methods. The user could also implement a custom Dataset class that descends from Dataset with even more methods.
+
+It is important to ensure that when using a Dataset in a downstream operator that also takes streaming inputs, the confluence property is respected. Unfortunately, Quokka currently does not enforce this and it's possible for you to mess this up when writing your code. Although it's not that easy to mess up, since you cannot change the objects you read from the Dataset. 
+
+A downstream operator could treat the Dataset as a stream by simply invoking the iterator to iterate through the objects in the Dataset. However, for many downstream operations, it might be desirable to explicitly convert a Dataset into a Stream again (e.g. to use stock operators that only have stream-based implementations). You can do that by using the specialized task node `add_input_dataset`. Internally, this task node just calls the iterator repeatedly and produce a stream of batches corresponding to the objects in the Dataset. 
+
 ### Fault tolerance (future work)
 
 The current theory is a bit complicated. I am still thinking through how this should work exactly, but the hopefully the gist gets through.
@@ -104,6 +130,28 @@ The stragglers introduced by fault recovery can be mediated in this fashion. Nod
 #### Manual autoscaling using combiner functions
 
 To be written.
+
+## Example Applications
+
+### TPC-H query 12
+
+### Pagerank
+
+![pagerank](Pagerank.png)
+
+Let's talk about how PageRank works in the Quokka programming model. 
+
+~~~python
+    state0 = set()
+    state1 = set()
+    for each input:
+        if input from stream0:
+            state0.add(input)
+            emit set(input.join(i) for i in state1)
+        else:
+            state1.add(input)
+            emit set(i.join(input) for i in state0)
+~~~
 
 ## TaskGraph API
 

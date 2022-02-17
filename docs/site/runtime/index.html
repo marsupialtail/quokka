@@ -55,7 +55,11 @@
     <ul class="current">
     <li class="toctree-l2"><a class="reference internal" href="#programming-model">Programming Model</a>
         <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#overview">Overview</a>
+    </li>
     <li class="toctree-l3"><a class="reference internal" href="#stateful-actors">Stateful Actors</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#datasets-and-streams">Datasets and Streams</a>
     </li>
     <li class="toctree-l3"><a class="reference internal" href="#fault-tolerance-future-work">Fault tolerance (future work)</a>
     </li>
@@ -64,6 +68,14 @@
     <li class="toctree-l4"><a class="reference internal" href="#manual-autoscaling-using-combiner-functions">Manual autoscaling using combiner functions</a>
     </li>
         </ul>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#example-applications">Example Applications</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#tpc-h-query-12">TPC-H query 12</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#pagerank">Pagerank</a>
     </li>
         </ul>
     </li>
@@ -122,6 +134,7 @@
                 <h1 id="quokka-runtime-api-documentation">Quokka Runtime API documentation</h1>
 <h2 id="programming-model">Programming Model</h2>
 <p>A note about the name: the name is inspired by the Apache Flink icon, which is a chipmunk. A quokka is a marsupial that resembles a chipmunk.</p>
+<h3 id="overview">Overview</h3>
 <p>The Quokka lower-level runtime API (henceforth referred to as the runtime API) allows you to construct a <strong>task graph</strong> of <strong>nodes</strong>, which each perform a specific task. This is very similar to other DAG-based processing frameworks such as <a href="https://spark.apache.org/docs/latest/">Apache Spark</a> or <a href="https://www.tensorflow.org/">Tensorflow</a>. For example, you can write the following code in the runtime API to execute TPC-H query 6:</p>
 <pre><code class="language-python">    task_graph = TaskGraph()
     lineitem = task_graph.new_input_csv(bucket,key,lineitem_scheme,8,batch_func=lineitem_filter, sep=&quot;|&quot;)
@@ -162,6 +175,18 @@
             emit set(i.join(input) for i in state0)
 </code></pre>
 <p>Note that there is in fact a non-monotonic domain-specific optimization we can make that will preserve confluence in the case of a primary key join. Any input streamed in from stream0 can guarantee that any future records from that table will not have the same key value. Thus all state1 related to the record’s key can be safely deleted. Quokka currently does not implement this optimization.</p>
+<h3 id="datasets-and-streams">Datasets and Streams</h3>
+<p>Now we have introduced the concepts of non-blocking and blocking operators, we can understand in detail how a Quokka program executes. In the overview section, it seems like the entire Quokka DAG is executed in a push-based fashion. This is not true. While enabling push-based execution accounts for most of the benefits of Quokka, some kinds of processing are not amenable to push-based processing or cannot benefit from it. Quokka does not re-invent the wheel here and uses the resilient distributed datasets (RDD) concept from Spark, which is an amazing idea. </p>
+<p>In particular, we notice that blocking operators are not amenable to push-based execution, since they have to materialize their entire state before pushing results to their children. Blocking operators could be introduced by operations like aggregations and sort, or simply by user command when they wish to materialize data with <code>.materialize()</code> (similar to <code>.cache()</code> semantics in Spark or <code>.compute()</code> semantics in Dask). </p>
+<p>Such blocking operators will produce a <strong>Dataset</strong> in Quokka, while non-blocking operators will produce a <strong>Stream</strong>. Downstream operators could depend on both upstream datasets and streams. The difference is that the upstream dataset need to be completely materialized when an operator starts executing, while a stream is just a promise that batches of data will be produced at some point in the future in any order. In other words, from the perspective of the operator, it can pull data from an upstream dataset and expects data to be pushed to it from the stream. </p>
+<p>In practice, a Quokka DAG can consist of many blocking operators and non-blocking operators organized in complicated ways. For example, here is the DAG for a PageRank application:</p>
+<p><img alt="pagerank" src="../Pagerank.png" /></p>
+<p>Quokka decomposes the computation into stages, with each stage ending in the creation of a Dataset. In this case the computation will be broken into two stages, the first of which consists of the nonblocking input sparse matrix read and caching (the upper row). The second will be the bottom row. The second stage depends on the first one, so it will be launched after the first one has completed. This is very similar to how stages in Spark work. (Note that strictly speaking, every stage has to start from a Dataset too. In this case the input nodes depend on Datasets that are pre-created in S3 or Disk, and are abbreviated in this graph.)</p>
+<p>Similarly to an RDD, Quokka represents a Dataset as a collection of immutable objects, and some associated metadata on those objects, which is itself an immutable object. The objects are all stored on a shared-memory object store with persistence (currently RocksDB). </p>
+<p>When you use <code>task_graph.add_blocking_task_node</code> in Quokka, a Dataset object will be returned. You can use this Dataset object in downstream operators. Quokka guarantees that by the time the downstream operators execute, all the Datasets that they depend on would have been materialized in this object store. </p>
+<p>The stock Dataset class in Quokka exposes some convenience methods such as an iterator to iterate through the objects. The user could also interact directly with the object store after looking up metadata from the Dataset object. There are more specialized Dataset class implementations in Quokka like KVDataset or RangeDataset which corresponds to hash-based partitioning or range-based partitioning of objects that expose more methods. The user could also implement a custom Dataset class that descends from Dataset with even more methods.</p>
+<p>It is important to ensure that when using a Dataset in a downstream operator that also takes streaming inputs, the confluence property is respected. Unfortunately, Quokka currently does not enforce this and it's possible for you to mess this up when writing your code. Although it's not that easy to mess up, since you cannot change the objects you read from the Dataset. </p>
+<p>A downstream operator could treat the Dataset as a stream by simply invoking the iterator to iterate through the objects in the Dataset. However, for many downstream operations, it might be desirable to explicitly convert a Dataset into a Stream again (e.g. to use stock operators that only have stream-based implementations). You can do that by using the specialized task node <code>add_input_dataset</code>. Internally, this task node just calls the iterator repeatedly and produce a stream of batches corresponding to the objects in the Dataset. </p>
 <h3 id="fault-tolerance-future-work">Fault tolerance (future work)</h3>
 <p>The current theory is a bit complicated. I am still thinking through how this should work exactly, but the hopefully the gist gets through.</p>
 <p>Given our group of confluent stateful operators, how do we achieve fault tolerance? A Quokka application can be thought of as a DAG, where each node corresponds to a channel, from one of the task nodes. Each node is assigned to a physical hardware instance. Quokka is designed to expect many nodes to be assigned to one physical instance. For example, let's imagine the following case, where the nodes circled belongs to machine A and the rest belong to machine B, and nodes 1 and 2 are channels of the input node. 3, 4 and 5 are non-blocking operators, 6 and 7 are blocking operators. </p>
@@ -183,6 +208,21 @@
 <p>The stragglers introduced by fault recovery can be mediated in this fashion. Node 1 and 3 will finish before node 2 and 4/5, creating less resource usage on machine B. The system will then try to move one of node 4/5 onto machine B. </p>
 <h4 id="manual-autoscaling-using-combiner-functions">Manual autoscaling using combiner functions</h4>
 <p>To be written.</p>
+<h2 id="example-applications">Example Applications</h2>
+<h3 id="tpc-h-query-12">TPC-H query 12</h3>
+<h3 id="pagerank">Pagerank</h3>
+<p><img alt="pagerank" src="../Pagerank.png" /></p>
+<p>Let's talk about how PageRank works in the Quokka programming model. </p>
+<pre><code class="language-python">    state0 = set()
+    state1 = set()
+    for each input:
+        if input from stream0:
+            state0.add(input)
+            emit set(input.join(i) for i in state1)
+        else:
+            state1.add(input)
+            emit set(i.join(input) for i in state0)
+</code></pre>
 <h2 id="taskgraph-api">TaskGraph API</h2>
 <h4 id="new_input_csv-bucket-key-names-parallelism-iplocalhostbatch_funcnone-sep-dependents-stride-64-1024-1024">new_input_csv (bucket, key, names, parallelism, ip='localhost',batch_func=None, sep = ",", dependents = [], stride = 64 * 1024 * 1024)</h4>
 <p>Currently, new_input_csv only supports reading a CSV in batches from an AWS S3 bucket.</p>
