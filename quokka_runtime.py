@@ -48,6 +48,12 @@ class Dataset:
 
     def is_complete(self):
         return self.done
+    
+    # debugging method
+    def print_all(self):
+        for channel in self.objects:
+            for object in self.objects[channel]:
+                print(ray.get(object))
 
 
 class TaskNode:
@@ -539,7 +545,9 @@ class TaskGraph:
             mapping[source] = key
             source_parallelism[source] = len(self.node_channel_to_ip[source]) # this only cares about how many channels the source has
         
-        output_dataset = Dataset.remote(len(channel_to_ip))
+        # the datasets will all be managed on the head node. Note that they are not in charge of actually storing the objects, they just 
+        # track the ids.
+        output_dataset = Dataset.options(resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(len(channel_to_ip))
 
         tasknode = []
         for ip in ip_to_num_channel:
