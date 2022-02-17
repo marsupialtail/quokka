@@ -279,8 +279,10 @@ class InputNode(TaskNode):
         for batch in input_generator:
             
             if self.batch_func is not None:
-                #print(batch.l_shipdate)
-                self.push(self.batch_func(batch))
+                print("batch func start",time.time())
+                result = self.batch_func(batch)
+                print("batch func end",time.time())
+                self.push(result)
             else:
                 self.push(batch)
 

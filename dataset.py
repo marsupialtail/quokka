@@ -32,7 +32,9 @@ class InputMultiParquetDataset:
         assert self.num_mappers is not None
         curr_pos = mapper_id 
         while curr_pos < len(self.files):
+            print("starting reading ",time.time())
             a = pq.read_table("s3://" + self.bucket + "/" + self.files[curr_pos],columns=self.columns, filters = self.filters).to_pandas()
+            print("ending reading ",time.time())
             curr_pos += self.num_mappers
             yield a
 

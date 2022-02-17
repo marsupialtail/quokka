@@ -1,3 +1,4 @@
+import datetime
 import pandas as pd
 import numpy as np
 import dask.dataframe as dd
@@ -75,6 +76,20 @@ def do_6(size):
     print(filtered_df.product.sum().compute())
     print(time.time() - start)
 
+def do_6_parquet(size):
+
+    start = time.time()
+    if size == "small":
+        df = dd.read_parquet("s3://tpc-h-small/parquet/lineitem")
+    elif size == "big":
+        df = dd.read_csv("s3://tpc-h-csv/lineitem/lineitem.tbl.1",sep="|", header = 0)
+    else:
+        raise Exception
+    filtered_df = df.loc[(df.l_shipdate > pd.to_datetime(datetime.date(1994,1,1))) & (df.l_discount >= 0.05) & (df.l_discount <= 0.07) & (df.l_quantity < 24)]
+    filtered_df['product'] = filtered_df.l_extendedprice * filtered_df.l_discount
+    print(filtered_df.product.sum().compute())
+    print(time.time() - start)
+
 def do_12(size):
 
     start = time.time()
@@ -116,7 +131,7 @@ def do_matmul(size):
 if int(sys.argv[1]) == 3:
     do_3(sys.argv[2])
 if int(sys.argv[1]) == 6:
-    do_6(sys.argv[2])
+    do_6_parquet(sys.argv[2])
 if int(sys.argv[1]) == 12:
     do_12(sys.argv[2])
 if int(sys.argv[1]) == 0:
