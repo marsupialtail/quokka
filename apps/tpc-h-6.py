@@ -36,8 +36,8 @@ elif sys.argv[2] == "parquet":
 
 
 agg_executor = AggExecutor()
-agged = task_graph.new_stateless_node({0:lineitem}, agg_executor, {'localhost':1}, {0:None})
-
+agged = task_graph.new_blocking_node({0:lineitem},None, agg_executor, {'localhost':1}, {0:None})
+print(agged)
 task_graph.initialize()
 
 start = time.time()

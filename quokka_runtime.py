@@ -19,9 +19,9 @@ class Dataset:
 
     def __init__(self, num_channels) -> None:
         self.num_channels = num_channels
-        self.objects = {i:[] for i in self.num_channels}
+        self.objects = {i:[] for i in range(self.num_channels)}
         self.metadata = {}
-        self.remaining_channels = {i for i in self.num_channels}
+        self.remaining_channels = {i for i in range(self.num_channels)}
         self.done = False
 
     # only one person will ever call this, and that is the master node
@@ -145,6 +145,7 @@ class TaskNode:
                     my_batches[stream_id].append(pickle.loads(first))
                 else:
                     my_batches[stream_id] = [pickle.loads(first)]
+        return my_batches
 
     def push(self, data):
 
@@ -238,7 +239,7 @@ class NonBlockingTaskNode(TaskNode):
 
         while len(self.input_streams) > 0:
 
-            my_batches = self.get_batches(self, mailbox, mailbox_id, p, my_id)
+            my_batches = self.get_batches(mailbox, mailbox_id, p, my_id)
 
             for stream_id in my_batches:
 
@@ -312,7 +313,7 @@ class BlockingTaskNode(TaskNode):
 
         while len(self.input_streams) > 0:
 
-            my_batches = self.get_batches(self, mailbox, mailbox_id, p, my_id)
+            my_batches = self.get_batches( mailbox, mailbox_id, p, my_id)
 
             for stream_id in my_batches:
                 results = self.functionObject.execute(my_batches[stream_id], self.physical_to_logical_stream_mapping[stream_id], my_id)
