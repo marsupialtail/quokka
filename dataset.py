@@ -22,7 +22,8 @@ class InputSingleParquetDataset:
         assert self.num_mappers is not None
         curr_row_group = mapper_id 
         while curr_row_group < len(self.num_row_groups):
-            a = self.parquet_file.read_row_group(curr_row_group, columns = self.columns)
+            a = self.parquet_file.read_row_group(curr_row_group, columns = self.columns).to_pandas()
+            yield a
 
 # use this if you have a lot of small parquet files
 class InputMultiParquetDataset:

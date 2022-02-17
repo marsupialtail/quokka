@@ -4,17 +4,19 @@ import time
 from state import PersistentStateVariable
 WRITE_MEM_LIMIT = 16 * 1024 * 1024
 
-class StatelessExecutor:
+class Executor:
     def __init__(self) -> None:
         raise NotImplementedError
+    def initialize(datasets):
+        pass
     def set_early_termination(self):
         self.early_termination = True
     def execute(self,batch,stream_id, executor_id):
         raise NotImplementedError
     def done(self,executor_id):
-        raise NotImplementedError
+        raise NotImplementedError    
 
-class OutputCSVExecutor(StatelessExecutor):
+class OutputCSVExecutor(Executor):
     def __init__(self, parallelism, bucket, prefix) -> None:
         self.num = 0
         self.parallelism = parallelism
@@ -38,7 +40,7 @@ class OutputCSVExecutor(StatelessExecutor):
         pd.concat(self.dfs).to_csv(name)
         print("done")
 
-class JoinExecutor(StatelessExecutor):
+class JoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
     def __init__(self, on = None, left_on = None, right_on = None, left_primary = False, right_primary = False, batch_func = None):
@@ -108,7 +110,7 @@ class JoinExecutor(StatelessExecutor):
     def done(self,executor_id):
         print("done join ", executor_id)
 
-class OOCJoinExecutor(StatelessExecutor):
+class OOCJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
     def __init__(self, on = None, left_on = None, right_on = None, left_primary = False, right_primary = False, batch_func = None):
@@ -150,7 +152,7 @@ class OOCJoinExecutor(StatelessExecutor):
     def done(self,executor_id):
         print("done join ", executor_id)
 
-class AggExecutor(StatelessExecutor):
+class AggExecutor(Executor):
     def __init__(self, fill_value = 0, final_func = None):
         self.state = None
         self.fill_value = fill_value
@@ -167,11 +169,11 @@ class AggExecutor(StatelessExecutor):
     
     def done(self,executor_id):
         if self.final_func:
-            print(self.final_func(self.state))
+            return self.final_func(self.state)
         else:
-            print(self.state)
+            return self.state
 
-class LimitExecutor(StatelessExecutor):
+class LimitExecutor(Executor):
     def __init__(self, limit) -> None:
         self.limit = limit
         self.state = []
@@ -187,7 +189,7 @@ class LimitExecutor(StatelessExecutor):
     def done(self):
         print(pd.concat(self.state)[:self.limit])
 
-class CountExecutor(StatelessExecutor):
+class CountExecutor(Executor):
     def __init__(self) -> None:
         self.state = 0
 
@@ -197,6 +199,6 @@ class CountExecutor(StatelessExecutor):
     def done(self, executor_id):
         print("COUNT:", self.state)
 
-class MergeSortedExecutor(StatelessExecutor):
+class MergeSortedExecutor(Executor):
     def __init__(self) -> None:
         self.state = None
