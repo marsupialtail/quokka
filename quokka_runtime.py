@@ -53,7 +53,9 @@ class Dataset:
     def print_all(self):
         for channel in self.objects:
             for object in self.objects[channel]:
-                print(ray.get(object))
+                print(object)
+                r = redis.Redis(host=object[0], port=6800, db=0)
+                print(r.get(object[1]))
 
 
 class TaskNode:
@@ -317,6 +319,8 @@ class BlockingTaskNode(TaskNode):
         mailbox = deque()
         mailbox_id = deque()
 
+        self.object_count = 0
+
         while len(self.input_streams) > 0:
 
             my_batches = self.get_batches( mailbox, mailbox_id, p, my_id)
@@ -329,13 +333,19 @@ class BlockingTaskNode(TaskNode):
                 if results is not None and len(results) > 0:
                     assert type(results) == list
                     for result in results:
-                        self.output_dataset.added_object.remote(my_id, ray.put(result))                    
+                        key = str(self.id) + "-" + str(my_id) + "-" + str(self.object_count)
+                        self.object_count += 1
+                        self.r.set(key, pickle.dumps(result))
+                        self.output_dataset.added_object.remote(my_id, (ray.util.get_node_ip_address(), key))                    
                 else:
                     pass
     
         obj_done =  self.functionObject.done(my_id) 
         if obj_done is not None:
-            self.output_dataset.added_object.remote(my_id, ray.put(obj_done))
+            key = str(self.id) + "-" + str(my_id) + "-" + str(self.object_count)
+            self.object_count += 1
+            self.r.set(key, pickle.dumps(obj_done))
+            self.output_dataset.added_object.remote(my_id, (ray.util.get_node_ip_address(), key))
         
         self.output_dataset.done_channel.remote(my_id)
         self.done()
