@@ -1,35 +1,54 @@
 from collections import deque
 from dataset import * 
-from sql import JoinExecutor, OutputCSVExecutor
 import redis
 import pyarrow as pa
 import numpy as np
 import pandas as pd
-#from multiprocessing import Process, Value
 import time
 import ray
-import os
+
 import pickle
-#parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-#os.environ["PYTHONPATH"] = parent_dir + ":" + os.environ.get("PYTHONPATH", "")
+
 #ray.init(ignore_reinit_error=True) # do this locally
 ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
 #ray.timeline("profile.json")
 
-'''
-
-In this system, there are two things. The first are task nodes and the second are streams. They can be defined more or less
-indepednently from one another. The Task
-
-'''
-
-'''
-Since each stream can have only one input, we are just going to use the source node id as the stream id. All ids are thus unique. 
-'''
-
-# TO DO -- address DeprecationWarning
-#context = pa.default_serialization_context()
     
+@ray.remote
+class Dataset:
+
+    def __init__(self, num_channels) -> None:
+        self.num_channels = num_channels
+        self.objects = {i:[] for i in self.num_channels}
+        self.metadata = {}
+        self.remaining_channels = {i for i in self.num_channels}
+        self.done = False
+
+    # only one person will ever call this, and that is the master node
+    # def change_num_channels(self, num_channels):
+    #     if num_channels > self.num_channels:
+    #         for i in range(self.num_channels, num_channels):
+    #             self.objects[i] = {}
+    #     self.num_channels = num_channels
+
+    def added_object(self, channel, object_handle):
+        if channel not in self.objects or channel not in self.remaining_channels:
+            raise Exception
+        self.objects[channel].append(object_handle)
+    
+    def add_metadata(self, channel, object_handle):
+        if channel in self.metadata or channel not in self.remaining_channels:
+            raise Exception("Cannot add metadata for the same channel twice")
+        self.metadata[channel] = object_handle
+    
+    def done_channel(self, channel):
+        self.remaining_channels.remove(channel)
+        if len(self.remaining_channels) == 0:
+            self.done = True
+
+    def is_complete(self):
+        return self.done
+
 
 class TaskNode:
 
@@ -98,6 +117,35 @@ class TaskNode:
         else:
             return False
 
+    def get_batches(self, mailbox, mailbox_id, p, my_id):
+        while True:
+            message = p.get_message()
+            if message is None:
+                break
+            if message['channel'].decode('utf-8') == "mailbox-" + str(self.id) + "-" + str(my_id):
+                mailbox.append(message['data'])
+            elif message['channel'].decode('utf-8') ==  "mailbox-id-" + str(self.id) + "-" + str(my_id):
+                mailbox_id.append(int(message['data']))
+        
+        my_batches = {}
+        while len(mailbox) > 0 and len(mailbox_id) > 0:
+            first = mailbox.popleft()
+            stream_id = mailbox_id.popleft()
+
+            if len(first) < 10 and first.decode("utf-8") == "done":
+
+                # the responsibility for checking how many executors this input stream has is now resting on the consumer.
+
+                self.source_parallelism[stream_id] -= 1
+                if self.source_parallelism[stream_id] == 0:
+                    self.input_streams.pop(self.physical_to_logical_stream_mapping[stream_id])
+                    print("done", self.physical_to_logical_stream_mapping[stream_id])
+            else:
+                if stream_id in my_batches:
+                    my_batches[stream_id].append(pickle.loads(first))
+                else:
+                    my_batches[stream_id] = [pickle.loads(first)]
+
     def push(self, data):
 
         print("stream psuh start",time.time())
@@ -152,17 +200,19 @@ class TaskNode:
                         raise Exception
                     self.strikes.remove((target, channel))
         return True
+
 @ray.remote
-class StatelessTaskNode(TaskNode):
+class NonBlockingTaskNode(TaskNode):
 
     # this is for one of the parallel threads
 
-    def __init__(self, streams, functionObject, id, channel_to_ip, mapping, source_parallelism, ip) -> None:
+    def __init__(self, streams, datasets, functionObject, id, channel_to_ip, mapping, source_parallelism, ip) -> None:
 
         super().__init__(id, channel_to_ip)
 
         self.functionObject = functionObject
         self.input_streams = streams
+        self.datasets = datasets
         
         # this maps what the system's stream_id is to what the user called the stream when they created the task node
         self.physical_to_logical_stream_mapping = mapping
@@ -171,11 +221,11 @@ class StatelessTaskNode(TaskNode):
         self.ip = ip
 
     def initialize(self):
-        pass
+        if self.datasets is not None:
+            self.functionObject.initialize(self.datasets)
 
     def execute(self, my_id):
 
-        # this needs to change
         print("task start",time.time())
 
         p = self.r.pubsub(ignore_subscribe_messages=True)
@@ -188,33 +238,7 @@ class StatelessTaskNode(TaskNode):
 
         while len(self.input_streams) > 0:
 
-            while True:
-                message = p.get_message()
-                if message is None:
-                    break
-                if message['channel'].decode('utf-8') == "mailbox-" + str(self.id) + "-" + str(my_id):
-                    mailbox.append(message['data'])
-                elif message['channel'].decode('utf-8') ==  "mailbox-id-" + str(self.id) + "-" + str(my_id):
-                    mailbox_id.append(int(message['data']))
-            
-            my_batches = {}
-            while len(mailbox) > 0 and len(mailbox_id) > 0:
-                first = mailbox.popleft()
-                stream_id = mailbox_id.popleft()
-
-                if len(first) < 10 and first.decode("utf-8") == "done":
-
-                    # the responsibility for checking how many executors this input stream has is now resting on the consumer.
-
-                    self.source_parallelism[stream_id] -= 1
-                    if self.source_parallelism[stream_id] == 0:
-                        self.input_streams.pop(self.physical_to_logical_stream_mapping[stream_id])
-                        print("done", self.physical_to_logical_stream_mapping[stream_id])
-                else:
-                    if stream_id in my_batches:
-                        my_batches[stream_id].append(pickle.loads(first))
-                    else:
-                        my_batches[stream_id] = [pickle.loads(first)]
+            my_batches = self.get_batches(self, mailbox, mailbox_id, p, my_id)
 
             for stream_id in my_batches:
 
@@ -226,7 +250,8 @@ class StatelessTaskNode(TaskNode):
                 # target list is bigger than 0. So you had somebody to send to but now you don't
 
                 if results is not None and len(self.targets) > 0:
-                    break_out = False                        
+                    break_out = False
+                    assert type(results) == list                    
                     for result in results:
                         if self.push(result) is False:
                             break_out = True
@@ -243,7 +268,72 @@ class StatelessTaskNode(TaskNode):
         self.done()
         self.r.publish("node-done-"+str(self.id),str(my_id))
         print("task end",time.time())
+
+@ray.remote
+class BlockingTaskNode(TaskNode):
+
+    # this is for one of the parallel threads
+
+    def __init__(self, streams, datasets, output_dataset, functionObject, id, channel_to_ip, mapping, source_parallelism, ip) -> None:
+
+        super().__init__(id, channel_to_ip)
+
+        self.functionObject = functionObject
+        self.input_streams = streams
+        self.datasets = datasets
+        self.output_dataset = output_dataset
+        
+        # this maps what the system's stream_id is to what the user called the stream when they created the task node
+        self.physical_to_logical_stream_mapping = mapping
+        self.source_parallelism = source_parallelism
+        
+        self.ip = ip
+
+    def initialize(self):
+        if self.datasets is not None:
+            self.functionObject.initialize(self.datasets)
     
+    # explicit override with error. Makes no sense to append to targets for a blocking node. Need to use the dataset instead.
+    def append_to_targets(self,tup):
+        raise Exception("Trying to stream from a blocking node")
+
+    def execute(self, my_id):
+
+        # this needs to change
+        print("task start",time.time())
+
+        p = self.r.pubsub(ignore_subscribe_messages=True)
+        p.subscribe("mailbox-" + str(self.id) + "-" + str(my_id), "mailbox-id-" + str(self.id) + "-" + str(my_id))
+
+        assert my_id in self.channel_to_ip
+
+        mailbox = deque()
+        mailbox_id = deque()
+
+        while len(self.input_streams) > 0:
+
+            my_batches = self.get_batches(self, mailbox, mailbox_id, p, my_id)
+
+            for stream_id in my_batches:
+                results = self.functionObject.execute(my_batches[stream_id], self.physical_to_logical_stream_mapping[stream_id], my_id)
+                if hasattr(self.functionObject, 'early_termination') and self.functionObject.early_termination: 
+                    break
+
+                if results is not None and len(results) > 0:
+                    assert type(results) == list
+                    for result in results:
+                        self.output_dataset.added_object.remote(my_id, ray.put(result))                    
+                else:
+                    pass
+    
+        obj_done =  self.functionObject.done(my_id) 
+        if obj_done is not None:
+            self.output_dataset.added_object.remote(my_id, ray.put(obj_done))
+        
+        self.output_dataset.done_channel.remote(my_id)
+        self.done()
+        self.r.publish("node-done-"+str(self.id),str(my_id))
+        print("task end",time.time())
 
 class InputNode(TaskNode):
 
@@ -334,6 +424,7 @@ class TaskGraph:
         self.nodes = {}
         self.node_channel_to_ip = {}
         self.node_ips = {}
+        self.datasets = {}
     
     def flip_ip_channels(self, ip_to_num_channel):
         ips = list(ip_to_num_channel.keys())
@@ -399,11 +490,11 @@ class TaskGraph:
         self.current_node += 1
         return self.current_node - 1
     
-    def new_stateless_node(self, streams, functionObject, ip_to_num_channel, partition_key):
+    def new_non_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key):
         
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
         # this is the mapping of physical node id to the key the user called in streams. i.e. if you made a node, task graph assigns it an internal id #
-        # then if you set this node as the input of this new stateless node and do streams = {0: node}, then mapping will be {0: the internal id of that node}
+        # then if you set this node as the input of this new non blocking task node and do streams = {0: node}, then mapping will be {0: the internal id of that node}
         mapping = {}
         # this is a dictionary of stream_id to the number of channels in that stream
         source_parallelism = {}
@@ -420,17 +511,49 @@ class TaskGraph:
         tasknode = []
         for ip in ip_to_num_channel:
             if ip != 'localhost':
-                tasknode.extend([StatelessTaskNode.options(resources={"node:" + ip : 0.01}).remote(streams, functionObject, self.current_node, 
+                tasknode.extend([NonBlockingTaskNode.options(resources={"node:" + ip : 0.01}).remote(streams, datasets, functionObject, self.current_node, 
                 channel_to_ip, mapping, source_parallelism, ip) for i in range(ip_to_num_channel[ip])])
             else:
-                tasknode.extend([StatelessTaskNode.options(resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(streams, 
-                functionObject, self.current_node, channel_to_ip, mapping, source_parallelism, ip) for i in range(ip_to_num_channel[ip])])
-        
+                tasknode.extend([NonBlockingTaskNode.options(resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(streams, 
+                datasets, functionObject, self.current_node, channel_to_ip, mapping, source_parallelism, ip) for i in range(ip_to_num_channel[ip])])
+
         self.nodes[self.current_node] = tasknode
         self.node_channel_to_ip[self.current_node] = channel_to_ip
         self.node_ips[self.current_node] = ip
         self.current_node += 1
         return self.current_node - 1
+
+    def new_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key):
+        
+        channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
+        mapping = {}
+        source_parallelism = {}
+        for key in streams:
+            source = streams[key]
+            if source not in self.nodes:
+                raise Exception("stream source not registered")
+            import sys
+            print(sys.path)
+            ray.get([i.append_to_targets.remote((self.current_node, channel_to_ip, partition_key[key])) for i in self.nodes[source]])
+            mapping[source] = key
+            source_parallelism[source] = len(self.node_channel_to_ip[source]) # this only cares about how many channels the source has
+        
+        output_dataset = Dataset.remote(len(channel_to_ip))
+
+        tasknode = []
+        for ip in ip_to_num_channel:
+            if ip != 'localhost':
+                tasknode.extend([BlockingTaskNode.options(resources={"node:" + ip : 0.01}).remote(streams, datasets, output_dataset, functionObject, self.current_node, 
+                channel_to_ip, mapping, source_parallelism, ip) for i in range(ip_to_num_channel[ip])])
+            else:
+                tasknode.extend([BlockingTaskNode.options(resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(streams, 
+                datasets, output_dataset, functionObject, self.current_node, channel_to_ip, mapping, source_parallelism, ip) for i in range(ip_to_num_channel[ip])])
+        
+        self.nodes[self.current_node] = tasknode
+        self.node_channel_to_ip[self.current_node] = channel_to_ip
+        self.node_ips[self.current_node] = ip
+        self.current_node += 1
+        return output_dataset
 
     
     def initialize(self):
@@ -445,19 +568,3 @@ class TaskGraph:
                 replica = node[i]
                 processes.append(replica.execute.remote(i))
         ray.get(processes)
-'''
-task_graph = TaskGraph()
-
-quotes = task_graph.new_input_csv("yugan","a-big.csv",["key"] + ["avalue" + str(i) for i in range(100)],2)
-trades = task_graph.new_input_csv("yugan","b-big.csv",["key"] + ["bvalue" + str(i) for i in range(100)],2)
-join_executor = JoinExecutor("key")
-output_stream = task_graph.new_stateless_node({0:quotes,1:trades},join_executor,4)
-#output_executor = OutputCSVExecutor(4,"yugan","result")
-#wrote = task_graph.new_stateless_node({0:output_stream},output_executor,4)
-
-task_graph.initialize()
-
-start = time.time()
-task_graph.run()
-print("total time ", time.time() - start)
-'''

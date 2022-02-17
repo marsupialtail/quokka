@@ -3,7 +3,26 @@ import pyarrow.parquet as pq
 import pandas as pd
 from io import BytesIO, StringIO
 import boto3
+import s3fs
 import time
+
+class InputSingleParquetDataset:
+
+    def __init__(self, bucket, filename, columns = None) -> None:
+        s3 = s3fs.S3FileSystem()
+        self.parquet_file = pq.ParquetFile(s3.open(bucket + filename, "rb"))
+        self.num_row_groups = self.parquet_file.num_row_groups
+        self.num_mappers = None
+        self.columns = columns
+
+    def set_num_mappers(self, num_mappers):
+        self.num_mappers = num_mappers
+    
+    def get_next_batch(self, mapper_id):
+        assert self.num_mappers is not None
+        curr_row_group = mapper_id 
+        while curr_row_group < len(self.num_row_groups):
+            a = self.parquet_file.read_row_group(curr_row_group, columns = self.columns)
 
 # use this if you have a lot of small parquet files
 class InputMultiParquetDataset:
@@ -12,7 +31,7 @@ class InputMultiParquetDataset:
     # but when you can't it seems like you still read in the entire thing anyways
     # might as well do the filtering at the Pandas step. Also you need to map filters to the DNF form of tuples, which could be 
     # an interesting project in itself. Time for an intern?
-    
+
     def __init__(self, bucket, prefix, columns = None, filters = None) -> None:
         self.s3 = boto3.client('s3')
         self.bucket = bucket
