@@ -1,0 +1,1 @@
+pd.read_csv("bump.mtx", sep = " ",header=None, names = ["x","y"])

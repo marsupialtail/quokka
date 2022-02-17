@@ -187,7 +187,7 @@ class LimitExecutor(Executor):
             self.set_early_termination()
     
     def done(self):
-        print(pd.concat(self.state)[:self.limit])
+        return pd.concat(self.state)[:self.limit]
 
 class CountExecutor(Executor):
     def __init__(self) -> None:

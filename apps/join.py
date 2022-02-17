@@ -15,9 +15,9 @@ quotes = task_graph.new_input_csv("yugan","a-big.csv",["key"] + ["avalue" + str(
 trades = task_graph.new_input_csv("yugan","b-big.csv",["key"] + ["bvalue" + str(i) for i in range(100)],{'localhost':2})
 join_executor = OOCJoinExecutor(on="key")
 #output_stream = task_graph.new_stateless_node({0:quotes,1:trades},join_executor,4,ip="172.31.48.233")
-output_stream = task_graph.new_stateless_node({0:quotes,1:trades},join_executor,{'localhost':4},{0:"key", 1:"key"})
+output_stream = task_graph.new_non_blocking_node({0:quotes,1:trades},None, join_executor,{'localhost':4},{0:"key", 1:"key"})
 count_executor = CountExecutor()
-counted = task_graph.new_stateless_node({0:output_stream}, count_executor, {'localhost':1}, {0:None})
+counted = task_graph.new_non_blocking_node({0:output_stream}, None, count_executor, {'localhost':1}, {0:None})
 #output_executor = OutputCSVExecutor(4,"yugan","result")
 #wrote = task_graph.new_stateless_node({0:output_stream},output_executor,4)
 

@@ -55,7 +55,7 @@ temp = task_graph.new_non_blocking_node({0:customers,1:orders},None, join_execut
 joined = task_graph.new_non_blocking_node({0:temp, 1: lineitem},None, join_executor2, {'localhost':2, '172.31.16.185':2}, {0: "o_orderkey", 1:"l_orderkey"})
 
 agg_executor = AggExecutor(final_func=final_func)
-agged = task_graph.new_non_blocking_node({0:joined}, None, agg_executor, {'localhost':1}, {0:None})
+agged = task_graph.new_blocking_node({0:joined}, None, agg_executor, {'localhost':1}, {0:None})
 #output_executor = OutputCSVExecutor(4,"yugan","result")
 #wrote = task_graph.new_non_blocking_node({0:output_stream}, None, output_executor,4)
 

@@ -53,9 +53,16 @@ class Dataset:
     def print_all(self):
         for channel in self.objects:
             for object in self.objects[channel]:
-                print(object)
                 r = redis.Redis(host=object[0], port=6800, db=0)
-                print(r.get(object[1]))
+                print(pickle.loads(r.get(object[1])))
+    
+    def to_pandas(self):
+        dfs = []
+        for channel in self.objects:
+            for object in self.objects[channel]:
+                r = redis.Redis(host=object[0], port=6800, db=0)
+                dfs.append(pickle.loads(r.get(object[1])))
+        return pd.concat(dfs)
 
 
 class TaskNode:

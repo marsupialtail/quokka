@@ -37,10 +37,10 @@ elif sys.argv[2] == "parquet":
 
 agg_executor = AggExecutor()
 agged = task_graph.new_blocking_node({0:lineitem},None, agg_executor, {'localhost':1}, {0:None})
-print(agged)
 task_graph.initialize()
 
 start = time.time()
 task_graph.run()
 print("total time ", time.time() - start)
+agged.print_all.remote()
 #import pdb;pdb.set_trace()
