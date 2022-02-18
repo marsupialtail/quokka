@@ -498,7 +498,7 @@ class TaskGraph:
 
         # this will assert that the dataset is complete. You can only call this API on a completed dataset
         objects = ray.get(dataset.get_objects.remote())
-
+        print(objects)
         ip_to_channel_sets = {}
         for channel in channel_to_ip:
             ip = channel_to_ip[channel]

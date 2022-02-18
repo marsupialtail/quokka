@@ -29,7 +29,8 @@ task_graph2 = TaskGraph()
 count_executor = CountExecutor()
 joined_stream = task_graph2.new_input_redis(output,{'localhost':4})
 final = task_graph2.new_blocking_node({0:joined_stream}, None, count_executor, {'localhost':4}, {0:'key'})
-
+task_graph2.initialize()
+task_graph2.run()
 #print(final.to_pandas.remote())
 
 #import pdb;pdb.set_trace()
