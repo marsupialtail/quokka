@@ -457,7 +457,11 @@ class InputRedisDatasetNode(InputNode):
         self.batch_func = batch_func
     
     def initialize(self):
-        self.accessor = RedisObjectsDataset(self.channel_objects)
+        ip_set = set()
+        for channel in self.channel_objects:
+            for object in self.channel_objects[channel]:
+                ip_set.add(object[0])
+        self.accessor = RedisObjectsDataset(self.channel_objects, ip_set)
 
 class TaskGraph:
     # this keeps the logical dependency DAG between tasks 
@@ -493,7 +497,8 @@ class TaskGraph:
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
 
         # this will assert that the dataset is complete. You can only call this API on a completed dataset
-        objects = dataset.get_objects.remote()
+        objects = ray.get(dataset.get_objects.remote())
+
         ip_to_channel_sets = {}
         for channel in channel_to_ip:
             ip = channel_to_ip[channel]
@@ -513,7 +518,7 @@ class TaskGraph:
         remote_read_sizes = {channel: 0 for channel in channel_to_ip}
 
         for writer_channel in objects:
-            for object in objects:
+            for object in objects[writer_channel]:
                 ip, key, size = object
                 # the object is on a machine that is not part of this task node, will have to remote fetch
                 if ip not in ip_to_channel_sets:
