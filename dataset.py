@@ -1,3 +1,4 @@
+import pickle
 import pyarrow.csv as csv
 import pyarrow.parquet as pq
 import pandas as pd
@@ -23,7 +24,8 @@ class RedisObjectsDataset:
         if mapper_id not in self.channel_objects:
             raise Exception("ERROR: I dont know about where this channel is. Autoscaling here not supported yet. Will it ever be?")
         for object in self.channel_objects[mapper_id]:
-            yield self.rs[object[0]].get(object[1])
+            bump =  self.rs[object[0]].get(object[1])
+            yield pickle.loads(bump)
 
 
 class InputSingleParquetDataset:
