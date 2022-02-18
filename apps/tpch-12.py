@@ -47,4 +47,7 @@ task_graph.initialize()
 start = time.time()
 task_graph.run()
 print("total time ", time.time() - start)
+
+print(agged.to_pandas.remote())
+
 #import pdb;pdb.set_trace()

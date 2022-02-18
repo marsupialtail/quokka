@@ -1,6 +1,7 @@
 from collections import deque
 from dataset import * 
 import redis
+import sys
 import pyarrow as pa
 import numpy as np
 import pandas as pd
@@ -19,7 +20,7 @@ class Dataset:
 
     def __init__(self, num_channels) -> None:
         self.num_channels = num_channels
-        self.objects = {i:[] for i in range(self.num_channels)}
+        self.objects = {i: [] for i in range(self.num_channels)}
         self.metadata = {}
         self.remaining_channels = {i for i in range(self.num_channels)}
         self.done = False
@@ -32,6 +33,7 @@ class Dataset:
     #     self.num_channels = num_channels
 
     def added_object(self, channel, object_handle):
+
         if channel not in self.objects or channel not in self.remaining_channels:
             raise Exception
         self.objects[channel].append(object_handle)
@@ -48,7 +50,7 @@ class Dataset:
 
     def is_complete(self):
         return self.done
-    
+
     # debugging method
     def print_all(self):
         for channel in self.objects:
@@ -56,7 +58,12 @@ class Dataset:
                 r = redis.Redis(host=object[0], port=6800, db=0)
                 print(pickle.loads(r.get(object[1])))
     
+    def get_objects(self):
+        assert self.is_complete()
+        return self.objects
+
     def to_pandas(self):
+        assert self.is_complete()
         dfs = []
         for channel in self.objects:
             for object in self.objects[channel]:
@@ -343,7 +350,7 @@ class BlockingTaskNode(TaskNode):
                         key = str(self.id) + "-" + str(my_id) + "-" + str(self.object_count)
                         self.object_count += 1
                         self.r.set(key, pickle.dumps(result))
-                        self.output_dataset.added_object.remote(my_id, (ray.util.get_node_ip_address(), key))                    
+                        self.output_dataset.added_object.remote(my_id, (ray.util.get_node_ip_address(), key, sys.getsizeof(result)))                    
                 else:
                     pass
     
@@ -352,7 +359,7 @@ class BlockingTaskNode(TaskNode):
             key = str(self.id) + "-" + str(my_id) + "-" + str(self.object_count)
             self.object_count += 1
             self.r.set(key, pickle.dumps(obj_done))
-            self.output_dataset.added_object.remote(my_id, (ray.util.get_node_ip_address(), key))
+            self.output_dataset.added_object.remote(my_id, (ray.util.get_node_ip_address(), key, sys.getsizeof(result)))
         
         self.output_dataset.done_channel.remote(my_id)
         self.done()
@@ -441,6 +448,17 @@ class InputS3MultiParquetNode(InputNode):
         self.accessor = InputMultiParquetDataset(self.bucket, self.key, columns = self.columns)
         self.accessor.set_num_mappers(len(self.channel_to_ip))
 
+@ray.remote
+class InputRedisDatasetNode(InputNode):
+
+    def __init__(self, id, channel_objects, channel_to_ip, batch_func=None, dependent_map={}):
+        super().__init__(id, channel_to_ip, dependent_map)
+        self.channel_objects = channel_objects
+        self.batch_func = batch_func
+    
+    def initialize(self):
+        self.accessor = RedisObjectsDataset(self.channel_objects)
+
 class TaskGraph:
     # this keeps the logical dependency DAG between tasks 
     def __init__(self) -> None:
@@ -468,6 +486,61 @@ class TaskGraph:
             for node in dependents:
                 dependent_map[node] = (self.node_ips[node], len(self.node_channel_to_ip[node]))
         return dependent_map
+
+    def new_input_redis(self, dataset, ip_to_num_channel, batch_func=None, dependents = []):
+        
+        dependent_map = self.return_dependent_map(dependents)
+        channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
+
+        # this will assert that the dataset is complete. You can only call this API on a completed dataset
+        objects = dataset.get_objects.remote()
+        ip_to_channel_sets = {}
+        for channel in channel_to_ip:
+            ip = channel_to_ip[channel]
+            if ip not in ip_to_channel_sets:
+                ip_to_channel_sets[ip] = {channel}
+            else:
+                ip_to_channel_sets[ip].add(channel)
+
+        # current heuristics for scheduling objects to reader channels:
+        # if an object can be streamed out locally from someone, always do that
+        # try to balance the amounts of things that people have to stream out locally
+        # if an object cannot be streamed out locally, assign it to anyone
+        # try to balance the amounts of things that people have to fetch over the network.
+        
+        channel_objects = {channel: [] for channel in channel_to_ip}
+        local_read_sizes = {channel: 0 for channel in channel_to_ip}
+        remote_read_sizes = {channel: 0 for channel in channel_to_ip}
+
+        for writer_channel in objects:
+            for object in objects:
+                ip, key, size = object
+                # the object is on a machine that is not part of this task node, will have to remote fetch
+                if ip not in ip_to_channel_sets:
+                    # find the channel with the least amount of remote read
+                    my_channel = min(remote_read_sizes, key = remote_read_sizes.get)
+                    channel_objects[my_channel].append(object)
+                    remote_read_sizes[my_channel] += size
+                else:
+                    eligible_sizes = {reader_channel : local_read_sizes[reader_channel] for reader_channel in ip_to_channel_sets[ip]}
+                    my_channel = min(eligible_sizes, key = eligible_sizes.get)
+                    channel_objects[my_channel].append(object)
+                    local_read_sizes[my_channel] += size
+
+        tasknode = []
+        for ip in ip_to_num_channel:
+            if ip != 'localhost':
+                tasknode.extend([InputRedisDatasetNode.options(num_cpus=0.01, resources={"node:" + ip : 0.01}).
+                remote(self.current_node, channel_objects, channel_to_ip, batch_func=batch_func, dependent_map=dependent_map) for i in range(ip_to_num_channel[ip])])
+            else:
+                tasknode.extend([InputRedisDatasetNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).
+                remote(self.current_node, channel_objects, channel_to_ip, batch_func=batch_func, dependent_map=dependent_map) for i in range(ip_to_num_channel[ip])])
+        
+        self.nodes[self.current_node] = tasknode
+        self.node_channel_to_ip[self.current_node] = channel_to_ip
+        self.node_ips[self.current_node] = ip
+        self.current_node += 1
+        return self.current_node - 1
 
     def new_input_csv(self, bucket, key, names, ip_to_num_channel, batch_func=None, sep = ",", dependents = [], stride= 64 * 1024 * 1024):
         

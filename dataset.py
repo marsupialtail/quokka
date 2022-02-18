@@ -5,6 +5,25 @@ from io import BytesIO, StringIO
 import boto3
 import s3fs
 import time
+import redis
+
+# this is used to convert an RDD into streams
+# gonna do some intelligent stuff by maximizing data locality
+class RedisObjectsDataset:
+
+    # expects objects as a dict of channel : list of tuples of (ip, key, size)
+    def __init__(self, channel_objects, ip_set) -> None:
+        self.channel_objects = channel_objects
+        self.rs = {}
+        for ip in self.ip_set:
+            self.rs[ip] = redis.Redis(host=ip, port=6800, db=0)
+
+    def get_next_batch(self, mapper_id):
+        if mapper_id not in self.channel_objects:
+            raise Exception("ERROR: I dont know about where this channel is. Autoscaling here not supported yet. Will it ever be?")
+        for object in self.channel_objects[mapper_id]:
+            yield self.rs[object[0]].get(object[1])
+
 
 class InputSingleParquetDataset:
 
