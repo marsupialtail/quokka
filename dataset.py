@@ -15,6 +15,7 @@ class RedisObjectsDataset:
     def __init__(self, channel_objects, ip_set) -> None:
         self.channel_objects = channel_objects
         self.rs = {}
+        self.ip_set = ip_set
         for ip in self.ip_set:
             self.rs[ip] = redis.Redis(host=ip, port=6800, db=0)
 
