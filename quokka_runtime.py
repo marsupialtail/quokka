@@ -243,9 +243,9 @@ class NonBlockingTaskNode(TaskNode):
         
         self.ip = ip
 
-    def initialize(self):
+    def initialize(self, my_id):
         if self.datasets is not None:
-            self.functionObject.initialize(self.datasets)
+            self.functionObject.initialize(self.datasets, my_id)
 
     def execute(self, my_id):
 
@@ -312,9 +312,9 @@ class BlockingTaskNode(TaskNode):
         
         self.ip = ip
 
-    def initialize(self):
+    def initialize(self, my_id):
         if self.datasets is not None:
-            self.functionObject.initialize(self.datasets)
+            self.functionObject.initialize(self.datasets, my_id)
     
     # explicit override with error. Makes no sense to append to targets for a blocking node. Need to use the dataset instead.
     def append_to_targets(self,tup):
@@ -491,7 +491,7 @@ class TaskGraph:
                 dependent_map[node] = (self.node_ips[node], len(self.node_channel_to_ip[node]))
         return dependent_map
 
-    def new_input_redis(self, dataset, ip_to_num_channel, batch_func=None, dependents = []):
+    def new_input_redis(self, dataset, ip_to_num_channel, policy = "default", batch_func=None, dependents = []):
         
         dependent_map = self.return_dependent_map(dependents)
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
@@ -514,25 +514,31 @@ class TaskGraph:
         # try to balance the amounts of things that people have to fetch over the network.
         
         channel_objects = {channel: [] for channel in channel_to_ip}
-        local_read_sizes = {channel: 0 for channel in channel_to_ip}
-        remote_read_sizes = {channel: 0 for channel in channel_to_ip}
 
-        for writer_channel in objects:
-            for object in objects[writer_channel]:
-                ip, key, size = object
-                # the object is on a machine that is not part of this task node, will have to remote fetch
-                if ip not in ip_to_channel_sets:
-                    # find the channel with the least amount of remote read
-                    my_channel = min(remote_read_sizes, key = remote_read_sizes.get)
-                    channel_objects[my_channel].append(object)
-                    remote_read_sizes[my_channel] += size
-                else:
-                    eligible_sizes = {reader_channel : local_read_sizes[reader_channel] for reader_channel in ip_to_channel_sets[ip]}
-                    my_channel = min(eligible_sizes, key = eligible_sizes.get)
-                    channel_objects[my_channel].append(object)
-                    local_read_sizes[my_channel] += size
+        if policy == "default":
+            local_read_sizes = {channel: 0 for channel in channel_to_ip}
+            remote_read_sizes = {channel: 0 for channel in channel_to_ip}
+
+            for writer_channel in objects:
+                for object in objects[writer_channel]:
+                    ip, key, size = object
+                    # the object is on a machine that is not part of this task node, will have to remote fetch
+                    if ip not in ip_to_channel_sets:
+                        # find the channel with the least amount of remote read
+                        my_channel = min(remote_read_sizes, key = remote_read_sizes.get)
+                        channel_objects[my_channel].append(object)
+                        remote_read_sizes[my_channel] += size
+                    else:
+                        eligible_sizes = {reader_channel : local_read_sizes[reader_channel] for reader_channel in ip_to_channel_sets[ip]}
+                        my_channel = min(eligible_sizes, key = eligible_sizes.get)
+                        channel_objects[my_channel].append(object)
+                        local_read_sizes[my_channel] += size
+        
+        else:
+            raise Exception("other distribution policies not implemented yet.")
 
         print(channel_objects)
+
         tasknode = []
         for ip in ip_to_num_channel:
             if ip != 'localhost':
@@ -605,8 +611,6 @@ class TaskGraph:
             source = streams[key]
             if source not in self.nodes:
                 raise Exception("stream source not registered")
-            import sys
-            print(sys.path)
             ray.get([i.append_to_targets.remote((self.current_node, channel_to_ip, partition_key[key])) for i in self.nodes[source]])
             mapping[source] = key
             source_parallelism[source] = len(self.node_channel_to_ip[source]) # this only cares about how many channels the source has
@@ -614,10 +618,10 @@ class TaskGraph:
         tasknode = []
         for ip in ip_to_num_channel:
             if ip != 'localhost':
-                tasknode.extend([NonBlockingTaskNode.options(resources={"node:" + ip : 0.01}).remote(streams, datasets, functionObject, self.current_node, 
+                tasknode.extend([NonBlockingTaskNode.options(num_cpus = 0.01, resources={"node:" + ip : 0.01}).remote(streams, datasets, functionObject, self.current_node, 
                 channel_to_ip, mapping, source_parallelism, ip) for i in range(ip_to_num_channel[ip])])
             else:
-                tasknode.extend([NonBlockingTaskNode.options(resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(streams, 
+                tasknode.extend([NonBlockingTaskNode.options(num_cpus = 0.01, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(streams, 
                 datasets, functionObject, self.current_node, channel_to_ip, mapping, source_parallelism, ip) for i in range(ip_to_num_channel[ip])])
 
         self.nodes[self.current_node] = tasknode
@@ -635,23 +639,21 @@ class TaskGraph:
             source = streams[key]
             if source not in self.nodes:
                 raise Exception("stream source not registered")
-            import sys
-            print(sys.path)
             ray.get([i.append_to_targets.remote((self.current_node, channel_to_ip, partition_key[key])) for i in self.nodes[source]])
             mapping[source] = key
             source_parallelism[source] = len(self.node_channel_to_ip[source]) # this only cares about how many channels the source has
         
         # the datasets will all be managed on the head node. Note that they are not in charge of actually storing the objects, they just 
         # track the ids.
-        output_dataset = Dataset.options(resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(len(channel_to_ip))
+        output_dataset = Dataset.options(num_cpus = 0.01, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(len(channel_to_ip))
 
         tasknode = []
         for ip in ip_to_num_channel:
             if ip != 'localhost':
-                tasknode.extend([BlockingTaskNode.options(resources={"node:" + ip : 0.01}).remote(streams, datasets, output_dataset, functionObject, self.current_node, 
+                tasknode.extend([BlockingTaskNode.options(num_cpus = 0.01, resources={"node:" + ip : 0.01}).remote(streams, datasets, output_dataset, functionObject, self.current_node, 
                 channel_to_ip, mapping, source_parallelism, ip) for i in range(ip_to_num_channel[ip])])
             else:
-                tasknode.extend([BlockingTaskNode.options(resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(streams, 
+                tasknode.extend([BlockingTaskNode.options(num_cpus = 0.01, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(streams, 
                 datasets, output_dataset, functionObject, self.current_node, channel_to_ip, mapping, source_parallelism, ip) for i in range(ip_to_num_channel[ip])])
         
         self.nodes[self.current_node] = tasknode
@@ -663,7 +665,13 @@ class TaskGraph:
     
     def initialize(self):
 
-        ray.get([node.initialize.remote() for node_id in self.nodes for node in self.nodes[node_id] ])
+        processes = []
+        for key in self.nodes:
+            node = self.nodes[key]
+            for i in range(len(node)):
+                replica = node[i]
+                processes.append(replica.initialize.remote(i))
+        ray.get(processes)
     
     def run(self):
         processes = []

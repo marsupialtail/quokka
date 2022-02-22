@@ -1,14 +1,15 @@
 import sys
+sys.path.append("/home/ubuntu/quokka/")
 
 import time
 from quokka_runtime import TaskGraph
-from sql import StatelessExecutor, StorageExecutor
+from sql import Executor, StorageExecutor
 import pandas as pd
 import redis
 import numpy as np
 import pickle
 
-class SpMVExecutor(StatelessExecutor):
+class SpMVExecutor(Executor):
     # this is basically an inner join, but we need to do some smart things to manage memory
 
     def __init__(self):
@@ -72,7 +73,7 @@ def partition_key_vector(data, channel):
 storage_graph = TaskGraph()
 graph_stream = storage_graph.new_input_csv("pagerank-graphs","livejournal.csv",["x","y"],{'localhost':8}, sep=" " )
 storage_executor = StorageExecutor()
-graph_dataset = storage_graph.new_blocking_node({0:graph_stream},None, storage_graph, {"localhost":8}, partition_key)
+graph_dataset = storage_graph.new_blocking_node({0:graph_stream},None, storage_graph, {"localhost":8}, {0:partition_key})
 storage_graph.initialize()
 storage_graph.execute()
 
