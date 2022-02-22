@@ -152,6 +152,7 @@ class OOCJoinExecutor(Executor):
     def done(self,executor_id):
         print("done join ", executor_id)
 
+# WARNING: aggregation on index match! Not on column match
 class AggExecutor(Executor):
     def __init__(self, fill_value = 0, final_func = None):
         self.state = None
@@ -198,6 +199,14 @@ class CountExecutor(Executor):
     
     def done(self, executor_id):
         print("COUNT:", self.state)
+
+class StorageExecutor(Executor):
+    def __init__(self) -> None:
+        pass
+    def execute(self, batch, stream_id, executor_id):
+        return batch
+    def done(self, executor_id):
+        pass
 
 class MergeSortedExecutor(Executor):
     def __init__(self) -> None:

@@ -4,23 +4,58 @@
 
 A note about the name: the name is inspired by the Apache Flink icon, which is a chipmunk. A quokka is a marsupial that resembles a chipmunk.
 
-### Overview
+### Motivation
 
-The Quokka lower-level runtime API (henceforth referred to as the runtime API) allows you to construct a **task graph** of **nodes**, which each perform a specific task. This is very similar to other DAG-based processing frameworks such as [Apache Spark](https://spark.apache.org/docs/latest/) or [Tensorflow](https://www.tensorflow.org/). For example, you can write the following code in the runtime API to execute TPC-H query 6:
+Popular big data processing frameworks such as Spark and Dask rely on bulk-synchronous execution on distributed datasets. Often, a map-reduce style model is adopted, where mappers perform functions on partitions of the input, the mapper outputs are shuffled into groups, **and after the shuffle has fully/mostly completed**, reducers start working on each group. Typically this is implemented as a pull-based model where reducers pull required data from the mappers, who persist their output in some kind of external storage (disk or network) when fault tolerance is desired.
+
+There are a couple problems with this approach. The first, as recent works such as LinkedIn Magnet and Uber Zeus have identified, is that when each mapper doesn't have too much data for each reducer, the pull operation amounts to a bunch of random disk/network reads. This is horrible. The solution is push-based shuffles, where mappers push data to the reducers. Data can now be persisted on the reducer side for fault tolerance.
+
+However, this only addresses part of the problem. In a synchronous shuffle, even when mapper output is pushed to the reducers as soon as they are generated, the reducers can't start operating on said data until they have received near everything. This is because the current Map-Reduce paradigm stipulates that the reduction function is a function on all the data assigned to it from the mappers. This forces the reducers to start only after most of the mappers have completely executed, making any kind of pipelined parallel execution between the two impossible. This is unfortunate, because **mappers and reducers often use very different resources** (network I/O bound mappers + compute bound reducers), and can often be scheduled for parallel execution on the same physical instances without compromising too much the performance of either. 
+
+Quokka's solution is to support two different kinds of reducer functions. Blocking reducers are similar to classic Map-Reduce reducers and block until they receive all mapper outputs. However, non-blocking reducers can start executing on mapper outputs as soon as they arrive, producing some output of its own and updating some local state. For example, sort, count and aggregation are blocking reducer functions because their output depend on all the data. However, join, filter and projection can be implemented in a non-blocking fashion with streaming operators. Non-blocking reducers can be pipelined with other non-blocking reducers, while a blocking reducer breaks the pipeline. Mappers are treated as non-blocking reducers where the output already exists in network/disk storage. We impose some limitations on the kinds of non-blocking operators we support, which are described in detail later.
+
+Logically, one can view Quokka execution as a series of stages, where each stage start with the output produced by a blocking operator, ends with another blocking operator, and executes non-blocking operators in between. The entire stage is executed in a pipeline-parallel fashion, and can be viewed as a pure streaming system. The stage inputs/outputs use Spark's lineage tracking based fault-tolerance and persistence mechanism. Since each Quokka stage now corresponds to a few Spark stages, Quokka also implements intra-stage fault tolerance based on checkpointing. The checkpointing recovery mechanism in Quokka conveniently avoids global asynchronous rollbacks, the bane of streaming systems, thanks to the restrictions we impose on the non-blocking operators.
+
+Quokka also aims to support autoscaling. (I have a plan to do this, but likely will not get to this until after the rotation.)
+
+### Execution Model
+
+The Quokka runtime API allows you to construct a **task graph** of **nodes**, which corresponds to a Quokka stage. This is very similar to other DAG-based processing frameworks such as [Apache Spark](https://spark.apache.org/docs/latest/) or [Tensorflow](https://www.tensorflow.org/). For example, you can write the following code in the runtime API to execute TPC-H query 6:
 ~~~python
     task_graph = TaskGraph()
     lineitem = task_graph.new_input_csv(bucket,key,lineitem_scheme,8,batch_func=lineitem_filter, sep="|")
     agg_executor = AggExecutor()
-    agged = task_graph.new_task_node({0:lineitem}, agg_executor, 1, {0:None})
+    agged = task_graph.new_blocking_node({0:lineitem}, agg_executor, 1, {0:None})
     task_graph.initialize()
     task_graph.run()
 ~~~
 
-There are perhaps a couple of things to note here. Firstly, there are two types of nodes in the runtime API. There are **input nodes**, declared with APIs such as `new_input_csv` or `new_input_parquet`, which interface with the external world (you can define where they will read their data), and **task nodes**, declared with APIs such as `new_task_node`, which take as input the outputs generated from another node in the task graph, either an input node or another task node. In the example code above, we see that the task node `agged` depends on the outputs from the input node `lineitem`. Note that there are no special "output nodes", they are implemented as task nodes. 
+There are perhaps a couple of things to note here. Firstly, there are two types of nodes in the runtime API. There are **input nodes**, declared with APIs such as `new_input_csv` or `new_input_parquet`, which interface with the external world (you can define where they will read their data), and **task nodes**, declared with `new_non_blocking_node` or `new_blocking_node`, which take as input the outputs generated from another node in the task graph, either an input node or another task node. Secondly, we see that the task node `agged` depends on the outputs from the input node `lineitem`. We will describe what exactly are the types of `lineitem` and `agged` later (the former is a stream and the latter is a dataset). Finally, note that the task graph ends with a blocking node. This is currently required, if you want to be able to interact with the results of the task graph execution. Multiple stages are implemented with multiple task graphs, with the first node of stage 2 reading from the output of stage 1, like the following: 
 
-Quokka's task graph follows push-based execution. This means that a node does not wait for its downstream dependencies to ask for data, but instead actively *pushes* data to its downstream dependencies whenever some intermediate results become available. **In short, execution proceeds as follows**: input nodes read batches of data from a specified source, and pushes those batches to downstream task nodes. A task node exposes a handler to process incoming batches as they arrive, possibly updating some internal state (as an actor in an actor model), and for each input batch possibly produces an output batch for its own downstream dependencies. The programmer is expected to supply this handler function as an **executor object** (more details later). Quokka provides a library of pre-implemented executor objects that the programmer can use for SQL, ML and graph analytics.
+~~~python
+    task_graph = TaskGraph()
+    a = task_graph.new_input_csv("bump","a-big.csv",["key"] + ["avalue" + str(i) for i in range(100)],{'localhost':2})
+    b = task_graph.new_input_csv("bump","b-big.csv",["key"] + ["bvalue" + str(i) for i in range(100)],{'localhost':2})
+    join_executor = OOCJoinExecutor(on="key")
+    output = task_graph.new_blocking_node({0:quotes,1:trades},None, join_executor,{'localhost':4},{0:"key", 1:"key"})
+    task_graph.initialize()
+    task_graph.run()
 
-Each task node can have multiple physical executors, sometimes referred to as **channels**. This is a form of intra-operator parallelism, as opposed to the inter-operator parallelism that results from all task nodes executing at the same time. These physical executors all execute the same handler function, but on different portions of the input batch, partitioned by a user-specified partition function. A Spark-like map reduce with M mappers and R reducers would be implemented in Quokka as a single mapper task node and a single reducer task node, where the mapper task node has M channels and the reducer task node has R channels. In the example above, we specified that the input node `lineitem` has 8 channels, and the task node `agged` has only 1 channel. The partition key was not specified (`{0:None}`) since there is no parallelism, thus no need for partitioning. The situation looks something like the following picture:
+    del task_graph
+
+    task_graph2 = TaskGraph()
+    count_executor = CountExecutor()
+    joined_stream = task_graph2.new_input_from_dataset(output,{'localhost':4})
+    final = task_graph2.new_blocking_node({0:joined_stream}, None, count_executor, {'localhost':4}, {0:'key'})
+    task_graph2.initialize()
+    task_graph2.run()
+~~~
+
+Note that since the output of a stage is persisted as in Spark, one can delete the first task graph and still access its outputs.
+
+Since a task graph represents one Quokka stage, it strictly follows push-based execution. This means that a node does not wait for its downstream dependencies to ask for data, but instead actively *pushes* data to its downstream dependencies whenever some intermediate results become available. **In short, execution proceeds as follows**: input nodes read batches of data from a specified source, which might be an external data source or the outputs of a previous stage, and pushes those batches to downstream task nodes. A task node exposes a handler to process incoming batches as they arrive, possibly updating some internal state, and for each input batch possibly produces an output batch for its own downstream children. The programmer is expected to supply this handler function as an **executor object** (e.g. `OOCJoinExecutor`,`AggExecutor`). Quokka provides a library of pre-implemented executor objects that the programmer can use for SQL, ML and graph analytics.
+
+Each task node can have multiple physical executors, referred to as **channels**. This is a form of intra-operator data parallelism, as opposed to the inter-operator pipeline parallelism that results from all task nodes executing at the same time. These physical executors all execute the same handler function, but on different portions of the input batch, partitioned by a user-specified partition function. A Map-Reduce job with M mappers and R reducers would be implemented in Quokka as a single mapper task node and a single reducer task node, where the mapper task node has M channels and the reducer task node has R channels. In the example above, we specified that the input node `lineitem` has 8 channels, and the task node `agged` has only 1 channel. The partition key was not specified (`{0:None}`) since there is no parallelism, thus no need for partitioning. The situation looks something like the following picture:
 
 ![Screenshot](TPC-H6.png)
 
@@ -37,13 +72,15 @@ The runtime API is meant to be very flexible and support all manners of batch an
 As a result of this flexibility, it requires quite a lot of knowledge for efficient utilization. As a result, we aim to provide higher level APIs to support common batch and streaming tasks in SQL, machine learning and graph analytics. **Most programmers are not expected to program at the runtime API level, but rather make use of the pre-packaged higher-level APIs.** 
 
 ### Stateful Actors
-Let's talk more about states in Quokka. Channels in task nodes are stateful operators in an actor programming model. The key property of stateful operators in Quokka is **confluence**: in the context of nondeterministic message delivery, an operation on a single machine is confluent if it produces the same set of outputs for any nondeterministic ordering and batching of a set of inputs. (cite CALM work) Note that the output itself can also be produced in any order. It’s easy to see that any composition of confluent operators is still confluent. We relax the confluent definition somewhat here to accept potentially different output sets, assuming they are all semantically correct. For example an operator that implements the LIMIT N clause in SQL can admit any of N input records it sees. More importantly, for Quokka we allow operators to depend on intra-stream ordering, just not inter-stream ordering. This means that it might still expect the inputs produced by a certain stream to observe some order, while there are no restrictions on the relative orderings between different input streams. Quokka as a system enforces intra-stream message order, but makes zero gurantees about inter-stream message orders.
+Let's talk more about task nodes in Quokka. Channels in task nodes can be treated as stateful operators in an actor programming model. Quokka adopts the notion of channels in a task node to specify that a group of actors all execute the same code, for fault tolerance and autoscaling purposes. One could override default Quokka behavior by simply specifying different task nodes with one channel each, all executing the same code.
 
-Henceforth, confluence will refer to this narrow definition, not the one defined in the CALM paper.
+The key property of stateful operators in Quokka is **confluence**: in the context of nondeterministic message delivery, an operation on a single machine is confluent if it produces the same set of outputs for any nondeterministic ordering and batching of a set of inputs. (Hellerstein, CALM) Note that the output itself can also be produced in any order. It’s easy to see that any composition of confluent operators is still confluent. We relax the confluent definition somewhat here to accept potentially different output sets, assuming they are all semantically correct. For example an operator that implements the LIMIT N clause in SQL can admit any of N input records it sees. More importantly, for Quokka we allow operators to depend on intra-stream ordering, just not inter-stream ordering. This means that it might still expect the inputs produced by a certain stream to observe some order, while there are no restrictions on the relative orderings between different input streams. Quokka as a system enforces intra-stream message order, but makes zero gurantees about inter-stream message orders. Henceforth, confluence will refer to this narrow definition, not the one defined in the CALM paper.
 
-Confluence is a very nice property to have in general, more so for streaming systems. Let’s imagine a stateful operator with two different upstream operators producing messages. It is very nice if the system’s correctness does not depend on the order in which the two upstream operators produce the messages, which could depend on network delay, task scheduling, etc. **This is critical for performance** in a push-based framework since a node should never wait on any one of its input streams. This also has nice fault-tolerance properties as we will describe later. This is perhaps the key difference between Quokka and streaming-centric systems like Flink. In Flink you can totally write pipelines where the outputs depend very strongly on the order the inputs are supplied. In Quokka it is not allowed. (Really at this point, it's only "not recommended" -- there are no checks in place to see if your actor is confluent or not. What's guaranteed is that all the operators in the libraries supplied follow this model. Enforcing this is future work.) 
+Confluence is a very nice property to have in general, more so for streaming systems. Let’s imagine a stateful operator with two different upstream operators producing messages. It is very nice if the system’s correctness does not depend on the order in which the two upstream operators produce the messages, which could depend on network delay, task scheduling, etc. **This is critical for performance** in a push-based framework since a node should never wait on any one of its input streams. In addition, it also greatly facilitates fault tolerance, as messages from different sources can be replayed in any order in regards to one another, as we will describe later. 
 
-What are some examples of confluent stateful operators? First let's categorize the world of stateful operators we'd like to implement in data analytics. There are two important cateogories: **nonblocking** and **blocking**. Blocking operators cannot emit any outputs to their downstream children until all of their inputs have been processed. Examples are any kind of aggregation and sort. For (naive) aggregation, the stateful operator does not know it has the final result for any of its aggregation keys until it has seen all of its inputs. For sorting, the stateful operator cannot guarantee that it would emit results in sorted order until it has received all its inputs. We call any operator that is not blocking non-blocking. Example non-blocking operators are map, filter, projection and join. Blocking operators are pipeline breakers, and negate the benefits of using a streaming framework like Quokka.  
+Confluence is perhaps the key difference between Quokka and streaming-centric systems like Flink. In Flink you can totally write pipelines where the outputs depend very strongly on the order the inputs are supplied. In Quokka it is not allowed. (Really at this point, it's only "not recommended" -- there are no checks in place to see if your actor is confluent or not. What's guaranteed is that all the operators in the libraries supplied follow this model. Enforcing this is future work.)  
+
+What are some examples of confluent stateful operators? First let's categorize the world of stateful operators we'd like to implement in data analytics. As mentioned previosuly, there are two important cateogories: **nonblocking** and **blocking**. Blocking operators cannot emit any outputs to their downstream children until all of their inputs have been processed. Examples are any kind of aggregation and sort. For (naive) aggregation, the stateful operator does not know it has the final result for any of its aggregation keys until it has seen all of its inputs. For sorting, the stateful operator cannot guarantee that it would emit results in sorted order until it has received all its inputs. We call any operator that is not blocking non-blocking. Example non-blocking operators are map, filter, projection and join. Blocking operators are pipeline breakers, and negate the benefits of using a streaming framework like Quokka.  
 
 Confluence is easy to reason about for blocking operators. The blocking operator emit only one output, at the very end. We just have to make sure that this output is the same regardless of the order in which we supply the operator's inputs. Since this operator is typically a function of the final state, we just have to ensure that the final state is the same. If we imagine that each incoming message changes the state of the operator by function *f*, then it's easy to see that as long as *f* is commutative this is true. For example, any kind of aggregation is commutative, the merge step in merge-sort is commutative, etc. 
 
@@ -67,21 +104,17 @@ Note that there is in fact a non-monotonic domain-specific optimization we can m
 
 ### Datasets and Streams
 
-Now we have introduced the concepts of non-blocking and blocking operators, we can understand in detail how a Quokka program executes. In the overview section, it seems like the entire Quokka DAG is executed in a push-based fashion. This is not true. While enabling push-based execution accounts for most of the benefits of Quokka, some kinds of processing are not amenable to push-based processing or cannot benefit from it. Quokka does not re-invent the wheel here and uses the resilient distributed datasets (RDD) concept from Spark, which is an amazing idea. 
-
-In particular, we notice that blocking operators are not amenable to push-based execution, since they have to materialize their entire state before pushing results to their children. Blocking operators could be introduced by operations like aggregations and sort, or simply by user command when they wish to materialize data with `.materialize()` (similar to `.cache()` semantics in Spark or `.compute()` semantics in Dask). 
-
-Such blocking operators will produce a **Dataset** in Quokka, while non-blocking operators will produce a **Stream**. Downstream operators could depend on both upstream datasets and streams. The difference is that the upstream dataset need to be completely materialized when an operator starts executing, while a stream is just a promise that batches of data will be produced at some point in the future in any order. In other words, from the perspective of the operator, it can pull data from an upstream dataset and expects data to be pushed to it from the stream. 
+Let's talk more about how non-blocking and blocking operators work in Quokka. Blocking operators could be introduced by operations like aggregations and sort, or simply by user command when they wish to materialize data with `.materialize()` (similar to `.cache()` semantics in Spark or `.compute()` semantics in Dask). Such blocking operators will produce a **Dataset** in Quokka, while non-blocking operators will produce a **Stream**. Downstream operators could depend on both upstream datasets and streams. The difference is that the upstream dataset need to be completely materialized when an operator starts executing, while a stream is just a promise that batches of data will be produced at some point in the future in any order. In other words, from the perspective of the operator, it can pull data from an upstream dataset and expects data to be pushed to it from the stream. In the very first code listing for TPC-H query 6, `agged` is a dataset whereas `lineitem` is a stream.
 
 In practice, a Quokka DAG can consist of many blocking operators and non-blocking operators organized in complicated ways. For example, here is the DAG for a PageRank application:
 
 ![pagerank](Pagerank.png)
 
-Quokka decomposes the computation into stages, with each stage ending in the creation of a Dataset. In this case the computation will be broken into two stages, the first of which consists of the nonblocking input sparse matrix read and caching (the upper row). The second will be the bottom row. The second stage depends on the first one, so it will be launched after the first one has completed. This is very similar to how stages in Spark work. (Note that strictly speaking, every stage has to start from a Dataset too. In this case the input nodes depend on Datasets that are pre-created in S3 or Disk, and are abbreviated in this graph.)
+As previously described, Quokka decomposes the computation into stages, with each stage ending in the creation of a Dataset. In this case the computation will be broken into two stages, the first of which consists of the nonblocking input sparse matrix read and caching (the upper row). The second will be the bottom row. The second stage depends on the first one, so it will be launched after the first one has completed. This is very similar to how stages in Spark work. (Note that strictly speaking, every stage has to start from a Dataset too. In this case the input nodes depend on Datasets that are pre-created in S3 or Disk, and are abbreviated in this graph.)
 
 Similarly to an RDD, Quokka represents a Dataset as a collection of immutable objects, and some associated metadata on those objects, which is itself an immutable object. The objects are all stored on a shared-memory object store with persistence (currently RocksDB). 
 
-When you use `task_graph.add_blocking_task_node` in Quokka, a Dataset object will be returned. You can use this Dataset object in downstream operators. Quokka guarantees that by the time the downstream operators execute, all the Datasets that they depend on would have been materialized in this object store. 
+When you use `task_graph.add_blocking_node` in Quokka, a Dataset object will be returned. You can use this Dataset object in downstream operators. Quokka guarantees that by the time the downstream operators execute, all the Datasets that they depend on would have been materialized in this object store. 
 
 The stock Dataset class in Quokka exposes some convenience methods such as an iterator to iterate through the objects. The user could also interact directly with the object store after looking up metadata from the Dataset object. There are more specialized Dataset class implementations in Quokka like KVDataset or RangeDataset which corresponds to hash-based partitioning or range-based partitioning of objects that expose more methods. The user could also implement a custom Dataset class that descends from Dataset with even more methods.
 
@@ -91,7 +124,7 @@ A downstream operator could treat the Dataset as a stream by simply invoking the
 
 ### Fault tolerance (future work)
 
-The current theory is a bit complicated. I am still thinking through how this should work exactly, but the hopefully the gist gets through.
+The current theory is a bit complicated. I am still thinking through how this should work exactly, but hopefully the gist gets through.
 
 Given our group of confluent stateful operators, how do we achieve fault tolerance? A Quokka application can be thought of as a DAG, where each node corresponds to a channel, from one of the task nodes. Each node is assigned to a physical hardware instance. Quokka is designed to expect many nodes to be assigned to one physical instance. For example, let's imagine the following case, where the nodes circled belongs to machine A and the rest belong to machine B, and nodes 1 and 2 are channels of the input node. 3, 4 and 5 are non-blocking operators, 6 and 7 are blocking operators. 
 
@@ -99,7 +132,7 @@ Given our group of confluent stateful operators, how do we achieve fault toleran
 
 Quokka follows a checkpoint-based system where each channel periodically asynchronously checkpoints its local state to persistent storage (AWS S3). Note that this is quite efficient given the types of states we typically have, such as (typically) small intermediate aggregation results and sets of batches that are monotonically added to. (This is definitely an area of future work)
 
-If you've read the Spark streaming paper, you would be smirking right now: "yes checkpoints are great, but you must turn off the entire system when a machine fails to sync it back to the latest good state, and then reapply all the inputs." Yes that is true for a general-purpose streaming system like Flink or Naiad. Coordinated global rollbacks really suck. But in Quokka where all the stateful operators are confluent, this need not happen.
+The problem is easy to spot: "yes checkpoints are great, but you must turn off the entire system when a machine fails to sync it back to the latest good state, and then reapply all the inputs." Yes that is true for a general-purpose streaming system like Flink or Naiad. Coordinated global rollbacks really suck. But in Quokka where all the stateful operators are confluent, this need not happen.
 
 What happens when machine A dies? **TLDR: machine B can keep doing work as if nothing is wrong, while machine A's workload eventually gets rescheduled.** 
 
@@ -140,18 +173,6 @@ To be written.
 ![pagerank](Pagerank.png)
 
 Let's talk about how PageRank works in the Quokka programming model. 
-
-~~~python
-    state0 = set()
-    state1 = set()
-    for each input:
-        if input from stream0:
-            state0.add(input)
-            emit set(input.join(i) for i in state1)
-        else:
-            state1.add(input)
-            emit set(i.join(input) for i in state0)
-~~~
 
 ## TaskGraph API
 
