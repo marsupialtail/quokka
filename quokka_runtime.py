@@ -425,7 +425,7 @@ class InputS3CSVNode(InputNode):
         self.sep = sep
         self.stride = stride
 
-    def initialize(self):
+    def initialize(self, my_id):
         if self.bucket is None:
             raise Exception
         self.accessor = InputCSVDataset(self.bucket, self.key, self.names,0, sep = self.sep, stride = self.stride) 
@@ -442,7 +442,7 @@ class InputS3MultiParquetNode(InputNode):
         self.columns = columns
         self.batch_func = batch_func
     
-    def initialize(self):
+    def initialize(self, my_id):
         if self.bucket is None:
             raise Exception
         self.accessor = InputMultiParquetDataset(self.bucket, self.key, columns = self.columns)
@@ -456,7 +456,7 @@ class InputRedisDatasetNode(InputNode):
         self.channel_objects = channel_objects
         self.batch_func = batch_func
     
-    def initialize(self):
+    def initialize(self, my_id):
         ip_set = set()
         for channel in self.channel_objects:
             for object in self.channel_objects[channel]:
