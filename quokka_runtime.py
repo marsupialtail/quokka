@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import time
 import ray
-
+import gc
 import pickle
 
 #ray.init(ignore_reinit_error=True) # do this locally
@@ -285,6 +285,8 @@ class NonBlockingTaskNode(TaskNode):
                     pass
     
         obj_done =  self.functionObject.done(my_id) 
+        del self.functionObject
+        gc.collect()
         if obj_done is not None:
             self.push(obj_done)
         
@@ -355,11 +357,13 @@ class BlockingTaskNode(TaskNode):
                     pass
     
         obj_done =  self.functionObject.done(my_id) 
+        del self.functionObject
+        gc.collect()
         if obj_done is not None:
             key = str(self.id) + "-" + str(my_id) + "-" + str(self.object_count)
             self.object_count += 1
             self.r.set(key, pickle.dumps(obj_done))
-            self.output_dataset.added_object.remote(my_id, (ray.util.get_node_ip_address(), key, sys.getsizeof(result)))
+            self.output_dataset.added_object.remote(my_id, (ray.util.get_node_ip_address(), key, sys.getsizeof(obj_done)))
         
         self.output_dataset.done_channel.remote(my_id)
         self.done()
@@ -383,7 +387,7 @@ class InputNode(TaskNode):
 
         undone_dependencies = len(self.dependent_rs)
         while undone_dependencies > 0:
-            time.sleep(0.01) # be nice
+            time.sleep(0.001) # be nice
             for dependent_node in self.dependent_rs:
                 message = self.dependent_rs[dependent_node].get_message()
                 if message is not None:
@@ -542,10 +546,10 @@ class TaskGraph:
         tasknode = []
         for ip in ip_to_num_channel:
             if ip != 'localhost':
-                tasknode.extend([InputRedisDatasetNode.options(num_cpus=0.01, resources={"node:" + ip : 0.01}).
+                tasknode.extend([InputRedisDatasetNode.options(num_cpus=0.001, resources={"node:" + ip : 0.001}).
                 remote(self.current_node, channel_objects, channel_to_ip, batch_func=batch_func, dependent_map=dependent_map) for i in range(ip_to_num_channel[ip])])
             else:
-                tasknode.extend([InputRedisDatasetNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).
+                tasknode.extend([InputRedisDatasetNode.options(num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}).
                 remote(self.current_node, channel_objects, channel_to_ip, batch_func=batch_func, dependent_map=dependent_map) for i in range(ip_to_num_channel[ip])])
         
         self.nodes[self.current_node] = tasknode
@@ -562,11 +566,11 @@ class TaskGraph:
         tasknode = []
         for ip in ip_to_num_channel:
             if ip != 'localhost':
-                tasknode.extend([InputS3CSVNode.options(num_cpus=0.01, resources={"node:" + ip : 0.01}).
+                tasknode.extend([InputS3CSVNode.options(num_cpus=0.001, resources={"node:" + ip : 0.001}).
                 remote(self.current_node, bucket,key,names, channel_to_ip, batch_func = batch_func,sep = sep, 
                 stride= stride, dependent_map = dependent_map, ) for i in range(ip_to_num_channel[ip])])
             else:
-                tasknode.extend([InputS3CSVNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).
+                tasknode.extend([InputS3CSVNode.options(num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}).
                 remote(self.current_node, bucket,key,names, channel_to_ip, batch_func = batch_func, sep = sep,
                 stride = stride, dependent_map = dependent_map, ) for i in range(ip_to_num_channel[ip])])
         
@@ -585,11 +589,11 @@ class TaskGraph:
         tasknode = []
         for ip in ip_to_num_channel:
             if ip != 'localhost':
-                tasknode.extend([InputS3MultiParquetNode.options(num_cpus=0.01, resources={"node:" + ip : 0.01}).
+                tasknode.extend([InputS3MultiParquetNode.options(num_cpus=0.001, resources={"node:" + ip : 0.001}).
                 remote(self.current_node, bucket,key,channel_to_ip, columns = columns,
                  batch_func = batch_func,dependent_map = dependent_map) for i in range(ip_to_num_channel[ip])])
             else:
-                tasknode.extend([InputS3MultiParquetNode.options(num_cpus=0.01,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.01}).
+                tasknode.extend([InputS3MultiParquetNode.options(num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}).
                 remote(self.current_node, bucket,key,channel_to_ip, columns = columns,
                  batch_func = batch_func, dependent_map = dependent_map) for i in range(ip_to_num_channel[ip])])
         
@@ -618,10 +622,10 @@ class TaskGraph:
         tasknode = []
         for ip in ip_to_num_channel:
             if ip != 'localhost':
-                tasknode.extend([NonBlockingTaskNode.options(num_cpus = 0.01, resources={"node:" + ip : 0.01}).remote(streams, datasets, functionObject, self.current_node, 
+                tasknode.extend([NonBlockingTaskNode.options(num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(streams, datasets, functionObject, self.current_node, 
                 channel_to_ip, mapping, source_parallelism, ip) for i in range(ip_to_num_channel[ip])])
             else:
-                tasknode.extend([NonBlockingTaskNode.options(num_cpus = 0.01, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(streams, 
+                tasknode.extend([NonBlockingTaskNode.options(num_cpus = 0.001, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.001}).remote(streams, 
                 datasets, functionObject, self.current_node, channel_to_ip, mapping, source_parallelism, ip) for i in range(ip_to_num_channel[ip])])
 
         self.nodes[self.current_node] = tasknode
@@ -645,15 +649,15 @@ class TaskGraph:
         
         # the datasets will all be managed on the head node. Note that they are not in charge of actually storing the objects, they just 
         # track the ids.
-        output_dataset = Dataset.options(num_cpus = 0.01, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(len(channel_to_ip))
+        output_dataset = Dataset.options(num_cpus = 0.001, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.001}).remote(len(channel_to_ip))
 
         tasknode = []
         for ip in ip_to_num_channel:
             if ip != 'localhost':
-                tasknode.extend([BlockingTaskNode.options(num_cpus = 0.01, resources={"node:" + ip : 0.01}).remote(streams, datasets, output_dataset, functionObject, self.current_node, 
+                tasknode.extend([BlockingTaskNode.options(num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(streams, datasets, output_dataset, functionObject, self.current_node, 
                 channel_to_ip, mapping, source_parallelism, ip) for i in range(ip_to_num_channel[ip])])
             else:
-                tasknode.extend([BlockingTaskNode.options(num_cpus = 0.01, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.01}).remote(streams, 
+                tasknode.extend([BlockingTaskNode.options(num_cpus = 0.001, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.001}).remote(streams, 
                 datasets, output_dataset, functionObject, self.current_node, channel_to_ip, mapping, source_parallelism, ip) for i in range(ip_to_num_channel[ip])])
         
         self.nodes[self.current_node] = tasknode

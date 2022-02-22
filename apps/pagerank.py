@@ -1,6 +1,6 @@
 import sys
 sys.path.append("/home/ubuntu/quokka/")
-
+import ray
 import time
 from quokka_runtime import TaskGraph
 from sql import Executor, StorageExecutor
@@ -25,8 +25,8 @@ class SpMVExecutor(Executor):
 
     # this whole set up is not great
     def initialize(self, datasets, my_id):
-        assert type(datasets) == list and len(datasets) == 0
-        dataset_objects = self.datasets[0].get_objects.remote()
+        assert type(datasets) == list and len(datasets) == 1
+        dataset_objects = ray.get(datasets[0].get_objects.remote())
         self.my_objects = dataset_objects[my_id]
         
 
@@ -73,14 +73,19 @@ def partition_key_vector(data, channel):
 storage_graph = TaskGraph()
 graph_stream = storage_graph.new_input_csv("pagerank-graphs","livejournal.csv",["x","y"],{'localhost':8}, sep=" " )
 storage_executor = StorageExecutor()
-graph_dataset = storage_graph.new_blocking_node({0:graph_stream},None, storage_graph, {"localhost":8}, {0:partition_key})
+graph_dataset = storage_graph.new_blocking_node({0:graph_stream},None, storage_executor, {"localhost":8}, {0:partition_key})
 storage_graph.initialize()
-storage_graph.execute()
+storage_graph.run()
+
+del storage_graph
 
 execute_graph = TaskGraph()
 spmv = SpMVExecutor()
 vector_stream = execute_graph.new_input_csv("pagerank-graphs","vector.csv",["y","val"], {'localhost':8}, sep= " ")
-for i in range(9):
+for i in range(5):
     vector_stream = execute_graph.new_non_blocking_node({0:vector_stream}, [graph_dataset], spmv, {'localhost':8}, {0:None})
 final_vector = execute_graph.new_blocking_node({0:vector_stream}, [graph_dataset], spmv, {'localhost':8}, {0:None})
-print(final_vector.to_numpy.remote())
+execute_graph.initialize()
+execute_graph.run()
+
+print(ray.get(final_vector.to_pandas.remote()))
