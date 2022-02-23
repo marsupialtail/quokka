@@ -127,6 +127,16 @@ def do_matmul(size):
         print(np.sum(np.dot(matrix,np.transpose(matrix))))
     print(time.time() - start)
 
+def do_pagerank():
+
+    start = time.time()
+    a = pd.read_csv("s3://pagerank-graphs/livejournal.csv",sep=" ",names=["x","y"])
+    result = pd.read_csv("s3://pagerank-graphs/vector.csv",sep=" ",names=["y","val"])
+    for i in range(20):
+        result = a.merge(result, on = "y").groupby("x").agg({'val':'sum'}).reset_index()
+        result.rename(columns = {"x":"y"}, inplace=True)
+    print(time.time()-start)
+
 
 if int(sys.argv[1]) == 3:
     do_3(sys.argv[2])
