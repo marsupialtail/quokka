@@ -130,13 +130,13 @@ def do_matmul(size):
 def do_pagerank(iters = 20):
 
     start = time.time()
-    a = pd.read_csv("s3://pagerank-graphs/livejournal.csv",sep=" ",names=["x","y"])
-    result = pd.read_csv("s3://pagerank-graphs/vector.csv",sep=" ",names=["y","val"])
+    a = pd.read_csv("s3://pagerank-graphs/livejournal.csv",sep=" ")
+    result = pd.read_csv("s3://pagerank-graphs/vector.csv",sep=" ")
     for i in range(iters):
         result = a.merge(result, on = "y").groupby("x").agg({'val':'sum'}).reset_index()
         result.rename(columns = {"x":"y"}, inplace=True)
     print(time.time()-start)
-
+    print(result)
 
 if int(sys.argv[1]) == 3:
     do_3(sys.argv[2])

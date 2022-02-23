@@ -90,7 +90,7 @@ del storage_graph
 execute_graph = TaskGraph()
 spmv = SpMVExecutor()
 vector_stream = execute_graph.new_input_csv("pagerank-graphs","vector.csv",["y","val"], {'localhost':BLOCKS}, sep= " ")
-for i in range(0):
+for i in range(9):
     vector_stream = execute_graph.new_non_blocking_node({0:vector_stream}, [graph_dataset], spmv, {'localhost':BLOCKS}, {0:None})
 final_vector = execute_graph.new_blocking_node({0:vector_stream}, [graph_dataset], spmv, {'localhost':BLOCKS}, {0:None})
 start = time.time()
