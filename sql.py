@@ -208,6 +208,14 @@ class StorageExecutor(Executor):
     def done(self, executor_id):
         pass
 
+class MergedStorageExecutor(Executor):
+    def __init__(self) -> None:
+        self.state = []
+    def execute(self, batch, stream_id, executor_id):
+        self.state.append(batch)
+    def done(self, executor_id):
+        return pd.concat(self.state)
+
 class MergeSortedExecutor(Executor):
     def __init__(self) -> None:
         self.state = None

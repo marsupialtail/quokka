@@ -3,7 +3,7 @@ sys.path.append("/home/ubuntu/quokka/")
 import ray
 import time
 from quokka_runtime import TaskGraph
-from sql import Executor, StorageExecutor
+from sql import Executor, StorageExecutor, MergedStorageExecutor
 import pandas as pd
 import redis
 import numpy as np
@@ -28,7 +28,7 @@ class SpMVExecutor(Executor):
         assert type(datasets) == list and len(datasets) == 1
         dataset_objects = ray.get(datasets[0].get_objects.remote())
         self.my_objects = dataset_objects[my_id]
-        
+        assert len(self.my_objects) == 1 # we should be using the mergedStorageExecutor
 
     def execute(self,batches, stream_id, executor_id):
 
@@ -37,12 +37,10 @@ class SpMVExecutor(Executor):
         start = time.time()
         if self.my_matrix is None:
             dfs = []
-            for object in self.my_objects:
-                ip, key, size = object
-                r = redis.Redis(host=ip, port=6800, db=0)
-                # with shared memory object store, picle.loads and r.get latency should be gone. the concat latency might still be there
-                dfs.append(pickle.loads(r.get(key)))
-            self.my_matrix = pd.concat(dfs)# - 1 # matrix market is 0 indexed, so subtract 1 from all indices
+            ip, key, size =  self.my_objects[0]
+            r = redis.Redis(host=ip, port=6800, db=0)
+            # with shared memory object store, picle.loads and r.get latency should be gone. the concat latency might still be there
+            self.matrix = pickle.loads(r.get(key))
         print("DESERIALIZATION STUFF", time.time() - start)
         result = self.my_matrix.merge(pd.concat(batches), on = "y").groupby("x").agg({'val':'sum'})
 
@@ -76,7 +74,7 @@ run_time = 0
 
 storage_graph = TaskGraph()
 graph_stream = storage_graph.new_input_csv("pagerank-graphs","livejournal.csv",["x","y"],{'localhost':8}, sep=" " )
-storage_executor = StorageExecutor()
+storage_executor = MergedStorageExecutor()
 graph_dataset = storage_graph.new_blocking_node({0:graph_stream},None, storage_executor, {"localhost":BLOCKS}, {0:partition_key})
 start = time.time()
 storage_graph.initialize()
