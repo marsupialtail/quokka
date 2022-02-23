@@ -34,6 +34,7 @@ class SpMVExecutor(Executor):
 
         # cannot do it in initialize function because all the nodes in a task graph are initialized at once
         # we are not using shared memory solution, so this will blow up the memory usage if done in initialize! do this lazily once you need it
+        start = time.time()
         if self.my_matrix is None:
             dfs = []
             for object in self.my_objects:
@@ -41,8 +42,8 @@ class SpMVExecutor(Executor):
                 r = redis.Redis(host=ip, port=6800, db=0)
                 # with shared memory object store, picle.loads and r.get latency should be gone. the concat latency might still be there
                 dfs.append(pickle.loads(r.get(key)))
-            self.my_matrix = pd.concat(dfs) - 1 # matrix market is 0 indexed, so subtract 1 from all indices
-
+            self.my_matrix = pd.concat(dfs)# - 1 # matrix market is 0 indexed, so subtract 1 from all indices
+        print("DESERIALIZATION STUFF", time.time() - start)
         result = self.my_matrix.merge(pd.concat(batches), on = "y").groupby("x").agg({'val':'sum'})
 
         if self.partial_sum is None:
@@ -58,7 +59,7 @@ class SpMVExecutor(Executor):
 
 
 ROWS = 4847571
-BLOCKS = 8
+BLOCKS = 4
 
 def partition_key(data, channel):
     assigned_portion_start = ROWS // BLOCKS * channel
@@ -70,22 +71,34 @@ def partition_key_vector(data, channel):
     assigned_portion_end = ROWS//BLOCKS * (channel + 1)
     return data[(data.y >= assigned_portion_start) & (data.y < assigned_portion_end)]
 
+init_time = 0
+run_time = 0
+
 storage_graph = TaskGraph()
 graph_stream = storage_graph.new_input_csv("pagerank-graphs","livejournal.csv",["x","y"],{'localhost':8}, sep=" " )
 storage_executor = StorageExecutor()
-graph_dataset = storage_graph.new_blocking_node({0:graph_stream},None, storage_executor, {"localhost":8}, {0:partition_key})
+graph_dataset = storage_graph.new_blocking_node({0:graph_stream},None, storage_executor, {"localhost":BLOCKS}, {0:partition_key})
+start = time.time()
 storage_graph.initialize()
+init_time += time.time() - start
+start = time.time()
 storage_graph.run()
+run_time += time.time() - start
 
 del storage_graph
 
 execute_graph = TaskGraph()
 spmv = SpMVExecutor()
-vector_stream = execute_graph.new_input_csv("pagerank-graphs","vector.csv",["y","val"], {'localhost':8}, sep= " ")
-for i in range(5):
-    vector_stream = execute_graph.new_non_blocking_node({0:vector_stream}, [graph_dataset], spmv, {'localhost':8}, {0:None})
-final_vector = execute_graph.new_blocking_node({0:vector_stream}, [graph_dataset], spmv, {'localhost':8}, {0:None})
+vector_stream = execute_graph.new_input_csv("pagerank-graphs","vector.csv",["y","val"], {'localhost':BLOCKS}, sep= " ")
+for i in range(0):
+    vector_stream = execute_graph.new_non_blocking_node({0:vector_stream}, [graph_dataset], spmv, {'localhost':BLOCKS}, {0:None})
+final_vector = execute_graph.new_blocking_node({0:vector_stream}, [graph_dataset], spmv, {'localhost':BLOCKS}, {0:None})
+start = time.time()
 execute_graph.initialize()
+init_time += time.time() - start
+start = time.time()
 execute_graph.run()
-
+run_time += time.time() - start
+print("init time", init_time)
+print("run time", run_time)
 print(ray.get(final_vector.to_pandas.remote()))
