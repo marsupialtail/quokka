@@ -204,6 +204,8 @@ class TaskNode:
                         if (target, channel) not in self.strikes:
                             raise Exception
                         self.strikes.remove((target, channel))
+        else:
+            raise Exception
 
         print("stream psuh end",time.time())
         return True

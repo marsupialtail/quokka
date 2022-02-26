@@ -209,10 +209,10 @@ class StorageExecutor(Executor):
         pass
 
 class MergedStorageExecutor(Executor):
-    def __init__(self) -> None:
+    def __init__(self, final_func = None) -> None:
         self.state = []
     def execute(self, batches, stream_id, executor_id):
-        self.state.extend(batch)
+        self.state.extend(batches)
     def done(self, executor_id):
         return pd.concat(self.state)
 
