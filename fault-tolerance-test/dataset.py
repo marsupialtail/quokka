@@ -20,12 +20,20 @@ class RedisObjectsDataset:
         for ip in self.ip_set:
             self.rs[ip] = redis.Redis(host=ip, port=6800, db=0)
 
-    def get_next_batch(self, mapper_id):
+    def get_next_batch(self, mapper_id, pos = None):
         if mapper_id not in self.channel_objects:
             raise Exception("ERROR: I dont know about where this channel is. Autoscaling here not supported yet. Will it ever be?")
-        for object in self.channel_objects[mapper_id]:
+        
+        total_objects = len(self.channel_objects[mapper_id])
+
+        if pos is None:
+            pos = 0
+
+        while pos < total_objects:
+            object = self.channel_objects[mapper_id][pos]
             bump =  self.rs[object[0]].get(object[1])
-            yield pickle.loads(bump)
+            pos += 1
+            yield pos, pickle.loads(bump)
 
 
 class InputSingleParquetDataset:
@@ -40,12 +48,15 @@ class InputSingleParquetDataset:
     def set_num_mappers(self, num_mappers):
         self.num_mappers = num_mappers
     
-    def get_next_batch(self, mapper_id):
+    def get_next_batch(self, mapper_id, pos = None):
         assert self.num_mappers is not None
-        curr_row_group = mapper_id 
+        if pos is None:
+            curr_row_group = mapper_id 
+        else:
+            curr_row_group = pos
         while curr_row_group < len(self.num_row_groups):
             a = self.parquet_file.read_row_group(curr_row_group, columns = self.columns).to_pandas()
-            yield a
+            yield curr_row_group, a
 
 # use this if you have a lot of small parquet files
 class InputMultiParquetDataset:
@@ -70,15 +81,18 @@ class InputMultiParquetDataset:
     def set_num_mappers(self, num_mappers):
         self.num_mappers = num_mappers
 
-    def get_next_batch(self, mapper_id):
+    def get_next_batch(self, mapper_id, pos = None):
         assert self.num_mappers is not None
-        curr_pos = mapper_id 
+        if pos is None:
+            curr_pos = mapper_id 
+        else:
+            curr_pos = pos
         while curr_pos < len(self.files):
             print("starting reading ",time.time())
             a = pq.read_table("s3://" + self.bucket + "/" + self.files[curr_pos],columns=self.columns, filters = self.filters).to_pandas()
             print("ending reading ",time.time())
             curr_pos += self.num_mappers
-            yield a
+            yield curr_pos, a
 
 class InputCSVDataset:
 
