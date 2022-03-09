@@ -1,9 +1,51 @@
+import pickle
 import pyarrow.csv as csv
 import pyarrow.parquet as pq
 import pandas as pd
 from io import BytesIO, StringIO
 import boto3
+import s3fs
 import time
+import redis
+
+# this is used to convert an RDD into streams
+# gonna do some intelligent stuff by maximizing data locality
+class RedisObjectsDataset:
+
+    # expects objects as a dict of channel : list of tuples of (ip, key, size)
+    def __init__(self, channel_objects, ip_set) -> None:
+        self.channel_objects = channel_objects
+        self.rs = {}
+        self.ip_set = ip_set
+        for ip in self.ip_set:
+            self.rs[ip] = redis.Redis(host=ip, port=6800, db=0)
+
+    def get_next_batch(self, mapper_id):
+        if mapper_id not in self.channel_objects:
+            raise Exception("ERROR: I dont know about where this channel is. Autoscaling here not supported yet. Will it ever be?")
+        for object in self.channel_objects[mapper_id]:
+            bump =  self.rs[object[0]].get(object[1])
+            yield pickle.loads(bump)
+
+
+class InputSingleParquetDataset:
+
+    def __init__(self, bucket, filename, columns = None) -> None:
+        s3 = s3fs.S3FileSystem()
+        self.parquet_file = pq.ParquetFile(s3.open(bucket + filename, "rb"))
+        self.num_row_groups = self.parquet_file.num_row_groups
+        self.num_mappers = None
+        self.columns = columns
+
+    def set_num_mappers(self, num_mappers):
+        self.num_mappers = num_mappers
+    
+    def get_next_batch(self, mapper_id):
+        assert self.num_mappers is not None
+        curr_row_group = mapper_id 
+        while curr_row_group < len(self.num_row_groups):
+            a = self.parquet_file.read_row_group(curr_row_group, columns = self.columns).to_pandas()
+            yield a
 
 # use this if you have a lot of small parquet files
 class InputMultiParquetDataset:
@@ -12,7 +54,7 @@ class InputMultiParquetDataset:
     # but when you can't it seems like you still read in the entire thing anyways
     # might as well do the filtering at the Pandas step. Also you need to map filters to the DNF form of tuples, which could be 
     # an interesting project in itself. Time for an intern?
-    
+
     def __init__(self, bucket, prefix, columns = None, filters = None) -> None:
         self.s3 = boto3.client('s3')
         self.bucket = bucket
@@ -32,7 +74,9 @@ class InputMultiParquetDataset:
         assert self.num_mappers is not None
         curr_pos = mapper_id 
         while curr_pos < len(self.files):
+            print("starting reading ",time.time())
             a = pq.read_table("s3://" + self.bucket + "/" + self.files[curr_pos],columns=self.columns, filters = self.filters).to_pandas()
+            print("ending reading ",time.time())
             curr_pos += self.num_mappers
             yield a
 

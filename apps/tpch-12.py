@@ -38,13 +38,16 @@ else:
     lineitem = task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl.1",lineitem_scheme,{'localhost':8, '172.31.16.185':8},batch_func=lineitem_filter, sep="|")
 
 join_executor = JoinExecutor(left_on="o_orderkey",right_on="l_orderkey", batch_func=batch_func, left_primary = True)
-output_stream = task_graph.new_stateless_node({0:orders,1:lineitem},join_executor,{'localhost':2, '172.31.16.185':2}, {0:"o_orderkey", 1:"l_orderkey"})
+output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},join_executor,{'localhost':2, '172.31.16.185':2}, {0:"o_orderkey", 1:"l_orderkey"})
 agg_executor = AggExecutor()
-agged = task_graph.new_stateless_node({0:output_stream}, agg_executor, {'localhost':1}, {0:None})
+agged = task_graph.new_blocking_node({0:output_stream}, None, agg_executor, {'localhost':1}, {0:None})
 
 task_graph.initialize()
 
 start = time.time()
 task_graph.run()
 print("total time ", time.time() - start)
+
+print(agged.to_pandas.remote())
+
 #import pdb;pdb.set_trace()

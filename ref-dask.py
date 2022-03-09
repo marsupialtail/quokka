@@ -1,3 +1,4 @@
+import datetime
 import pandas as pd
 import numpy as np
 import dask.dataframe as dd
@@ -75,6 +76,20 @@ def do_6(size):
     print(filtered_df.product.sum().compute())
     print(time.time() - start)
 
+def do_6_parquet(size):
+
+    start = time.time()
+    if size == "small":
+        df = dd.read_parquet("s3://tpc-h-small/parquet/lineitem")
+    elif size == "big":
+        df = dd.read_csv("s3://tpc-h-csv/lineitem/lineitem.tbl.1",sep="|", header = 0)
+    else:
+        raise Exception
+    filtered_df = df.loc[(df.l_shipdate > pd.to_datetime(datetime.date(1994,1,1))) & (df.l_discount >= 0.05) & (df.l_discount <= 0.07) & (df.l_quantity < 24)]
+    filtered_df['product'] = filtered_df.l_extendedprice * filtered_df.l_discount
+    print(filtered_df.product.sum().compute())
+    print(time.time() - start)
+
 def do_12(size):
 
     start = time.time()
@@ -112,12 +127,24 @@ def do_matmul(size):
         print(np.sum(np.dot(matrix,np.transpose(matrix))))
     print(time.time() - start)
 
+def do_pagerank(iters = 20):
+
+    start = time.time()
+    a = pd.read_csv("s3://pagerank-graphs/livejournal.csv",sep=" ")
+    result = pd.read_csv("s3://pagerank-graphs/vector.csv",sep=" ")
+    for i in range(iters):
+        result = a.merge(result, on = "y").groupby("x").agg({'val':'sum'}).reset_index()
+        result.rename(columns = {"x":"y"}, inplace=True)
+    print(time.time()-start)
+
 
 if int(sys.argv[1]) == 3:
     do_3(sys.argv[2])
 if int(sys.argv[1]) == 6:
-    do_6(sys.argv[2])
+    do_6_parquet(sys.argv[2])
 if int(sys.argv[1]) == 12:
     do_12(sys.argv[2])
 if int(sys.argv[1]) == 0:
     do_matmul(sys.argv[2])
+if int(sys.argv[1]) == 100:
+    do_pagerank(iters=  int(sys.argv[2]))

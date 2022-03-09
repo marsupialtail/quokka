@@ -51,17 +51,16 @@ else:
 # join order picked by hand, might not be  the best one!
 join_executor1 = OOCJoinExecutor(left_on = "c_custkey", right_on = "o_custkey",batch_func=batch_func1, left_primary = True)
 join_executor2 = OOCJoinExecutor(left_on="o_orderkey",right_on="l_orderkey",batch_func=batch_func2, left_primary = True)
-temp = task_graph.new_stateless_node({0:customers,1:orders},join_executor1,{'localhost':2,'172.31.16.185':2}, {0:"c_custkey", 1:"o_custkey"})
-joined = task_graph.new_stateless_node({0:temp, 1: lineitem},join_executor2, {'localhost':2, '172.31.16.185':2}, {0: "o_orderkey", 1:"l_orderkey"})
+temp = task_graph.new_non_blocking_node({0:customers,1:orders},None, join_executor1,{'localhost':2,'172.31.16.185':2}, {0:"c_custkey", 1:"o_custkey"})
+joined = task_graph.new_non_blocking_node({0:temp, 1: lineitem},None, join_executor2, {'localhost':2, '172.31.16.185':2}, {0: "o_orderkey", 1:"l_orderkey"})
 
 agg_executor = AggExecutor(final_func=final_func)
-agged = task_graph.new_stateless_node({0:joined}, agg_executor, {'localhost':1}, {0:None})
-#output_executor = OutputCSVExecutor(4,"yugan","result")
-#wrote = task_graph.new_stateless_node({0:output_stream},output_executor,4)
+agged = task_graph.new_blocking_node({0:joined}, None, agg_executor, {'localhost':1}, {0:None})
 
 task_graph.initialize()
 
 start = time.time()
 task_graph.run()
 print("total time ", time.time() - start)
-#import pdb;pdb.set_trace()
+
+print(ray.get(agged.to_pandas.remote()))
