@@ -23,8 +23,8 @@ else
 		--cluster-id ${CLUSTER_ID} \
 		--steps Type=Spark,Name="${EXP_NAME}_$i",ActionOnFailure=CONTINUE,\
 Args=[s3://quokka-benchmark/${EXP_NAME}.py,\
---source_lineitem,s3://tpc-h-small/lineitem.tbl\
---source_orders,s3://tpc-h-small/orders.tbl\
+--source_lineitem,s3://tpc-h-small/lineitem.tbl,\
+--source_orders,s3://tpc-h-small/orders.tbl,\
 --output_uri,s3://quokka-benchmark/experiment/${EXP_NAME}/$i]
 	done
 fi

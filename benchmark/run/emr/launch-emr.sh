@@ -18,4 +18,5 @@ aws emr create-cluster \
     --log-uri "s3://quokka-benchmark/logs/" \
     --use-default-roles \
     --no-termination-protected \
-    --auto-termination-policy IdleTimeout=1800
+    --auto-termination-policy IdleTimeout=1800 \
+    --configurations file://${WORKING_PATH}/configurations.json

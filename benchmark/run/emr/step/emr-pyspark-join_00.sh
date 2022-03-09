@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# If you run this file directly from the command line then run the following in the shell first
+# If you run this file directly from the command line then run the following 3 lines in the shell first
 # export REPO_PATH="!!INSERT THE PATH TO THE QUOKKA REPO HERE!!"
 # export WORKING_PATH="${REPO_PATH}/benchmark/run/emr"
 # export QUERY_PATH="${REPO_PATH}/benchmark/query"
