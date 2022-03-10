@@ -1,3 +1,6 @@
+import os
+os.environ["POLAR_MAX_THREADS"] = "1"
+import polars
 import pandas as pd
 import time
 
@@ -40,6 +43,54 @@ class OutputCSVExecutor(Executor):
         pd.concat(self.dfs).to_csv(name)
         print("done")
 
+
+
+class PolarJoinExecutor(Executor):
+    # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
+    # batch func must return a list of dfs too
+    def __init__(self, on = None, left_on = None, right_on = None, batch_func = None):
+        self.state0 = []
+        self.state1 = []
+        if on is not None:
+            assert left_on is None and right_on is None
+            self.left_on = on
+            self.right_on = on
+        else:
+            assert left_on is not None and right_on is not None
+            self.left_on = left_on
+            self.right_on = right_on
+        self.batch_func = batch_func
+        # keys that will never be seen again, safe to delete from the state on the other side
+
+    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
+    def execute(self,batches, stream_id, executor_id):
+        batch = polars.concat(batches)
+        results = []
+        # state compaction
+
+        if stream_id == 0:
+            if len(self.state1) > 0:
+                #pass
+                #results = [batch.join(i,left_on = self.left_on, right_on = self.right_on ,how='inner') for i in self.state1]
+                results = [batch.join(polars.concat(self.state1),left_on = self.left_on, right_on = self.right_on ,how='inner')]
+            self.state0.append(batch)
+             
+        elif stream_id == 1:
+            if len(self.state0) > 0:
+                #pass
+                #results = [i.join(batch,left_on = self.left_on, right_on = self.right_on ,how='inner') for i in self.state0]
+                results = [polars.concat(self.state0).join(batch,left_on = self.left_on, right_on = self.right_on ,how='inner')]
+            self.state1.append(batch)
+        
+        if len(results) > 0:
+            if self.batch_func is not None:
+                return self.batch_func([i.to_pandas() for i in results])
+            else:
+                return [i.to_pandas() for i in results] 
+    
+    def done(self,executor_id):
+        print("done join ", executor_id)
+
 class JoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
@@ -59,8 +110,8 @@ class JoinExecutor(Executor):
         self.right_primary = right_primary
 
         # keys that will never be seen again, safe to delete from the state on the other side
-        self.left_gone_keys = set()
-        self.right_gone_keys = set()
+        #self.left_gone_keys = set()
+        #self.right_gone_keys = set()
 
         self.batch_func = batch_func
         self.epoch = 0
@@ -76,34 +127,38 @@ class JoinExecutor(Executor):
         self.epoch += 1
 
         # state compaction
-        if self.epoch % 20 == 0:
-            if len(self.state0) > 10:
-                self.state0 = [pd.concat(self.state0)]
-            if len(self.state1) > 10:
-                self.state1 = [pd.concat(self.state1)]
-            
-            if len(self.left_gone_keys) > 0:
-                self.state1 = [i[~i[self.right_on].isin(self.left_gone_keys)].copy() for i in self.state1]
-            if len(self.right_gone_keys) > 0:
-                self.state0 = [i[~i[self.left_on].isin(self.right_gone_keys)].copy() for i in self.state0]
+        #if self.epoch % 20 == 0:
+        #    if len(self.state0) > 10:
+        #        self.state0 = [pd.concat(self.state0)]
+        #    if len(self.state1) > 10:
+        #        self.state1 = [pd.concat(self.state1)]
+        #    
+        #    if len(self.left_gone_keys) > 0:
+        #        self.state1 = [i[~i[self.right_on].isin(self.left_gone_keys)].copy() for i in self.state1]
+        #    if len(self.right_gone_keys) > 0:
+        #        self.state0 = [i[~i[self.left_on].isin(self.right_gone_keys)].copy() for i in self.state0]
 
         if stream_id == 0:
             if len(self.state1) > 0:
                 results = [batch.merge(i,left_on = self.left_on, right_on = self.right_on ,how='inner',suffixes=('_a','_b')) for i in self.state1]
+            #    pass
             self.state0.append(batch)
-            if self.left_primary:
-                self.left_gone_keys = self.left_gone_keys | set(batch[self.left_on])
+            #if self.left_primary:
+            #    self.left_gone_keys = self.left_gone_keys | set(batch[self.left_on])
              
         elif stream_id == 1:
             if len(self.state0) > 0:
                 results = [i.merge(batch,left_on = self.left_on, right_on = self.right_on ,how='inner',suffixes=('_a','_b')) for i in self.state0]
+            #    pass
             self.state1.append(batch)
-            if self.right_primary:
-                self.right_gone_keys = self.right_gone_keys | set(batch[self.right_on])
-        
+            #if self.right_primary:
+            #    self.right_gone_keys = self.right_gone_keys | set(batch[self.right_on])
+        print("batch_func start", time.time()) 
         if len(results) > 0:
             if self.batch_func is not None:
-                return self.batch_func(results)
+                result =  self.batch_func(results)
+                print("batch_func end", time.time())
+                return result
             else:
                 return results
     
@@ -212,7 +267,7 @@ class MergedStorageExecutor(Executor):
     def __init__(self) -> None:
         self.state = []
     def execute(self, batches, stream_id, executor_id):
-        self.state.extend(batch)
+        self.state.extend(batches)
     def done(self, executor_id):
         return pd.concat(self.state)
 

@@ -3,6 +3,7 @@ from dataset import *
 import redis
 import sys
 import pyarrow as pa
+import polars
 import numpy as np
 import pandas as pd
 import time
@@ -10,8 +11,10 @@ import ray
 import gc
 import pickle
 
-#ray.init(ignore_reinit_error=True) # do this locally
 ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
+
+#ray.init(ignore_reinit_error=True) # do this locally
+
 #ray.timeline("profile.json")
 
     
@@ -177,12 +180,11 @@ class TaskNode:
             print("stream psuh end",time.time())
             return False
         
-        if type(data) == pd.core.frame.DataFrame:
-            for target in self.alive_targets:
-                original_channel_to_ip, partition_key = self.targets[target]
-                for channel in self.alive_targets[target]:
-                    if partition_key is not None:
-
+        for target in self.alive_targets:
+            original_channel_to_ip, partition_key = self.targets[target]
+            for channel in self.alive_targets[target]:
+                if partition_key is not None:
+                    if type(data) == pd.core.frame.DataFrame:
                         if type(partition_key) == str:
                             payload = data[data[partition_key] % len(original_channel_to_ip) == channel]
                             print("payload size ",payload.memory_usage().sum(), channel)
@@ -190,20 +192,28 @@ class TaskNode:
                             payload = partition_key(data, channel)
                         else:
                             raise Exception("Can't understand partition strategy")
-                    else:
-                        payload = data
-                    # don't worry about target being full for now.
-                    print("not checking if target is full. This will break with larger joins for sure.")
-                    pipeline = self.target_rs[target][channel].pipeline()
-                    #pipeline.publish("mailbox-"+str(target) + "-" + str(channel),context.serialize(payload).to_buffer().to_pybytes())
-                    pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
+                    if type(data) == polars.internals.frame.DataFrame:
+                        if type(partition_key) == str:
+                            payload = data[data[partition_key] % len(original_channel_to_ip) == channel]
+                        elif callable(partition_key):
+                            payload = partition_key(data, channel)
+                        else:
+                            raise Exception("Can't understand partition strategy")
+                       
+                else:
+                    payload = data
+                # don't worry about target being full for now.
+                print("not checking if target is full. This will break with larger joins for sure.")
+                pipeline = self.target_rs[target][channel].pipeline()
+                #pipeline.publish("mailbox-"+str(target) + "-" + str(channel),context.serialize(payload).to_buffer().to_pybytes())
+                pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
 
-                    pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
-                    results = pipeline.execute()
-                    if False in results:
-                        if (target, channel) not in self.strikes:
-                            raise Exception
-                        self.strikes.remove((target, channel))
+                pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
+                results = pipeline.execute()
+                if False in results:
+                    if (target, channel) not in self.strikes:
+                        raise Exception
+                    self.strikes.remove((target, channel))
 
         print("stream psuh end",time.time())
         return True
@@ -438,13 +448,14 @@ class InputS3CSVNode(InputNode):
 @ray.remote
 class InputS3MultiParquetNode(InputNode):
 
-    def __init__(self, id, bucket, key, channel_to_ip, columns = None, batch_func=None, dependent_map={}):
+    def __init__(self, id, bucket, key, channel_to_ip, columns = None, filters = None, batch_func=None, dependent_map={}):
         super().__init__(id, channel_to_ip, dependent_map)
 
         self.bucket = bucket
         self.key = key
         self.columns = columns
         self.batch_func = batch_func
+        self.filters = filters
     
     def initialize(self, my_id):
         if self.bucket is None:
@@ -581,7 +592,7 @@ class TaskGraph:
         return self.current_node - 1
     
 
-    def new_input_multiparquet(self, bucket, key,  ip_to_num_channel, batch_func=None, columns = None, dependents = []):
+    def new_input_multiparquet(self, bucket, key,  ip_to_num_channel, batch_func=None, columns = None, filters = None, dependents = []):
         
         dependent_map = self.return_dependent_map(dependents)
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
@@ -590,11 +601,11 @@ class TaskGraph:
         for ip in ip_to_num_channel:
             if ip != 'localhost':
                 tasknode.extend([InputS3MultiParquetNode.options(num_cpus=0.001, resources={"node:" + ip : 0.001}).
-                remote(self.current_node, bucket,key,channel_to_ip, columns = columns,
+                remote(self.current_node, bucket,key,channel_to_ip, columns = columns,filters= filters,
                  batch_func = batch_func,dependent_map = dependent_map) for i in range(ip_to_num_channel[ip])])
             else:
                 tasknode.extend([InputS3MultiParquetNode.options(num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}).
-                remote(self.current_node, bucket,key,channel_to_ip, columns = columns,
+                remote(self.current_node, bucket,key,channel_to_ip, columns = columns,filters= filters,
                  batch_func = batch_func, dependent_map = dependent_map) for i in range(ip_to_num_channel[ip])])
         
         self.nodes[self.current_node] = tasknode

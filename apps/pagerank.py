@@ -8,6 +8,7 @@ import pandas as pd
 import redis
 import numpy as np
 import pickle
+ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
 
 class SpMVExecutor(Executor):
     # this is basically an inner join, but we need to do some smart things to manage memory
@@ -36,13 +37,14 @@ class SpMVExecutor(Executor):
         # we are not using shared memory solution, so this will blow up the memory usage if done in initialize! do this lazily once you need it
         start = time.time()
         if self.my_matrix is None:
-            dfs = []
             ip, key, size =  self.my_objects[0]
             r = redis.Redis(host=ip, port=6800, db=0)
             # with shared memory object store, picle.loads and r.get latency should be gone. the concat latency might still be there
-            self.matrix = pickle.loads(r.get(key))
+            self.my_matrix = pickle.loads(r.get(key))
         print("DESERIALIZATION STUFF", time.time() - start)
+        start = time.time()
         result = self.my_matrix.merge(pd.concat(batches), on = "y").groupby("x").agg({'val':'sum'})
+        print("JOIN TIME", time.time() - start)
 
         if self.partial_sum is None:
             self.partial_sum = result 

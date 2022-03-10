@@ -75,7 +75,8 @@ class InputMultiParquetDataset:
         curr_pos = mapper_id 
         while curr_pos < len(self.files):
             print("starting reading ",time.time())
-            a = pq.read_table("s3://" + self.bucket + "/" + self.files[curr_pos],columns=self.columns, filters = self.filters).to_pandas()
+            #a = pq.read_table("s3://" + self.bucket + "/" + self.files[curr_pos],columns=self.columns, filters = self.filters).to_pandas()
+            a = pq.read_table("s3://" + self.bucket + "/" + self.files[curr_pos],columns=self.columns, filters = self.filters)
             print("ending reading ",time.time())
             curr_pos += self.num_mappers
             yield a
@@ -173,7 +174,8 @@ class InputCSVDataset:
                 pos += last_newline
                 print("start convert,",time.time())
                 #bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
-                bump = csv.read_csv(BytesIO(resp),read_options = csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)).to_pandas() 
+                #bump = csv.read_csv(BytesIO(resp),read_options = csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)).to_pandas() 
+                bump = csv.read_csv(BytesIO(resp),read_options = csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)) 
                 print("done convert,",time.time())
                 yield bump
 
