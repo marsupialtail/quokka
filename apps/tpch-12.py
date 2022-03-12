@@ -29,6 +29,11 @@ orders_filter = lambda x: x[["o_orderkey","o_orderpriority"]]
 lineitem_filter = lambda x: x[((x.l_shipmode == "MAIL") | (x.l_shipmode == "SHIP")) & (x.l_commitdate < x.l_receiptdate) 
 & (x.l_shipdate < x.l_commitdate) & (x.l_receiptdate >= pd.to_datetime(datetime.date(1994,1,1))) & (x.l_receiptdate < pd.to_datetime(datetime.date(1995,1,1)))][["l_orderkey","l_shipmode"]]
 
+orders_filter = lambda x: x.select("o_orderkey","o_orderpriority").to_pandas()
+lineitem_filter = lambda x: x.filter(compute.and_(compute.and_(compute.and_(compute.is_in(x["l_shipmode"],value_set = pa.array(["SHIP","MAIL"]), skip_null = True), compute.less(x["l_commitdate"], x["l_receiptdate"])), 
+compute.and_(compute.less(x["l_shipdate"], x["l_commitdate"]), compute.greater_equal(x["l_receiptdate"], compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s")))),
+ compute.less(x["l_receiptdate"], compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")))).select(["l_orderkey","l_shipmode"]).to_pandas()
+
 if sys.argv[1] == "small":
     print("DOING  SMALL")
     orders = task_graph.new_input_csv("tpc-h-small","orders.tbl",order_scheme,{'localhost':8, '172.31.16.185':8},batch_func=orders_filter, sep="|")
