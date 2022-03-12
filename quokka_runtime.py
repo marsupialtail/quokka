@@ -460,7 +460,7 @@ class InputS3MultiParquetNode(InputNode):
     def initialize(self, my_id):
         if self.bucket is None:
             raise Exception
-        self.accessor = InputMultiParquetDataset(self.bucket, self.key, columns = self.columns)
+        self.accessor = InputMultiParquetDataset(self.bucket, self.key, columns = self.columns, filters= self.filters)
         self.accessor.set_num_mappers(len(self.channel_to_ip))
 
 @ray.remote

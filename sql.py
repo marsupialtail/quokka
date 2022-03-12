@@ -49,8 +49,9 @@ class PolarJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
     def __init__(self, on = None, left_on = None, right_on = None, batch_func = None):
-        self.state0 = []
-        self.state1 = []
+        self.state0 = None
+        self.state1 = None
+        self.lengths = {0:0, 1:0}
         if on is not None:
             assert left_on is None and right_on is None
             self.left_on = on
@@ -64,23 +65,31 @@ class PolarJoinExecutor(Executor):
 
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
+        self.lengths[stream_id] += len(batches)
+        print(self.lengths)
         batch = polars.concat(batches)
         results = []
         # state compaction
 
         if stream_id == 0:
-            if len(self.state1) > 0:
+            if self.state1 is not None:
                 #pass
                 #results = [batch.join(i,left_on = self.left_on, right_on = self.right_on ,how='inner') for i in self.state1]
-                results = [batch.join(polars.concat(self.state1),left_on = self.left_on, right_on = self.right_on ,how='inner')]
-            self.state0.append(batch)
+                results = [batch.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how='inner')]
+            if self.state0 is None:
+                self.state0 = batch
+            else:
+                self.state0.vstack(batch, in_place = True)
              
         elif stream_id == 1:
-            if len(self.state0) > 0:
+            if self.state0 is not None:
                 #pass
                 #results = [i.join(batch,left_on = self.left_on, right_on = self.right_on ,how='inner') for i in self.state0]
-                results = [polars.concat(self.state0).join(batch,left_on = self.left_on, right_on = self.right_on ,how='inner')]
-            self.state1.append(batch)
+                results = [self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how='inner')]
+            if self.state1 is None:
+                self.state1 = batch
+            else:
+                self.state1.vstack(batch, in_place = True)
         
         if len(results) > 0:
             if self.batch_func is not None:
