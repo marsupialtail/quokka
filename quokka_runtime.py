@@ -5,8 +5,8 @@ import time
 import pickle
 import utils as utils
 
-#ray.init(ignore_reinit_error=True) # do this locally
-ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
+ray.init(ignore_reinit_error=True) # do this locally
+#ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
 #ray.timeline("profile.json")
 
     
@@ -19,13 +19,6 @@ class Dataset:
         self.metadata = {}
         self.remaining_channels = {i for i in range(self.num_channels)}
         self.done = False
-
-    # only one person will ever call this, and that is the master node
-    # def change_num_channels(self, num_channels):
-    #     if num_channels > self.num_channels:
-    #         for i in range(self.num_channels, num_channels):
-    #             self.objects[i] = {}
-    #     self.num_channels = num_channels
 
     def added_object(self, channel, object_handle):
 
@@ -97,6 +90,13 @@ class TaskGraph:
                 dependent_map[node] = (self.node_ips[node], len(self.node_channel_to_ip[node]))
         return dependent_map
 
+    def epilogue(self,tasknode, channel_to_ip, ips):
+        self.nodes[self.current_node] = tasknode
+        self.node_channel_to_ip[self.current_node] = channel_to_ip
+        self.node_ips[self.current_node] = ips
+        self.current_node += 1
+        return self.current_node - 1
+
     def new_input_redis(self, dataset, ip_to_num_channel, policy = "default", batch_func=None, dependents = []):
         
         dependent_map = self.return_dependent_map(dependents)
@@ -150,18 +150,14 @@ class TaskGraph:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
                 tasknode[channel] = InputRedisDatasetNode.options(num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, channel_objects, channel_to_ip, batch_func=batch_func, dependent_map=dependent_map)
+                ).remote(self.current_node, channel, channel_objects, (self.checkpoint_bucket, self.current_node + "-" + channel), batch_func=batch_func, dependent_map=dependent_map)
             else:
                 tasknode[channel] = InputRedisDatasetNode.options(num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
-                ).remote(self.current_node, channel_objects, channel_to_ip, batch_func=batch_func, dependent_map=dependent_map)
+                ).remote(self.current_node, channel, channel_objects, (self.checkpoint_bucket, self.current_node + "-" + channel), batch_func=batch_func, dependent_map=dependent_map)
         
-        self.nodes[self.current_node] = tasknode
-        self.node_channel_to_ip[self.current_node] = channel_to_ip
-        self.node_ips[self.current_node] = tuple(ip_to_num_channel.keys())
-        self.current_node += 1
-        return self.current_node - 1
+        return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
-    def new_input_csv(self, bucket, key, names, ip_to_num_channel, batch_func=None, sep = ",", dependents = [], stride= 64 * 1024 * 1024):
+    def new_input_csv(self, bucket, key, names, ip_to_num_channel, batch_func=None, sep = ",", dependents = [], stride= 1024 * 1024):
         
         dependent_map = self.return_dependent_map(dependents)
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
@@ -171,18 +167,14 @@ class TaskGraph:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
                 tasknode[channel] = InputS3CSVNode.options(num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, bucket,key,names, channel_to_ip, batch_func = batch_func,sep = sep, 
+                ).remote(self.current_node, channel, bucket,key,names, len(channel_to_ip), (self.checkpoint_bucket, self.current_node + "-" + channel),batch_func = batch_func,sep = sep, 
                 stride= stride, dependent_map = dependent_map, )
             else:
                 tasknode[channel] = InputS3CSVNode.options(num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
-                ).remote(self.current_node, bucket,key,names, channel_to_ip, batch_func = batch_func, sep = sep,
+                ).remote(self.current_node, channel, bucket,key,names, len(channel_to_ip), (self.checkpoint_bucket, self.current_node + "-" + channel), batch_func = batch_func, sep = sep,
                 stride = stride, dependent_map = dependent_map, ) 
         
-        self.nodes[self.current_node] = tasknode
-        self.node_channel_to_ip[self.current_node] = channel_to_ip
-        self.node_ips[self.current_node] = tuple(ip_to_num_channel.keys())
-        self.current_node += 1
-        return self.current_node - 1
+        return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
     
 
     def new_input_multiparquet(self, bucket, key,  ip_to_num_channel, batch_func=None, columns = None, dependents = []):
@@ -195,65 +187,55 @@ class TaskGraph:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
                 tasknode[channel] = InputS3MultiParquetNode.options(num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, bucket,key,channel_to_ip, columns = columns,
+                ).remote(self.current_node, channel, bucket,key,len(channel_to_ip), (self.checkpoint_bucket, self.current_node + "-" + channel), columns = columns,
                  batch_func = batch_func,dependent_map = dependent_map)
             else:
                 tasknode[channel] = InputS3MultiParquetNode.options(num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
-                ).remote(self.current_node, bucket,key,channel_to_ip, columns = columns,
+                ).remote(self.current_node, channel, bucket,key,len(channel_to_ip), (self.checkpoint_bucket, self.current_node + "-" + channel),columns = columns,
                  batch_func = batch_func, dependent_map = dependent_map)
         
-        self.nodes[self.current_node] = tasknode
-        self.node_channel_to_ip[self.current_node] = channel_to_ip
-        self.node_ips[self.current_node] = tuple(ip_to_num_channel.keys())
-        self.current_node += 1
-        return self.current_node - 1
+        return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
     
-    def new_non_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key):
+    def new_non_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 10):
         
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
         # this is the mapping of physical node id to the key the user called in streams. i.e. if you made a node, task graph assigns it an internal id #
         # then if you set this node as the input of this new non blocking task node and do streams = {0: node}, then mapping will be {0: the internal id of that node}
         mapping = {}
         # this is a dictionary of stream_id to the number of channels in that stream
-        source_parallelism = {}
+        parents = {}
         for key in streams:
             source = streams[key]
             if source not in self.nodes:
                 raise Exception("stream source not registered")
-            ray.get([i.append_to_targets.remote((self.current_node, channel_to_ip, partition_key[key])) for i in self.nodes[source]])
+            ray.get([self.nodes[source][i].append_to_targets.remote((self.current_node, channel_to_ip, partition_key[key])) for i in self.nodes[source]])
             mapping[source] = key
-            source_parallelism[source] = len(self.node_channel_to_ip[source]) # this only cares about how many channels the source has
+            parents[source] = self.nodes[source]
         
         tasknode = {}
         for channel in channel_to_ip:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
-                tasknode[channel] = NonBlockingTaskNode.options(num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(streams, datasets, functionObject, self.current_node, 
-                channel_to_ip, mapping, source_parallelism, ip, (self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)))
+                tasknode[channel] = NonBlockingTaskNode.options(num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(self.current_node, channel, mapping, datasets, functionObject, 
+                parents, (self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)), checkpoint_interval = ckpt_interval)
             else:
-                tasknode[channel] = NonBlockingTaskNode.options(num_cpus = 0.001, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.001}).remote(streams, 
-                datasets, functionObject, self.current_node, channel_to_ip, mapping, source_parallelism, ip,
-                (self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)))
+                tasknode[channel] = NonBlockingTaskNode.options(num_cpus = 0.001, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.001}).remote(self.current_node,
+                 channel, mapping, datasets, functionObject, parents, (self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)), checkpoint_interval = ckpt_interval)
 
-        self.nodes[self.current_node] = tasknode
-        self.node_channel_to_ip[self.current_node] = channel_to_ip
-        self.node_ips[self.current_node] =tuple(ip_to_num_channel.keys())
-        self.non_blocking_nodes.add(self.current_node)
-        self.current_node += 1
-        return self.current_node - 1
+        return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
-    def new_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key):
+    def new_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 10):
         
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
         mapping = {}
-        source_parallelism = {}
+        parents = {}
         for key in streams:
             source = streams[key]
             if source not in self.nodes:
                 raise Exception("stream source not registered")
-            ray.get([i.append_to_targets.remote((self.current_node, channel_to_ip, partition_key[key])) for i in self.nodes[source]])
+            ray.get([self.nodes[source][i].append_to_targets.remote((self.current_node, channel_to_ip, partition_key[key])) for i in self.nodes[source]])
             mapping[source] = key
-            source_parallelism[source] = len(self.node_channel_to_ip[source]) # this only cares about how many channels the source has
+            parents[source] = self.nodes[source]
         
         # the datasets will all be managed on the head node. Note that they are not in charge of actually storing the objects, they just 
         # track the ids.
@@ -263,39 +245,21 @@ class TaskGraph:
         for channel in channel_to_ip:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
-                tasknode[channel] = BlockingTaskNode.options(num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(streams, datasets, output_dataset, functionObject, self.current_node, 
-                channel_to_ip, mapping, source_parallelism, ip(self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)))
+                tasknode[channel] = BlockingTaskNode.options(num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(self.current_node, channel, mapping, datasets, output_dataset, functionObject, 
+                parents, (self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)), checkpoint_interval = ckpt_interval)
             else:
-                tasknode[channel] = BlockingTaskNode.options(num_cpus = 0.001, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.001}).remote(streams, 
-                datasets, output_dataset, functionObject, self.current_node, channel_to_ip, mapping, source_parallelism, ip,
-                (self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)))
+                tasknode[channel] = BlockingTaskNode.options(num_cpus = 0.001, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.001}).remote(self.current_node, 
+                channel, mapping, datasets, output_dataset, functionObject, parents, (self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)), checkpoint_interval = ckpt_interval)
         
-        self.nodes[self.current_node] = tasknode
-        self.node_channel_to_ip[self.current_node] = channel_to_ip
-        self.node_ips[self.current_node] = tuple(ip_to_num_channel.keys())
-        self.blocking_nodes.add(self.current_node)
-        self.current_node += 1
-        return output_dataset
-
-    
-    def initialize(self):
-
-        # no fault tolerance in the initailization process, fault here = dead
-        processes = []
-        for key in self.nodes:
-            node = self.nodes[key]
-            for i in range(len(node)):
-                replica = node[i]
-                processes.append(replica.initialize.remote(i))
-        ray.get(processes)
+        return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
     
     def run(self):
         processes = []
         for key in self.nodes:
             node = self.nodes[key]
-            for i in range(len(node)):
-                replica = node[i]
-                processes.append(replica.execute.remote(i))
+            for channel in node:
+                replica = node[channel]
+                processes.append(replica.execute.remote())
         ray.get(processes)
 
     def run_with_fault_tolerance(self):

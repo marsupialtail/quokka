@@ -40,6 +40,45 @@ class OutputCSVExecutor(Executor):
         pd.concat(self.dfs).to_csv(name)
         print("done")
 
+class SimpleJoinExecutor(Executor):
+    # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
+    # batch func must return a list of dfs too
+    def __init__(self, on = None, left_on = None, right_on = None, left_primary = False, right_primary = False, batch_func = None):
+        self.state0 = []
+        self.state1 = []
+        if on is not None:
+            assert left_on is None and right_on is None
+            self.left_on = on
+            self.right_on = on
+        else:
+            assert left_on is not None and right_on is not None
+            self.left_on = left_on
+            self.right_on = right_on
+        
+        # keys that will never be seen again, safe to delete from the state on the other side
+
+    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
+    def execute(self,batches, stream_id, executor_id):
+        batch = pd.concat(batches)
+        results = []
+        # state compaction
+
+        if stream_id == 0:
+            if len(self.state1) > 0:
+                results = [batch.merge(i,left_on = self.left_on, right_on = self.right_on ,how='inner',suffixes=('_a','_b')) for i in self.state1]
+            self.state0.append(batch)
+             
+        elif stream_id == 1:
+            if len(self.state0) > 0:
+                results = [i.merge(batch,left_on = self.left_on, right_on = self.right_on ,how='inner',suffixes=('_a','_b')) for i in self.state0]
+            self.state1.append(batch)
+        
+        if len(results) > 0:
+            return results
+    
+    def done(self,executor_id):
+        print("LLLLLLLLL",sum(len(i) for i in self.state0), sum(len(i) for i in self.state1))
+        print("done join ", executor_id)
 class JoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too

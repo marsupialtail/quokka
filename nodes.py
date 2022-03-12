@@ -1,28 +1,38 @@
-from dataset import * 
-import redis
+import numpy as np
+import pandas as pd
 import ray
-from collections import deque
+from collections import deque, OrderedDict
+from dataset import InputCSVDataset, InputMultiParquetDataset, InputSingleParquetDataset, RedisObjectsDataset
+import pickle
+import os
+import redis
+from threading import Lock
+import time
+import boto3
 import gc
 import sys
+# isolated simplified test bench for different fault tolerance protocols
 
 class Node:
 
-    # parallelism is going to be a dict of channel_id : ip
-    def __init__(self, id, channel_to_ip):
+    # will be overridden
+    def __init__(self, id, channel, checkpoint_location) -> None:
         self.id = id
-        self.channel_to_ip = channel_to_ip
+        self.channel = channel
+        self.checkpoint_location = checkpoint_location
+
         self.targets = {}
         self.r = redis.Redis(host='localhost', port=6800, db=0)
+        self.head_r = redis.Redis(host=ray.worker._global_node.address.split(":")[0], port=6800, db=0)
+
         self.target_rs = {}
         self.target_ps = {}
 
         # track the targets that are still alive
         self.alive_targets = {}
-        # you are only allowed to send a message to a done target once. More than once is unforgivable. This is because the current mechanism
-        # checks if something is done, and then sends a message. The target can be done while the message is sending. But then come next message,
-        # the check must tell you that the target is done.
-        self.strikes = set()
-    
+        self.output_lock = Lock()
+
+
     def append_to_targets(self,tup):
         node_id, channel_to_ip, partition_key = tup
 
@@ -30,33 +40,74 @@ class Node:
         redis_clients = {i: redis.Redis(host=i, port=6800, db=0) if i != ray.util.get_node_ip_address() else redis.Redis(host='localhost', port = 6800, db=0) for i in unique_ips}
         self.targets[node_id] = (channel_to_ip, partition_key)
         self.target_rs[node_id] = {}
-        self.target_ps[node_id] = []
+        self.target_ps[node_id] = {}
+
         for channel in channel_to_ip:
             self.target_rs[node_id][channel] = redis_clients[channel_to_ip[channel]]
         
         for client in redis_clients:
             pubsub = redis_clients[client].pubsub(ignore_subscribe_messages = True)
             pubsub.subscribe("node-done-"+str(node_id))
-            self.target_ps[node_id].append(pubsub)
+            self.target_ps[node_id][channel] = pubsub
         
         self.alive_targets[node_id] = {i for i in channel_to_ip}
-        for i in channel_to_ip:
-            self.strikes.add((node_id,i))
+        # remember the self.strikes stuff? Now we cannot check for that because a downstream target could just die.
+        # it's ok if we send stuff to dead people. Fault tolerance is supposed to take care of this.
+        
+        self.target_output_state[node_id] = {channel:0 for channel in channel_to_ip}
 
-    def initialize(self):
-        # child classes must override this method
-        raise NotImplementedError
 
-    def execute(self):
-        # child classes must override this method
-        raise NotImplementedError
+    def update_target_ip_and_help_target_recover(self, target_id, channel, target_out_seq_state, new_ip):
 
-    # determines if there are still targets alive, returns True or False. 
+        if new_ip != self.targets[target_id][0][channel]: # shouldn't schedule to same IP address ..
+            redis_client = redis.Redis(host=new_ip, port = 6800, db=0) 
+            pubsub = redis_client.pubsub(ignore_subscribe_messages = True)
+            pubsub.subscribe("node-done-"+str(target_id))
+            self.target_rs[target_id][channel] = redis_client
+            self.target_ps[target_id][channel] = pubsub
+
+        # send logged outputs 
+        print("HELP RECOVER",target_id,channel, target_out_seq_state)
+        self.output_lock.acquire()
+        pipeline = self.target_rs[target_id][channel].pipeline()
+        for key in self.logged_outputs:
+            if key > target_out_seq_state:
+                if type(self.logged_outputs[key]) == str and self.logged_outputs[key] == "done":
+                    payload = "done"
+                else:
+                    partition_key = self.targets[target_id][1]
+                    if type(partition_key) == str:
+                        payload = self.logged_outputs[key][self.logged_outputs[key][partition_key] % len(self.targets[target_id][0]) == channel]
+                    elif callable(partition_key):
+                        payload = partition_key(self.logged_outputs[key], channel)
+                pipeline.publish("mailbox-"+str(target_id) + "-" + str(channel),pickle.dumps(payload))
+                pipeline.publish("mailbox-id-"+str(target_id) + "-" + str(channel),pickle.dumps((self.id, self.channel, key)))
+        results = pipeline.execute()
+        if False in results:
+            raise Exception
+        self.output_lock.release()
+
+    def truncate_logged_outputs(self, target_id, channel, target_ckpt_state):
+        
+        print("STARTING TRUNCATE", target_id, channel, target_ckpt_state, self.target_output_state)
+        old_min = min(self.target_output_state[target_id].values())
+        self.target_output_state[target_id][channel] = target_ckpt_state
+        new_min = min(self.target_output_state[target_id].values())
+
+        self.output_lock.acquire()
+        if new_min > old_min:
+            for key in range(old_min, new_min):
+                if key in self.logged_outputs:
+                    print("REMOVING KEY",key,"FROM LOGGED OUTPUTS")
+                    self.logged_outputs.pop(key)
+        self.output_lock.release()    
+
     def update_targets(self):
 
         for target_node in self.target_ps:
             # there are #-ip locations you need to poll here.
-            for client in self.target_ps[target_node]:
+            for channel in self.target_ps[target_node]:
+                client = self.target_ps[target_node][channel]
                 while True:
                     message = client.get_message()
                     
@@ -72,44 +123,23 @@ class Node:
         else:
             return False
 
-    def get_batches(self, mailbox, mailbox_id, p, my_id):
-        while True:
-            message = p.get_message()
-            if message is None:
-                break
-            if message['channel'].decode('utf-8') == "mailbox-" + str(self.id) + "-" + str(my_id):
-                mailbox.append(message['data'])
-            elif message['channel'].decode('utf-8') ==  "mailbox-id-" + str(self.id) + "-" + str(my_id):
-                mailbox_id.append(int(message['data']))
-        
-        my_batches = {}
-        while len(mailbox) > 0 and len(mailbox_id) > 0:
-            first = mailbox.popleft()
-            stream_id = mailbox_id.popleft()
-
-            if len(first) < 10 and first.decode("utf-8") == "done":
-
-                # the responsibility for checking how many executors this input stream has is now resting on the consumer.
-
-                self.source_parallelism[stream_id] -= 1
-                if self.source_parallelism[stream_id] == 0:
-                    self.input_streams.pop(self.physical_to_logical_stream_mapping[stream_id])
-                    print("done", self.physical_to_logical_stream_mapping[stream_id])
-            else:
-                if stream_id in my_batches:
-                    my_batches[stream_id].append(pickle.loads(first))
-                else:
-                    my_batches[stream_id] = [pickle.loads(first)]
-        return my_batches
+    # reliably log state tag
+    def log_state_tag(self):
+        assert self.head_r.rpush("state-tag-" + str(self.id) + "-" + str(self.channel), pickle.dumps(self.state_tag))
 
     def push(self, data):
+            
 
-        print("stream psuh start",time.time())
+        self.out_seq += 1
 
+        self.output_lock.acquire()
+        self.logged_outputs[self.out_seq] = data
+        self.output_lock.release()
+
+        # downstream targets are done. You should be done too then.
         if not self.update_targets():
-            print("stream psuh end",time.time())
             return False
-        
+
         if type(data) == pd.core.frame.DataFrame:
             for target in self.alive_targets:
                 original_channel_to_ip, partition_key = self.targets[target]
@@ -118,7 +148,6 @@ class Node:
 
                         if type(partition_key) == str:
                             payload = data[data[partition_key] % len(original_channel_to_ip) == channel]
-                            print("payload size ",payload.memory_usage().sum(), channel)
                         elif callable(partition_key):
                             payload = partition_key(data, channel)
                         else:
@@ -126,223 +155,50 @@ class Node:
                     else:
                         payload = data
                     # don't worry about target being full for now.
-                    print("not checking if target is full. This will break with larger joins for sure.")
                     pipeline = self.target_rs[target][channel].pipeline()
-                    #pipeline.publish("mailbox-"+str(target) + "-" + str(channel),context.serialize(payload).to_buffer().to_pybytes())
                     pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
 
-                    pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
+                    pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),pickle.dumps((self.id, self.channel, self.out_seq)))
                     results = pipeline.execute()
                     if False in results:
-                        if (target, channel) not in self.strikes:
-                            raise Exception
-                        self.strikes.remove((target, channel))
+                        print("Downstream failure detected")
         else:
             raise Exception
 
-        print("stream psuh end",time.time())
         return True
 
     def done(self):
+
+        self.out_seq += 1
+
+        print("IM DONE", self.id)
+
+        self.output_lock.acquire()
+        self.logged_outputs[self.out_seq] = "done"
+        self.output_lock.release()
+
         if not self.update_targets():
             return False
+
         for target in self.alive_targets:
             for channel in self.alive_targets[target]:
                 pipeline = self.target_rs[target][channel].pipeline()
-                pipeline.publish("mailbox-"+str(target) + "-" + str(channel),"done")
-                pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),self.id)
+                pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps("done"))
+                pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),pickle.dumps((self.id, self.channel, self.out_seq)))
                 results = pipeline.execute()
                 if False in results:
-                    if (target, channel) not in self.strikes:
-                        print(target,channel)
-                        raise Exception
-                    self.strikes.remove((target, channel))
+                    print("Downstream failure detected")
         return True
 
-class TaskNode(Node):
-    def __init__(self, streams, datasets, functionObject, id, channel_to_ip, mapping, source_parallelism, ip, checkpoint_location) -> None:
-
-        super().__init__(id, channel_to_ip)
-
-        self.functionObject = functionObject
-        self.input_streams = streams
-        self.datasets = datasets
-        
-        # this maps what the system's stream_id is to what the user called the stream when they created the task node
-        self.physical_to_logical_stream_mapping = mapping
-        self.source_parallelism = source_parallelism
-        
-        self.ip = ip
-        self.checkpoint_location = checkpoint_location
-
-    def __init__(self, checkpoint_location):
-
-        # we cannot pickle redis clients so we have to rebuild all of them.
-        bucket, key = checkpoint_location
-        s3_resource = boto3.resource('s3')
-        body = s3_resource.Object(bucket, key).get()['Body']
-        state = pickle.loads(body.read())
-        super().__init__(state.id, state.channel_to_ip)
-        for tup in state.targets:
-            self.append_to_targets(tup)
-        
-        self.input_streams = state.streams
-        self.datasets = state.datasets
-        
-        # this maps what the system's stream_id is to what the user called the stream when they created the task node
-        self.physical_to_logical_stream_mapping = state.mapping
-        self.source_parallelism = state.source_parallelism
-        
-        self.ip = state.ip
-        assert checkpoint_location == state.checkpoint_location
-        self.checkpoint_location = checkpoint_location
-
-        self.functionObject = state.functionObject
-
-    def initialize(self, my_id):
-        if self.datasets is not None:
-            self.functionObject.initialize(self.datasets, my_id)
-    
-    # this is not intended to be called remotely
-    def checkpoint(self):
-        # this will be horribly inefficient atm.
-
-        # rely on pickle to serailize the state of the functionObject. probably reasonable.
-
-        # note that we are serializing ray object handlers in datasets. This is assuming that those things will still be around after the failure
-        # this is a fair assumption as all the dataset handlers are on master node and we assume that thing doesn't die.
-        state_dict = {"id": self.id, "channel_to_ip": self.channel_to_ip, "targets": self.targets, "alive_targets": self.alive_targets,
-        "strikes":self.strikes, "functionObject": self.functionObject, "input_streams": self.input_streams, "datasets": self.datasets, 
-        "mapping": self.physical_to_logical_stream_mapping, "source_parallelism": self.source_parallelism, "ip": self.ip,
-        "checkpoint_location": self.checkpoint_location}
-
-        state_str = pickle.dumps(state_dict)
-        s3_resource = boto3.resource('s3')
-        bucket, key = self.checkpoint_location
-        s3_resource.Object(bucket, key).put(state_str)
-
-@ray.remote
-class NonBlockingTaskNode(TaskNode):
-
-    # this is for one of the parallel threads
-
-    def __init__(self, streams, datasets, functionObject, id, channel_to_ip, mapping, source_parallelism, ip, checkpoint_location) -> None:
-
-        super().__init__( streams, datasets, functionObject, id, channel_to_ip, mapping, source_parallelism, ip, checkpoint_location)
-
-    def execute(self, my_id):
-
-        print("task start",time.time())
-
-        p = self.r.pubsub(ignore_subscribe_messages=True)
-        p.subscribe("mailbox-" + str(self.id) + "-" + str(my_id), "mailbox-id-" + str(self.id) + "-" + str(my_id))
-
-        assert my_id in self.channel_to_ip
-
-        mailbox = deque()
-        mailbox_id = deque()
-
-        while len(self.input_streams) > 0:
-
-            my_batches = self.get_batches(mailbox, mailbox_id, p, my_id)
-
-            for stream_id in my_batches:
-
-                results = self.functionObject.execute(my_batches[stream_id], self.physical_to_logical_stream_mapping[stream_id], my_id)
-                if hasattr(self.functionObject, 'early_termination') and self.functionObject.early_termination: 
-                    break
-
-                # this is a very subtle point. You will only breakout if length of self.target, i.e. the original length of 
-                # target list is bigger than 0. So you had somebody to send to but now you don't
-
-                if results is not None and len(self.targets) > 0:
-                    break_out = False
-                    assert type(results) == list                    
-                    for result in results:
-                        if self.push(result) is False:
-                            break_out = True
-                            break
-                    if break_out:
-                        break
-                else:
-                    pass
-    
-        obj_done =  self.functionObject.done(my_id) 
-        del self.functionObject
-        gc.collect()
-        if obj_done is not None:
-            self.push(obj_done)
-        
-        self.done()
-        self.r.publish("node-done-"+str(self.id),str(my_id))
-        print("task end",time.time())
-
-@ray.remote
-class BlockingTaskNode(TaskNode):
-
-    # this is for one of the parallel threads
-
-    def __init__(self, streams, datasets, output_dataset, functionObject, id, channel_to_ip, mapping, source_parallelism, ip, checkpoint_location) -> None:
-
-        super().__init__( streams, datasets, functionObject, id, channel_to_ip, mapping, source_parallelism, ip, checkpoint_location)
-        self.output_dataset = output_dataset
-    
-    # explicit override with error. Makes no sense to append to targets for a blocking node. Need to use the dataset instead.
-    def append_to_targets(self,tup):
-        raise Exception("Trying to stream from a blocking node")
-
-    def execute(self, my_id):
-
-        # this needs to change
-        print("task start",time.time())
-
-        p = self.r.pubsub(ignore_subscribe_messages=True)
-        p.subscribe("mailbox-" + str(self.id) + "-" + str(my_id), "mailbox-id-" + str(self.id) + "-" + str(my_id))
-
-        assert my_id in self.channel_to_ip
-
-        mailbox = deque()
-        mailbox_id = deque()
-
-        self.object_count = 0
-
-        while len(self.input_streams) > 0:
-
-            my_batches = self.get_batches( mailbox, mailbox_id, p, my_id)
-
-            for stream_id in my_batches:
-                results = self.functionObject.execute(my_batches[stream_id], self.physical_to_logical_stream_mapping[stream_id], my_id)
-                if hasattr(self.functionObject, 'early_termination') and self.functionObject.early_termination: 
-                    break
-
-                if results is not None and len(results) > 0:
-                    assert type(results) == list
-                    for result in results:
-                        key = str(self.id) + "-" + str(my_id) + "-" + str(self.object_count)
-                        self.object_count += 1
-                        self.r.set(key, pickle.dumps(result))
-                        self.output_dataset.added_object.remote(my_id, (ray.util.get_node_ip_address(), key, sys.getsizeof(result)))                    
-                else:
-                    pass
-    
-        obj_done =  self.functionObject.done(my_id) 
-        del self.functionObject
-        gc.collect()
-        if obj_done is not None:
-            key = str(self.id) + "-" + str(my_id) + "-" + str(self.object_count)
-            self.object_count += 1
-            self.r.set(key, pickle.dumps(obj_done))
-            self.output_dataset.added_object.remote(my_id, (ray.util.get_node_ip_address(), key, sys.getsizeof(obj_done)))
-        
-        self.output_dataset.done_channel.remote(my_id)
-        self.done()
-        self.r.publish("node-done-"+str(self.id),str(my_id))
-        print("task end",time.time())
-
 class InputNode(Node):
+    def __init__(self, id, channel, checkpoint_location, batch_func = None, dependent_map = {}, ckpt = None) -> None:
 
-    def __init__(self, id, channel_to_ip, dependent_map = {}):
-        super().__init__(id, channel_to_ip)
+        super().__init__( id, channel, checkpoint_location) 
+
+        # track the targets that are still alive
+        print("INPUT ACTOR LAUNCH", self.id)
+
+        self.batch_func = batch_func
         self.dependent_rs = {}
         self.dependent_parallelism = {}
         for key in dependent_map:
@@ -354,9 +210,37 @@ class InputNode(Node):
                 p.subscribe("input-done-" + str(key))
                 ps.append(p)
             self.dependent_rs[key] = ps
-    
-    def execute(self, id):
 
+        if ckpt is None:
+            self.logged_outputs = OrderedDict()
+            self.target_output_state = {}
+            self.out_seq = 0
+            self.state_tag = 0
+            self.state = None
+        else:
+            recovered_state = pickle.load(open(ckpt,"rb"))
+            self.logged_outputs = recovered_state["logged_outputs"]
+            self.target_output_state = recovered_state["target_output_state"]
+            self.state = recovered_state["state"]
+            self.out_seq = recovered_state["out_seq"]
+            self.state_tag = recovered_state["tag"]
+
+        
+    def checkpoint(self):
+
+        # write logged outputs, state, state_tag to reliable storage
+        # for input nodes, log the outputs instead of redownlaoding is probably worth it. since the outputs could be filtered by predicate
+        self.output_lock.acquire()
+        state = { "logged_outputs": self.logged_outputs, "out_seq" : self.out_seq, "tag":self.state_tag, "target_output_state":self.target_output_state,
+        "state":self.state}
+        self.output_lock.release()
+        pickle.dump(state, open("ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl","wb"))
+
+        # if this fails we are dead, but probability of this failing much smaller than dump failing
+        os.rename("ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl", "ckpt-" + str(self.id) + "-" + str(self.channel) + ".pkl")
+        
+    def execute(self):
+        
         undone_dependencies = len(self.dependent_rs)
         while undone_dependencies > 0:
             time.sleep(0.001) # be nice
@@ -369,73 +253,363 @@ class InputNode(Node):
                             if self.dependent_parallelism[dependent_node] == 0:
                                 undone_dependencies -= 1
                         else:
-                            raise Exception(message['data'])
+                            raise Exception(message['data'])            
 
-        print("input node start",time.time())
-        input_generator = self.accessor.get_next_batch(id)
+        # no need to log the state tag in an input node since we know the expected path...
 
-        for batch in input_generator:
-            
+        for pos, batch in self.input_generator:
+            self.state = pos
             if self.batch_func is not None:
-                print("batch func start",time.time())
                 result = self.batch_func(batch)
-                print("batch func end",time.time())
                 self.push(result)
             else:
                 self.push(batch)
-
+            if self.state_tag % 10 == 0:
+                self.checkpoint()
+            self.state_tag += 1
+        
         self.done()
         self.r.publish("input-done-" + str(self.id), "done")
-        print("input node end",time.time())
-
+    
 @ray.remote
 class InputS3CSVNode(InputNode):
+    def __init__(self, id, channel, bucket, key, names, num_channels,checkpoint_location, batch_func = None, dependent_map = {}, ckpt = None) -> None:
 
-    def __init__(self,id, bucket, key, names, channel_to_ip, batch_func=None, sep = ",", stride = 64 * 1024 * 1024, dependent_map = {}):
-        super().__init__(id, channel_to_ip, dependent_map)
-        
-        self.bucket = bucket
-        self.key = key
-        self.names = names
-
-        self.batch_func = batch_func
-        self.sep = sep
-        self.stride = stride
-
-    def initialize(self, my_id):
-        if self.bucket is None:
-            raise Exception
-        self.accessor = InputCSVDataset(self.bucket, self.key, self.names,0, sep = self.sep, stride = self.stride) 
-        self.accessor.set_num_mappers(len(self.channel_to_ip))
+        super().__init__(id, channel, checkpoint_location, batch_func = batch_func, dependent_map = dependent_map, ckpt = ckpt)
+        self.accessor = InputCSVDataset(bucket, key, names, 0, stride = 1024 * 1024)
+        self.accessor.set_num_mappers(num_channels)
+        self.input_generator = self.accessor.get_next_batch(channel, self.state)    
 
 @ray.remote
 class InputS3MultiParquetNode(InputNode):
 
-    def __init__(self, id, bucket, key, channel_to_ip, columns = None, batch_func=None, dependent_map={}):
-        super().__init__(id, channel_to_ip, dependent_map)
-
-        self.bucket = bucket
-        self.key = key
-        self.columns = columns
-        self.batch_func = batch_func
-    
-    def initialize(self, my_id):
-        if self.bucket is None:
-            raise Exception
-        self.accessor = InputMultiParquetDataset(self.bucket, self.key, columns = self.columns)
-        self.accessor.set_num_mappers(len(self.channel_to_ip))
+    def __init__(self, id, channel, bucket, key, num_channels, checkpoint_location,columns = None, batch_func=None, dependent_map={}, ckpt = None):
+        
+        super().__init__(id, channel, checkpoint_location, batch_func = batch_func, dependent_map = dependent_map, ckpt = ckpt)
+        self.accessor = InputMultiParquetDataset(bucket, key, columns = columns)
+        self.accessor.set_num_mappers(num_channels)
+        self.input_generator = self.accessor.get_next_batch(channel, self.state)
 
 @ray.remote
 class InputRedisDatasetNode(InputNode):
-
-    def __init__(self, id, channel_objects, channel_to_ip, batch_func=None, dependent_map={}):
-        super().__init__(id, channel_to_ip, dependent_map)
-        self.channel_objects = channel_objects
-        self.batch_func = batch_func
-    
-    def initialize(self, my_id):
+    def __init__(self, id, channel,channel_objects, checkpoint_location,batch_func=None, dependent_map={}, ckpt = None):
+        super().__init__(id, channel, checkpoint_location, batch_func = batch_func, dependent_map = dependent_map, ckpt = ckpt)
         ip_set = set()
         for channel in self.channel_objects:
             for object in self.channel_objects[channel]:
                 ip_set.add(object[0])
-        self.accessor = RedisObjectsDataset(self.channel_objects, ip_set)
+        self.accessor = RedisObjectsDataset(channel_objects, ip_set)
+        self.input_generator = self.accessor.get_next_batch(channel, self.state)
+
+
+class TaskNode(Node):
+    def __init__(self, id, channel,  mapping, datasets, functionObject, parents, checkpoint_location, checkpoint_interval = 10, ckpt = None) -> None:
+
+        # id: int. Id of the node
+        # channel: int. Channel of the node
+        # streams: dictionary of logical_id : streams
+        # mapping: the mapping between the name you assigned the stream to the actual id of the string.
+
+        super().__init__(id, channel, checkpoint_location)
+
+        self.p = self.r.pubsub(ignore_subscribe_messages=True)
+        self.p.subscribe("mailbox-" + str(id) + "-" + str(channel), "mailbox-id-" + str(id) + "-" + str(channel))
+        self.buffered_inputs = {(parent, channel): deque() for parent in parents for channel in parents[parent]}
+        self.id = id 
+        self.parents = parents # dict of id -> dict of channel -> actor handles        
+        self.datasets = datasets
+        self.functionObject = functionObject
+        if self.datasets is not None:
+            self.functionObject.initialize(self.datasets, self.channel)
+        self.physical_to_logical_stream_mapping = mapping
+        self.checkpoint_interval = checkpoint_interval
+
+        if ckpt is None:
+            self.state_tag =  {(parent,channel): 0 for parent in parents for channel in parents[parent]}
+            self.latest_input_received = {(parent,channel): 0 for parent in parents for channel in parents[parent]}
+            self.logged_outputs = OrderedDict()
+            self.target_output_state = {}
+
+            self.out_seq = 0
+            self.expected_path = deque()
+
+            self.ckpt_counter = -1
+
+        else:
+
+            # bucket, key = checkpoint_location
+            # s3_resource = boto3.resource('s3')
+            # body = s3_resource.Object(bucket, key).get()['Body']
+            # recovered_state = pickle.loads(body.read())
+
+            recovered_state = pickle.load(open(ckpt,"rb"))
+
+            self.state_tag= recovered_state["tag"]
+            print("RECOVERED TO STATE TAG", self.state_tag)
+            self.latest_input_received = recovered_state["latest_input_received"]
+            self.functionObject.deserialize(recovered_state["function_object"])
+            self.out_seq = recovered_state["out_seq"]
+            self.logged_outputs = recovered_state["logged_outputs"]
+            self.target_output_state = recovered_state["target_output_state"]
+
+            self.expected_path = self.get_expected_path()
+            print("EXPECTED PATH", self.expected_path)
+
+            self.ckpt_counter = -1
+        
+        self.log_state_tag()        
+
+    def checkpoint(self, method = "local"):
+
+        # write logged outputs, state, state_tag to reliable storage
+        self.output_lock.acquire()
+        state = {"latest_input_received": self.latest_input_received, "logged_outputs": self.logged_outputs, "out_seq" : self.out_seq,
+        "function_object": self.functionObject.serialize(), "tag":self.state_tag, "target_output_state": self.target_output_state}
+        self.output_lock.release()
+
+        if method == "s3":
+            state_str = pickle.dumps(state)
+            s3_resource = boto3.resource('s3')
+            bucket, key = self.checkpoint_location
+            # if this fails we are dead, but probability of this failing much smaller than dump failing
+            # the lack of rename in S3 is a big problem
+            s3_resource.Object(bucket, key).put(state_str)
+        
+        elif method == "local":
+            pickle.dump(state, open("ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl","wb"))
+            # if this fails we are dead, but probability of this failing much smaller than dump failing
+            os.rename("ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl", "ckpt-" + str(self.id) + "-" + str(self.channel) + ".pkl")
+        
+        else:
+            raise Exception
+
+        self.truncate_log()
+        truncate_tasks = []
+        for parent in self.parents:
+            for channel in self.parents[parent]:
+                handler = self.parents[parent][channel]
+                truncate_tasks.append(handler.truncate_logged_outputs.remote(self.id, self.channel, self.state_tag[(parent,channel)]))
+        try:
+            ray.get(truncate_tasks)
+        except ray.exceptions.RayActorError:
+            print("A PARENT HAS FAILED")
+            pass
+    
+    def ask_upstream_for_help(self, new_ip):
+        recover_tasks = []
+        print("UPSTREAM",self.parents)
+        for parent in self.parents:
+            for channel in self.parents[parent]:
+                handler = self.parents[parent][channel]
+                recover_tasks.append(handler.update_target_ip_and_help_target_recover.remote(self.id, self.channel, self.state_tag[(parent,channel)], new_ip))
+        ray.get(recover_tasks)
+        
+    def get_batches(self, mailbox, mailbox_id):
+        while True:
+            message = self.p.get_message()
+            if message is None:
+                break
+            if message['channel'].decode('utf-8') == "mailbox-" + str(self.id) + "-" + str(self.channel):
+                mailbox.append(message['data'])
+            elif message['channel'].decode('utf-8') ==  "mailbox-id-" + str(self.id)+ "-" + str(self.channel):
+                # this should be a tuple (source_id, source_tag)
+                mailbox_id.append(pickle.loads(message['data']))
+        
+        batches_returned = 0
+        while len(mailbox) > 0 and len(mailbox_id) > 0:
+            first = mailbox.popleft()
+            stream_id, channel,  tag = mailbox_id.popleft()
+
+            if tag <= self.state_tag[(stream_id,channel)]:
+                print("rejected an input stream's tag smaller than or equal to current state tag")
+                continue
+            if tag > self.latest_input_received[(stream_id,channel)] + 1:
+                print("DROPPING INPUT. THIS IS A FUTURE INPUT THAT WILL BE RESENT (hopefully)", tag, stream_id, channel, "current tag", self.latest_input_received[(stream_id,channel)])
+                continue
+
+            batches_returned += 1
+            self.latest_input_received[(stream_id,channel)] = tag
+            if len(first) < 20 and pickle.loads(first) == "done":
+                # the responsibility for checking how many executors this input stream has is now resting on the consumer.
+                self.parents[stream_id].pop(channel)
+                #raise Exception
+                if len(self.parents[stream_id]) == 0:
+                    self.parents.pop(stream_id)
+                
+                print("done", stream_id)
+            else:
+                self.buffered_inputs[(stream_id,channel)].append(pickle.loads(first))
+            
+        return batches_returned
+    
+    def get_expected_path(self):
+        return deque([pickle.loads(i) for i in self.head_r.lrange("state-tag-" + str(self.id) + "-" + str(self.channel), 0, self.head_r.llen("state-tag-" + str(self.id)))])
+    
+    # truncate the log to the checkpoint
+    def truncate_log(self):
+        while True:
+            if self.head_r.llen("state-tag-" + str(self.id) + "-" + str(self.channel)) == 0:
+                raise Exception
+            tag = pickle.loads(self.head_r.lpop("state-tag-" + str(self.id) + "-" + str(self.channel)))
+            
+            if tag == self.state_tag:
+                return
+
+    def schedule_for_execution(self):
+        if len(self.expected_path) == 0:
+            # process the source with the most backlog
+            lengths = {i: len(self.buffered_inputs[i]) for i in self.buffered_inputs}
+            parent, channel = max(lengths, key=lengths.get)
+            length = lengths[(parent,channel)]
+            if length == 0:
+                return None, None
+
+            # now drain that source
+            batch = pd.concat(self.buffered_inputs[parent,channel])
+            self.state_tag[(parent,channel)] += length
+            self.buffered_inputs[parent,channel].clear()
+            self.log_state_tag()
+            return parent, batch
+
+        else:
+            expected = self.expected_path[0]
+            diffs = {i: expected[i] - self.state_tag[i] for i in expected}
+            # there should only be one nonzero value in diffs. we need to figure out which one that is.
+            to_do = None
+            for key in diffs:
+                if diffs[key] > 0:
+                    if to_do is None:
+                        to_do = key
+                    else:
+                        raise Exception("shouldn't have more than one source > 0")
+            
+            parent, channel = to_do
+            required_batches = diffs[(parent, channel)]
+            if len(self.buffered_inputs[parent,channel]) < required_batches:
+                # cannot fulfill expectation
+                print("CANNOT FULFILL EXPECTATION")
+                return None, None
+            else:
+                batch = pd.concat([self.buffered_inputs[parent,channel].popleft() for i in range(required_batches)])
+            self.state_tag = expected
+            self.expected_path.popleft()
+            self.log_state_tag()
+            return parent, batch
+
+    def input_buffers_drained(self):
+        for key in self.buffered_inputs:
+            if len(self.buffered_inputs[key]) > 0:
+                return False
+        return True
+    
+@ray.remote
+class NonBlockingTaskNode(TaskNode):
+    def __init__(self, id, channel,  mapping, datasets, functionObject, parents, checkpoint_location, checkpoint_interval = 10, ckpt = None) -> None:
+        super().__init__(id, channel,  mapping, datasets, functionObject, parents, checkpoint_location, checkpoint_interval , ckpt )
+    
+    def execute(self):
+        
+        mailbox = deque()
+        mailbox_meta = deque()
+
+        while not (len(self.parents) == 0 and self.input_buffers_drained()):
+
+            # append messages to the mailbox
+            batches_returned = self.get_batches(mailbox, mailbox_meta)
+            
+            # deque messages from the mailbox in a way that makes sense
+            stream_id, batch = self.schedule_for_execution()
+
+            if stream_id is None:
+                continue
+
+            print(self.state_tag)
+
+            results = self.functionObject.execute( batch, stream_id, self.channel)
+            
+            self.ckpt_counter += 1
+            if self.ckpt_counter % self.checkpoint_interval == 0:
+                print(self.id, "CHECKPOINTING")
+                self.checkpoint()
+
+            # this is a very subtle point. You will only breakout if length of self.target, i.e. the original length of 
+            # target list is bigger than 0. So you had somebody to send to but now you don't
+
+            if results is not None and len(self.targets) > 0:
+                break_out = False
+                assert type(results) == list                    
+                for result in results:
+                    if self.push(result) is False:
+                        break_out = True
+                        break
+                if break_out:
+                    break
+            else:
+                pass
+        
+        obj_done =  self.functionObject.done(self.channel) 
+        del self.functionObject
+        gc.collect()
+        if obj_done is not None:
+            self.push(obj_done)
+        
+        self.done()
+        self.r.publish("node-done-"+str(self.id),str(self.channel))
+    
+@ray.remote
+class BlockingTaskNode(TaskNode):
+    def __init__(self, id, channel,  mapping, datasets, output_dataset, functionObject, parents, checkpoint_location, checkpoint_interval = 10, ckpt = None) -> None:
+        super().__init__(id, channel,  mapping, datasets, functionObject, parents, checkpoint_location, checkpoint_interval , ckpt )
+        self.output_dataset = output_dataset
+    
+    # explicit override with error. Makes no sense to append to targets for a blocking node. Need to use the dataset instead.
+    def append_to_targets(self,tup):
+        raise Exception("Trying to stream from a blocking node")
+    
+    def execute(self):
+        
+        mailbox = deque()
+        mailbox_meta = deque()
+
+        while not (len(self.parents) == 0 and self.input_buffers_drained()):
+
+            # append messages to the mailbox
+            batches_returned = self.get_batches(mailbox, mailbox_meta)
+            if batches_returned == 0:
+                continue
+            # deque messages from the mailbox in a way that makes sense
+            stream_id, batch = self.schedule_for_execution()
+
+            if stream_id is None:
+                continue
+
+            print(self.state_tag)
+
+            results = self.functionObject.execute( stream_id, batch)
+            
+            self.ckpt_counter += 1
+            if self.ckpt_counter % self.checkpoint_interval == 0:
+                print(self.id, "CHECKPOINTING")
+                self.checkpoint()
+
+            # this is a very subtle point. You will only breakout if length of self.target, i.e. the original length of 
+            # target list is bigger than 0. So you had somebody to send to but now you don't
+
+            if results is not None and len(results) > 0:
+                assert type(results) == list
+                for result in results:
+                    key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
+                    self.object_count += 1
+                    self.r.set(key, pickle.dumps(result))
+                    self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, sys.getsizeof(result)))                    
+            else:
+                pass
+        
+        obj_done =  self.functionObject.done(self.channel) 
+        del self.functionObject
+        gc.collect()
+        if obj_done is not None:
+            self.push(obj_done)
+        
+        self.done()
+        self.r.publish("node-done-"+str(self.id),str(self.channel))
