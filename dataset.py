@@ -20,12 +20,20 @@ class RedisObjectsDataset:
         for ip in self.ip_set:
             self.rs[ip] = redis.Redis(host=ip, port=6800, db=0)
 
-    def get_next_batch(self, mapper_id):
+    def get_next_batch(self, mapper_id, pos = None):
         if mapper_id not in self.channel_objects:
             raise Exception("ERROR: I dont know about where this channel is. Autoscaling here not supported yet. Will it ever be?")
-        for object in self.channel_objects[mapper_id]:
+        
+        total_objects = len(self.channel_objects[mapper_id])
+
+        if pos is None:
+            pos = 0
+
+        while pos < total_objects:
+            object = self.channel_objects[mapper_id][pos]
             bump =  self.rs[object[0]].get(object[1])
-            yield pickle.loads(bump)
+            pos += 1
+            yield pos, pickle.loads(bump)
 
 
 class InputSingleParquetDataset:
@@ -40,12 +48,15 @@ class InputSingleParquetDataset:
     def set_num_mappers(self, num_mappers):
         self.num_mappers = num_mappers
     
-    def get_next_batch(self, mapper_id):
+    def get_next_batch(self, mapper_id, pos = None):
         assert self.num_mappers is not None
-        curr_row_group = mapper_id 
+        if pos is None:
+            curr_row_group = mapper_id 
+        else:
+            curr_row_group = pos
         while curr_row_group < len(self.num_row_groups):
             a = self.parquet_file.read_row_group(curr_row_group, columns = self.columns).to_pandas()
-            yield a
+            yield curr_row_group, a
 
 # use this if you have a lot of small parquet files
 class InputMultiParquetDataset:
@@ -64,15 +75,18 @@ class InputMultiParquetDataset:
         self.columns = columns
         self.filters = filters
         while 'NextContinuationToken' in z.keys():
-            z = self.s3.list_objects_v2(Bucket = "tpc-h-parquet",Prefix="lineitem",ContinuationToken = z['NextContinuationToken'])
+            z = self.s3.list_objects_v2(Bucket = bucket,Prefix=prefix,ContinuationToken = z['NextContinuationToken'])
             self.files.extend([i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")])
     
     def set_num_mappers(self, num_mappers):
         self.num_mappers = num_mappers
 
-    def get_next_batch(self, mapper_id):
+    def get_next_batch(self, mapper_id, pos = None):
         assert self.num_mappers is not None
-        curr_pos = mapper_id 
+        if pos is None:
+            curr_pos = mapper_id 
+        else:
+            curr_pos = pos
         while curr_pos < len(self.files):
             print("input batch",(curr_pos - mapper_id) / self.num_mappers)
             print("starting reading ",time.time())
@@ -80,7 +94,7 @@ class InputMultiParquetDataset:
             a = pq.read_table("s3://" + self.bucket + "/" + self.files[curr_pos],columns=self.columns, filters = self.filters)
             print("ending reading ",time.time())
             curr_pos += self.num_mappers
-            yield a
+            yield curr_pos, a
 
 class InputCSVDataset:
 
@@ -143,7 +157,7 @@ class InputCSVDataset:
         print(length, adjusted_splits)
         return length, adjusted_splits
 
-    def get_next_batch(self, mapper_id): #default is to get 16 KB batches at a time. 
+    def get_next_batch(self, mapper_id, pos = None): #default is to get 16 KB batches at a time. 
         
         if self.num_mappers is None:
             raise Exception("I need to know the total number of mappers you are planning on using.")
@@ -152,14 +166,15 @@ class InputCSVDataset:
         assert self.num_mappers < splits + 1
         assert mapper_id < self.num_mappers + 1
         chunks = splits // self.num_mappers
-        start = self.adjusted_splits[chunks * mapper_id]
+        if pos is None:
+            start = self.adjusted_splits[chunks * mapper_id]
+            pos = start
         
         if mapper_id == self.num_mappers - 1:
             end = self.adjusted_splits[splits - 1]
         else:
             end = self.adjusted_splits[chunks * mapper_id + chunks] 
 
-        pos = start
         while pos < end-1:
 
             resp = self.s3.get_object(Bucket=self.bucket,Key=self.key, Range='bytes={}-{}'.format(pos,min(pos+self.stride,end)))['Body'].read()
@@ -178,7 +193,7 @@ class InputCSVDataset:
                 #bump = csv.read_csv(BytesIO(resp),read_options = csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)).to_pandas() 
                 bump = csv.read_csv(BytesIO(resp),read_options = csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)) 
                 print("done convert,",time.time())
-                yield bump
+                yield pos, bump
 
 
 class OutputCSVDataset:

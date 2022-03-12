@@ -56,8 +56,6 @@ joined = task_graph.new_non_blocking_node({0:temp, 1: lineitem},None, join_execu
 
 agg_executor = AggExecutor(final_func=final_func)
 agged = task_graph.new_blocking_node({0:joined}, None, agg_executor, {'localhost':1}, {0:None})
-#output_executor = OutputCSVExecutor(4,"yugan","result")
-#wrote = task_graph.new_non_blocking_node({0:output_stream}, None, output_executor,4)
 
 task_graph.initialize()
 
@@ -65,6 +63,4 @@ start = time.time()
 task_graph.run()
 print("total time ", time.time() - start)
 
-print(agged.to_pandas.remote())
-
-#import pdb;pdb.set_trace()
+print(ray.get(agged.to_pandas.remote()))

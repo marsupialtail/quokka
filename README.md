@@ -1,25 +1,9 @@
-# quokka
+# Quokka Core
 
-The plan:
+Docs: https://marsupialtail.github.io/quokka/runtime/
 
-We are either going to use Redis to implement the communication and storage layer. I am writing a barebones embedded distributed key-value store in C++ that will be nice to replace these systems in the future but should not count on this. 
+Quokka is a fast data processing engine whose core consists of ~1000 lines of Python code. However it can be leveraged to obtain near-peak performance on SQL queries on data "lakes" with CSV and Parquet file formats. It is often several times faster than SparkSQL and an order of magnitude faster than Dask.
 
-Either way, there will be another Python program running alongside the Redis server on the reducer, implementing the reducer logic and interfacing with the Redis server with a client library. Although everything should eventually be event driven (if using my embedded K-V store, they definitely have to be), currently it doesn't have to be. In fact we can probably just do this.
+Quokka stands on the shoulders of giants. It uses Ray for task scheduling, Redis for pub/sub, Polar-rs for relational algebra kernels and Pyarrow for I/O. All of those are backed by efficient C++/Rust implementations. Quokka is merely a high-performance way of piecing them all together.
 
-For simplicity, each task node will host two Redis servers. One for mailbox and one for its internal state. 
-```
-while True:  
-   redis.atomic_get_del_messages_from_mailbox() 
-   if new_message():  
-      things_to_send = execute_reducer()   
-      update_state()  
-      for thing in things_to_send:  
-        send(thing)  
-```
-
-
-The code to set up a Redis server should be common infrastructure. Perhaps there should also be a common library on top of the async Redis client that polls messages and trigger some user defined reducer function. The user defined reducer function can be some arbitrary Python file. There needs to be some kind of coordination mechanism 
-
-https://stackoverflow.com/questions/57949871/how-to-set-get-pandas-dataframes-into-redis-using-pyarrow/57986261#57986261
-
-Both Redis and Memcached would work. Redis is the clear winner because 1) support for atomic transactions 2) doesn't delete stuff by default 3) keyspace alerts, though we might not need it at the moment 4) more flexible data structures that makes implementing mailbox easier.
+The core Quokka API allows you to construct a computation DAG with stateful executors. Please refer to the docs and examples in the apps directory.
