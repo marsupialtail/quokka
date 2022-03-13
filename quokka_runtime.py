@@ -60,7 +60,10 @@ class Dataset:
             for object in self.objects[channel]:
                 r = redis.Redis(host=object[0], port=6800, db=0)
                 dfs.append(pickle.loads(r.get(object[1])))
-        return polars.concat(dfs)
+        try:
+            return polars.concat(dfs)
+        except:
+            return pd.concat(dfs)
 
 class TaskGraph:
     # this keeps the logical dependency DAG between tasks 
@@ -160,7 +163,7 @@ class TaskGraph:
         
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
-    def new_input_csv(self, bucket, key, names, ip_to_num_channel, batch_func=None, sep = ",", dependents = [], stride= 1024 * 1024):
+    def new_input_csv(self, bucket, key, names, ip_to_num_channel, batch_func=None, sep = ",", dependents = [], stride= 64 * 1024 * 1024):
         
         dependent_map = self.return_dependent_map(dependents)
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
@@ -190,16 +193,16 @@ class TaskGraph:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
                 tasknode[channel] = InputS3MultiParquetNode.options(num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, channel, bucket,key,len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)), columns = columns,
+                ).remote(self.current_node, channel, bucket,key,len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)), columns = columns, filters = filters,
                  batch_func = batch_func,dependent_map = dependent_map)
             else:
                 tasknode[channel] = InputS3MultiParquetNode.options(num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
-                ).remote(self.current_node, channel, bucket,key,len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)),columns = columns,
+                ).remote(self.current_node, channel, bucket,key,len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)),columns = columns, filters = filters,
                  batch_func = batch_func, dependent_map = dependent_map)
         
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
     
-    def new_non_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 10):
+    def new_non_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 100):
         
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
         # this is the mapping of physical node id to the key the user called in streams. i.e. if you made a node, task graph assigns it an internal id #
@@ -215,6 +218,7 @@ class TaskGraph:
             mapping[source] = key
             parents[source] = self.nodes[source]
         
+        print("MAPPING", mapping)
         tasknode = {}
         for channel in channel_to_ip:
             ip = channel_to_ip[channel]
@@ -227,7 +231,7 @@ class TaskGraph:
 
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
-    def new_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 10):
+    def new_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 100):
         
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
         mapping = {}
@@ -257,7 +261,7 @@ class TaskGraph:
         self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
         return output_dataset
     
-    def run(self):
+    def create(self):
         launches = []
         for key in self.nodes:
             node = self.nodes[key]
@@ -265,6 +269,7 @@ class TaskGraph:
                 replica = node[channel]
                 launches.append(replica.initialize.remote())
         ray.get(launches)
+    def run(self):
         processes = []
         for key in self.nodes:
             node = self.nodes[key]
