@@ -3,7 +3,7 @@ sys.path.append("/home/ubuntu/quokka/")
 import datetime
 import time
 from quokka_runtime import TaskGraph
-from sql import AggExecutor, JoinExecutor, PolarJoinExecutor
+from sql import AggExecutor, PolarJoinExecutor
 import pandas as pd
 import ray
 import os
@@ -13,15 +13,10 @@ import pyarrow.compute as compute
 
 task_graph = TaskGraph()
 
-def batch_func(results):
-    aggs = []
-    for df in results:
-        df["high"] = ((df["o_orderpriority"] == "1-URGENT") | (df["o_orderpriority"] == "2-HIGH")).astype(int)
-        df["low"] = ((df["o_orderpriority"] != "1-URGENT") & (df["o_orderpriority"] != "2-HIGH")).astype(int)
-        aggs.append(df.groupby("l_shipmode").agg({'high':['sum'],'low':['sum']}))
-    for i in range(1,len(aggs)):
-        aggs[0] = aggs[0].add(aggs[i],fill_value=0)
-    return [aggs[0]]
+def batch_func(df):
+    df["high"] = ((df["o_orderpriority"] == "1-URGENT") | (df["o_orderpriority"] == "2-HIGH")).astype(int)
+    df["low"] = ((df["o_orderpriority"] != "1-URGENT") & (df["o_orderpriority"] != "2-HIGH")).astype(int)
+    return df.groupby("l_shipmode").agg({'high':['sum'],'low':['sum']})
 
 lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
 "l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
@@ -33,8 +28,8 @@ order_scheme = ["o_orderkey", "o_custkey","o_orderstatus","o_totalprice","o_orde
 #lineitem_filter = lambda x: x[((x.l_shipmode == "MAIL") | (x.l_shipmode == "SHIP")) & (x.l_commitdate < x.l_receiptdate) 
 #@& (x.l_shipdate < x.l_commitdate) & (x.l_receiptdate >= pd.to_datetime(datetime.date(1994,1,1))) & (x.l_receiptdate < pd.to_datetime(datetime.date(1995,1,1)))][["l_orderkey","l_shipmode"]]
 
-orders_filter = lambda x: x.select(["o_orderkey","o_orderpriority"]).to_pandas()
-lineitem_filter = lambda x: x.filter(compute.and_(compute.and_(compute.and_(compute.is_in(x["l_shipmode"],value_set = pa.array(["SHIP","MAIL"])), compute.less(x["l_commitdate"], x["l_receiptdate"])), compute.and_(compute.less(x["l_shipdate"], x["l_commitdate"]), compute.greater_equal(x["l_receiptdate"], compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s")))), compute.less(x["l_receiptdate"], compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")))).select(["l_orderkey","l_shipmode"]).to_pandas()
+orders_filter = lambda x: polars.from_arrow(x.select(["o_orderkey","o_orderpriority"]))
+lineitem_filter = lambda x: polars.from_arrow(x.filter(compute.and_(compute.and_(compute.and_(compute.is_in(x["l_shipmode"],value_set = pa.array(["SHIP","MAIL"])), compute.less(x["l_commitdate"], x["l_receiptdate"])), compute.and_(compute.less(x["l_shipdate"], x["l_commitdate"]), compute.greater_equal(x["l_receiptdate"], compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s")))), compute.less(x["l_receiptdate"], compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")))).select(["l_orderkey","l_shipmode"]))
 orders_filter_parquet = lambda x: polars.from_arrow(x)
 lineitem_filter_parquet = lambda x: polars.from_arrow(x.filter(compute.and_(compute.less(x["l_commitdate"], x["l_receiptdate"]), compute.less(x["l_shipdate"], x["l_commitdate"]))).select(["l_orderkey","l_shipmode"]))
 if sys.argv[2] == "csv":
@@ -64,10 +59,8 @@ agg_executor = AggExecutor()
 agged = task_graph.new_blocking_node({0:output_stream}, None, agg_executor, {'localhost':1}, {0:None})
 
 
-task_graph.initialize()
-
+task_graph.create()
 start = time.time()
-
 task_graph.run()
 print("total time ", time.time() - start)
 

@@ -75,10 +75,16 @@ class PolarJoinExecutor(Executor):
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batch, stream_id, executor_id):
         # state compaction
+        self.lengths[stream_id] += 1
+        print("state", self.lengths)
+        print("BUMP", len(batch))
         result = None
         if stream_id == 0:
             if self.state1 is not None:
-                result = batch.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how='inner')
+                try:
+                    result = batch.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how='inner')
+                except:
+                    print(batch)
             if self.state0 is None:
                 self.state0 = batch
             else:
@@ -94,7 +100,8 @@ class PolarJoinExecutor(Executor):
         
         if result is not None and len(result) > 0:
             if self.batch_func is not None:
-                return polars.from_pandas(self.batch_func(result.to_pandas()))
+                da =  self.batch_func(result.to_pandas())
+                return da
             else:
                 print("RESULT LENGTH",len(result))
                 return result
@@ -195,16 +202,23 @@ class AggExecutor(Executor):
         self.fill_value = fill_value
         self.final_func = final_func
 
+    def serialize(self):
+        return pickle.dumps({"state":self.state})
+    
+    def deserialize(self, s):
+        stuff = pickle.loads(s)
+        self.state = stuff["state"]
+    
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
-    def execute(self,batches, stream_id, executor_id):
-
-        for batch in batches:
-            if self.state is None:
-                self.state = batch 
-            else:
-                self.state = self.state.add(batch, fill_value = self.fill_value)
+    def execute(self,batch, stream_id, executor_id):
+        assert type(batch) == pd.core.frame.DataFrame # polars add has no index, will have wierd behavior
+        if self.state is None:
+            self.state = batch 
+        else:
+            self.state = self.state.add(batch, fill_value = self.fill_value)
     
     def done(self,executor_id):
+        print(self.state)
         if self.final_func:
             return self.final_func(self.state)
         else:

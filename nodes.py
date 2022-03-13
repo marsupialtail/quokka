@@ -15,6 +15,8 @@ import polars
 import pyarrow as pa
 # isolated simplified test bench for different fault tolerance protocols
 
+FT = True
+
 class Node:
 
     # will be overridden
@@ -136,9 +138,11 @@ class Node:
 
         if type(data) == pa.lib.Table:
             data = polars.from_arrow(data)
-        self.output_lock.acquire()
-        self.logged_outputs[self.out_seq] = data
-        self.output_lock.release()
+        
+        if FT:
+            self.output_lock.acquire()
+            self.logged_outputs[self.out_seq] = data
+            self.output_lock.release()
 
         # downstream targets are done. You should be done too then.
         if not self.update_targets():
@@ -231,7 +235,8 @@ class InputNode(Node):
 
         
     def checkpoint(self):
-
+        if not FT:
+            return
         # write logged outputs, state, state_tag to reliable storage
         # for input nodes, log the outputs instead of redownlaoding is probably worth it. since the outputs could be filtered by predicate
         self.output_lock.acquire()
@@ -239,7 +244,8 @@ class InputNode(Node):
         "state":self.state}
         self.output_lock.release()
         pickle.dump(state, open("ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl","wb"))
-
+        print("INPUT NODE CHECKPOINTING")
+        
         # if this fails we are dead, but probability of this failing much smaller than dump failing
         os.rename("ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl", "ckpt-" + str(self.id) + "-" + str(self.channel) + ".pkl")
         
@@ -287,10 +293,10 @@ class InputS3CSVNode(InputNode):
 @ray.remote
 class InputS3MultiParquetNode(InputNode):
 
-    def __init__(self, id, channel, bucket, key, num_channels, checkpoint_location,columns = None, batch_func=None, dependent_map={}, ckpt = None):
+    def __init__(self, id, channel, bucket, key, num_channels, checkpoint_location,columns = None,filters = None, batch_func=None, dependent_map={}, ckpt = None):
         
         super().__init__(id, channel, checkpoint_location, batch_func = batch_func, dependent_map = dependent_map, ckpt = ckpt)
-        self.accessor = InputMultiParquetDataset(bucket, key, columns = columns)
+        self.accessor = InputMultiParquetDataset(bucket, key, filters = filters, columns = columns)
         self.accessor.set_num_mappers(num_channels)
         self.input_generator = self.accessor.get_next_batch(channel, self.state)
 
@@ -325,7 +331,7 @@ class TaskNode(Node):
         self.functionObject = functionObject
         if self.datasets is not None:
             self.functionObject.initialize(self.datasets, self.channel)
-        self.physical_to_logical_stream_mapping = mapping
+        self.physical_to_logical_mapping = mapping
         self.checkpoint_interval = checkpoint_interval
 
         if ckpt is None:
@@ -364,7 +370,8 @@ class TaskNode(Node):
         self.log_state_tag()        
 
     def checkpoint(self, method = "local"):
-
+        if not FT:
+            return
         # write logged outputs, state, state_tag to reliable storage
         self.output_lock.acquire()
         state = {"latest_input_received": self.latest_input_received, "logged_outputs": self.logged_outputs, "out_seq" : self.out_seq,
@@ -439,7 +446,6 @@ class TaskNode(Node):
                 #raise Exception
                 if len(self.parents[stream_id]) == 0:
                     self.parents.pop(stream_id)
-                print(self.parents)
                 
                 print("done", stream_id)
             else:
@@ -470,7 +476,10 @@ class TaskNode(Node):
                 return None, None
 
             # now drain that source
-            batch = polars.concat(self.buffered_inputs[parent,channel])
+            try:
+                batch = polars.concat(self.buffered_inputs[parent,channel])
+            except:
+                batch = pd.concat(self.buffered_inputs[parent,channel])
             self.state_tag[(parent,channel)] += length
             self.buffered_inputs[parent,channel].clear()
             self.log_state_tag()
@@ -495,7 +504,10 @@ class TaskNode(Node):
                 print("CANNOT FULFILL EXPECTATION")
                 return None, None
             else:
-                batch = polars.concat([self.buffered_inputs[parent,channel].popleft() for i in range(required_batches)])
+                try:
+                    batch = polars.concat([self.buffered_inputs[parent,channel].popleft() for i in range(required_batches)])
+                except:
+                    batch = pd.concat([self.buffered_inputs[parent,channel].popleft() for i in range(required_batches)])
             self.state_tag = expected
             self.expected_path.popleft()
             self.log_state_tag()
@@ -521,16 +533,14 @@ class NonBlockingTaskNode(TaskNode):
 
             # append messages to the mailbox
             batches_returned = self.get_batches(mailbox, mailbox_meta)
-            
             # deque messages from the mailbox in a way that makes sense
             stream_id, batch = self.schedule_for_execution()
-
             if stream_id is None:
                 continue
 
             print(self.state_tag)
 
-            results = self.functionObject.execute( batch, stream_id, self.channel)
+            results = self.functionObject.execute( batch, self.physical_to_logical_mapping[stream_id], self.channel)
             
             self.ckpt_counter += 1
             if self.ckpt_counter % self.checkpoint_interval == 0:
@@ -586,7 +596,7 @@ class BlockingTaskNode(TaskNode):
 
             print(self.state_tag)
 
-            results = self.functionObject.execute( batch,stream_id, self.channel)
+            results = self.functionObject.execute( batch,self.physical_to_logical_mapping[stream_id], self.channel)
             
             self.ckpt_counter += 1
             if self.ckpt_counter % self.checkpoint_interval == 0:
