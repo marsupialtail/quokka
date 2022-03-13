@@ -11,6 +11,8 @@ import time
 import boto3
 import gc
 import sys
+import polars
+import pyarrow as pa
 # isolated simplified test bench for different fault tolerance protocols
 
 class Node:
@@ -32,7 +34,8 @@ class Node:
         self.alive_targets = {}
         self.output_lock = Lock()
 
-
+    def initialize(self):
+        pass
     def append_to_targets(self,tup):
         node_id, channel_to_ip, partition_key = tup
 
@@ -129,9 +132,10 @@ class Node:
 
     def push(self, data):
             
-
         self.out_seq += 1
 
+        if type(data) == pa.lib.Table:
+            data = polars.from_arrow(data)
         self.output_lock.acquire()
         self.logged_outputs[self.out_seq] = data
         self.output_lock.release()
@@ -140,7 +144,7 @@ class Node:
         if not self.update_targets():
             return False
 
-        if type(data) == pd.core.frame.DataFrame:
+        if type(data) == pd.core.frame.DataFrame or type(data) == polars.internals.frame.DataFrame:
             for target in self.alive_targets:
                 original_channel_to_ip, partition_key = self.targets[target]
                 for channel in self.alive_targets[target]:
@@ -273,10 +277,10 @@ class InputNode(Node):
     
 @ray.remote
 class InputS3CSVNode(InputNode):
-    def __init__(self, id, channel, bucket, key, names, num_channels,checkpoint_location, batch_func = None, dependent_map = {}, ckpt = None) -> None:
+    def __init__(self, id, channel, bucket, key, names, num_channels,checkpoint_location, batch_func = None, sep = ",", stride = 64 * 1024 * 1024, dependent_map = {}, ckpt = None) -> None:
 
         super().__init__(id, channel, checkpoint_location, batch_func = batch_func, dependent_map = dependent_map, ckpt = ckpt)
-        self.accessor = InputCSVDataset(bucket, key, names, 0, stride = 1024 * 1024)
+        self.accessor = InputCSVDataset(bucket, key, names, 0, sep=sep, stride = stride)
         self.accessor.set_num_mappers(num_channels)
         self.input_generator = self.accessor.get_next_batch(channel, self.state)    
 
@@ -295,8 +299,8 @@ class InputRedisDatasetNode(InputNode):
     def __init__(self, id, channel,channel_objects, checkpoint_location,batch_func=None, dependent_map={}, ckpt = None):
         super().__init__(id, channel, checkpoint_location, batch_func = batch_func, dependent_map = dependent_map, ckpt = ckpt)
         ip_set = set()
-        for channel in self.channel_objects:
-            for object in self.channel_objects[channel]:
+        for da in channel_objects:
+            for object in channel_objects[da]:
                 ip_set.add(object[0])
         self.accessor = RedisObjectsDataset(channel_objects, ip_set)
         self.input_generator = self.accessor.get_next_batch(channel, self.state)
@@ -435,6 +439,7 @@ class TaskNode(Node):
                 #raise Exception
                 if len(self.parents[stream_id]) == 0:
                     self.parents.pop(stream_id)
+                print(self.parents)
                 
                 print("done", stream_id)
             else:
@@ -465,7 +470,7 @@ class TaskNode(Node):
                 return None, None
 
             # now drain that source
-            batch = pd.concat(self.buffered_inputs[parent,channel])
+            batch = polars.concat(self.buffered_inputs[parent,channel])
             self.state_tag[(parent,channel)] += length
             self.buffered_inputs[parent,channel].clear()
             self.log_state_tag()
@@ -490,7 +495,7 @@ class TaskNode(Node):
                 print("CANNOT FULFILL EXPECTATION")
                 return None, None
             else:
-                batch = pd.concat([self.buffered_inputs[parent,channel].popleft() for i in range(required_batches)])
+                batch = polars.concat([self.buffered_inputs[parent,channel].popleft() for i in range(required_batches)])
             self.state_tag = expected
             self.expected_path.popleft()
             self.log_state_tag()
@@ -537,11 +542,9 @@ class NonBlockingTaskNode(TaskNode):
 
             if results is not None and len(self.targets) > 0:
                 break_out = False
-                assert type(results) == list                    
-                for result in results:
-                    if self.push(result) is False:
-                        break_out = True
-                        break
+                if self.push(results) is False:
+                    break_out = True
+                    break
                 if break_out:
                     break
             else:
@@ -561,7 +564,7 @@ class BlockingTaskNode(TaskNode):
     def __init__(self, id, channel,  mapping, datasets, output_dataset, functionObject, parents, checkpoint_location, checkpoint_interval = 10, ckpt = None) -> None:
         super().__init__(id, channel,  mapping, datasets, functionObject, parents, checkpoint_location, checkpoint_interval , ckpt )
         self.output_dataset = output_dataset
-    
+        self.object_count = 0 
     # explicit override with error. Makes no sense to append to targets for a blocking node. Need to use the dataset instead.
     def append_to_targets(self,tup):
         raise Exception("Trying to stream from a blocking node")
@@ -575,8 +578,6 @@ class BlockingTaskNode(TaskNode):
 
             # append messages to the mailbox
             batches_returned = self.get_batches(mailbox, mailbox_meta)
-            if batches_returned == 0:
-                continue
             # deque messages from the mailbox in a way that makes sense
             stream_id, batch = self.schedule_for_execution()
 
@@ -585,7 +586,7 @@ class BlockingTaskNode(TaskNode):
 
             print(self.state_tag)
 
-            results = self.functionObject.execute( stream_id, batch)
+            results = self.functionObject.execute( batch,stream_id, self.channel)
             
             self.ckpt_counter += 1
             if self.ckpt_counter % self.checkpoint_interval == 0:
@@ -596,12 +597,11 @@ class BlockingTaskNode(TaskNode):
             # target list is bigger than 0. So you had somebody to send to but now you don't
 
             if results is not None and len(results) > 0:
-                assert type(results) == list
-                for result in results:
-                    key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
-                    self.object_count += 1
-                    self.r.set(key, pickle.dumps(result))
-                    self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, sys.getsizeof(result)))                    
+                key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
+                self.object_count += 1
+                self.r.set(key, pickle.dumps(results))
+                # we really should be doing sys.getsizeof(result), but that doesn't work for polars dfs
+                self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(results)))                    
             else:
                 pass
         
@@ -609,7 +609,11 @@ class BlockingTaskNode(TaskNode):
         del self.functionObject
         gc.collect()
         if obj_done is not None:
-            self.push(obj_done)
+            key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
+            self.object_count += 1
+            self.r.set(key, pickle.dumps(obj_done))
+            self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(obj_done)))                    
+        self.output_dataset.done_channel.remote(self.channel)
         
-        self.done()
+        #self.done()
         self.r.publish("node-done-"+str(self.id),str(self.channel))

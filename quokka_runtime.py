@@ -60,7 +60,7 @@ class Dataset:
             for object in self.objects[channel]:
                 r = redis.Redis(host=object[0], port=6800, db=0)
                 dfs.append(pickle.loads(r.get(object[1])))
-        return pd.concat(dfs)
+        return polars.concat(dfs)
 
 class TaskGraph:
     # this keeps the logical dependency DAG between tasks 
@@ -146,17 +146,17 @@ class TaskGraph:
         else:
             raise Exception("other distribution policies not implemented yet.")
 
-        print(channel_objects)
+        print("CHANNEL_OBJECTS",channel_objects)
 
         tasknode = {}
         for channel in channel_to_ip:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
                 tasknode[channel] = InputRedisDatasetNode.options(num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, channel, channel_objects, (self.checkpoint_bucket, self.current_node + "-" + channel), batch_func=batch_func, dependent_map=dependent_map)
+                ).remote(self.current_node, channel, channel_objects, (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)), batch_func=batch_func, dependent_map=dependent_map)
             else:
                 tasknode[channel] = InputRedisDatasetNode.options(num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
-                ).remote(self.current_node, channel, channel_objects, (self.checkpoint_bucket, self.current_node + "-" + channel), batch_func=batch_func, dependent_map=dependent_map)
+                ).remote(self.current_node, channel, channel_objects, (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)), batch_func=batch_func, dependent_map=dependent_map)
         
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
@@ -170,11 +170,11 @@ class TaskGraph:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
                 tasknode[channel] = InputS3CSVNode.options(num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, channel, bucket,key,names, len(channel_to_ip), (self.checkpoint_bucket, self.current_node + "-" + channel),batch_func = batch_func,sep = sep, 
+                ).remote(self.current_node, channel, bucket,key,names, len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)),batch_func = batch_func,sep = sep, 
                 stride= stride, dependent_map = dependent_map, )
             else:
                 tasknode[channel] = InputS3CSVNode.options(num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
-                ).remote(self.current_node, channel, bucket,key,names, len(channel_to_ip), (self.checkpoint_bucket, self.current_node + "-" + channel), batch_func = batch_func, sep = sep,
+                ).remote(self.current_node, channel, bucket,key,names, len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)), batch_func = batch_func, sep = sep,
                 stride = stride, dependent_map = dependent_map, ) 
         
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
@@ -190,11 +190,11 @@ class TaskGraph:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
                 tasknode[channel] = InputS3MultiParquetNode.options(num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, channel, bucket,key,len(channel_to_ip), (self.checkpoint_bucket, self.current_node + "-" + channel), columns = columns,
+                ).remote(self.current_node, channel, bucket,key,len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)), columns = columns,
                  batch_func = batch_func,dependent_map = dependent_map)
             else:
                 tasknode[channel] = InputS3MultiParquetNode.options(num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
-                ).remote(self.current_node, channel, bucket,key,len(channel_to_ip), (self.checkpoint_bucket, self.current_node + "-" + channel),columns = columns,
+                ).remote(self.current_node, channel, bucket,key,len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)),columns = columns,
                  batch_func = batch_func, dependent_map = dependent_map)
         
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
@@ -254,9 +254,17 @@ class TaskGraph:
                 tasknode[channel] = BlockingTaskNode.options(num_cpus = 0.001, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.001}).remote(self.current_node, 
                 channel, mapping, datasets, output_dataset, functionObject, parents, (self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)), checkpoint_interval = ckpt_interval)
         
-        return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
+        self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
+        return output_dataset
     
     def run(self):
+        launches = []
+        for key in self.nodes:
+            node = self.nodes[key]
+            for channel in node:
+                replica = node[channel]
+                launches.append(replica.initialize.remote())
+        ray.get(launches)
         processes = []
         for key in self.nodes:
             node = self.nodes[key]

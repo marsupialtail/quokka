@@ -1,3 +1,4 @@
+import pickle
 import os
 os.environ["POLAR_MAX_THREADS"] = "1"
 import polars
@@ -63,18 +64,21 @@ class PolarJoinExecutor(Executor):
         self.batch_func = batch_func
         # keys that will never be seen again, safe to delete from the state on the other side
 
+    def serialize(self):
+        return pickle.dumps({"state0":self.state0, "state1":self.state1})
+    
+    def deserialize(self, s):
+        stuff = pickle.loads(s)
+        self.state0 = stuff["state0"]
+        self.state1 = stuff["state1"]
+    
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
-    def execute(self,batches, stream_id, executor_id):
-        self.lengths[stream_id] += len(batches)
-        print(self.lengths)
-        batch = polars.concat(batches)
-
+    def execute(self,batch, stream_id, executor_id):
         # state compaction
-
+        result = None
         if stream_id == 0:
             if self.state1 is not None:
-                #pass
-                results = [batch.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how='inner')]
+                result = batch.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how='inner')
             if self.state0 is None:
                 self.state0 = batch
             else:
@@ -82,20 +86,21 @@ class PolarJoinExecutor(Executor):
              
         elif stream_id == 1:
             if self.state0 is not None:
-                #pass
-                results = [self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how='inner')]
+                result = self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how='inner')
             if self.state1 is None:
                 self.state1 = batch
             else:
                 self.state1.vstack(batch, in_place = True)
         
-        if len(results) > 0:
+        if result is not None and len(result) > 0:
             if self.batch_func is not None:
-                return self.batch_func([i.to_pandas() for i in results])
+                return polars.from_pandas(self.batch_func(result.to_pandas()))
             else:
-                return [i.to_pandas() for i in results] 
+                print("RESULT LENGTH",len(result))
+                return result
     
     def done(self,executor_id):
+        print(len(self.state0),len(self.state1))
         print("done join ", executor_id)
 
 
@@ -140,81 +145,6 @@ class SimpleJoinExecutor(Executor):
         print("LLLLLLLLL",sum(len(i) for i in self.state0), sum(len(i) for i in self.state1))
         print("done join ", executor_id)
 
-
-
-class JoinExecutor(Executor):
-    # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
-    # batch func must return a list of dfs too
-    def __init__(self, on = None, left_on = None, right_on = None, left_primary = False, right_primary = False, batch_func = None):
-        self.state0 = []
-        self.state1 = []
-        if on is not None:
-            assert left_on is None and right_on is None
-            self.left_on = on
-            self.right_on = on
-        else:
-            assert left_on is not None and right_on is not None
-            self.left_on = left_on
-            self.right_on = right_on
-        
-        self.left_primary = left_primary
-        self.right_primary = right_primary
-
-        # keys that will never be seen again, safe to delete from the state on the other side
-        #self.left_gone_keys = set()
-        #self.right_gone_keys = set()
-
-        self.batch_func = batch_func
-        self.epoch = 0
-
-
-    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
-    def execute(self,batches, stream_id, executor_id):
-        print("STATE SIZE:", (sum([i.memory_usage().sum() for i in self.state0]) + sum([i.memory_usage().sum() for i in self.state1])) / 1024 / 1024)
-        print("STATE LEN:", len(self.state0), len(self.state1))
-        batch = pd.concat(batches)
-        results = []
-
-        self.epoch += 1
-
-        # state compaction
-        #if self.epoch % 20 == 0:
-        #    if len(self.state0) > 10:
-        #        self.state0 = [pd.concat(self.state0)]
-        #    if len(self.state1) > 10:
-        #        self.state1 = [pd.concat(self.state1)]
-        #    
-        #    if len(self.left_gone_keys) > 0:
-        #        self.state1 = [i[~i[self.right_on].isin(self.left_gone_keys)].copy() for i in self.state1]
-        #    if len(self.right_gone_keys) > 0:
-        #        self.state0 = [i[~i[self.left_on].isin(self.right_gone_keys)].copy() for i in self.state0]
-
-        if stream_id == 0:
-            if len(self.state1) > 0:
-                results = [batch.merge(i,left_on = self.left_on, right_on = self.right_on ,how='inner',suffixes=('_a','_b')) for i in self.state1]
-            #    pass
-            self.state0.append(batch)
-            #if self.left_primary:
-            #    self.left_gone_keys = self.left_gone_keys | set(batch[self.left_on])
-             
-        elif stream_id == 1:
-            if len(self.state0) > 0:
-                results = [i.merge(batch,left_on = self.left_on, right_on = self.right_on ,how='inner',suffixes=('_a','_b')) for i in self.state0]
-            #    pass
-            self.state1.append(batch)
-            #if self.right_primary:
-            #    self.right_gone_keys = self.right_gone_keys | set(batch[self.right_on])
-        print("batch_func start", time.time()) 
-        if len(results) > 0:
-            if self.batch_func is not None:
-                result =  self.batch_func(results)
-                print("batch_func end", time.time())
-                return result
-            else:
-                return results
-    
-    def done(self,executor_id):
-        print("done join ", executor_id)
 
 class OOCJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
@@ -300,11 +230,19 @@ class CountExecutor(Executor):
     def __init__(self) -> None:
         self.state = 0
 
-    def execute(self, batches, stream_id, executor_id):
-        self.state += sum(len(batch) for batch in batches)
+    def execute(self, batch, stream_id, executor_id):
+        self.state += len(batch)
+    
+    def serialize(self):
+        return pickle.dumps({"state":self.state})
+    
+    def deserialize(self, s):
+        stuff = pickle.loads(s)
+        self.state = stuff["state"]
     
     def done(self, executor_id):
         print("COUNT:", self.state)
+        return polars.DataFrame([self.state])
 
 class StorageExecutor(Executor):
     def __init__(self) -> None:

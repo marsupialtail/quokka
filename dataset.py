@@ -55,7 +55,7 @@ class InputSingleParquetDataset:
         else:
             curr_row_group = pos
         while curr_row_group < len(self.num_row_groups):
-            a = self.parquet_file.read_row_group(curr_row_group, columns = self.columns).to_pandas()
+            a = self.parquet_file.read_row_group(curr_row_group, columns = self.columns)
             yield curr_row_group, a
 
 # use this if you have a lot of small parquet files
@@ -188,11 +188,10 @@ class InputCSVDataset:
             else:
                 resp = resp[:last_newline]
                 pos += last_newline
-                print("start convert,",time.time())
+                #print("start convert,",time.time())
                 #bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
-                #bump = csv.read_csv(BytesIO(resp),read_options = csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)).to_pandas() 
                 bump = csv.read_csv(BytesIO(resp),read_options = csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)) 
-                print("done convert,",time.time())
+                #print("done convert,",time.time())
                 yield pos, bump
 
 
