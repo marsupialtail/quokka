@@ -15,8 +15,8 @@ import polars
 import pyarrow as pa
 # isolated simplified test bench for different fault tolerance protocols
 
-FT = True
-
+FT_I = False
+FT = False#True
 class Node:
 
     # will be overridden
@@ -235,7 +235,7 @@ class InputNode(Node):
 
         
     def checkpoint(self):
-        if not FT:
+        if not FT_I:
             return
         # write logged outputs, state, state_tag to reliable storage
         # for input nodes, log the outputs instead of redownlaoding is probably worth it. since the outputs could be filtered by predicate
@@ -243,11 +243,15 @@ class InputNode(Node):
         state = { "logged_outputs": self.logged_outputs, "out_seq" : self.out_seq, "tag":self.state_tag, "target_output_state":self.target_output_state,
         "state":self.state}
         self.output_lock.release()
-        pickle.dump(state, open("ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl","wb"))
+        f = open("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl","wb")
+        pickle.dump(state, f)
+        f.flush()
+        os.fsync(f.fileno())
+        f.close()
         print("INPUT NODE CHECKPOINTING")
         
         # if this fails we are dead, but probability of this failing much smaller than dump failing
-        os.rename("ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl", "ckpt-" + str(self.id) + "-" + str(self.channel) + ".pkl")
+        os.rename("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl", "/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + ".pkl")
         
     def execute(self):
         
@@ -387,9 +391,14 @@ class TaskNode(Node):
             s3_resource.Object(bucket, key).put(state_str)
         
         elif method == "local":
-            pickle.dump(state, open("ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl","wb"))
+            
+            f = open("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl","wb")
+            pickle.dump(state,f)
+            f.flush()
+            os.fsync(f.fileno())
+            f.close()
             # if this fails we are dead, but probability of this failing much smaller than dump failing
-            os.rename("ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl", "ckpt-" + str(self.id) + "-" + str(self.channel) + ".pkl")
+            #os.rename("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl", "/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + ".pkl")
         
         else:
             raise Exception
@@ -476,14 +485,11 @@ class TaskNode(Node):
                 return None, None
 
             # now drain that source
-            try:
-                batch = polars.concat(self.buffered_inputs[parent,channel])
-            except:
-                batch = pd.concat(self.buffered_inputs[parent,channel])
+            batches = list(self.buffered_inputs[parent,channel])
             self.state_tag[(parent,channel)] += length
             self.buffered_inputs[parent,channel].clear()
             self.log_state_tag()
-            return parent, batch
+            return parent, batches
 
         else:
             expected = self.expected_path[0]
@@ -504,14 +510,11 @@ class TaskNode(Node):
                 print("CANNOT FULFILL EXPECTATION")
                 return None, None
             else:
-                try:
-                    batch = polars.concat([self.buffered_inputs[parent,channel].popleft() for i in range(required_batches)])
-                except:
-                    batch = pd.concat([self.buffered_inputs[parent,channel].popleft() for i in range(required_batches)])
+                batches = [self.buffered_inputs[parent,channel].popleft() for i in range(required_batches)]
             self.state_tag = expected
             self.expected_path.popleft()
             self.log_state_tag()
-            return parent, batch
+            return parent, batches
 
     def input_buffers_drained(self):
         for key in self.buffered_inputs:
@@ -534,13 +537,13 @@ class NonBlockingTaskNode(TaskNode):
             # append messages to the mailbox
             batches_returned = self.get_batches(mailbox, mailbox_meta)
             # deque messages from the mailbox in a way that makes sense
-            stream_id, batch = self.schedule_for_execution()
+            stream_id, batches = self.schedule_for_execution()
             if stream_id is None:
                 continue
 
             print(self.state_tag)
 
-            results = self.functionObject.execute( batch, self.physical_to_logical_mapping[stream_id], self.channel)
+            results = self.functionObject.execute( batches, self.physical_to_logical_mapping[stream_id], self.channel)
             
             self.ckpt_counter += 1
             if self.ckpt_counter % self.checkpoint_interval == 0:
@@ -589,14 +592,14 @@ class BlockingTaskNode(TaskNode):
             # append messages to the mailbox
             batches_returned = self.get_batches(mailbox, mailbox_meta)
             # deque messages from the mailbox in a way that makes sense
-            stream_id, batch = self.schedule_for_execution()
+            stream_id, batches = self.schedule_for_execution()
 
             if stream_id is None:
                 continue
 
             print(self.state_tag)
 
-            results = self.functionObject.execute( batch,self.physical_to_logical_mapping[stream_id], self.channel)
+            results = self.functionObject.execute( batches,self.physical_to_logical_mapping[stream_id], self.channel)
             
             self.ckpt_counter += 1
             if self.ckpt_counter % self.checkpoint_interval == 0:

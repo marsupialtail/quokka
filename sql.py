@@ -73,11 +73,11 @@ class PolarJoinExecutor(Executor):
         self.state1 = stuff["state1"]
     
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
-    def execute(self,batch, stream_id, executor_id):
+    def execute(self,batches, stream_id, executor_id):
         # state compaction
+        batch = polars.concat(batches)
         self.lengths[stream_id] += 1
         print("state", self.lengths)
-        print("BUMP", len(batch))
         result = None
         if stream_id == 0:
             if self.state1 is not None:
@@ -210,12 +210,15 @@ class AggExecutor(Executor):
         self.state = stuff["state"]
     
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
-    def execute(self,batch, stream_id, executor_id):
-        assert type(batch) == pd.core.frame.DataFrame # polars add has no index, will have wierd behavior
-        if self.state is None:
-            self.state = batch 
-        else:
-            self.state = self.state.add(batch, fill_value = self.fill_value)
+    def execute(self,batches, stream_id, executor_id):
+        for batch in batches:
+            assert type(batch) == pd.core.frame.DataFrame # polars add has no index, will have wierd behavior
+            if self.state is None:
+                self.state = batch 
+            else:
+                self.state = self.state.add(batch, fill_value = self.fill_value)
+        assert(len(self.state) == 2)
+
     
     def done(self,executor_id):
         print(self.state)

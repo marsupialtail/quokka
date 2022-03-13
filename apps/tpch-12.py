@@ -16,7 +16,9 @@ task_graph = TaskGraph()
 def batch_func(df):
     df["high"] = ((df["o_orderpriority"] == "1-URGENT") | (df["o_orderpriority"] == "2-HIGH")).astype(int)
     df["low"] = ((df["o_orderpriority"] != "1-URGENT") & (df["o_orderpriority"] != "2-HIGH")).astype(int)
-    return df.groupby("l_shipmode").agg({'high':['sum'],'low':['sum']})
+    result = df.groupby("l_shipmode").agg({'high':['sum'],'low':['sum']})
+    assert(len(result) == 2)
+    return result
 
 lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
 "l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
