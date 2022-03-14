@@ -2,6 +2,25 @@ import os
 import time
 import boto3
 
+class QuokkaCluster:
+    def __init__(self, public_ips, private_ips, instance_ids) -> None:
+        
+        self.num_node = len(public_ips)
+        self.public_ips = {}
+        self.private_ips = {}
+        self.instance_ids = {}
+
+        for node in self.num_node:
+            self.public_ips[node] = public_ips[node]
+            self.private_ips[node] = private_ips[node]
+            self.instance_ids[node] = instance_ids[node]
+        
+        self.state = "running"
+
+    def get_leader_ip(self):
+        return self.public_ips[0]
+        
+
 def check_instance_alive(public_ip):
     z = os.system("ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i /home/ziheng/Downloads/oregon-neurodb.pem ubuntu@" + public_ip)
     if z == 0:
@@ -55,10 +74,10 @@ def launch_new_instances(aws_access_key, aws_access_id, num_instances = 1, insta
     " redis-6.2.6/src/redis-server redis-6.2.6/redis.conf --port 6800 --protected-mode no&") for public_ip in public_ips]
     if sum(z)!= 0:
         raise Exception("Failed to start Redis server on new worker")
-    return public_ips, private_ips
+    return public_ips, private_ips, instance_ids
 
 def create_cluster(aws_access_key, aws_access_id, num_instances, instance_type = "i3.2xlarge"):
-    public_ips, private_ips = launch_new_instances(aws_access_key, aws_access_id, num_instances, instance_type)
+    public_ips, private_ips, instace_ids = launch_new_instances(aws_access_key, aws_access_id, num_instances, instance_type)
     leader_public_ip = public_ips[0]
     leader_private_ip = private_ips[0]
     z = os.system("ssh -oStrictHostKeyChecking=no -i /home/ziheng/Downloads/oregon-neurodb.pem ubuntu@" + leader_public_ip + 
@@ -73,4 +92,33 @@ def create_cluster(aws_access_key, aws_access_id, num_instances, instance_type =
         raise Exception("ray workers failed to connect to ray head node")
     
     print("Quokka cluster started, coordinator IP address: ", leader_public_ip)
-    return leader_public_ip
+    return QuokkaCluster(public_ips, private_ips, instace_ids)
+
+def stop_cluster(quokka_cluster):
+    ec2 = boto3.client("ec2")
+    instance_ids = list(quokka_cluster.instance_ids.values())
+    ec2.stop_instances(InstanceIds = instance_ids)
+    while True:
+        time.sleep(0.1)
+        a = ec2.describe_instances(InstanceIds = instance_ids)
+        states = [a['Reservations'][0]['Instances'][i]['State']['Name'] for i in range(len(instance_ids))]
+        if "running" in states:
+            continue
+        else:
+            break
+    quokka_cluster.state = "stopped"
+    
+    
+def terminate_cluster(quokka_cluster):
+    ec2 = boto3.client("ec2")
+    instance_ids = list(quokka_cluster.instance_ids.values())
+    ec2.terminate_instances(InstanceIds = instance_ids)
+    while True:
+        time.sleep(0.1)
+        a = ec2.describe_instances(InstanceIds = instance_ids)
+        states = [a['Reservations'][0]['Instances'][i]['State']['Name'] for i in range(len(instance_ids))]
+        if "running" in states:
+            continue
+        else:
+            break
+    del quokka_cluster
