@@ -199,7 +199,7 @@ class Node:
         return True
 
 class InputNode(Node):
-    def __init__(self, id, channel, checkpoint_location, batch_func = None, dependent_map = {}, ckpt = None) -> None:
+    def __init__(self, id, channel, checkpoint_location, batch_func = None, dependent_map = {}, checkpoint_interval = 10, ckpt = None) -> None:
 
         super().__init__( id, channel, checkpoint_location) 
 
@@ -209,6 +209,8 @@ class InputNode(Node):
         self.batch_func = batch_func
         self.dependent_rs = {}
         self.dependent_parallelism = {}
+        self.checkpoint_interval = checkpoint_interval
+
         for key in dependent_map:
             self.dependent_parallelism[key] = dependent_map[key][1]
             ps = []
@@ -226,7 +228,13 @@ class InputNode(Node):
             self.state_tag = 0
             self.state = None
         else:
-            recovered_state = pickle.load(open(ckpt,"rb"))
+            if ckpt == "s3":
+                s3_resource = boto3.resource('s3')
+                bucket, key = self.checkpoint_location
+                recovered_state = pickle.loads(s3_resource.Object(bucket, key + "-" + str(self.id) + "-" + str(self.channel)).get()['Body'].read())
+            else:
+                recovered_state = pickle.load(open(ckpt,"rb"))
+            
             self.logged_outputs = recovered_state["logged_outputs"]
             self.target_output_state = recovered_state["target_output_state"]
             self.state = recovered_state["state"]
@@ -234,7 +242,7 @@ class InputNode(Node):
             self.state_tag = recovered_state["tag"]
 
         
-    def checkpoint(self):
+    def checkpoint(self, method = "s3"):
         if not FT_I:
             return
         # write logged outputs, state, state_tag to reliable storage
@@ -243,11 +251,23 @@ class InputNode(Node):
         state = { "logged_outputs": self.logged_outputs, "out_seq" : self.out_seq, "tag":self.state_tag, "target_output_state":self.target_output_state,
         "state":self.state}
         self.output_lock.release()
-        f = open("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl","wb")
-        pickle.dump(state, f)
-        f.flush()
-        os.fsync(f.fileno())
-        f.close()
+
+        if method == "s3":
+            state_str = pickle.dumps(state)
+            s3_resource = boto3.resource('s3')
+            bucket, key = self.checkpoint_location
+            # if this fails we are dead, but probability of this failing much smaller than dump failing
+            # the lack of rename in S3 is a big problem
+            s3_resource.Object(bucket, key).put(Body=state_str)
+        
+        elif method == "local":
+            
+            f = open("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl","wb")
+            pickle.dump(state,f)
+            f.flush()
+            os.fsync(f.fileno())
+            f.close()
+
         print("INPUT NODE CHECKPOINTING")
         
         # if this fails we are dead, but probability of this failing much smaller than dump failing
@@ -278,7 +298,7 @@ class InputNode(Node):
                 self.push(result)
             else:
                 self.push(batch)
-            if self.state_tag % 10 == 0:
+            if self.state_tag % self.checkpoint_interval == 0:
                 self.checkpoint()
             self.state_tag += 1
         
@@ -348,15 +368,14 @@ class TaskNode(Node):
             self.expected_path = deque()
 
             self.ckpt_counter = -1
-
         else:
+            if ckpt == "s3":
+                s3_resource = boto3.resource('s3')
+                bucket, key = self.checkpoint_location
+                recovered_state = pickle.loads(s3_resource.Object(bucket, key + "-" + str(self.id) + "-" + str(self.channel)).get()['Body'].read())
+            else:
 
-            # bucket, key = checkpoint_location
-            # s3_resource = boto3.resource('s3')
-            # body = s3_resource.Object(bucket, key).get()['Body']
-            # recovered_state = pickle.loads(body.read())
-
-            recovered_state = pickle.load(open(ckpt,"rb"))
+                recovered_state = pickle.load(open(ckpt,"rb"))
 
             self.state_tag= recovered_state["tag"]
             print("RECOVERED TO STATE TAG", self.state_tag)
@@ -388,7 +407,7 @@ class TaskNode(Node):
             bucket, key = self.checkpoint_location
             # if this fails we are dead, but probability of this failing much smaller than dump failing
             # the lack of rename in S3 is a big problem
-            s3_resource.Object(bucket, key).put(state_str)
+            s3_resource.Object(bucket, key).put(Body=state_str)
         
         elif method == "local":
             

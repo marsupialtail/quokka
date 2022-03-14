@@ -17,7 +17,6 @@ def batch_func(df):
     df["high"] = ((df["o_orderpriority"] == "1-URGENT") | (df["o_orderpriority"] == "2-HIGH")).astype(int)
     df["low"] = ((df["o_orderpriority"] != "1-URGENT") & (df["o_orderpriority"] != "2-HIGH")).astype(int)
     result = df.groupby("l_shipmode").agg({'high':['sum'],'low':['sum']})
-    assert(len(result) == 2)
     return result
 
 lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
@@ -25,10 +24,6 @@ lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quanti
 "l_shipmode","l_comment", "null"]
 order_scheme = ["o_orderkey", "o_custkey","o_orderstatus","o_totalprice","o_orderdate","o_orderpriority","o_clerk",
 "o_shippriority","o_comment", "null"]
-
-#orders_filter = lambda x: x[["o_orderkey","o_orderpriority"]]
-#lineitem_filter = lambda x: x[((x.l_shipmode == "MAIL") | (x.l_shipmode == "SHIP")) & (x.l_commitdate < x.l_receiptdate) 
-#@& (x.l_shipdate < x.l_commitdate) & (x.l_receiptdate >= pd.to_datetime(datetime.date(1994,1,1))) & (x.l_receiptdate < pd.to_datetime(datetime.date(1995,1,1)))][["l_orderkey","l_shipmode"]]
 
 orders_filter = lambda x: polars.from_arrow(x.select(["o_orderkey","o_orderpriority"]))
 lineitem_filter = lambda x: polars.from_arrow(x.filter(compute.and_(compute.and_(compute.and_(compute.is_in(x["l_shipmode"],value_set = pa.array(["SHIP","MAIL"])), compute.less(x["l_commitdate"], x["l_receiptdate"])), compute.and_(compute.less(x["l_shipdate"], x["l_commitdate"]), compute.greater_equal(x["l_receiptdate"], compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s")))), compute.less(x["l_receiptdate"], compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")))).select(["l_orderkey","l_shipmode"]))
@@ -46,8 +41,7 @@ if sys.argv[2] == "csv":
         lineitem = task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl.1",lineitem_scheme,{'localhost':16},batch_func=lineitem_filter, sep="|")
 elif sys.argv[2] == "parquet":
     if sys.argv[1] == "small":
-        lineitem = task_graph.new_input_multiparquet("tpc-h-small","parquet/lineitem", {'localhost':4},columns=["l_shipdate","l_discount","l_quantity","l_extendedprice"],
-       batch_func=lineitem_filter)
+        raise Exception("not implemented")
     else:
 #        lineitem = task_graph.new_input_multiparquet("tpc-h-parquet","lineitem.parquet", {'localhost':8},columns=['l_shipdate','l_commitdate','l_shipmode','l_receiptdate','l_orderkey'], filters= [('l_shipmode', 'in', ['SHIP','MAIL']),('l_receiptdate','<',compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")), ('l_receiptdate','>=',compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s"))], batch_func=lineitem_filter_parquet)
 #        orders = task_graph.new_input_multiparquet("tpc-h-parquet","orders.parquet",{'localhost':4},columns = ['o_orderkey','o_orderpriority'], batch_func = orders_filter_parquet)
