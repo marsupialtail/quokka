@@ -15,8 +15,8 @@ import polars
 import pyarrow as pa
 # isolated simplified test bench for different fault tolerance protocols
 
-FT_I = False
-FT = False#True
+FT_I = True
+FT = True
 class Node:
 
     # will be overridden
@@ -373,7 +373,7 @@ class TaskNode(Node):
         
         self.log_state_tag()        
 
-    def checkpoint(self, method = "local"):
+    def checkpoint(self, method = "s3"):
         if not FT:
             return
         # write logged outputs, state, state_tag to reliable storage
@@ -398,7 +398,7 @@ class TaskNode(Node):
             os.fsync(f.fileno())
             f.close()
             # if this fails we are dead, but probability of this failing much smaller than dump failing
-            #os.rename("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl", "/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + ".pkl")
+            os.rename("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl", "/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + ".pkl")
         
         else:
             raise Exception

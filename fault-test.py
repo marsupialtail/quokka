@@ -88,11 +88,11 @@ def correlated_failure_test():
         input_actors_a.pop(to_die)
     
     for actor_id in input_to_dies:
-        input_actors_a[actor_id] =  InputS3CSVNode.options(max_concurrency = 2, num_cpus = 0.001).remote(0,actor_id,"yugan","a-big.csv",["key"] + ["avalue" + str(i) for i in range(100)], NUM_MAPPERS, ("a","b"), ckpt = "ckpt-0-"+str(actor_id)+".pkl") 
+        input_actors_a[actor_id] =  InputS3CSVNode.options(max_concurrency = 2, num_cpus = 0.001).remote(0,actor_id,"yugan","a-big.csv",["key"] + ["avalue" + str(i) for i in range(100)], NUM_MAPPERS, ("a","b"), ckpt = "/home/ubuntu/ckpt-0-"+str(actor_id)+".pkl") 
         handlers.pop((0,actor_id))
         parents[0][actor_id] = input_actors_a[actor_id]
     for actor_id in actor_to_dies:
-        join_actors[actor_id] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001).remote(2,actor_id, {0:0,1:1}, None, join_executor, parents, ("bump","bump"), ckpt = "ckpt-2-"+str(actor_id)+".pkl")
+        join_actors[actor_id] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001).remote(2,actor_id, {0:0,1:1}, None, join_executor, parents, ("quokka-checkpoint","ckpt"), ckpt = "/home/ubuntu/ckpt-2-"+str(actor_id)+".pkl")
         handlers.pop((2,actor_id))
     
     appends = []
