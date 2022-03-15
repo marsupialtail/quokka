@@ -324,24 +324,21 @@ class TaskGraph:
         while len(ip_set) > 0:
             time.sleep(0.001) # be nice
             to_remove = set()
+            to_add = set()
             for ip in ip_set:
                 try:
                     finished, unfinished = ray.wait(processes_by_ip[ip], timeout = 1)
                     if len(unfinished) == 0:
                         to_remove.add(ip)
                     #processes_by_ip[ip] = unfinished
-                    for bump in finished:
-                        stuff = ray.get(finished)
-                        ray.kill(process_to_actor[bump])
+                    ray.get(finished)
                 except ray.exceptions.RayActorError:
                     # let's assume that this entire machine is dead and there are no good things left on this machine, which is probably the case 
                     # if your spot instance got preempted
                     # reschedule all the channels stuck on this ip on a new machine
                     
-                    # in the future when we don't hand-input private IPs and can get a mapping between public and private ips
                     # check if the machine is still reachable
-                    # utils.check_instance_alive(private_ip_to_public_ip(ip))
-
+                    # utils.check_instance_alive(ip -- redis works with prviate ips, just try to send it a redis set)
                     #new_private_ip = utils.launch_new_instance()
 
                     # now go ahead and try to kill all the actors on the old instance
@@ -361,8 +358,8 @@ class TaskGraph:
                         except:
                             pass # don't get too mad if you can't kill something that's already dead
 
-                    done_ips.add(ip)
-                    ip_set.remove(ip)
+                    to_remove.add(ip)
+                    all_ips.remove(ip)
 
                     # redistribute the dead stuff on the alive machines
                     # now that we have killed stuff, relaunch them on the new one.    
@@ -376,7 +373,10 @@ class TaskGraph:
                         node_type = self.node_type[node]
                         new_channel_to_ip = self.node_channel_to_ip[node].copy()
                         for channel in affected_channels:
-                            new_channel_to_ip[channel] = random.sample(ip_set,1)[0]
+                            new_ip = random.sample(all_ips,1)[0]
+                            new_channel_to_ip[channel] = new_ip
+                            to_add.add(new_ip)
+                        self.node_channel_to_ip[node] = new_channel_to_ip
                         print("RESTARTING NODE",node, " NODE TYPE ", node_type, " ", new_channel_to_ip)
                         print("AFFECTED CHANNELS", affected_channels, ip_set)
                         if node_type == NONBLOCKING_NODE:
@@ -448,9 +448,13 @@ class TaskGraph:
 
                     ray.get(helps)
                     
-                    new_processes = []
                     for node in sorted(restarted_actors.keys()):
                         affected_channels = restarted_actors[node]
-                        new_processes.append(self.nodes[node][channel].execute.remote())
+                        for channel in affected_channels:
+                            new_ip = self.node_channel_to_ip[node][channel]
+                            processes_by_ip[new_ip].append(self.nodes[node][channel].execute.remote())
                     
-                    processes_by_ip[ip] = new_processes
+            for ip in to_remove:
+                ip_set.remove(ip)
+            for ip in to_add:
+                ip_set.add(ip)
