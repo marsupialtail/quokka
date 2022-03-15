@@ -10,11 +10,11 @@ NUM_JOINS = 4
 
 r = redis.Redis(host="localhost",port=6800,db=0)
 r.flushall()
-input_actors_a = {k: InputS3CSVNode.options(max_concurrency = 2, num_cpus = 0.001).remote(0,k,"yugan","a-big.csv",["key"] + ["avalue" + str(i) for i in range(100)], NUM_MAPPERS, ("quokka-checkpoint","ckpt")) for k in range(NUM_MAPPERS)}
-input_actors_b = {k: InputS3CSVNode.options(max_concurrency = 2, num_cpus = 0.001).remote(1,k,"yugan","b-big.csv",["key"] + ["bvalue" + str(i) for i in range(100)], NUM_MAPPERS, ("quokka-checkpoint","ckpt")) for k in range(NUM_MAPPERS)}
+input_actors_a = {k: InputS3CSVNode.options(max_concurrency = 2, num_cpus = 0.001).remote(0,k,"yugan","a-big.csv",["key"] + ["avalue" + str(i) for i in range(100)], NUM_MAPPERS, ("quokka-checkpoint","ckpt-0-" + str(k))) for k in range(NUM_MAPPERS)}
+input_actors_b = {k: InputS3CSVNode.options(max_concurrency = 2, num_cpus = 0.001).remote(1,k,"yugan","b-big.csv",["key"] + ["bvalue" + str(i) for i in range(100)], NUM_MAPPERS, ("quokka-checkpoint","ckpt-1-" + str(k))) for k in range(NUM_MAPPERS)}
 parents = {0:input_actors_a, 1: input_actors_b}
 join_executor = PolarJoinExecutor(on="key")
-join_actors = {i: NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001).remote(2,i, {0:0,1:1}, None, join_executor, parents, ("quokka-checkpoint","ckpt")) for i in range(NUM_JOINS)}
+join_actors = {i: NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001).remote(2,i, {0:0,1:1}, None, join_executor, parents, ("quokka-checkpoint","ckpt-2-" + str(i))) for i in range(NUM_JOINS)}
 join_channel_to_ip = {i: 'localhost' for i in range(NUM_JOINS)}
 
 for j in range(NUM_MAPPERS):
@@ -88,11 +88,13 @@ def correlated_failure_test():
         input_actors_a.pop(to_die)
     
     for actor_id in input_to_dies:
-        input_actors_a[actor_id] =  InputS3CSVNode.options(max_concurrency = 2, num_cpus = 0.001).remote(0,actor_id,"yugan","a-big.csv",["key"] + ["avalue" + str(i) for i in range(100)], NUM_MAPPERS, ("quokka-checkpoint","ckpt"), ckpt = "ckpt-0-"+str(actor_id)+".pkl") 
+        #input_actors_a[actor_id] =  InputS3CSVNode.options(max_concurrency = 2, num_cpus = 0.001).remote(0,actor_id,"yugan","a-big.csv",["key"] + ["avalue" + str(i) for i in range(100)], NUM_MAPPERS, ("quokka-checkpoint","ckpt"), ckpt = "ckpt-0-"+str(actor_id)+".pkl") 
+        input_actors_a[actor_id] =  InputS3CSVNode.options(max_concurrency = 2, num_cpus = 0.001).remote(0,actor_id,"yugan","a-big.csv",["key"] + ["avalue" + str(i) for i in range(100)], NUM_MAPPERS, ("quokka-checkpoint","ckpt-0-" + str(actor_id)), ckpt = "s3") 
         handlers.pop((0,actor_id))
         parents[0][actor_id] = input_actors_a[actor_id]
     for actor_id in actor_to_dies:
-        join_actors[actor_id] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001).remote(2,actor_id, {0:0,1:1}, None, join_executor, parents, ("quokka-checkpoint","ckpt"), ckpt = "ckpt-2-"+str(actor_id)+".pkl")
+        #join_actors[actor_id] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001).remote(2,actor_id, {0:0,1:1}, None, join_executor, parents, ("quokka-checkpoint","ckpt"), ckpt = "ckpt-2-"+str(actor_id)+".pkl")
+        join_actors[actor_id] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001).remote(2,actor_id, {0:0,1:1}, None, join_executor, parents, ("quokka-checkpoint","ckpt-2-" + str(actor_id)), ckpt = "s3")
         handlers.pop((2,actor_id))
     
     appends = []

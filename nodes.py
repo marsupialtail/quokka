@@ -16,7 +16,7 @@ import pyarrow as pa
 # isolated simplified test bench for different fault tolerance protocols
 
 FT_I = True
-FT = True
+FT =  True
 class Node:
 
     # will be overridden
@@ -231,7 +231,7 @@ class InputNode(Node):
             if ckpt == "s3":
                 s3_resource = boto3.resource('s3')
                 bucket, key = self.checkpoint_location
-                recovered_state = pickle.loads(s3_resource.Object(bucket, key + "-" + str(self.id) + "-" + str(self.channel)).get()['Body'].read())
+                recovered_state = pickle.loads(s3_resource.Object(bucket, key).get()['Body'].read())
             else:
                 recovered_state = pickle.load(open(ckpt,"rb"))
             
@@ -250,28 +250,30 @@ class InputNode(Node):
         self.output_lock.acquire()
         state = { "logged_outputs": self.logged_outputs, "out_seq" : self.out_seq, "tag":self.state_tag, "target_output_state":self.target_output_state,
         "state":self.state}
+        state_str = pickle.dumps(state)
         self.output_lock.release()
 
         if method == "s3":
-            state_str = pickle.dumps(state)
+
             s3_resource = boto3.resource('s3')
             bucket, key = self.checkpoint_location
             # if this fails we are dead, but probability of this failing much smaller than dump failing
             # the lack of rename in S3 is a big problem
-            s3_resource.Object(bucket, key).put(Body=state_str)
+            s3_resource.Object(bucket,key).put(Body=state_str)
         
         elif method == "local":
             
             f = open("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl","wb")
-            pickle.dump(state,f)
+            f.write(state_str)
             f.flush()
             os.fsync(f.fileno())
             f.close()
+            os.rename("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl", "/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + ".pkl")
 
         print("INPUT NODE CHECKPOINTING")
         
         # if this fails we are dead, but probability of this failing much smaller than dump failing
-        os.rename("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl", "/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + ".pkl")
+
         
     def execute(self):
         
@@ -372,7 +374,7 @@ class TaskNode(Node):
             if ckpt == "s3":
                 s3_resource = boto3.resource('s3')
                 bucket, key = self.checkpoint_location
-                recovered_state = pickle.loads(s3_resource.Object(bucket, key + "-" + str(self.id) + "-" + str(self.channel)).get()['Body'].read())
+                recovered_state = pickle.loads(s3_resource.Object(bucket, key).get()['Body'].read())
             else:
 
                 recovered_state = pickle.load(open(ckpt,"rb"))
@@ -399,10 +401,11 @@ class TaskNode(Node):
         self.output_lock.acquire()
         state = {"latest_input_received": self.latest_input_received, "logged_outputs": self.logged_outputs, "out_seq" : self.out_seq,
         "function_object": self.functionObject.serialize(), "tag":self.state_tag, "target_output_state": self.target_output_state}
+        state_str = pickle.dumps(state)
         self.output_lock.release()
 
         if method == "s3":
-            state_str = pickle.dumps(state)
+
             s3_resource = boto3.resource('s3')
             bucket, key = self.checkpoint_location
             # if this fails we are dead, but probability of this failing much smaller than dump failing
@@ -412,7 +415,7 @@ class TaskNode(Node):
         elif method == "local":
             
             f = open("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl","wb")
-            pickle.dump(state,f)
+            f.write(state_str)
             f.flush()
             os.fsync(f.fileno())
             f.close()
@@ -565,7 +568,7 @@ class NonBlockingTaskNode(TaskNode):
             results = self.functionObject.execute( batches, self.physical_to_logical_mapping[stream_id], self.channel)
             
             self.ckpt_counter += 1
-            if self.ckpt_counter % self.checkpoint_interval == 0:
+            if FT and self.ckpt_counter % self.checkpoint_interval == 0:
                 print(self.id, "CHECKPOINTING")
                 self.checkpoint()
 
@@ -621,7 +624,7 @@ class BlockingTaskNode(TaskNode):
             results = self.functionObject.execute( batches,self.physical_to_logical_mapping[stream_id], self.channel)
             
             self.ckpt_counter += 1
-            if self.ckpt_counter % self.checkpoint_interval == 0:
+            if FT and self.ckpt_counter % self.checkpoint_interval == 0:
                 print(self.id, "CHECKPOINTING")
                 self.checkpoint()
 

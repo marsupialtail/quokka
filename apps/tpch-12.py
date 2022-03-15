@@ -35,10 +35,10 @@ if sys.argv[2] == "csv":
         orders = task_graph.new_input_csv("tpc-h-small","orders.tbl",order_scheme,{'localhost':8, '172.31.16.185':8},batch_func=orders_filter, sep="|")
         lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme,{'localhost':8, '172.31.16.185':8},batch_func=lineitem_filter, sep="|")
     else:
-        #orders = task_graph.new_input_csv("tpc-h-csv","orders/orders.tbl.1",order_scheme,{'localhost':8, '172.31.16.185':8},batch_func=orders_filter, sep="|")
-        #lineitem = task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl.1",lineitem_scheme,{'localhost':8, '172.31.16.185':8},batch_func=lineitem_filter, sep="|")
-        orders = task_graph.new_input_csv("tpc-h-csv","orders/orders.tbl.1",order_scheme,{'localhost':8},batch_func=orders_filter, sep="|")
-        lineitem = task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl.1",lineitem_scheme,{'localhost':16},batch_func=lineitem_filter, sep="|")
+        orders = task_graph.new_input_csv("tpc-h-csv","orders/orders.tbl.1",order_scheme,{'localhost':8, '172.31.11.134':8},batch_func=orders_filter, sep="|")
+        lineitem = task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl.1",lineitem_scheme,{'localhost':16, '172.31.11.134':16},batch_func=lineitem_filter, sep="|")
+        #orders = task_graph.new_input_csv("tpc-h-csv","orders/orders.tbl.1",order_scheme,{'localhost':8},batch_func=orders_filter, sep="|")
+        #lineitem = task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl.1",lineitem_scheme,{'localhost':16},batch_func=lineitem_filter, sep="|")
 elif sys.argv[2] == "parquet":
     if sys.argv[1] == "small":
         raise Exception("not implemented")
