@@ -322,16 +322,19 @@ class TaskGraph:
 
         all_ips = ip_set.copy()
         while len(ip_set) > 0:
-            time.sleep(0.001) # be nice
+            time.sleep(0.01) # be nice
             to_remove = set()
             to_add = set()
             for ip in ip_set:
                 try:
                     finished, unfinished = ray.wait(processes_by_ip[ip], timeout = 1)
+                    print(finished, unfinished)
                     if len(unfinished) == 0:
                         to_remove.add(ip)
-                    #processes_by_ip[ip] = unfinished
+                        print("ADDING ", ip , " TO TOREMOVE")
                     ray.get(finished)
+                    # this ordering is very important. if we do this line before ray.get(finished), we might discard the actor who triggered the failure! If there is an actor failure, then we don't update the processes.
+                    processes_by_ip[ip] = unfinished
                 except ray.exceptions.RayActorError:
                     # let's assume that this entire machine is dead and there are no good things left on this machine, which is probably the case 
                     # if your spot instance got preempted
