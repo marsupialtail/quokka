@@ -307,27 +307,31 @@ class TaskGraph:
             node = self.nodes[node_id]
             for channel in node:
                 replica = node[channel]
-                ip = self.node_channel_to_ip[node][channel]
+                ip = self.node_channel_to_ip[node_id][channel]
                 ip_set.add(ip)
                 if ip not in processes_by_ip:
                     processes_by_ip[ip] = []
                 bump = replica.execute.remote()
                 processes_by_ip[ip].append(bump)
                 process_to_actor[bump] = replica
-                what_is_the_process[bump] = (node, channel)
+                what_is_the_process[bump] = (node_id, channel)
 
-        done_ips = set()
-        while len(done_ips) < len(ip_set):
+        for ip in processes_by_ip:
+            for process in processes_by_ip[ip]:
+                print(ip, what_is_the_process[process])
+
+        all_ips = ip_set.copy()
+        while len(ip_set) > 0:
             time.sleep(0.001) # be nice
-            for ip in processes_by_ip:
-                if ip in done_ips:
-                    continue
+            to_remove = set()
+            for ip in ip_set:
                 try:
-                    finished, unfinished = ray.wait(processes_by_ip[ip])
+                    finished, unfinished = ray.wait(processes_by_ip[ip], timeout = 1)
                     if len(unfinished) == 0:
-                        done_ips.add(ip)
-                    processes_by_ip[ip] = unfinished
+                        to_remove.add(ip)
+                    #processes_by_ip[ip] = unfinished
                     for bump in finished:
+                        stuff = ray.get(finished)
                         ray.kill(process_to_actor[bump])
                 except ray.exceptions.RayActorError:
                     # let's assume that this entire machine is dead and there are no good things left on this machine, which is probably the case 
@@ -342,9 +346,12 @@ class TaskGraph:
 
                     # now go ahead and try to kill all the actors on the old instance
                     print("WORKER AT ", ip, " HAS DIED. At least, an actor on it failed.")
+                    print("=======================================================")
+                    print("ATTEMPTING TO RESCHEDULE ITS WORK")
+                    print("=======================================================")
                     restarted_actors = {}
                     for old_process in processes_by_ip[ip]:
-                        node, channel = what_is_the_process
+                        node, channel = what_is_the_process[old_process]
                         try:
                             restarted_actors[node].append(channel)
                         except:
@@ -364,15 +371,20 @@ class TaskGraph:
                     
                     helps = []
                     for node in sorted(restarted_actors.keys()):
+
                         affected_channels = restarted_actors[node]
                         node_type = self.node_type[node]
                         new_channel_to_ip = self.node_channel_to_ip[node].copy()
                         for channel in affected_channels:
                             new_channel_to_ip[channel] = random.sample(ip_set,1)[0]
-                        
+                        print("RESTARTING NODE",node, " NODE TYPE ", node_type, " ", new_channel_to_ip)
+                        print("AFFECTED CHANNELS", affected_channels, ip_set)
                         if node_type == NONBLOCKING_NODE:
                             # this should have the new actor info, since node_parents refer to self.nodes, and the input nodes must have been updated since node number smaller
                             my_parents = self.node_parents[node] # all the channels should have the same parents
+                            print("PARENTS", my_parents)
+                            for parent in my_parents:
+                                print("NODES",self.nodes[parent])
                             mapping = self.node_args[node]["mapping"]
                             partition_key = self.node_args[node]["partition_key"]
                             datasets = self.node_args[node]["datasets"]

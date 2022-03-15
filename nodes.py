@@ -145,8 +145,11 @@ class Node:
             self.output_lock.release()
 
         # downstream targets are done. You should be done too then.
-        if not self.update_targets():
-            return False
+        try:    
+            if not self.update_targets():
+                return False
+        except:
+            print("downstream failure detected")
 
         if type(data) == pd.core.frame.DataFrame or type(data) == polars.internals.frame.DataFrame:
             for target in self.alive_targets:
@@ -167,8 +170,11 @@ class Node:
                     pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
 
                     pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),pickle.dumps((self.id, self.channel, self.out_seq)))
-                    results = pipeline.execute()
-                    if False in results:
+                    try:    
+                        results = pipeline.execute()
+                        if False in results:
+                            print("Downstream failure detected")
+                    except:
                         print("Downstream failure detected")
         else:
             raise Exception

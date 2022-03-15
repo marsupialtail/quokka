@@ -60,7 +60,7 @@ agged = task_graph.new_blocking_node({0:output_stream}, None, agg_executor, {'lo
 
 task_graph.create()
 start = time.time()
-task_graph.run()
+task_graph.run_with_fault_tolerance()
 print("total time ", time.time() - start)
 
 print(ray.get(agged.to_pandas.remote()))
