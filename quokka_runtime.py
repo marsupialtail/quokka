@@ -388,9 +388,6 @@ class TaskGraph:
                         if node_type == NONBLOCKING_NODE:
                             # this should have the new actor info, since node_parents refer to self.nodes, and the input nodes must have been updated since node number smaller
                             my_parents = self.node_parents[node] # all the channels should have the same parents
-                            print("PARENTS", my_parents)
-                            for parent in my_parents:
-                                print("NODES",self.nodes[parent])
                             mapping = self.node_args[node]["mapping"]
                             partition_key = self.node_args[node]["partition_key"]
                             datasets = self.node_args[node]["datasets"]
@@ -406,14 +403,12 @@ class TaskGraph:
 
                             for bump in self.nodes:
                                 if bump in self.node_parents and node in self.node_parents[bump] and bump not in restarted_actors: # this node was not restarted. noone will apped_targets to you, do it yourself
-                                    ray.get([self.nodes[node][channel].append_to_targets.remote((bump, self.node_channel_to_ip[bump], None)) for channel in affected_channels])
+                                    bump_partition_key = self.node_args[bump]["partition_key"][self.node_args[bump]["mapping"][node]]
+                                    ray.get([self.nodes[node][channel].append_to_targets.remote((bump, self.node_channel_to_ip[bump], bump_partition_key)) for channel in affected_channels])
                         
                         elif node_type == BLOCKING_NODE:
                             # this should have the new actor info, since node_parents refer to self.nodes, and the input nodes must have been updated since node number smaller
                             my_parents = self.node_parents[node] # all the channels should have the same parents
-                            print("PARENTS", my_parents)
-                            for parent in my_parents:
-                                print("NODES",self.nodes[parent])
                             mapping = self.node_args[node]["mapping"]
                             partition_key = self.node_args[node]["partition_key"]
                             output_dataset = self.node_args[node]["output_dataset"]
@@ -421,7 +416,6 @@ class TaskGraph:
                             functionObject = self.node_args[node]["functionObject"]
                             ckpt_interval = self.node_args[node]["ckpt_interval"]
                             for source in my_parents:
-                                print("-----",source, restarted_actors[source])
                                 ray.get([self.nodes[source][channel].append_to_targets.remote((node, new_channel_to_ip, partition_key[mapping[source]])) for channel in restarted_actors[source]])
                             for channel in affected_channels:
                                 self.nodes[node][channel] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" +new_channel_to_ip[channel] : 0.001}).remote(node, channel, 
@@ -430,7 +424,8 @@ class TaskGraph:
                             
                             for bump in self.nodes:
                                 if bump in self.node_parents and node in self.node_parents[bump] and bump not in restarted_actors: # this node was not restarted. noone will apped_targets to you, do it yourself
-                                    ray.get([self.nodes[node][channel].append_to_targets.remote((bump, self.node_channel_to_ip[bump], None)) for channel in affected_channels])
+                                    bump_partition_key = self.node_args[bump]["partition_key"][self.node_args[bump]["mapping"][node]]
+                                    ray.get([self.nodes[node][channel].append_to_targets.remote((bump, self.node_channel_to_ip[bump], bump_partition_key)) for channel in affected_channels])
                         elif node_type == INPUT_CSV_DATASET:
                             bucket = self.node_args[node]["bucket"]
                             key = self.node_args[node]["key"]

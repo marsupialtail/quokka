@@ -248,8 +248,8 @@ class CountExecutor(Executor):
     def __init__(self) -> None:
         self.state = 0
 
-    def execute(self, batch, stream_id, executor_id):
-        self.state += len(batch)
+    def execute(self, batches, stream_id, executor_id):
+        self.state += sum(len(batch) for batch in batches)
     
     def serialize(self):
         return pickle.dumps({"state":self.state})
