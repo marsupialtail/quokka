@@ -218,6 +218,7 @@ class AggExecutor(Executor):
             else:
                 self.state = self.state.add(batch, fill_value = self.fill_value)
         assert(len(self.state) == 2)
+        print(self.state)
 
     
     def done(self,executor_id):

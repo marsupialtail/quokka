@@ -155,6 +155,7 @@ class Node:
             for target in self.alive_targets:
                 original_channel_to_ip, partition_key = self.targets[target]
                 for channel in self.alive_targets[target]:
+                    print("PUSHING FROM",str(self.id),str(self.channel)," TO ",str(target),str(channel), " MY TAG ", self.out_seq)
                     if partition_key is not None:
 
                         if type(partition_key) == str:
@@ -191,16 +192,22 @@ class Node:
         self.logged_outputs[self.out_seq] = "done"
         self.output_lock.release()
 
-        if not self.update_targets():
-            return False
+        try:    
+            if not self.update_targets():
+                return False
+        except:
+            print("downstream failure detected")
 
         for target in self.alive_targets:
             for channel in self.alive_targets[target]:
                 pipeline = self.target_rs[target][channel].pipeline()
                 pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps("done"))
                 pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),pickle.dumps((self.id, self.channel, self.out_seq)))
-                results = pipeline.execute()
-                if False in results:
+                try:
+                    results = pipeline.execute()
+                    if False in results:
+                        print("Downstream failure detected")
+                except:
                     print("Downstream failure detected")
         return True
 
@@ -246,6 +253,7 @@ class InputNode(Node):
             self.state = recovered_state["state"]
             self.out_seq = recovered_state["out_seq"]
             self.state_tag = recovered_state["tag"]
+            print("INPUT NODE RECOVERED TO STATE", self.state)
 
         
     def checkpoint(self, method = "s3"):
@@ -309,7 +317,7 @@ class InputNode(Node):
             if self.state_tag % self.checkpoint_interval == 0:
                 self.checkpoint()
             self.state_tag += 1
-        
+        print("INPUT DONE", self.id, self.channel)
         self.done()
         self.r.publish("input-done-" + str(self.id), "done")
     
@@ -389,7 +397,7 @@ class TaskNode(Node):
             print("RECOVERED TO STATE TAG", self.state_tag)
             self.latest_input_received = recovered_state["latest_input_received"]
             self.functionObject.deserialize(recovered_state["function_object"])
-            self.out_seq = recovered_state["out_seq"]
+            self.out_seq = recovered_state["out_seq"] + 1 # due to the order in which we checkpoint and increment out_seq, only for tasknodes not for input nodes
             self.logged_outputs = recovered_state["logged_outputs"]
             self.target_output_state = recovered_state["target_output_state"]
 
@@ -468,8 +476,12 @@ class TaskNode(Node):
             first = mailbox.popleft()
             stream_id, channel,  tag = mailbox_id.popleft()
 
+            if stream_id not in self.parents or channel not in self.parents[stream_id]:
+                print("this channel has already received the done signal. stop wasting your breath.")
+                continue
+
             if tag <= self.state_tag[(stream_id,channel)]:
-                print("rejected an input stream's tag smaller than or equal to current state tag")
+                print("rejected an input stream's tag smaller than or equal to current state tag. input tag", tag, "current state tag", self.state_tag[(stream_id, channel)])
                 continue
             if tag > self.latest_input_received[(stream_id,channel)] + 1:
                 print("DROPPING INPUT. THIS IS A FUTURE INPUT THAT WILL BE RESENT (hopefully)", tag, stream_id, channel, "current tag", self.latest_input_received[(stream_id,channel)])
@@ -491,7 +503,7 @@ class TaskNode(Node):
         return batches_returned
     
     def get_expected_path(self):
-        return deque([pickle.loads(i) for i in self.head_r.lrange("state-tag-" + str(self.id) + "-" + str(self.channel), 0, self.head_r.llen("state-tag-" + str(self.id)))])
+        return deque([pickle.loads(i) for i in self.head_r.lrange("state-tag-" + str(self.id) + "-" + str(self.channel), 0, self.head_r.llen("state-tag-" + str(self.id) + "-" + str(self.channel)))])
     
     # truncate the log to the checkpoint
     def truncate_log(self):
@@ -530,12 +542,13 @@ class TaskNode(Node):
                         to_do = key
                     else:
                         raise Exception("shouldn't have more than one source > 0")
-            
+            if to_do is None:
+                raise Exception("there should be some difference..",self.state_tag,expected)
             parent, channel = to_do
             required_batches = diffs[(parent, channel)]
             if len(self.buffered_inputs[parent,channel]) < required_batches:
                 # cannot fulfill expectation
-                print("CANNOT FULFILL EXPECTATION")
+                #print("CANNOT FULFILL EXPECTATION")
                 return None, None
             else:
                 batches = [self.buffered_inputs[parent,channel].popleft() for i in range(required_batches)]
@@ -597,6 +610,7 @@ class NonBlockingTaskNode(TaskNode):
         if obj_done is not None:
             self.push(obj_done)
         
+        print("TASK NODE DONE", self.id, self.channel)
         self.done()
         self.r.publish("node-done-"+str(self.id),str(self.channel))
     
