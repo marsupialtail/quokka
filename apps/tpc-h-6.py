@@ -7,6 +7,10 @@ from quokka_runtime import TaskGraph
 from sql import AggExecutor
 import ray
 import pandas as pd
+
+import redis
+r = redis.Redis(host="localhost", port=6800, db=0)
+r.flushall()
 task_graph = TaskGraph()
 
 # unless I was dreaming, and my dreams somehow manifested themselves in the EC2 instance execution logs, sometimes the results are wrong. Though it is extremely infrequent.

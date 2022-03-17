@@ -3,7 +3,7 @@ sys.path.append("/home/ubuntu/quokka/")
 import datetime
 import time
 from quokka_runtime import TaskGraph
-from sql import AggExecutor, PolarJoinExecutor
+from sql import AggExecutor, PolarJoinExecutor, CountExecutor
 import pandas as pd
 import ray
 import os
@@ -13,14 +13,7 @@ import pyarrow.compute as compute
 import redis
 r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
-
 task_graph = TaskGraph()
-
-def batch_func(df):
-    df["high"] = ((df["o_orderpriority"] == "1-URGENT") | (df["o_orderpriority"] == "2-HIGH")).astype(int)
-    df["low"] = ((df["o_orderpriority"] != "1-URGENT") & (df["o_orderpriority"] != "2-HIGH")).astype(int)
-    result = df.groupby("l_shipmode").agg({'high':['sum'],'low':['sum']})
-    return result
 
 lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
 "l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
@@ -50,15 +43,15 @@ elif sys.argv[2] == "parquet":
 #        orders = task_graph.new_input_multiparquet("tpc-h-parquet","orders.parquet",{'localhost':4},columns = ['o_orderkey','o_orderpriority'], batch_func = orders_filter_parquet)
         #lineitem = task_graph.new_input_multiparquet("tpc-h-parquet","lineitem.parquet", {'localhost':8,'172.31.11.134':8,'172.31.15.208':8,'172.31.10.96':8},columns=['l_shipdate','l_commitdate','l_shipmode','l_receiptdate','l_orderkey'], filters= [('l_shipmode', 'in', ['SHIP','MAIL']),('l_receiptdate','<',compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")), ('l_receiptdate','>=',compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s"))], batch_func=lineitem_filter_parquet)
         #orders = task_graph.new_input_multiparquet("tpc-h-parquet","orders.parquet",{'localhost':4,'172.31.11.134':4,'172.31.15.208':4,'172.31.10.96':4},columns = ['o_orderkey','o_orderpriority'], batch_func = orders_filter_parquet)
-        lineitem = task_graph.new_input_multiparquet("tpc-h-parquet","lineitem.parquet", {'localhost':4,'172.31.11.134':4},columns=['l_shipdate','l_commitdate','l_shipmode','l_receiptdate','l_orderkey'], filters= [('l_shipmode', 'in', ['SHIP','MAIL']),('l_receiptdate','<',compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")), ('l_receiptdate','>=',compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s"))], batch_func=lineitem_filter_parquet)
-        orders = task_graph.new_input_multiparquet("tpc-h-parquet","orders.parquet",{'localhost':4,'172.31.11.134':4},columns = ['o_orderkey','o_orderpriority'], batch_func = orders_filter_parquet)
+        lineitem = task_graph.new_input_multiparquet("tpc-h-parquet","lineitem.parquet", {'localhost':2,'172.31.11.134':2},columns=['l_shipdate','l_commitdate','l_shipmode','l_receiptdate','l_orderkey'], filters= [('l_shipmode', 'in', ['SHIP','MAIL']),('l_receiptdate','<',compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")), ('l_receiptdate','>=',compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s"))], batch_func=lineitem_filter_parquet)
+        orders = task_graph.new_input_multiparquet("tpc-h-parquet","orders.parquet",{'localhost':2,'172.31.11.134':2},columns = ['o_orderkey','o_orderpriority'], batch_func = orders_filter_parquet)
 
-join_executor = PolarJoinExecutor(left_on="o_orderkey",right_on="l_orderkey", batch_func=batch_func)
+join_executor = PolarJoinExecutor(left_on="o_orderkey",right_on="l_orderkey")
 #output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor,{'localhost':4, '172.31.11.134':4,'172.31.15.208':4,'172.31.10.96':4}, {0:"o_orderkey", 1:"l_orderkey"})
-output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor,{'localhost':4, '172.31.11.134':4}, {0:"o_orderkey", 1:"l_orderkey"})
+output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor,{'localhost':2, '172.31.11.134':2}, {0:"o_orderkey", 1:"l_orderkey"})
 #output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor,{'localhost':4,'172.31.16.185':4}, {0:"o_orderkey", 1:"l_orderkey"})
-agg_executor = AggExecutor()
-agged = task_graph.new_blocking_node({0:output_stream}, None, agg_executor, {'localhost':1}, {0:None})
+count_executor = CountExecutor()
+agged = task_graph.new_blocking_node({0:output_stream}, None, count_executor, {'localhost':1}, {0:None})
 
 
 task_graph.create()

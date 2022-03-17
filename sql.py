@@ -218,8 +218,6 @@ class AggExecutor(Executor):
             else:
                 self.state = self.state.add(batch, fill_value = self.fill_value)
         assert(len(self.state) == 2)
-        print(self.state)
-
     
     def done(self,executor_id):
         print(self.state)
@@ -247,8 +245,12 @@ class LimitExecutor(Executor):
 class CountExecutor(Executor):
     def __init__(self) -> None:
         self.state = 0
+        self.seq = 0
 
     def execute(self, batches, stream_id, executor_id):
+        for batch in batches:
+            #batch.to_parquet("/home/ubuntu/logged_out/" + str(self.seq) + ".parquet")
+            self.seq += 1
         self.state += sum(len(batch) for batch in batches)
     
     def serialize(self):

@@ -7,6 +7,9 @@ from quokka_runtime import TaskGraph
 from sql import AggExecutor, OOCJoinExecutor
 import ray
 import os
+import redis
+r = redis.Redis(host="localhost", port=6800, db=0)
+r.flushall()
 task_graph = TaskGraph()
 
 # aggregation push down might be interesting to think about

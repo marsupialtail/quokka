@@ -8,6 +8,9 @@ import pandas as pd
 import numpy as np
 import ray
 import os
+import redis
+r = redis.Redis(host="localhost", port=6800, db=0)
+r.flushall()
 task_graph = TaskGraph()
 
 BX = 2

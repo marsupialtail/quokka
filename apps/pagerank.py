@@ -11,6 +11,9 @@ import pickle
 ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
 import sparse_dot_mkl
 from scipy.sparse import csr_matrix
+import redis
+r = redis.Redis(host="localhost", port=6800, db=0)
+r.flushall()
 
 class SpMVExecutor(Executor):
     # this is basically an inner join, but we need to do some smart things to manage memory

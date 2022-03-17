@@ -89,10 +89,10 @@ class InputMultiParquetDataset:
             curr_pos = pos
         while curr_pos < len(self.files):
             print("input batch",(curr_pos - mapper_id) / self.num_mappers)
-            print("starting reading ",time.time())
+            #print("starting reading ",time.time())
             #a = pq.read_table("s3://" + self.bucket + "/" + self.files[curr_pos],columns=self.columns, filters = self.filters).to_pandas()
             a = pq.read_table("s3://" + self.bucket + "/" + self.files[curr_pos],columns=self.columns, filters = self.filters)
-            print("ending reading ",time.time())
+            #print("ending reading ",time.time())
             curr_pos += self.num_mappers
             yield curr_pos, a
 

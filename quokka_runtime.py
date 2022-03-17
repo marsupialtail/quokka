@@ -219,7 +219,7 @@ class TaskGraph:
         self.node_args[self.current_node] = {"bucket":bucket, "key":key, "batch_func": batch_func, "columns": columns, "filters": filters, "dependent_map": dependent_map}
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
     
-    def new_non_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 10):
+    def new_non_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 30):
         
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
         # this is the mapping of physical node id to the key the user called in streams. i.e. if you made a node, task graph assigns it an internal id #
@@ -331,7 +331,7 @@ class TaskGraph:
             for ip in ip_set:
                 try:
                     finished, unfinished = ray.wait(processes_by_ip[ip], timeout = 1)
-                    print(finished, unfinished)
+                    #print(finished, unfinished)
                     if len(unfinished) == 0:
                         to_remove.add(ip)
                         print("ADDING ", ip , " TO TOREMOVE")

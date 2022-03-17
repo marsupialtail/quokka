@@ -16,7 +16,7 @@ import pyarrow as pa
 # isolated simplified test bench for different fault tolerance protocols
 
 FT_I = True
-FT =  True
+FT = True
 class Node:
 
     # will be overridden
@@ -251,7 +251,7 @@ class InputNode(Node):
             self.logged_outputs = recovered_state["logged_outputs"]
             self.target_output_state = recovered_state["target_output_state"]
             self.state = recovered_state["state"]
-            self.out_seq = recovered_state["out_seq"]
+            self.out_seq = recovered_state["out_seq"] 
             self.state_tag = recovered_state["tag"]
             print("INPUT NODE RECOVERED TO STATE", self.state)
 
@@ -395,12 +395,13 @@ class TaskNode(Node):
 
             self.state_tag= recovered_state["tag"]
             print("RECOVERED TO STATE TAG", self.state_tag)
-            self.latest_input_received = recovered_state["latest_input_received"]
+            self.latest_input_received = self.state_tag.copy() #recovered_state["latest_input_received"]
             self.functionObject.deserialize(recovered_state["function_object"])
-            self.out_seq = recovered_state["out_seq"] + 1 # due to the order in which we checkpoint and increment out_seq, only for tasknodes not for input nodes
+            self.out_seq = recovered_state["out_seq"]  
             self.logged_outputs = recovered_state["logged_outputs"]
             self.target_output_state = recovered_state["target_output_state"]
 
+            self.truncate_log() # the process could have failed between checkpoint and truncate log
             self.expected_path = self.get_expected_path()
             print("EXPECTED PATH", self.expected_path)
 
@@ -480,8 +481,8 @@ class TaskNode(Node):
                 print("this channel has already received the done signal. stop wasting your breath.")
                 continue
 
-            if tag <= self.state_tag[(stream_id,channel)]:
-                print("rejected an input stream's tag smaller than or equal to current state tag. input tag", tag, "current state tag", self.state_tag[(stream_id, channel)])
+            if tag <= self.latest_input_received[(stream_id,channel)]:
+                print("rejected an input stream's tag smaller than or equal to latest input received. input tag", tag, "current latest input received", self.latest_input_received[(stream_id, channel)])
                 continue
             if tag > self.latest_input_received[(stream_id,channel)] + 1:
                 print("DROPPING INPUT. THIS IS A FUTURE INPUT THAT WILL BE RESENT (hopefully)", tag, stream_id, channel, "current tag", self.latest_input_received[(stream_id,channel)])
@@ -507,11 +508,21 @@ class TaskNode(Node):
     
     # truncate the log to the checkpoint
     def truncate_log(self):
+        # you truncated the log right before you failed.
+        if self.head_r.llen("state-tag-" + str(self.id) + "-" + str(self.channel)) == 0:
+            return
+        first_state = pickle.loads(self.head_r.lrange("state-tag-" + str(self.id) + "-" + str(self.channel), 0, 1)[0])
+        diffs = np.array([first_state[i] - self.state_tag[i] for i in first_state])
+        hmm = np.count_nonzero(diffs > 0)
+        if hmm > 1:
+            raise Exception("I think you truncated something you shouldn't have", first_state, self.state_tag)
+        if hmm == 1:
+            return
+        
         while True:
             if self.head_r.llen("state-tag-" + str(self.id) + "-" + str(self.channel)) == 0:
                 raise Exception
             tag = pickle.loads(self.head_r.lpop("state-tag-" + str(self.id) + "-" + str(self.channel)))
-            
             if tag == self.state_tag:
                 return
 
@@ -528,6 +539,8 @@ class TaskNode(Node):
             batches = list(self.buffered_inputs[parent,channel])
             self.state_tag[(parent,channel)] += length
             self.buffered_inputs[parent,channel].clear()
+            #self.state_tag[(parent,channel)] += 1
+            #batches = [self.buffered_inputs[parent,channel].popleft()]
             self.log_state_tag()
             return parent, batches
 
@@ -578,19 +591,19 @@ class NonBlockingTaskNode(TaskNode):
             # append messages to the mailbox
             batches_returned = self.get_batches(mailbox, mailbox_meta)
             # deque messages from the mailbox in a way that makes sense
+
             stream_id, batches = self.schedule_for_execution()
             if stream_id is None:
                 continue
 
-            print(self.state_tag)
+            #print("BUFFERED INPUT LENGTHS",{i:len(i) for i in self.buffered_inputs})
+            #print(self.state_tag)
+            #print(self.latest_input_received)
+            for key in self.state_tag:
+                assert self.state_tag[key] <= self.latest_input_received[key]
 
             results = self.functionObject.execute( batches, self.physical_to_logical_mapping[stream_id], self.channel)
             
-            self.ckpt_counter += 1
-            if FT and self.ckpt_counter % self.checkpoint_interval == 0:
-                print(self.id, "CHECKPOINTING")
-                self.checkpoint()
-
             # this is a very subtle point. You will only breakout if length of self.target, i.e. the original length of 
             # target list is bigger than 0. So you had somebody to send to but now you don't
 
@@ -603,6 +616,11 @@ class NonBlockingTaskNode(TaskNode):
                     break
             else:
                 pass
+            
+            self.ckpt_counter += 1
+            if FT and self.ckpt_counter % self.checkpoint_interval == 0:
+                print(self.id, "CHECKPOINTING")
+                self.checkpoint()
         
         obj_done =  self.functionObject.done(self.channel) 
         del self.functionObject

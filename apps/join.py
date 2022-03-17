@@ -6,6 +6,9 @@ from quokka_runtime import TaskGraph
 from sql import PolarJoinExecutor, OutputCSVExecutor, CountExecutor
 import ray
 import os
+import redis
+r = redis.Redis(host="localhost", port=6800, db=0)
+r.flushall()
 task_graph = TaskGraph()
 
 #quotes = task_graph.new_input_csv("yugan","a-big.csv",["key"] + ["avalue" + str(i) for i in range(100)],2,ip="172.31.16.185")
