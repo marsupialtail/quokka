@@ -261,6 +261,7 @@ class InputNode(Node):
             return
         # write logged outputs, state, state_tag to reliable storage
         # for input nodes, log the outputs instead of redownlaoding is probably worth it. since the outputs could be filtered by predicate
+        
         self.output_lock.acquire()
         state = { "logged_outputs": self.logged_outputs, "out_seq" : self.out_seq, "tag":self.state_tag, "target_output_state":self.target_output_state,
         "state":self.state}
@@ -369,6 +370,7 @@ class TaskNode(Node):
         self.parents = parents # dict of id -> dict of channel -> actor handles        
         self.datasets = datasets
         self.functionObject = functionObject
+        assert hasattr(functionObject, "num_states") # for recovery
         if self.datasets is not None:
             self.functionObject.initialize(self.datasets, self.channel)
         self.physical_to_logical_mapping = mapping
@@ -384,19 +386,38 @@ class TaskNode(Node):
             self.expected_path = deque()
 
             self.ckpt_counter = -1
+            self.ckpt_number = 0
+            self.ckpt_files = {}
+
         else:
             if ckpt == "s3":
                 s3_resource = boto3.resource('s3')
                 bucket, key = self.checkpoint_location
                 recovered_state = pickle.loads(s3_resource.Object(bucket, key).get()['Body'].read())
-            else:
+                self.ckpt_number = recovered_state["function_object"]
+                self.ckpt_files = recovered_state["ckpt_files"]
+                object_states = []
+                for bucket, key in self.ckpt_files:
+                    z=  {}
+                    for k in self.ckpt_files[bucket, key]:
+                        if self.ckpt_files[bucket, key][k] == "polars":
+                            z[k].append(polars.from_arrow(pa.parquet.read_table("s3://" + bucket + "/" + key + "." + str(k) + ".parquet")))
+                        elif self.ckpt_files[bucket, key][k] == "pandas":
+                            z[k].append(pd.read_parquet("s3://" + bucket + "/" + key + "." + str(k) + ".parquet"))
+                        elif self.ckpt_files[bucket, key][k] == "pickle":
+                            z[k].append(pickle.loads(s3_resource.Object(bucket, key + "." + str(k) + ".pkl").get()['Body'].read()))
+                        else:
+                            raise Exception
+                    object_states.append(z)
 
+            else:
+                raise Exception("not supported anymore")
                 recovered_state = pickle.load(open(ckpt,"rb"))
 
             self.state_tag= recovered_state["tag"]
             print("RECOVERED TO STATE TAG", self.state_tag)
             self.latest_input_received = self.state_tag.copy() #recovered_state["latest_input_received"]
-            self.functionObject.deserialize(recovered_state["function_object"])
+            self.functionObject.deserialize(object_states)
             self.out_seq = recovered_state["out_seq"]  
             self.logged_outputs = recovered_state["logged_outputs"]
             self.target_output_state = recovered_state["target_output_state"]
@@ -406,6 +427,8 @@ class TaskNode(Node):
             print("EXPECTED PATH", self.expected_path)
 
             self.ckpt_counter = -1
+            
+            
         
         self.log_state_tag()        
 
@@ -413,29 +436,52 @@ class TaskNode(Node):
         if not FT:
             return
         # write logged outputs, state, state_tag to reliable storage
+
+        function_object_state, mode = self.functionObject.serialize()
+        s3_resource = boto3.resource('s3')
+        bucket, key = self.checkpoint_location
+
+        if mode == "all":
+            self.ckpt_number = 0
+            self.ckpt_files = {}
+
+        key = key + "." + str(self.ckpt_number) 
+        self.ckpt_files[(bucket, key)] = {}
+
+        for k in function_object_state:
+            if type(function_object_state[k]) == polars.internals.frame.DataFrame:
+                pa.parquet.write_table(function_object_state[k].to_arrow(), "s3://" + bucket + "/" + key + "." + str(k) + ".parquet")
+                self.ckpt_files[(bucket, key)][k] = "polars"
+            elif type(function_object_state[k]) == pd.core.frame.DataFrame:
+                function_object_state[k].to_parquet("s3://" + bucket + "/" + key + "." + str(k) + ".parquet")
+                self.ckpt_files[(bucket, key)][k] = "pandas"
+            else:
+                s3_resource.Object(bucket, key + "." + str(k) + ".pkl").put(Body=pickle.dumps(function_object_state[k]))
+                self.ckpt_files[(bucket, key)][k] = "pickle"
+
+        self.ckpt_number += 1
+
         self.output_lock.acquire()
         state = {"latest_input_received": self.latest_input_received, "logged_outputs": self.logged_outputs, "out_seq" : self.out_seq,
-        "function_object": self.functionObject.serialize(), "tag":self.state_tag, "target_output_state": self.target_output_state}
+        "function_object": self.ckpt_number, "tag":self.state_tag, "target_output_state": self.target_output_state, "ckpt_files": self.ckpt_files}
         state_str = pickle.dumps(state)
         self.output_lock.release()
 
         if method == "s3":
-
-            s3_resource = boto3.resource('s3')
-            bucket, key = self.checkpoint_location
+           
             # if this fails we are dead, but probability of this failing much smaller than dump failing
             # the lack of rename in S3 is a big problem
             s3_resource.Object(bucket, key).put(Body=state_str)
         
         elif method == "local":
-            
-            f = open("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl","wb")
-            f.write(state_str)
-            f.flush()
-            os.fsync(f.fileno())
-            f.close()
-            # if this fails we are dead, but probability of this failing much smaller than dump failing
-            os.rename("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl", "/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + ".pkl")
+            raise Exception("not supported anymore")
+            # f = open("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl","wb")
+            # f.write(state_str)
+            # f.flush()
+            # os.fsync(f.fileno())
+            # f.close()
+            # # if this fails we are dead, but probability of this failing much smaller than dump failing
+            # os.rename("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl", "/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + ".pkl")
         
         else:
             raise Exception
