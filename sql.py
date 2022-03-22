@@ -73,8 +73,8 @@ class PolarJoinExecutor(Executor):
     
     def deserialize(self, s):
         assert type(s) == list
-        self.state0 = polars.concat([i[0] for i in s])
-        self.state1 = polars.concat([i[1] for i in s])
+        self.state0 = polars.concat([i[0] for i in s if i[0] is not None])
+        self.state1 = polars.concat([i[1] for i in s if i[1] is not None])
     
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):

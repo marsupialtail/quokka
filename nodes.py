@@ -471,6 +471,7 @@ class TaskNode(Node):
            
             # if this fails we are dead, but probability of this failing much smaller than dump failing
             # the lack of rename in S3 is a big problem
+            bucket, key = self.checkpoint_location
             s3_resource.Object(bucket, key).put(Body=state_str)
         
         elif method == "local":
