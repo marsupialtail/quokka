@@ -55,6 +55,8 @@ class PolarJoinExecutor(Executor):
 
         self.state0 = None
         self.state1 = None
+        self.ckpt_start0 = 0
+        self.ckpt_start1 = 0
         self.lengths = {0:0, 1:0}
 
         if on is not None:
@@ -69,12 +71,19 @@ class PolarJoinExecutor(Executor):
         # keys that will never be seen again, safe to delete from the state on the other side
 
     def serialize(self):
-        return {0:self.state0, 1:self.state1}, "inc"
+        result = {0:self.state0[self.ckpt_start0:], 1:self.state1[self.ckpt_start1:]}
+        if self.state0 is not None:
+            self.ckpt_start0 += len(self.state0)
+        if self.state1 is not None:
+            self.ckpt_start1 += len(self.state1)
+        return result, "inc"
     
     def deserialize(self, s):
         assert type(s) == list
         self.state0 = polars.concat([i[0] for i in s if i[0] is not None])
         self.state1 = polars.concat([i[1] for i in s if i[1] is not None])
+        self.ckpt_start0 = len(self.state0)
+        self.ckpt_start1 = len(self.state1)
     
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
