@@ -401,11 +401,11 @@ class TaskNode(Node):
                     z=  {}
                     for k in self.ckpt_files[bucket, key]:
                         if self.ckpt_files[bucket, key][k] == "polars":
-                            z[k].append(polars.from_arrow(pa.parquet.read_table("s3://" + bucket + "/" + key + "." + str(k) + ".parquet")))
+                            z[k] = polars.from_arrow(pa.parquet.read_table("s3://" + bucket + "/" + key + "." + str(k) + ".parquet"))
                         elif self.ckpt_files[bucket, key][k] == "pandas":
-                            z[k].append(pd.read_parquet("s3://" + bucket + "/" + key + "." + str(k) + ".parquet"))
+                            z[k] = pd.read_parquet("s3://" + bucket + "/" + key + "." + str(k) + ".parquet")
                         elif self.ckpt_files[bucket, key][k] == "pickle":
-                            z[k].append(pickle.loads(s3_resource.Object(bucket, key + "." + str(k) + ".pkl").get()['Body'].read()))
+                            z[k] = pickle.loads(s3_resource.Object(bucket, key + "." + str(k) + ".pkl").get()['Body'].read())
                         else:
                             raise Exception
                     object_states.append(z)
