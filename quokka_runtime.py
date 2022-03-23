@@ -323,6 +323,8 @@ class TaskGraph:
             for process in processes_by_ip[ip]:
                 print(ip, what_is_the_process[process])
 
+        all_processes_by_ip = processes_by_ip.copy()
+
         all_ips = ip_set.copy()
         while len(ip_set) > 0:
             time.sleep(0.01) # be nice
@@ -353,7 +355,8 @@ class TaskGraph:
                     print("ATTEMPTING TO RESCHEDULE ITS WORK")
                     print("=======================================================")
                     restarted_actors = {}
-                    for old_process in processes_by_ip[ip]:
+                    # this is a very subtle point. you need to reschedule all the actors, even the ones who are done. Because they might have to replay some of their logged outputs downstream
+                    for old_process in all_processes_by_ip[ip]:
                         node, channel = what_is_the_process[old_process]
                         try:
                             restarted_actors[node].append(channel)
