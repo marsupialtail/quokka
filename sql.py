@@ -3,7 +3,10 @@ import os
 os.environ["POLAR_MAX_THREADS"] = "1"
 import polars
 import pandas as pd
+import pyarrow as pa
 import time
+import numpy as np
+import os, psutil
 
 from state import PersistentStateVariable
 WRITE_MEM_LIMIT = 16 * 1024 * 1024
@@ -325,5 +328,184 @@ class MergedStorageExecutor(Executor):
         return pd.concat(self.state)
 
 class MergeSortedExecutor(Executor):
-    def __init__(self) -> None:
-        self.state = None
+    def __init__(self, key, record_batch_rows = None, length_limit = 5000) -> None:
+        self.states = []
+        self.num = 1
+        self.key = key
+        self.record_batch_rows = record_batch_rows
+        self.fileno = 0
+        self.length_limit = 5000
+
+    def write_out_df_to_disk(self, target_filepath, input_mem_table):
+        arrow_table = input_mem_table.to_arrow()
+        batches = arrow_table.to_batches(self.record_batch_rows)
+        writer =  pa.ipc.new_file(pa.OSFile(target_filepath, 'wb'), arrow_table.schema)
+        for batch in batches:
+            writer.write(batch)
+        writer.close()
+    
+    # with minimal memory used!
+    def produce_sorted_file_from_two_sorted_files(self, target_filepath, input_filepath1, input_filepath2):
+
+        source1 =  pa.ipc.open_file(pa.memory_map(input_filepath1, 'rb'))
+        number_of_batches_in_source1 = source1.num_record_batches
+        source2 =  pa.ipc.open_file(pa.memory_map(input_filepath2, 'rb'))
+        number_of_batches_in_source2 = source2.num_record_batches
+
+        next_batch_to_get1 = 1
+        cached_batches_in_mem1 = polars.from_arrow(pa.Table.from_batches([source1.get_batch(0)]))
+
+        next_batch_to_get2 = 1
+        cached_batches_in_mem2 = polars.from_arrow(pa.Table.from_batches([source2.get_batch(0)]))
+
+        writer =  pa.ipc.new_file(pa.OSFile(target_filepath, 'wb'), source1.schema)
+
+        # each iteration will write a batch to the target filepath
+        while len(cached_batches_in_mem1) > 0 and len(cached_batches_in_mem2) > 0:
+            
+            disk_portion1 = cached_batches_in_mem1[:self.record_batch_rows]
+            disk_portion1['asdasd'] = np.zeros(len(disk_portion1))
+
+            disk_portion2 = cached_batches_in_mem2[:self.record_batch_rows]
+            disk_portion2['asdasd'] = np.ones(len(disk_portion2))
+
+            new_batch = polars.concat([disk_portion1, disk_portion2]).sort(self.key)[:self.record_batch_rows]
+            disk_contrib2 = int(new_batch['asdasd'].sum())
+            disk_contrib1 = len(new_batch) - disk_contrib2
+            new_batch = new_batch.drop('asdasd')
+
+            #print(source.schema, new_batch.to_arrow().schema)
+            writer.write(new_batch.to_arrow().to_batches()[0])
+            
+            cached_batches_in_mem1 = cached_batches_in_mem1[disk_contrib1:]
+            if len(cached_batches_in_mem1) < self.record_batch_rows and next_batch_to_get1 < number_of_batches_in_source1:
+                next_batch = source1.get_batch(next_batch_to_get1)
+                next_batch_to_get1 += 1
+                next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
+                cached_batches_in_mem1 = polars.concat([cached_batches_in_mem1, next_batch])
+            
+            cached_batches_in_mem2 = cached_batches_in_mem2[disk_contrib2:]
+            if len(cached_batches_in_mem2) < self.record_batch_rows and next_batch_to_get2 < number_of_batches_in_source2:
+                next_batch = source2.get_batch(next_batch_to_get2)
+                next_batch_to_get2 += 1
+                next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
+                cached_batches_in_mem2 = polars.concat([cached_batches_in_mem2, next_batch])
+        
+        writer.close()
+
+    # with minimal memory used!
+    def produce_sorted_file_from_sorted_file_and_in_memory(self, target_filepath, input_filepath, input_mem_table):
+
+        source =  pa.ipc.open_file(pa.memory_map(input_filepath, 'rb'))
+        number_of_batches_in_source = source.num_record_batches
+
+        # always keep two record batches from the disk file in memory. This one and the next one.
+        next_batch_to_get = 1
+        # all the batches must be of size self.record_batch_rows, except possibly the last one.
+        cached_batches_in_mem = polars.from_arrow(pa.Table.from_batches([source.get_batch(0)]))
+
+        current_ptr_in_mem = 0
+
+        writer =  pa.ipc.new_file(pa.OSFile(target_filepath, 'wb'), source.schema)
+
+        # each iteration will write a batch to the target filepath
+        while len(cached_batches_in_mem) > 0 and current_ptr_in_mem < len(input_mem_table):
+            in_mem_portion = input_mem_table[current_ptr_in_mem: current_ptr_in_mem + self.record_batch_rows]
+            # let's hope that there is no column called asdasd. That's why I am not going to use a more common name like idx.
+            in_mem_portion['asdasd'] = np.zeros(len(in_mem_portion))
+            disk_portion = cached_batches_in_mem[:self.record_batch_rows]
+            disk_portion['asdasd'] = np.ones(len(disk_portion))
+
+            new_batch = polars.concat([in_mem_portion, disk_portion]).sort(self.key)[:self.record_batch_rows]
+            disk_contrib = int(new_batch['asdasd'].sum())
+            in_mem_contrib = len(new_batch) - disk_contrib
+            new_batch = new_batch.drop('asdasd')
+
+            #print(source.schema, new_batch.to_arrow().schema)
+            writer.write(new_batch.to_arrow().to_batches()[0])
+            # now get rid of the contributions
+            current_ptr_in_mem += in_mem_contrib
+            cached_batches_in_mem = cached_batches_in_mem[disk_contrib:]
+            if len(cached_batches_in_mem) < self.record_batch_rows and next_batch_to_get < number_of_batches_in_source:
+                next_batch = source.get_batch(next_batch_to_get)
+                next_batch_to_get += 1
+                next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
+                cached_batches_in_mem = polars.concat([cached_batches_in_mem, next_batch])
+        
+        writer.close()
+        
+    # this is some crazy wierd algo that I came up with, might be there before.
+    def execute(self, batch, stream_id, executor_id):
+        highest_power_of_two = int(np.log2(self.num & (~(self.num - 1))))
+
+        if highest_power_of_two == 0:
+            self.states.append(batch)
+        else:
+            self.states[-1] = polars.concat([self.states[-1], batch]).sort(self.key)
+            for k in range(1, highest_power_of_two):
+                if type(self.states[-2]) == polars.internals.frame.DataFrame and type(self.states[-1]) == polars.internals.frame.DataFrame:
+                    self.states[-2 ] = polars.concat([self.states[-2 ], self.states[-1]]).sort(self.key)
+                    if len(self.states[-2 ]) >  self.length_limit:
+                        self.write_out_df_to_disk(str(self.fileno) + ".arrow", self.states[-2])
+                        self.states[-2] = str(self.fileno) + ".arrow"
+                        self.fileno += 1
+                    del self.states[-1 ]
+                elif type(self.states[-2]) == str and type(self.states[-1]) == str:
+                    self.produce_sorted_file_from_two_sorted_files(str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
+                    os.remove(self.states[-2])
+                    self.states[-2] = str(self.fileno) + ".arrow"
+                    self.fileno += 1
+                    os.remove(self.states[-1])
+                    del self.states[-1]
+                else:
+                    raise Exception("this should never happen")
+
+        self.num += 1
+    
+    def done(self):
+        print(self.states)
+        if len(self.states) == 1:
+            return self.states[0]
+        while len(self.states) > 1:
+            if type(self.states[-2]) == polars.internals.frame.DataFrame and type(self.states[-1]) == polars.internals.frame.DataFrame:
+                self.states[-2 ] = polars.concat([self.states[-2 ], self.states[-1]]).sort(self.key)
+                if len(self.states[-2 ]) >  self.length_limit:
+                    self.write_out_df_to_disk(str(self.fileno) + ".arrow", self.states[-2])
+                    self.states[-2] = str(self.fileno) + ".arrow"
+                    self.fileno += 1
+                del self.states[-1 ]
+            elif type(self.states[-2]) == str and type(self.states[-1]) == polars.internals.frame.DataFrame:
+                self.produce_sorted_file_from_sorted_file_and_in_memory(str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
+                os.remove(self.states[-2])
+                self.states[-2] = str(self.fileno) + ".arrow"
+                self.fileno += 1
+                del self.states[-1]
+            elif type(self.states[-2]) == str and type(self.states[-1]) == str:
+                self.produce_sorted_file_from_two_sorted_files(str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
+                os.remove(self.states[-2])
+                self.states[-2] = str(self.fileno) + ".arrow"
+                self.fileno += 1
+                os.remove(self.states[-1])
+                del self.states[-1]
+        return self.states[0]
+        # self.state = polars.concat(self.states).sort(self.key)
+        # print(self.state)
+
+stuff = []
+exe = MergeSortedExecutor('0', 1000)
+for k in range(10):
+    item = polars.from_pandas(pd.DataFrame(np.random.normal(size=(1000,10))))
+    exe.execute(item, 0, 0)
+exe.done()
+
+# exe = MergeSortedExecutor('0', 3000)
+# a = polars.from_pandas(pd.DataFrame(np.random.normal(size=(10000,1000)))).sort('0')
+# b = polars.from_pandas(pd.DataFrame(np.random.normal(size=(10000,1000)))).sort('0')
+
+# exe.write_out_df_to_disk("file.arrow", a)
+
+# del a
+# process = psutil.Process(os.getpid())
+# print(process.memory_info().rss)
+# exe.produce_sorted_file_from_sorted_file_and_in_memory("file2.arrow","file.arrow",b)
+# exe.produce_sorted_file_from_two_sorted_files("file3.arrow","file2.arrow","file.arrow")
