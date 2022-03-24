@@ -7,7 +7,9 @@ import pyarrow as pa
 import time
 import numpy as np
 import os, psutil
-
+import boto3
+import pyarrow.csv as csv
+from io import StringIO, BytesIO
 from state import PersistentStateVariable
 WRITE_MEM_LIMIT = 16 * 1024 * 1024
 
@@ -328,13 +330,22 @@ class MergedStorageExecutor(Executor):
         return pd.concat(self.state)
 
 class MergeSortedExecutor(Executor):
-    def __init__(self, key, record_batch_rows = None, length_limit = 5000) -> None:
+    def __init__(self, key, record_batch_rows = None, length_limit = 5000, output_line_limit = 1000) -> None:
         self.states = []
         self.num = 1
         self.key = key
         self.record_batch_rows = record_batch_rows
         self.fileno = 0
-        self.length_limit = 5000
+        self.length_limit = length_limit
+
+        self.output_line_limit = output_line_limit
+        self.bucket = "quokka-sorted-lineitem"
+    
+    def serialize(self):
+        return {}, "all" # don't support fault tolerance of sort
+    
+    def deserialize(self, s):
+        raise Exception
 
     def write_out_df_to_disk(self, target_filepath, input_mem_table):
         arrow_table = input_mem_table.to_arrow()
@@ -436,6 +447,10 @@ class MergeSortedExecutor(Executor):
         
     # this is some crazy wierd algo that I came up with, might be there before.
     def execute(self, batch, stream_id, executor_id):
+
+        if self.record_batch_rows is None:
+            self.record_batch_rows = len(batch)
+
         highest_power_of_two = int(np.log2(self.num & (~(self.num - 1))))
 
         if highest_power_of_two == 0:
@@ -462,8 +477,7 @@ class MergeSortedExecutor(Executor):
 
         self.num += 1
     
-    def done(self):
-        print(self.states)
+    def done(self, channel):
         if len(self.states) == 1:
             return self.states[0]
         while len(self.states) > 1:
@@ -487,16 +501,48 @@ class MergeSortedExecutor(Executor):
                 self.fileno += 1
                 os.remove(self.states[-1])
                 del self.states[-1]
+
+        s3_resource = boto3.resource('s3')
+
+        name = 0
+        if type(self.states[0]) == polars.internals.frame.DataFrame:
+            
+            for start in range(0, len(self.states[0]), self.output_line_limit):
+                da = BytesIO()
+                csv.write_csv(self.states[0][start: start + self.output_line_limit].to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
+                s3_resource.Object(self.bucket,str(channel) + "-" + str(name) + ".csv").put(Body=da.getvalue())
+                name += 1
+
+        elif type(self.states[0]) == str:
+            source =  pa.ipc.open_file(pa.memory_map(self.states[0], 'rb'))
+            number_of_batches_in_source = source.num_record_batches
+            batch = polars.from_arrow(pa.Table.from_batches([source.get_batch(0)]))
+            for i in range(1, number_of_batches_in_source):
+                while len(batch) > self.output_line_limit:
+                    da = BytesIO()
+                    csv.write_csv(batch[:self.output_line_limit].to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
+                    s3_resource.Object(self.bucket,str(channel) + "-" + str(name) + ".csv").put(Body=da.getvalue())
+                    print(name)
+                    name += 1
+                    batch = batch[self.output_line_limit:]
+                batch.vstack(polars.from_arrow(pa.Table.from_batches([source.get_batch(i)])),in_place=True)
+            print(len(batch),name)
+            for start in range(0, len(batch), self.output_line_limit):
+                da = BytesIO()
+                csv.write_csv(batch[start: start + self.output_line_limit].to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
+                s3_resource.Object(self.bucket,str(channel) + "-" + str(name) + ".csv").put(Body=da.getvalue())
+                name += 1
+
         return self.states[0]
         # self.state = polars.concat(self.states).sort(self.key)
         # print(self.state)
 
 stuff = []
-exe = MergeSortedExecutor('0', 1000)
+exe = MergeSortedExecutor('0', length_limit=10000)
 for k in range(10):
-    item = polars.from_pandas(pd.DataFrame(np.random.normal(size=(1000,10))))
+    item = polars.from_pandas(pd.DataFrame(np.random.normal(size=(1000 - k * 50,1000))))
     exe.execute(item, 0, 0)
-exe.done()
+exe.done(0)
 
 # exe = MergeSortedExecutor('0', 3000)
 # a = polars.from_pandas(pd.DataFrame(np.random.normal(size=(10000,1000)))).sort('0')

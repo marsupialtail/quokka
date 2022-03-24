@@ -323,7 +323,7 @@ class TaskGraph:
             for process in processes_by_ip[ip]:
                 print(ip, what_is_the_process[process])
         
-        processes_by_ip_copy = processes_by_ip.copy()
+        processes_by_ip_copy = processes_by_ip.copy
 
         all_ips = ip_set.copy()
         while len(ip_set) > 0:
