@@ -326,6 +326,7 @@ class StorageExecutor(Executor):
 class MergedStorageExecutor(Executor):
     def __init__(self, final_func = None) -> None:
         self.state = []
+        self.num_states = 0
     def execute(self, batches, stream_id, executor_id):
         self.state.extend(batches)
     def done(self, executor_id):
@@ -333,6 +334,7 @@ class MergedStorageExecutor(Executor):
 
 class MergeSortedExecutor(Executor):
     def __init__(self, key, record_batch_rows = None, length_limit = 5000, output_line_limit = 1000) -> None:
+        self.num_states = 0
         self.states = []
         self.num = 1
         self.key = key
@@ -448,8 +450,9 @@ class MergeSortedExecutor(Executor):
         writer.close()
         
     # this is some crazy wierd algo that I came up with, might be there before.
-    def execute(self, batch, stream_id, executor_id):
+    def execute(self, batches, stream_id, executor_id):
 
+        batch = polars.concat(batches)
         if self.record_batch_rows is None:
             self.record_batch_rows = len(batch)
 
@@ -539,12 +542,12 @@ class MergeSortedExecutor(Executor):
         # self.state = polars.concat(self.states).sort(self.key)
         # print(self.state)
 
-stuff = []
-exe = MergeSortedExecutor('0', length_limit=10000)
-for k in range(10):
-    item = polars.from_pandas(pd.DataFrame(np.random.normal(size=(1000 - k * 50,1000))))
-    exe.execute(item, 0, 0)
-exe.done(0)
+#stuff = []
+#exe = MergeSortedExecutor('0', length_limit=10000)
+#for k in range(10):
+#    item = polars.from_pandas(pd.DataFrame(np.random.normal(size=(1000 - k * 50,1000))))
+#    exe.execute(item, 0, 0)
+#exe.done(0)
 
 # exe = MergeSortedExecutor('0', 3000)
 # a = polars.from_pandas(pd.DataFrame(np.random.normal(size=(10000,1000)))).sort('0')

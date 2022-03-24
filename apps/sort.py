@@ -18,6 +18,12 @@ task_graph = TaskGraph()
 
 lineitem_filter = lambda x: polars.from_arrow(x).sort('l_partkey')
 
+def partition_key(data, channel):
+    
+    interval = (200000000 // 8)
+    range_start = interval * channel 
+
+    return data[ (data.l_partkey > range_start ) & (data.l_partkey <= range_start + interval) ]
 
 lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
 "l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
@@ -36,7 +42,7 @@ elif sys.argv[2] == "parquet":
        lineitem = task_graph.new_input_multiparquet("tpc-h-parquet","lineitem.parquet", {'localhost':4,'172.31.11.134':4},columns=['l_shipdate','l_commitdate','l_shipmode','l_receiptdate','l_orderkey'], filters= [('l_shipmode', 'in', ['SHIP','MAIL']),('l_receiptdate','<',compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")), ('l_receiptdate','>=',compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s"))], batch_func=lineitem_filter_parquet)
 
 executor = MergeSortedExecutor("l_partkey", length_limit = 1000000, output_line_limit = 1000000)
-stream = task_graph.new_blocking_node({0:lineitem}, None, executor, {'localhost':4, '172.31.11.134':4}, {0: "l_partkey"})
+stream = task_graph.new_blocking_node({0:lineitem}, None, executor, {'localhost':4, '172.31.11.134':4}, {0: partition_key})
 
 task_graph.create()
 start = time.time()
