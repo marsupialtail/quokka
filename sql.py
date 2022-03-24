@@ -333,7 +333,7 @@ class MergedStorageExecutor(Executor):
         return pd.concat(self.state)
 
 class MergeSortedExecutor(Executor):
-    def __init__(self, key, record_batch_rows = None, length_limit = 5000, output_line_limit = 1000) -> None:
+    def __init__(self, key, record_batch_rows = None, length_limit = 5000, file_prefix = "mergesort", output_line_limit = 1000) -> None:
         self.num_states = 0
         self.states = []
         self.num = 1
@@ -341,6 +341,7 @@ class MergeSortedExecutor(Executor):
         self.record_batch_rows = record_batch_rows
         self.fileno = 0
         self.length_limit = length_limit
+        self.prefix = file_prefix # make sure this is different for different executors
 
         self.output_line_limit = output_line_limit
         self.bucket = "quokka-sorted-lineitem"
@@ -467,49 +468,49 @@ class MergeSortedExecutor(Executor):
                 if type(self.states[-2]) == polars.internals.frame.DataFrame and type(self.states[-1]) == polars.internals.frame.DataFrame:
                     self.states[-2 ] = polars.concat([self.states[-2 ], self.states[-1]]).sort(self.key)
                     if len(self.states[-2 ]) >  self.length_limit:
-                        self.write_out_df_to_disk(self.data_dir + "/" + str(self.fileno) + ".arrow", self.states[-2])
-                        self.states[-2] = self.data_dir + "/" + str(self.fileno) + ".arrow"
+                        self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", self.states[-2])
+                        self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
                         self.fileno += 1
                     del self.states[-1 ]
                 elif type(self.states[-2]) == str and type(self.states[-1]) == str:
-                    self.produce_sorted_file_from_two_sorted_files(self.data_dir + "/" + str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
+                    self.produce_sorted_file_from_two_sorted_files(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
                     os.remove(self.states[-2])
-                    self.states[-2] = self.data_dir + "/" + str(self.fileno) + ".arrow"
+                    self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
                     self.fileno += 1
                     os.remove(self.states[-1])
                     del self.states[-1]
                 elif type(self.states[-2]) == str and type(self.states[-1]) == polars.internals.frame.DataFrame:
-                    self.produce_sorted_file_from_sorted_file_and_in_memory(self.data_dir + "/" + str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
+                    self.produce_sorted_file_from_sorted_file_and_in_memory(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
                     os.remove(self.states[-2])
-                    self.states[-2] = self.data_dir + "/" + str(self.fileno) + ".arrow"
+                    self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
                     self.fileno += 1
                     del self.states[-1]
                 else:
-                    raise Exception("this should never happen")
+                    raise Exception("this should never happen", self.states[-2],self.states[-1])
 
         self.num += 1
     
-    def done(self, channel):
+    def done(self, executor_id):
         if len(self.states) == 1:
             return self.states[0]
         while len(self.states) > 1:
             if type(self.states[-2]) == polars.internals.frame.DataFrame and type(self.states[-1]) == polars.internals.frame.DataFrame:
                 self.states[-2 ] = polars.concat([self.states[-2 ], self.states[-1]]).sort(self.key)
                 if len(self.states[-2 ]) >  self.length_limit:
-                    self.write_out_df_to_disk(self.data_dir + "/" + str(self.fileno) + ".arrow", self.states[-2])
-                    self.states[-2] = self.data_dir + "/" + str(self.fileno) + ".arrow"
+                    self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", self.states[-2])
+                    self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
                     self.fileno += 1
                 del self.states[-1 ]
             elif type(self.states[-2]) == str and type(self.states[-1]) == polars.internals.frame.DataFrame:
-                self.produce_sorted_file_from_sorted_file_and_in_memory(self.data_dir + "/" + str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
+                self.produce_sorted_file_from_sorted_file_and_in_memory(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
                 os.remove(self.states[-2])
-                self.states[-2] = self.data_dir + "/" + str(self.fileno) + ".arrow"
+                self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
                 self.fileno += 1
                 del self.states[-1]
             elif type(self.states[-2]) == str and type(self.states[-1]) == str:
-                self.produce_sorted_file_from_two_sorted_files(self.data_dir + "/" + str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
+                self.produce_sorted_file_from_two_sorted_files(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
                 os.remove(self.states[-2])
-                self.states[-2] = self.data_dir + "/" + str(self.fileno) + ".arrow"
+                self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
                 self.fileno += 1
                 os.remove(self.states[-1])
                 del self.states[-1]
@@ -522,7 +523,7 @@ class MergeSortedExecutor(Executor):
             for start in range(0, len(self.states[0]), self.output_line_limit):
                 da = BytesIO()
                 csv.write_csv(self.states[0][start: start + self.output_line_limit].to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
-                s3_resource.Object(self.bucket,str(channel) + "-" + str(name) + ".csv").put(Body=da.getvalue())
+                s3_resource.Object(self.bucket,str(executor_id) + "-" + str(name) + ".csv").put(Body=da.getvalue())
                 name += 1
 
         elif type(self.states[0]) == str:
@@ -533,7 +534,7 @@ class MergeSortedExecutor(Executor):
                 while len(batch) > self.output_line_limit:
                     da = BytesIO()
                     csv.write_csv(batch[:self.output_line_limit].to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
-                    s3_resource.Object(self.bucket,str(channel) + "-" + str(name) + ".csv").put(Body=da.getvalue())
+                    s3_resource.Object(self.bucket,str(executor_id) + "-" + str(name) + ".csv").put(Body=da.getvalue())
                     print(name)
                     name += 1
                     batch = batch[self.output_line_limit:]
@@ -542,7 +543,7 @@ class MergeSortedExecutor(Executor):
             for start in range(0, len(batch), self.output_line_limit):
                 da = BytesIO()
                 csv.write_csv(batch[start: start + self.output_line_limit].to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
-                s3_resource.Object(self.bucket,str(channel) + "-" + str(name) + ".csv").put(Body=da.getvalue())
+                s3_resource.Object(self.bucket,str(executor_id) + "-" + str(name) + ".csv").put(Body=da.getvalue())
                 name += 1
 
         return self.states[0]
