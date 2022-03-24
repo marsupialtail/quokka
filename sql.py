@@ -482,8 +482,13 @@ class MergeSortedExecutor(Executor):
                     self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
                     self.fileno += 1
                     del self.states[-1]
-                else:
-                    raise Exception("this should never happen")
+                elif type(self.states[-2]) == polars.internals.frame.DataFrame and type(self.states[-1]) == str:
+                    self.produce_sorted_file_from_sorted_file_and_in_memory(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow",self.states[-1], self.states[-2])
+                    os.remove(self.states[-1])
+                    self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
+                    self.fileno += 1
+                    del self.states[-1]
+                
 
         self.num += 1
     
@@ -511,7 +516,12 @@ class MergeSortedExecutor(Executor):
                 self.fileno += 1
                 os.remove(self.states[-1])
                 del self.states[-1]
-
+            elif type(self.states[-2]) == polars.internals.frame.DataFrame and type(self.states[-1]) == str:
+                self.produce_sorted_file_from_sorted_file_and_in_memory(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow",self.states[-1], self.states[-2])
+                os.remove(self.states[-1])
+                self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
+                self.fileno += 1
+                del self.states[-1]
         s3_resource = boto3.resource('s3')
 
         name = 0
