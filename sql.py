@@ -344,6 +344,7 @@ class MergeSortedExecutor(Executor):
 
         self.output_line_limit = output_line_limit
         self.bucket = "quokka-sorted-lineitem"
+        self.data_dir = "/data"
     
     def serialize(self):
         return {}, "all" # don't support fault tolerance of sort
@@ -466,16 +467,22 @@ class MergeSortedExecutor(Executor):
                 if type(self.states[-2]) == polars.internals.frame.DataFrame and type(self.states[-1]) == polars.internals.frame.DataFrame:
                     self.states[-2 ] = polars.concat([self.states[-2 ], self.states[-1]]).sort(self.key)
                     if len(self.states[-2 ]) >  self.length_limit:
-                        self.write_out_df_to_disk(str(self.fileno) + ".arrow", self.states[-2])
-                        self.states[-2] = str(self.fileno) + ".arrow"
+                        self.write_out_df_to_disk(self.data_dir + "/" + str(self.fileno) + ".arrow", self.states[-2])
+                        self.states[-2] = self.data_dir + "/" + str(self.fileno) + ".arrow"
                         self.fileno += 1
                     del self.states[-1 ]
                 elif type(self.states[-2]) == str and type(self.states[-1]) == str:
-                    self.produce_sorted_file_from_two_sorted_files(str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
+                    self.produce_sorted_file_from_two_sorted_files(self.data_dir + "/" + str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
                     os.remove(self.states[-2])
-                    self.states[-2] = str(self.fileno) + ".arrow"
+                    self.states[-2] = self.data_dir + "/" + str(self.fileno) + ".arrow"
                     self.fileno += 1
                     os.remove(self.states[-1])
+                    del self.states[-1]
+                elif type(self.states[-2]) == str and type(self.states[-1]) == polars.internals.frame.DataFrame:
+                    self.produce_sorted_file_from_sorted_file_and_in_memory(self.data_dir + "/" + str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
+                    os.remove(self.states[-2])
+                    self.states[-2] = self.data_dir + "/" + str(self.fileno) + ".arrow"
+                    self.fileno += 1
                     del self.states[-1]
                 else:
                     raise Exception("this should never happen")
@@ -489,20 +496,20 @@ class MergeSortedExecutor(Executor):
             if type(self.states[-2]) == polars.internals.frame.DataFrame and type(self.states[-1]) == polars.internals.frame.DataFrame:
                 self.states[-2 ] = polars.concat([self.states[-2 ], self.states[-1]]).sort(self.key)
                 if len(self.states[-2 ]) >  self.length_limit:
-                    self.write_out_df_to_disk(str(self.fileno) + ".arrow", self.states[-2])
-                    self.states[-2] = str(self.fileno) + ".arrow"
+                    self.write_out_df_to_disk(self.data_dir + "/" + str(self.fileno) + ".arrow", self.states[-2])
+                    self.states[-2] = self.data_dir + "/" + str(self.fileno) + ".arrow"
                     self.fileno += 1
                 del self.states[-1 ]
             elif type(self.states[-2]) == str and type(self.states[-1]) == polars.internals.frame.DataFrame:
-                self.produce_sorted_file_from_sorted_file_and_in_memory(str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
+                self.produce_sorted_file_from_sorted_file_and_in_memory(self.data_dir + "/" + str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
                 os.remove(self.states[-2])
-                self.states[-2] = str(self.fileno) + ".arrow"
+                self.states[-2] = self.data_dir + "/" + str(self.fileno) + ".arrow"
                 self.fileno += 1
                 del self.states[-1]
             elif type(self.states[-2]) == str and type(self.states[-1]) == str:
-                self.produce_sorted_file_from_two_sorted_files(str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
+                self.produce_sorted_file_from_two_sorted_files(self.data_dir + "/" + str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
                 os.remove(self.states[-2])
-                self.states[-2] = str(self.fileno) + ".arrow"
+                self.states[-2] = self.data_dir + "/" + str(self.fileno) + ".arrow"
                 self.fileno += 1
                 os.remove(self.states[-1])
                 del self.states[-1]
