@@ -8,6 +8,7 @@ import time
 import numpy as np
 import os, psutil
 import boto3
+import gc
 import pyarrow.csv as csv
 from io import StringIO, BytesIO
 from state import PersistentStateVariable
@@ -453,8 +454,12 @@ class MergeSortedExecutor(Executor):
         
     # this is some crazy wierd algo that I came up with, might be there before.
     def execute(self, batches, stream_id, executor_id):
-
-        batch = polars.concat(batches)
+        print("NUMBER OF INCOMING BATCHES", len(batches))
+        print("MY SORT STATE", [(type(i), len(i)) for i in self.states if type(i) == polars.internals.frame.DataFrame])
+        import os, psutil
+        process = psutil.Process(os.getpid())
+        print("mem usage", process.memory_info().rss)
+        batch = polars.concat(batches).sort(self.key)
         if self.record_batch_rows is None:
             self.record_batch_rows = len(batch)
 
@@ -485,10 +490,15 @@ class MergeSortedExecutor(Executor):
                     self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
                     self.fileno += 1
                     del self.states[-1]
-                else:
-                    raise Exception("this should never happen", self.states[-2],self.states[-1])
-
+                elif type(self.states[-2]) == polars.internals.frame.DataFrame and type(self.states[-1]) == str:
+                    self.produce_sorted_file_from_sorted_file_and_in_memory(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow",self.states[-1], self.states[-2])
+                    os.remove(self.states[-1])
+                    self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
+                    self.fileno += 1
+                    del self.states[-1]
+                
         self.num += 1
+        gc.collect()
     
     def done(self, executor_id):
         if len(self.states) == 1:
@@ -514,7 +524,12 @@ class MergeSortedExecutor(Executor):
                 self.fileno += 1
                 os.remove(self.states[-1])
                 del self.states[-1]
-
+            elif type(self.states[-2]) == polars.internals.frame.DataFrame and type(self.states[-1]) == str:
+                self.produce_sorted_file_from_sorted_file_and_in_memory(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow",self.states[-1], self.states[-2])
+                os.remove(self.states[-1])
+                self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
+                self.fileno += 1
+                del self.states[-1]
         s3_resource = boto3.resource('s3')
 
         name = 0

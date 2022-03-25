@@ -15,8 +15,8 @@ import polars
 import pyarrow as pa
 # isolated simplified test bench for different fault tolerance protocols
 
-FT_I = True
-FT = True
+FT_I =False# True
+FT = False #True
 class Node:
 
     # will be overridden

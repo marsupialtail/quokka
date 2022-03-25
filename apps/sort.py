@@ -34,14 +34,14 @@ ips = []
 
 if sys.argv[2] == "csv":
     #lineitems = [task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl." + str(i),lineitem_scheme,{ips[i-1]:16}, batch_func=lineitem_filter, sep="|") for i in range(1, 17)]
-    lineitem = task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl.1",lineitem_scheme,{'localhost':16, '172.31.11.134':16},batch_func=lineitem_filter, sep="|")
+    lineitem = task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl.1",lineitem_scheme,{'localhost':8, '172.31.11.134':8}, sep="|")
 elif sys.argv[2] == "parquet":
     if sys.argv[1] == "small":
         raise Exception("not implemented")
     else:
        lineitem = task_graph.new_input_multiparquet("tpc-h-parquet","lineitem.parquet", {'localhost':4,'172.31.11.134':4},columns=['l_shipdate','l_commitdate','l_shipmode','l_receiptdate','l_orderkey'], filters= [('l_shipmode', 'in', ['SHIP','MAIL']),('l_receiptdate','<',compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")), ('l_receiptdate','>=',compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s"))], batch_func=lineitem_filter_parquet)
 
-executor = MergeSortedExecutor("l_partkey", length_limit = 1000000, output_line_limit = 1000000)
+executor = MergeSortedExecutor("l_partkey", record_batch_rows = 1000000, length_limit = 1000000, output_line_limit = 1000000)
 stream = task_graph.new_blocking_node({0:lineitem}, None, executor, {'localhost':4, '172.31.11.134':4}, {0: partition_key})
 
 task_graph.create()
