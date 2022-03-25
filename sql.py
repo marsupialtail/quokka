@@ -365,16 +365,22 @@ class MergeSortedExecutor(Executor):
     # with minimal memory used!
     def produce_sorted_file_from_two_sorted_files(self, target_filepath, input_filepath1, input_filepath2):
 
+        read_time = 0
+        sort_time = 0
+        write_time = 0
+
         source1 =  pa.ipc.open_file(pa.memory_map(input_filepath1, 'rb'))
         number_of_batches_in_source1 = source1.num_record_batches
         source2 =  pa.ipc.open_file(pa.memory_map(input_filepath2, 'rb'))
         number_of_batches_in_source2 = source2.num_record_batches
 
         next_batch_to_get1 = 1
-        cached_batches_in_mem1 = polars.from_arrow(pa.Table.from_batches([source1.get_batch(0)]))
 
+        start = time.time()
+        cached_batches_in_mem1 = polars.from_arrow(pa.Table.from_batches([source1.get_batch(0)]))
         next_batch_to_get2 = 1
         cached_batches_in_mem2 = polars.from_arrow(pa.Table.from_batches([source2.get_batch(0)]))
+        read_time += time.time() - start
 
         writer =  pa.ipc.new_file(pa.OSFile(target_filepath, 'wb'), source1.schema)
 
@@ -386,16 +392,22 @@ class MergeSortedExecutor(Executor):
 
             disk_portion2 = cached_batches_in_mem2[:self.record_batch_rows]
             disk_portion2['asdasd'] = np.ones(len(disk_portion2))
-
+            
+            start = time.time()
             new_batch = polars.concat([disk_portion1, disk_portion2]).sort(self.key)[:self.record_batch_rows]
+            sort_time += time.time() - start
             disk_contrib2 = int(new_batch['asdasd'].sum())
             disk_contrib1 = len(new_batch) - disk_contrib2
             new_batch = new_batch.drop('asdasd')
 
             #print(source.schema, new_batch.to_arrow().schema)
+            start = time.time()
             writer.write(new_batch.to_arrow().to_batches()[0])
-            
+            write_time += time.time() - start
+
             cached_batches_in_mem1 = cached_batches_in_mem1[disk_contrib1:]
+            
+            start = time.time()
             if len(cached_batches_in_mem1) < self.record_batch_rows and next_batch_to_get1 < number_of_batches_in_source1:
                 next_batch = source1.get_batch(next_batch_to_get1)
                 next_batch_to_get1 += 1
@@ -408,8 +420,10 @@ class MergeSortedExecutor(Executor):
                 next_batch_to_get2 += 1
                 next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
                 cached_batches_in_mem2 = polars.concat([cached_batches_in_mem2, next_batch])
+            read_time += time.time() - start
         
         writer.close()
+        print(read_time, write_time, sort_time)
 
     # with minimal memory used!
     def produce_sorted_file_from_sorted_file_and_in_memory(self, target_filepath, input_filepath, input_mem_table):
@@ -577,6 +591,8 @@ class MergeSortedExecutor(Executor):
 # b = polars.from_pandas(pd.DataFrame(np.random.normal(size=(10000,1000)))).sort('0')
 
 # exe.write_out_df_to_disk("file.arrow", a)
+#exe = MergeSortedExecutor( "l_partkey", record_batch_rows = 1000000, length_limit = 1000000, file_prefix = "mergesort", output_line_limit = 1000000)
+#exe.produce_sorted_file_from_two_sorted_files("/data/test.arrow","/data/mergesort-0-29.arrow","/data/mergesort-1-31.arrow")
 
 # del a
 # process = psutil.Process(os.getpid())
