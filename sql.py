@@ -400,16 +400,74 @@ class MergeSortedExecutor(Executor):
                 next_batch = source1.get_batch(next_batch_to_get1)
                 next_batch_to_get1 += 1
                 next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
-                cached_batches_in_mem1 = polars.concat([cached_batches_in_mem1, next_batch])
+                cached_batches_in_mem1.vstack(next_batch, in_place=True)
             
             cached_batches_in_mem2 = cached_batches_in_mem2[disk_contrib2:]
             if len(cached_batches_in_mem2) < self.record_batch_rows and next_batch_to_get2 < number_of_batches_in_source2:
                 next_batch = source2.get_batch(next_batch_to_get2)
                 next_batch_to_get2 += 1
                 next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
-                cached_batches_in_mem2 = polars.concat([cached_batches_in_mem2, next_batch])
+                cached_batches_in_mem2.vstack(next_batch, in_place = True)
         
         writer.close()
+
+    def experimental_end(self, executor_id):
+
+        # first merge all of the in memory states to a file. This makes programming easier and likely not horrible in terms of performance. And we can save some memory! 
+        # yolo and hope that that you can concatenate all and not die
+        mem_idx = [i for i in range(len(self.states)) if type(self)]
+        in_mem_state = polars.concat([i for i in self.states if type(i) == polars.internal.frame.DataFrame]).sort(self.key)
+        for ele in sorted(mem_idx, reverse = True):
+            del self.states[ele]
+        self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", in_mem_state)
+        self.states.append(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow")
+        self.fileno += 1
+
+        # now all the states should be strs!
+        assert sum([type(i) != str for i in self.states]) == 0
+
+        s3_resource = boto3.resource('s3')
+        sources = [pa.ipc.open_file(pa.memory_map(k, 'rb')) for k in self.states]
+        number_of_batches_in_sources = [source.num_record_batches for source in sources]
+        next_batch_to_gets = [1 for i in self.states]
+        cached_batches_in_mem = [polars.from_arrow(pa.Table.from_batches([source.get_batch(0)])) for source in sources]
+
+        my_batch = cached_batches_in_mem[0][:0] # get an empty dataframe for the schema
+        name = 0
+
+        while sum([len(i) != 0 for i in cached_batches_in_mem]) > 0:
+            
+            while len(my_batch) > self.output_line_limit:
+                da = BytesIO()
+                csv.write_csv(my_batch[:self.output_line_limit].to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
+                s3_resource.Object(self.bucket,str(executor_id) + "-" + str(name) + ".csv").put(Body=da.getvalue())
+                print(name)
+                name += 1
+                my_batch = my_batch[self.output_line_limit:]
+                
+            disk_portions = [cached_batch_in_mem[:self.record_batch_rows] for cached_batch_in_mem in cached_batches_in_mem]
+            for j in range(len(disk_portions)):
+                disk_portions[j]['asdasd'] = np.ones(len(disk_portions[j])) * j
+
+            new_batch = polars.concat(disk_portions).sort(self.key)
+            disk_contribs = [(new_batch['asdasd'] == j).sum() for j in range(len(disk_portions))]
+            new_batch = new_batch.drop('asdasd')[:self.record_batch_rows]
+            my_batch.vstack(new_batch,in_place=True)
+
+            for j in range(len(cached_batches_in_mem)):
+                cached_batches_in_mem[j] = cached_batches_in_mem[j][disk_contribs[j]:]
+                if len(cached_batches_in_mem[j]) < self.record_batch_rows and next_batch_to_gets[j] < number_of_batches_in_sources[j]:
+                    next_batch = sources[j].get_batch(next_batch_to_gets[j])
+                    next_batch_to_gets[j] += 1
+                    next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
+                    cached_batches_in_mem[j].vstack(next_batch, in_place=True)
+        
+        da = BytesIO()
+        csv.write_csv(my_batch.to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
+        s3_resource.Object(self.bucket,str(executor_id) + "-" + str(name) + ".csv").put(Body=da.getvalue())
+        print(name)
+        name += 1
+
 
     # with minimal memory used!
     def produce_sorted_file_from_sorted_file_and_in_memory(self, target_filepath, input_filepath, input_mem_table):
@@ -448,7 +506,7 @@ class MergeSortedExecutor(Executor):
                 next_batch = source.get_batch(next_batch_to_get)
                 next_batch_to_get += 1
                 next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
-                cached_batches_in_mem = polars.concat([cached_batches_in_mem, next_batch])
+                cached_batches_in_mem.vstack(next_batch, in_place=True)
         
         writer.close()
         
