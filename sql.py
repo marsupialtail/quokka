@@ -162,7 +162,7 @@ class Polar3JoinExecutor(Executor):
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
         # state compaction
-        batch = polars.concat(batches)
+        batch = polars.concat(batches, rechunk=False)
         self.lengths[stream_id] += 1
         print("state", self.lengths)
         result = None
@@ -365,16 +365,22 @@ class MergeSortedExecutor(Executor):
     # with minimal memory used!
     def produce_sorted_file_from_two_sorted_files(self, target_filepath, input_filepath1, input_filepath2):
 
+        read_time = 0
+        sort_time = 0
+        write_time = 0
+
         source1 =  pa.ipc.open_file(pa.memory_map(input_filepath1, 'rb'))
         number_of_batches_in_source1 = source1.num_record_batches
         source2 =  pa.ipc.open_file(pa.memory_map(input_filepath2, 'rb'))
         number_of_batches_in_source2 = source2.num_record_batches
 
         next_batch_to_get1 = 1
-        cached_batches_in_mem1 = polars.from_arrow(pa.Table.from_batches([source1.get_batch(0)]))
 
+        start = time.time()
+        cached_batches_in_mem1 = polars.from_arrow(pa.Table.from_batches([source1.get_batch(0)]))
         next_batch_to_get2 = 1
         cached_batches_in_mem2 = polars.from_arrow(pa.Table.from_batches([source2.get_batch(0)]))
+        read_time += time.time() - start
 
         writer =  pa.ipc.new_file(pa.OSFile(target_filepath, 'wb'), source1.schema)
 
@@ -386,16 +392,22 @@ class MergeSortedExecutor(Executor):
 
             disk_portion2 = cached_batches_in_mem2[:self.record_batch_rows]
             disk_portion2['asdasd'] = np.ones(len(disk_portion2))
-
-            new_batch = polars.concat([disk_portion1, disk_portion2]).sort(self.key)[:self.record_batch_rows]
+            
+            start = time.time()
+            new_batch = polars.concat([disk_portion1, disk_portion2], rechunk = False).sort(self.key)[:self.record_batch_rows]
+            sort_time += time.time() - start
             disk_contrib2 = int(new_batch['asdasd'].sum())
             disk_contrib1 = len(new_batch) - disk_contrib2
             new_batch = new_batch.drop('asdasd')
 
             #print(source.schema, new_batch.to_arrow().schema)
+            start = time.time()
             writer.write(new_batch.to_arrow().to_batches()[0])
-            
+            write_time += time.time() - start
+
             cached_batches_in_mem1 = cached_batches_in_mem1[disk_contrib1:]
+            
+            start = time.time()
             if len(cached_batches_in_mem1) < self.record_batch_rows and next_batch_to_get1 < number_of_batches_in_source1:
                 next_batch = source1.get_batch(next_batch_to_get1)
                 next_batch_to_get1 += 1
@@ -408,23 +420,30 @@ class MergeSortedExecutor(Executor):
                 next_batch_to_get2 += 1
                 next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
                 cached_batches_in_mem2.vstack(next_batch, in_place = True)
+            
+            read_time += time.time() - start
+
         
         writer.close()
+        print(read_time, write_time, sort_time)
 
     def done(self, executor_id):
 
         # first merge all of the in memory states to a file. This makes programming easier and likely not horrible in terms of performance. And we can save some memory! 
         # yolo and hope that that you can concatenate all and not die
-        mem_idx = [i for i in range(len(self.states)) if type(self)]
-        in_mem_state = polars.concat([i for i in self.states if type(i) == polars.internal.frame.DataFrame]).sort(self.key)
-        for ele in sorted(mem_idx, reverse = True):
-            del self.states[ele]
-        self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", in_mem_state)
-        self.states.append(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow")
-        self.fileno += 1
+        mem_idx = [i for i in range(len(self.states)) if type(self.states[i]) == polars.internals.frame.DataFrame]
+        if len(mem_idx) > 0:
+            in_mem_state = polars.concat([i for i in self.states if type(i) == polars.internals.frame.DataFrame], rechunk = False).sort(self.key)
+            for ele in sorted(mem_idx, reverse = True):
+                del self.states[ele]
+            self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", in_mem_state)
+            self.states.append(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow")
+            self.fileno += 1
+            del in_mem_state
 
         # now all the states should be strs!
         assert sum([type(i) != str for i in self.states]) == 0
+        print("MY DISK STATE", self.states)
 
         s3_resource = boto3.resource('s3')
         sources = [pa.ipc.open_file(pa.memory_map(k, 'rb')) for k in self.states]
@@ -440,7 +459,7 @@ class MergeSortedExecutor(Executor):
             while len(my_batch) > self.output_line_limit:
                 da = BytesIO()
                 csv.write_csv(my_batch[:self.output_line_limit].to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
-                s3_resource.Object(self.bucket,str(executor_id) + "-" + str(name) + ".csv").put(Body=da.getvalue())
+                #s3_resource.Object(self.bucket,str(executor_id) + "-" + str(name) + ".csv").put(Body=da.getvalue())
                 print(name)
                 name += 1
                 my_batch = my_batch[self.output_line_limit:]
@@ -449,9 +468,11 @@ class MergeSortedExecutor(Executor):
             for j in range(len(disk_portions)):
                 disk_portions[j]['asdasd'] = np.ones(len(disk_portions[j])) * j
 
-            new_batch = polars.concat(disk_portions).sort(self.key)
+            new_batch = polars.concat(disk_portions, rechunk = False).sort(self.key)
+            new_batch = new_batch[:self.record_batch_rows]
             disk_contribs = [(new_batch['asdasd'] == j).sum() for j in range(len(disk_portions))]
-            new_batch = new_batch.drop('asdasd')[:self.record_batch_rows]
+            print(disk_contribs)
+            new_batch = new_batch.drop('asdasd')
             my_batch.vstack(new_batch,in_place=True)
 
             for j in range(len(cached_batches_in_mem)):
@@ -492,7 +513,7 @@ class MergeSortedExecutor(Executor):
             disk_portion = cached_batches_in_mem[:self.record_batch_rows]
             disk_portion['asdasd'] = np.ones(len(disk_portion))
 
-            new_batch = polars.concat([in_mem_portion, disk_portion]).sort(self.key)[:self.record_batch_rows]
+            new_batch = polars.concat([in_mem_portion, disk_portion], rechunk=False).sort(self.key)[:self.record_batch_rows]
             disk_contrib = int(new_batch['asdasd'].sum())
             in_mem_contrib = len(new_batch) - disk_contrib
             new_batch = new_batch.drop('asdasd')
@@ -517,7 +538,7 @@ class MergeSortedExecutor(Executor):
         import os, psutil
         process = psutil.Process(os.getpid())
         print("mem usage", process.memory_info().rss)
-        batch = polars.concat(batches).sort(self.key)
+        batch = polars.concat(batches, rechunk = False).sort(self.key)
         if self.record_batch_rows is None:
             self.record_batch_rows = len(batch)
 
@@ -526,10 +547,12 @@ class MergeSortedExecutor(Executor):
         if highest_power_of_two == 0:
             self.states.append(batch)
         else:
-            self.states[-1] = polars.concat([self.states[-1], batch]).sort(self.key)
+            self.states[-1].vstack(batch, in_place = True)
+            self.states[-1].sort(self.key, in_place = True)
             for k in range(1, highest_power_of_two):
                 if type(self.states[-2]) == polars.internals.frame.DataFrame and type(self.states[-1]) == polars.internals.frame.DataFrame:
-                    self.states[-2 ] = polars.concat([self.states[-2 ], self.states[-1]]).sort(self.key)
+                    self.states[-2 ].vstack(self.states[-1], in_place = True)
+                    self.states[-2].sort(self.key, in_place = True)
                     if len(self.states[-2 ]) >  self.length_limit:
                         self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", self.states[-2])
                         self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
@@ -627,14 +650,16 @@ class MergeSortedExecutor(Executor):
 #exe = MergeSortedExecutor('0', length_limit=10000)
 #for k in range(10):
 #    item = polars.from_pandas(pd.DataFrame(np.random.normal(size=(1000 - k * 50,1000))))
-#    exe.execute(item, 0, 0)
-#exe.done(0)
+#    exe.execute([item], 0, 0)
+#exe.experimental_end(0)
 
 # exe = MergeSortedExecutor('0', 3000)
 # a = polars.from_pandas(pd.DataFrame(np.random.normal(size=(10000,1000)))).sort('0')
 # b = polars.from_pandas(pd.DataFrame(np.random.normal(size=(10000,1000)))).sort('0')
 
 # exe.write_out_df_to_disk("file.arrow", a)
+#exe = MergeSortedExecutor( "l_partkey", record_batch_rows = 1000000, length_limit = 1000000, file_prefix = "mergesort", output_line_limit = 1000000)
+#exe.produce_sorted_file_from_two_sorted_files("/data/test.arrow","/data/mergesort-0-29.arrow","/data/mergesort-1-31.arrow")
 
 # del a
 # process = psutil.Process(os.getpid())
