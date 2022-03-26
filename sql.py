@@ -29,12 +29,20 @@ class Executor:
 class OutputCSVExecutor(Executor):
     def __init__(self, bucket, prefix, output_line_limit = 1000000) -> None:
         self.num = 0
+        self.num_states = 0
+
         self.bucket = bucket
         self.prefix = prefix
         self.s3_resource = None
         self.output_line_limit = output_line_limit
         self.name = 0
         self.my_batches = deque()
+
+    def serialize(self):
+        pass
+    
+    def serialize(self, s):
+        pass
 
     def execute(self,batches,stream_id, executor_id):
 
