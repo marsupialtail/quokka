@@ -17,14 +17,14 @@ BX = 2
 BY = 2
 MATRIX_SIZE = 1000
 
-def partition_key_0(data, channel):
-    channel_x = channel // BY 
+def partition_key_0(data, source_channel, target_channel):
+    channel_x = target_channel // BY 
     range_x_start = (MATRIX_SIZE // BX) * channel_x 
 
     return data[ (data.key >= range_x_start ) & (data.key < range_x_start + (MATRIX_SIZE // BX)) ]
 
-def partition_key_1(data, channel):
-    channel_y = channel % BY 
+def partition_key_1(data, source_channel, target_channel):
+    channel_y = target_channel % BY 
     range_y_start = (MATRIX_SIZE // BY) * channel_y
 
     return data[ (data.key >= range_y_start) & (data.key < range_y_start + (MATRIX_SIZE//BY))]

@@ -13,6 +13,7 @@ import gc
 import sys
 import polars
 import pyarrow as pa
+import types
 # isolated simplified test bench for different fault tolerance protocols
 
 FT_I =False# True
@@ -84,7 +85,7 @@ class Node:
                     if type(partition_key) == str:
                         payload = self.logged_outputs[key][self.logged_outputs[key][partition_key] % len(self.targets[target_id][0]) == channel]
                     elif callable(partition_key):
-                        payload = partition_key(self.logged_outputs[key], channel)
+                        payload = partition_key(self.logged_outputs[key], self.channel, channel)
                 pipeline.publish("mailbox-"+str(target_id) + "-" + str(channel),pickle.dumps(payload))
                 pipeline.publish("mailbox-id-"+str(target_id) + "-" + str(channel),pickle.dumps((self.id, self.channel, key)))
         results = pipeline.execute()
@@ -161,7 +162,7 @@ class Node:
                         if type(partition_key) == str:
                             payload = data[data[partition_key] % len(original_channel_to_ip) == channel]
                         elif callable(partition_key):
-                            payload = partition_key(data, channel)
+                            payload = partition_key(data, self.channel, channel)
                         else:
                             raise Exception("Can't understand partition strategy")
                     else:
@@ -586,8 +587,7 @@ class TaskNode(Node):
             batches = list(self.buffered_inputs[parent,channel])
             self.state_tag[(parent,channel)] += length
             self.buffered_inputs[parent,channel].clear()
-            #self.state_tag[(parent,channel)] += 1
-            #batches = [self.buffered_inputs[parent,channel].popleft()]
+            
             self.log_state_tag()
             return parent, batches
 
@@ -670,10 +670,17 @@ class NonBlockingTaskNode(TaskNode):
                 self.checkpoint()
         
         obj_done =  self.functionObject.done(self.channel) 
-        del self.functionObject
-        gc.collect()
-        if obj_done is not None:
-            self.push(obj_done)
+
+        if type(obj_done) == types.GeneratorType:
+            for object in obj_done:
+                self.push(object)
+            del self.functionObject
+            gc.collect()
+        else:
+            del self.functionObject
+            gc.collect()
+            if obj_done is not None:
+                self.push(obj_done)
         
         print("TASK NODE DONE", self.id, self.channel)
         self.done()
@@ -726,13 +733,26 @@ class BlockingTaskNode(TaskNode):
                 pass
         
         obj_done =  self.functionObject.done(self.channel) 
-        del self.functionObject
-        gc.collect()
-        if obj_done is not None:
-            key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
-            self.object_count += 1
-            self.r.set(key, pickle.dumps(obj_done))
-            self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(obj_done)))                    
+
+        if type(obj_done) == types.GeneratorType:
+            for object in obj_done:
+                if object is not None:
+                    key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
+                    self.object_count += 1
+                    self.r.set(key, pickle.dumps(object))
+                    self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(object))) 
+            del self.functionObject
+            gc.collect()
+        else:
+            del self.functionObject
+            gc.collect()
+            
+            if obj_done is not None:
+                key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
+                self.object_count += 1
+                self.r.set(key, pickle.dumps(obj_done))
+                self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(obj_done))) 
+                           
         self.output_dataset.done_channel.remote(self.channel)
         
         #self.done()

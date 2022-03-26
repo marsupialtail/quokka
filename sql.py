@@ -12,7 +12,7 @@ import gc
 import pyarrow.csv as csv
 from io import StringIO, BytesIO
 from state import PersistentStateVariable
-WRITE_MEM_LIMIT = 16 * 1024 * 1024
+from collections import deque
 
 class Executor:
     def __init__(self) -> None:
@@ -27,27 +27,42 @@ class Executor:
         raise NotImplementedError    
 
 class OutputCSVExecutor(Executor):
-    def __init__(self, parallelism, bucket, prefix) -> None:
+    def __init__(self, bucket, prefix, output_line_limit = 1000000) -> None:
         self.num = 0
-        self.parallelism = parallelism
         self.bucket = bucket
         self.prefix = prefix
-        self.dfs =[]
-        pass
+        self.s3_resource = boto3.resource('s3')
+        self.output_line_limit = output_line_limit
+        self.name = 0
+        self.my_batches = deque()
+
     def execute(self,batches,stream_id, executor_id):
         
         #self.num += 1
-        batch = pd.concat(batches)
-        self.dfs.append(batch)
-        if sum([i.memory_usage().sum() for i in self.dfs]) > WRITE_MEM_LIMIT:
-            name = "s3://" + self.bucket + "/" + self.prefix + "-" + str(self.num * self.parallelism + executor_id) + ".csv"
-            pd.concat(self.dfs).to_csv(name)
-            self.num += 1
-            self.dfs = []
+        self.my_batches.extend(batches)
+        
+        curr_len = 0
+        i = 0
+        while i < len(self.my_batches):
+            curr_len += len(self.my_batches[i])
+            i += 1
+            if curr_len > self.output_line_limit:
+                da = BytesIO()
+                csv.write_csv(polars.concat([self.my_batches.popleft() for k in range(i)], rechunk=False).to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
+                self.s3_resource.Object(self.bucket,self.prefix + "-" + str(executor_id) + "-" + str(self.name) + ".csv").put(Body=da.getvalue())
+                print(self.name)
+                self.name += 1
+                i = 0
+                curr_len = 0
+
 
     def done(self,executor_id):
-        name = "s3://" + self.bucket + "/" + self.prefix + "-" + str(self.num * self.parallelism + executor_id) + ".csv"
-        pd.concat(self.dfs).to_csv(name)
+        if len(self.my_batches) > 0:
+            da = BytesIO()
+            csv.write_csv(polars.concat(list(self.my_batches)), da, write_options = csv.WriteOptions(include_header=False))
+            self.s3_resource.Object(self.bucket,self.prefix + "-" + str(executor_id) + "-" + str(self.name) + ".csv").put(Body=da.getvalue())
+            print(self.name)
+            self.name += 1
         print("done")
 
 
@@ -267,7 +282,6 @@ class AggExecutor(Executor):
                 self.state = batch 
             else:
                 self.state = self.state.add(batch, fill_value = self.fill_value)
-        assert(len(self.state) == 2)
     
     def done(self,executor_id):
         print(self.state)
@@ -316,22 +330,6 @@ class CountExecutor(Executor):
         print("COUNT:", self.state)
         return polars.DataFrame([self.state])
 
-class StorageExecutor(Executor):
-    def __init__(self) -> None:
-        pass
-    def execute(self, batch, stream_id, executor_id):
-        return batch
-    def done(self, executor_id):
-        pass
-
-class MergedStorageExecutor(Executor):
-    def __init__(self, final_func = None) -> None:
-        self.state = []
-        self.num_states = 0
-    def execute(self, batches, stream_id, executor_id):
-        self.state.extend(batches)
-    def done(self, executor_id):
-        return pd.concat(self.state)
 
 class MergeSortedExecutor(Executor):
     def __init__(self, key, record_batch_rows = None, length_limit = 5000, file_prefix = "mergesort", output_line_limit = 1000) -> None:
@@ -345,7 +343,6 @@ class MergeSortedExecutor(Executor):
         self.prefix = file_prefix # make sure this is different for different executors
 
         self.output_line_limit = output_line_limit
-        self.bucket = "quokka-sorted-lineitem"
         self.data_dir = "/data"
     
     def serialize(self):
@@ -445,24 +442,13 @@ class MergeSortedExecutor(Executor):
         assert sum([type(i) != str for i in self.states]) == 0
         print("MY DISK STATE", self.states)
 
-        s3_resource = boto3.resource('s3')
+        
         sources = [pa.ipc.open_file(pa.memory_map(k, 'rb')) for k in self.states]
         number_of_batches_in_sources = [source.num_record_batches for source in sources]
         next_batch_to_gets = [1 for i in self.states]
         cached_batches_in_mem = [polars.from_arrow(pa.Table.from_batches([source.get_batch(0)])) for source in sources]
 
-        my_batch = cached_batches_in_mem[0][:0] # get an empty dataframe for the schema
-        name = 0
-
         while sum([len(i) != 0 for i in cached_batches_in_mem]) > 0:
-            
-            while len(my_batch) > self.output_line_limit:
-                da = BytesIO()
-                csv.write_csv(my_batch[:self.output_line_limit].to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
-                #s3_resource.Object(self.bucket,str(executor_id) + "-" + str(name) + ".csv").put(Body=da.getvalue())
-                print(name)
-                name += 1
-                my_batch = my_batch[self.output_line_limit:]
                 
             disk_portions = [cached_batch_in_mem[:self.record_batch_rows] for cached_batch_in_mem in cached_batches_in_mem]
             for j in range(len(disk_portions)):
@@ -473,7 +459,7 @@ class MergeSortedExecutor(Executor):
             disk_contribs = [(new_batch['asdasd'] == j).sum() for j in range(len(disk_portions))]
             print(disk_contribs)
             new_batch = new_batch.drop('asdasd')
-            my_batch.vstack(new_batch,in_place=True)
+            
 
             for j in range(len(cached_batches_in_mem)):
                 cached_batches_in_mem[j] = cached_batches_in_mem[j][disk_contribs[j]:]
@@ -482,12 +468,8 @@ class MergeSortedExecutor(Executor):
                     next_batch_to_gets[j] += 1
                     next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
                     cached_batches_in_mem[j].vstack(next_batch, in_place=True)
-        
-        da = BytesIO()
-        csv.write_csv(my_batch.to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
-        s3_resource.Object(self.bucket,str(executor_id) + "-" + str(name) + ".csv").put(Body=da.getvalue())
-        print(name)
-        name += 1
+            
+            yield new_batch
 
 
     # with minimal memory used!
@@ -580,71 +562,6 @@ class MergeSortedExecutor(Executor):
                 
         self.num += 1
         gc.collect()
-    
-    def old_done(self, executor_id):
-        if len(self.states) == 1:
-            return self.states[0]
-        while len(self.states) > 1:
-            if type(self.states[-2]) == polars.internals.frame.DataFrame and type(self.states[-1]) == polars.internals.frame.DataFrame:
-                self.states[-2 ] = polars.concat([self.states[-2 ], self.states[-1]]).sort(self.key)
-                if len(self.states[-2 ]) >  self.length_limit:
-                    self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", self.states[-2])
-                    self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
-                    self.fileno += 1
-                del self.states[-1 ]
-            elif type(self.states[-2]) == str and type(self.states[-1]) == polars.internals.frame.DataFrame:
-                self.produce_sorted_file_from_sorted_file_and_in_memory(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
-                os.remove(self.states[-2])
-                self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
-                self.fileno += 1
-                del self.states[-1]
-            elif type(self.states[-2]) == str and type(self.states[-1]) == str:
-                self.produce_sorted_file_from_two_sorted_files(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", self.states[-2], self.states[-1])
-                os.remove(self.states[-2])
-                self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
-                self.fileno += 1
-                os.remove(self.states[-1])
-                del self.states[-1]
-            elif type(self.states[-2]) == polars.internals.frame.DataFrame and type(self.states[-1]) == str:
-                self.produce_sorted_file_from_sorted_file_and_in_memory(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow",self.states[-1], self.states[-2])
-                os.remove(self.states[-1])
-                self.states[-2] = self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
-                self.fileno += 1
-                del self.states[-1]
-        s3_resource = boto3.resource('s3')
-
-        name = 0
-        if type(self.states[0]) == polars.internals.frame.DataFrame:
-            
-            for start in range(0, len(self.states[0]), self.output_line_limit):
-                da = BytesIO()
-                csv.write_csv(self.states[0][start: start + self.output_line_limit].to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
-                s3_resource.Object(self.bucket,str(executor_id) + "-" + str(name) + ".csv").put(Body=da.getvalue())
-                name += 1
-
-        elif type(self.states[0]) == str:
-            source =  pa.ipc.open_file(pa.memory_map(self.states[0], 'rb'))
-            number_of_batches_in_source = source.num_record_batches
-            batch = polars.from_arrow(pa.Table.from_batches([source.get_batch(0)]))
-            for i in range(1, number_of_batches_in_source):
-                while len(batch) > self.output_line_limit:
-                    da = BytesIO()
-                    csv.write_csv(batch[:self.output_line_limit].to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
-                    s3_resource.Object(self.bucket,str(executor_id) + "-" + str(name) + ".csv").put(Body=da.getvalue())
-                    print(name)
-                    name += 1
-                    batch = batch[self.output_line_limit:]
-                batch.vstack(polars.from_arrow(pa.Table.from_batches([source.get_batch(i)])),in_place=True)
-            print(len(batch),name)
-            for start in range(0, len(batch), self.output_line_limit):
-                da = BytesIO()
-                csv.write_csv(batch[start: start + self.output_line_limit].to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
-                s3_resource.Object(self.bucket,str(executor_id) + "-" + str(name) + ".csv").put(Body=da.getvalue())
-                name += 1
-
-        return self.states[0]
-        # self.state = polars.concat(self.states).sort(self.key)
-        # print(self.state)
 
 #stuff = []
 #exe = MergeSortedExecutor('0', length_limit=10000)

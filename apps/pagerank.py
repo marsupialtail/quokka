@@ -115,14 +115,14 @@ class SpMVExecutorMKL(Executor):
 ROWS = 4847571
 BLOCKS = 4
 
-def partition_key(data, channel):
-    assigned_portion_start = ROWS // BLOCKS * channel
-    assigned_portion_end = ROWS//BLOCKS * (channel + 1)
+def partition_key(data,source_channel, target_channel):
+    assigned_portion_start = ROWS // BLOCKS * target_channel
+    assigned_portion_end = ROWS//BLOCKS * (target_channel + 1)
     return data[(data.x >= assigned_portion_start) & (data.x < assigned_portion_end)]
 
-def partition_key_vector(data, channel):
-    assigned_portion_start = ROWS // BLOCKS * channel
-    assigned_portion_end = ROWS//BLOCKS * (channel + 1)
+def partition_key_vector(data, source_channel, target_channel):
+    assigned_portion_start = ROWS // BLOCKS * target_channel
+    assigned_portion_end = ROWS//BLOCKS * (target_channel + 1)
     return data[(data.y >= assigned_portion_start) & (data.y < assigned_portion_end)]
 
 init_time = 0
