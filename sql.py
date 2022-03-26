@@ -31,13 +31,16 @@ class OutputCSVExecutor(Executor):
         self.num = 0
         self.bucket = bucket
         self.prefix = prefix
-        self.s3_resource = boto3.resource('s3')
+        self.s3_resource = None
         self.output_line_limit = output_line_limit
         self.name = 0
         self.my_batches = deque()
 
     def execute(self,batches,stream_id, executor_id):
-        
+
+        if self.s3_resource is None:
+            self.s3_resource = boto3.resource('s3')
+
         #self.num += 1
         self.my_batches.extend(batches)
         

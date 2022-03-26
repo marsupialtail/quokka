@@ -89,7 +89,7 @@ class TaskGraph:
         bucket.objects.all().delete()
     
     def flip_ip_channels(self, ip_to_num_channel):
-        ips = list(ip_to_num_channel.keys())
+        ips = sorted(list(ip_to_num_channel.keys()))
         starts = np.cumsum([0] + [ip_to_num_channel[ip] for ip in ips])
         start_dict = {ips[k]: starts[k] for k in range(len(ips))}
         lists_to_merge =  [ {i: ip for i in range(start_dict[ip], start_dict[ip] + ip_to_num_channel[ip])} for ip in ips ]
