@@ -411,7 +411,7 @@ class MergeSortedExecutor(Executor):
         
         writer.close()
 
-    def experimental_end(self, executor_id):
+    def done(self, executor_id):
 
         # first merge all of the in memory states to a file. This makes programming easier and likely not horrible in terms of performance. And we can save some memory! 
         # yolo and hope that that you can concatenate all and not die
@@ -558,7 +558,7 @@ class MergeSortedExecutor(Executor):
         self.num += 1
         gc.collect()
     
-    def done(self, executor_id):
+    def old_done(self, executor_id):
         if len(self.states) == 1:
             return self.states[0]
         while len(self.states) > 1:
