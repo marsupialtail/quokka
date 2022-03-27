@@ -52,7 +52,7 @@ elif sys.argv[2] == "parquet":
 executor = MergeSortedExecutor("l_partkey", record_batch_rows = 100000, length_limit = 1000000, output_line_limit = 1000000)
 stream = task_graph.new_non_blocking_node({0:lineitem}, None, executor, {'localhost':2, '172.31.11.134':2}, {0: partition_key})
 outputer = OutputCSVExecutor("quokka-sorted-lineitem","lineitem")
-output = task_graph.new_blocking_node({0:stream}, None, )
+output = task_graph.new_blocking_node({0:stream}, None,outputer, {'localhost':2, '172.31.11.134':2}, {0: partition_key2} )
 
 task_graph.create()
 start = time.time()

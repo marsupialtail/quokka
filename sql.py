@@ -457,9 +457,19 @@ class MergeSortedExecutor(Executor):
         sources = [pa.ipc.open_file(pa.memory_map(k, 'rb')) for k in self.states]
         number_of_batches_in_sources = [source.num_record_batches for source in sources]
         next_batch_to_gets = [1 for i in self.states]
+
+        del self.states
+        gc.collect()
+        import os, psutil
+        process = psutil.Process(os.getpid())
+        print("mem usage", process.memory_info().rss)
+
+
         cached_batches_in_mem = [polars.from_arrow(pa.Table.from_batches([source.get_batch(0)])) for source in sources]
 
         while sum([len(i) != 0 for i in cached_batches_in_mem]) > 0:
+
+            print("mem usage", process.memory_info().rss)
                 
             disk_portions = [cached_batch_in_mem[:self.record_batch_rows] for cached_batch_in_mem in cached_batches_in_mem]
             for j in range(len(disk_portions)):
