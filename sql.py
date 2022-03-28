@@ -411,7 +411,7 @@ class MergeSortedExecutor(Executor):
             sort_time += time.time() - start
             disk_contrib2 = int(new_batch['asdasd'].sum())
             disk_contrib1 = len(new_batch) - disk_contrib2
-            new_batch = new_batch.drop('asdasd')
+            new_batch.drop_in_place('asdasd')
 
             #print(source.schema, new_batch.to_arrow().schema)
             start = time.time()
@@ -457,31 +457,34 @@ class MergeSortedExecutor(Executor):
 
         # now all the states should be strs!
         print("MY DISK STATE", self.filename_to_size.keys())
+
+        import os, psutil   
+
         
-        sources = [pa.ipc.open_file(pa.memory_map(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(k) + ".arrow", 'rb')) for k in self.filename_to_size]
-        number_of_batches_in_sources = [source.num_record_batches for source in sources]
+        sources = [self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(k) + ".arrow" for k in self.filename_to_size]
+        number_of_batches_in_sources = [pa.ipc.open_file(pa.memory_map(source,'rb')).num_record_batches for source in sources]
         next_batch_to_gets = [1 for i in sources]
         
-        import os, psutil
+        
         process = psutil.Process(os.getpid())
         print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
 
-        cached_batches_in_mem = [pa.Table.from_batches([source.get_batch(0)]) for source in sources]
-        cached_batches_in_mem = [batch.append_column('asdasd', pa.array(np.ones(len(batch)) * j, pa.int32())) for batch, j in zip(cached_batches_in_mem, range(len(sources)))]
+        cached_batches_in_mem = [polars.from_arrow(pa.Table.from_batches([pa.ipc.open_file(pa.memory_map(source,'rb')).get_batch(0)])) for source in sources]
 
         while sum([len(i) != 0 for i in cached_batches_in_mem]) > 0:
         
             print("mem usage", process.memory_info().rss,  pa.total_allocated_bytes())
-                
-            disk_portions = [cached_batch_in_mem[:self.record_batch_rows].select([self.key, 'asdasd']) for cached_batch_in_mem in cached_batches_in_mem]
 
-            temp = pa.concat_tables(disk_portions)
-            new_batch = temp.take(compute.sort_indices(temp, sort_keys = [(self.key, "ascending")]))[:self.record_batch_rows]
-
-            disk_contribs = [compute.sum(compute.equal(new_batch['asdasd'], j)).as_py() for j in range(len(disk_portions))]
-
-            result = pa.concat_tables([cached_batches_in_mem[j][:disk_contribs[j]] for j in range(len(cached_batches_in_mem))])
+            disk_portions = [batch[:self.record_batch_rows] for batch in cached_batches_in_mem]
+            for j in range(len(disk_portions)):
+                disk_portions[j]["asdasd"] = np.ones(len(disk_portions[j])) * j
             
+            result = polars.concat(disk_portions).sort(self.key)[:self.record_batch_rows]
+            
+            disk_contribs = [(result["asdasd"] == j).sum() for j in range(len(sources))]
+            
+            result.drop_in_place("asdasd")
+
             #result = result.take(compute.sort_indices(result, sort_keys = [(self.key, "ascending")]))
             #time.sleep(2)
 
@@ -491,10 +494,10 @@ class MergeSortedExecutor(Executor):
                 #cached_batches_in_mem[j] = cached_batches_in_mem[j][1000:]#.copy()
 
                 if len(cached_batches_in_mem[j]) < self.record_batch_rows and next_batch_to_gets[j] < number_of_batches_in_sources[j]:
-                    next_batch = pa.Table.from_batches([sources[j].get_batch(next_batch_to_gets[j])])#.to_pandas()
-                    next_batch = next_batch.append_column('asdasd', pa.array(np.ones(len(next_batch)) * j, pa.int32()))
+                    source = pa.ipc.open_file(pa.memory_map(sources[j], 'rb'))
+                    next_batch = polars.from_arrow(pa.Table.from_batches([source.get_batch(next_batch_to_gets[j])]))
                     next_batch_to_gets[j] += 1
-                    cached_batches_in_mem[j] = pa.concat_tables([cached_batches_in_mem[j], next_batch])
+                    cached_batches_in_mem[j] = cached_batches_in_mem[j].vstack(next_batch)
                     del next_batch
             
             print(gc.collect())
