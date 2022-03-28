@@ -3,7 +3,10 @@ import os
 os.environ["POLAR_MAX_THREADS"] = "1"
 import polars
 import pandas as pd
+os.environ['ARROW_DEFAULT_MEMORY_POOL'] = 'system'
+
 import pyarrow as pa
+
 import time
 import numpy as np
 import os, psutil
@@ -472,29 +475,31 @@ class MergeSortedExecutor(Executor):
         
             print("mem usage", process.memory_info().rss,  pa.total_allocated_bytes())
                 
-            disk_portions = [cached_batch_in_mem[:self.record_batch_rows].select([self.key, 'asdasd']) for cached_batch_in_mem in cached_batches_in_mem]
+            disk_portions = [cached_batch_in_mem[:self.record_batch_rows].select([self.key, 'asdasd']).to_pandas() for cached_batch_in_mem in cached_batches_in_mem]
 
-            temp = pa.concat_tables(disk_portions)
-            idx = compute.sort_indices(temp[self.key], sort_keys = [(self.key, "ascending")])
-
-            new_batch = temp.take(idx)[:self.record_batch_rows]
-            disk_contribs = [compute.sum(compute.equal(new_batch['asdasd'] , j)).as_py() for j in range(len(disk_portions))]
-            print(disk_contribs)
-            result = pa.concat_tables([cached_batches_in_mem[j][:disk_contribs[j]] for j in range(len(cached_batches_in_mem))])
-
-            del temp
+            temp = pd.concat(disk_portions)
+            new_batch = temp.sort_values(self.key, axis=0)[:self.record_batch_rows]
+            disk_contribs = [(new_batch['asdasd'] == j).sum() for j in range(len(disk_portions))]
+            #print(disk_contribs)
+            care_about = [cached_batches_in_mem[j][:disk_contribs[j]].to_pandas() for j in range(len(sources))]
+            #result = pd.concat([cached_batches_in_mem[j][:disk_contribs[j]].copy() for j in range(len(cached_batches_in_mem))])
+            #import pdb;pdb.set_trace()
+            #result = result.sort_values(self.key, axis=0)
 
             for j in range(len(cached_batches_in_mem)):
                 cached_batches_in_mem[j] = cached_batches_in_mem[j][disk_contribs[j]:]
                 
+                #cached_batches_in_mem[j] = cached_batches_in_mem[j][1000:]#.copy()
+
                 if len(cached_batches_in_mem[j]) < self.record_batch_rows and next_batch_to_gets[j] < number_of_batches_in_sources[j]:
-                    next_batch = pa.Table.from_batches([sources[j].get_batch(next_batch_to_gets[j])])
+                    next_batch = pa.Table.from_batches([sources[j].get_batch(next_batch_to_gets[j])])#.to_pandas()
                     next_batch = next_batch.append_column('asdasd', pa.array(np.ones(len(next_batch)) * j, pa.int32()))
                     next_batch_to_gets[j] += 1
                     cached_batches_in_mem[j] = pa.concat_tables([cached_batches_in_mem[j], next_batch])
+                    del next_batch
             
             print(gc.collect())
-            yield result
+            yield 0 #result
 
         
 
