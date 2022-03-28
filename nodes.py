@@ -179,7 +179,24 @@ class Node:
                     except:
                         print("Downstream failure detected")
         else:
-            raise Exception
+            # the data that you gave is a custom thing. so the partition function must be a callable
+            for target in self.alive_targets:
+                original_channel_to_ip, partition_key = self.targets[target]
+                assert callable(partition_key)
+                for channel in self.alive_targets[target]:
+                    print("PUSHING FROM",str(self.id),str(self.channel)," TO ",str(target),str(channel), " MY TAG ", self.out_seq)
+                    payload = partition_key(data, self.channel, channel)
+                    # don't worry about target being full for now.
+                    pipeline = self.target_rs[target][channel].pipeline()
+                    pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
+
+                    pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),pickle.dumps((self.id, self.channel, self.out_seq)))
+                    try:    
+                        results = pipeline.execute()
+                        if False in results:
+                            print("Downstream failure detected")
+                    except:
+                        print("Downstream failure detected")
 
         return True
 
@@ -515,7 +532,7 @@ class TaskNode(Node):
             if message is None:
                 break
             if message['channel'].decode('utf-8') == "mailbox-" + str(self.id) + "-" + str(self.channel):
-                mailbox.append(message['data'])
+                maiclbox.append(message['data'])
             elif message['channel'].decode('utf-8') ==  "mailbox-id-" + str(self.id)+ "-" + str(self.channel):
                 # this should be a tuple (source_id, source_tag)
                 mailbox_id.append(pickle.loads(message['data']))
