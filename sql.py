@@ -475,16 +475,22 @@ class MergeSortedExecutor(Executor):
         
             print("mem usage", process.memory_info().rss,  pa.total_allocated_bytes())
                 
-            disk_portions = [cached_batch_in_mem[:self.record_batch_rows].select([self.key, 'asdasd']).to_pandas() for cached_batch_in_mem in cached_batches_in_mem]
+            disk_portions = [cached_batch_in_mem[:self.record_batch_rows].select([self.key, 'asdasd']) for cached_batch_in_mem in cached_batches_in_mem]
 
-            temp = pd.concat(disk_portions)
-            new_batch = temp.sort_values(self.key, axis=0)[:self.record_batch_rows]
-            disk_contribs = [(new_batch['asdasd'] == j).sum() for j in range(len(disk_portions))]
+            temp = pa.concat_tables(disk_portions)
+            new_batch = temp.take(compute.sort_indices(temp, sort_keys = [(self.key, "ascending")]))[:self.record_batch_rows]
+
+            disk_contribs = [compute.sum(compute.equal(new_batch['asdasd'], j)).as_py() for j in range(len(disk_portions))]
             #print(disk_contribs)
-            care_about = [cached_batches_in_mem[j][:disk_contribs[j]].to_pandas() for j in range(len(sources))]
+            #care_about = [cached_batches_in_mem[j][:disk_contribs[j]] for j in range(len(sources))]
+            #time.sleep(1)
             #result = pd.concat([cached_batches_in_mem[j][:disk_contribs[j]].copy() for j in range(len(cached_batches_in_mem))])
             #import pdb;pdb.set_trace()
             #result = result.sort_values(self.key, axis=0)
+
+            result = pa.concat_tables([cached_batches_in_mem[j][:disk_contribs[j]] for j in range(len(cached_batches_in_mem))])
+            #result = result.take(compute.sort_indices(result, sort_keys = [(self.key, "ascending")]))
+            #time.sleep(2)
 
             for j in range(len(cached_batches_in_mem)):
                 cached_batches_in_mem[j] = cached_batches_in_mem[j][disk_contribs[j]:]
@@ -499,7 +505,7 @@ class MergeSortedExecutor(Executor):
                     del next_batch
             
             print(gc.collect())
-            yield 0 #result
+            yield result
 
         
 
