@@ -532,7 +532,7 @@ class TaskNode(Node):
             if message is None:
                 break
             if message['channel'].decode('utf-8') == "mailbox-" + str(self.id) + "-" + str(self.channel):
-                maiclbox.append(message['data'])
+                mailbox.append(message['data'])
             elif message['channel'].decode('utf-8') ==  "mailbox-id-" + str(self.id)+ "-" + str(self.channel):
                 # this should be a tuple (source_id, source_tag)
                 mailbox_id.append(pickle.loads(message['data']))
