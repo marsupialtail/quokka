@@ -356,6 +356,7 @@ class MergeSortedExecutor(Executor):
         self.length_limit = length_limit
         self.prefix = file_prefix # make sure this is different for different executors
 
+        self.filename_to_size = {}
         self.data_dir = "/data"
     
     def serialize(self):
@@ -435,35 +436,30 @@ class MergeSortedExecutor(Executor):
 
         
         writer.close()
+        import os, psutil
+        process = psutil.Process(os.getpid())
+        print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
         print(read_time, write_time, sort_time)
 
     def done(self, executor_id):
         
         # first merge all of the in memory states to a file. This makes programming easier and likely not horrible in terms of performance. And we can save some memory! 
         # yolo and hope that that you can concatenate all and not die
-        mem_idx = [i for i in range(len(self.states)) if type(self.states[i]) == polars.internals.frame.DataFrame]
-        if len(mem_idx) > 0:
-            in_mem_state = polars.concat([i for i in self.states if type(i) == polars.internals.frame.DataFrame]).sort(self.key)
-
-            for ele in sorted(mem_idx, reverse = True):
-                del self.states[ele]
+        if len(self.states) > 0:
+            in_mem_state = polars.concat(self.states).sort(self.key)
             self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", in_mem_state)
-            self.states.append(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow")
+            self.filename_to_size[self.fileno] = len(in_mem_state)
             self.fileno += 1
             del in_mem_state
+        self.states = []
 
         # now all the states should be strs!
-        assert sum([type(i) != str for i in self.states]) == 0
-        print("MY DISK STATE", self.states)
-
+        print("MY DISK STATE", self.filename_to_size.keys())
         
-        sources = [pa.ipc.open_file(pa.memory_map(k, 'rb')) for k in self.states]
+        sources = [pa.ipc.open_file(pa.memory_map(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(k) + ".arrow", 'rb')) for k in self.filename_to_size]
         number_of_batches_in_sources = [source.num_record_batches for source in sources]
-        next_batch_to_gets = [1 for i in self.states]
+        next_batch_to_gets = [1 for i in sources]
         
-
-        del self.states
-        gc.collect()
         import os, psutil
         process = psutil.Process(os.getpid())
         print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
@@ -483,6 +479,7 @@ class MergeSortedExecutor(Executor):
             disk_contribs = [compute.sum(compute.equal(new_batch['asdasd'], j)).as_py() for j in range(len(disk_portions))]
 
             result = pa.concat_tables([cached_batches_in_mem[j][:disk_contribs[j]] for j in range(len(cached_batches_in_mem))])
+            
             #result = result.take(compute.sort_indices(result, sort_keys = [(self.key, "ascending")]))
             #time.sleep(2)
 
@@ -515,17 +512,31 @@ class MergeSortedExecutor(Executor):
 
         if len(batch) > self.length_limit:
             self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", batch)
-            self.states.append(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow")
+            self.filename_to_size[self.fileno] = len(batch)
             self.fileno += 1
         elif sum([len(i) for i in self.states if type(i) == polars.internals.frame.DataFrame]) + len(batch) > self.length_limit:
             mega_batch = polars.concat([i for i in self.states if type(i) == polars.internals.frame.DataFrame] + [batch]).sort(self.key)
             self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", mega_batch)
+            self.filename_to_size[self.fileno] = len(mega_batch)
             del mega_batch
-            self.states = [i for i in self.states if type(i) == str]
-            self.states.append(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow")
             self.fileno += 1
+            self.states = []
         else:
             self.states.append(batch)
+        
+        while len(self.filename_to_size) > 16:
+            files_to_merge = [y[0] for y in sorted(self.filename_to_size.items(), key = lambda x: x[1])[:2]]
+            self.produce_sorted_file_from_two_sorted_files(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", 
+            self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[0]) + ".arrow",
+            self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[1]) + ".arrow")
+            self.filename_to_size[self.fileno] = self.filename_to_size.pop(files_to_merge[0]) + self.filename_to_size.pop(files_to_merge[1])
+            self.fileno += 1
+            os.remove(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[0]) + ".arrow")
+            os.remove(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[1]) + ".arrow")
+            
+            
+
+
 
 #stuff = []
 exe = MergeSortedExecutor('0', length_limit=1000)
