@@ -58,8 +58,10 @@ class OutputCSVExecutor(Executor):
         i = 0
         while i < len(self.my_batches):
             curr_len += len(self.my_batches[i])
+            print(curr_len)
             i += 1
             if curr_len > self.output_line_limit:
+                print("writing")
                 da = BytesIO()
                 csv.write_csv(polars.concat([self.my_batches.popleft() for k in range(i)]).to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
                 self.s3_resource.Object(self.bucket,self.prefix + "-" + str(executor_id) + "-" + str(self.name) + ".csv").put(Body=da.getvalue())
@@ -590,13 +592,13 @@ class MergeSortedExecutor(Executor):
         gc.collect()
 
 #stuff = []
-exe = MergeSortedExecutor('0', length_limit=1000)
-for k in range(100):
-   item = polars.from_pandas(pd.DataFrame(np.random.normal(size=(random.randint(1, 2000),1000))))
-   exe.execute([item], 0, 0)
-da = exe.done(0)
-for bump in da:
-    pass
+#exe = MergeSortedExecutor('0', length_limit=1000)
+#for k in range(100):
+#   item = polars.from_pandas(pd.DataFrame(np.random.normal(size=(random.randint(1, 2000),1000))))
+#   exe.execute([item], 0, 0)
+#da = exe.done(0)
+#for bump in da:
+#    pass
 
 # exe = MergeSortedExecutor('0', 3000)
 # a = polars.from_pandas(pd.DataFrame(np.random.normal(size=(10000,1000)))).sort('0')
@@ -611,3 +613,10 @@ for bump in da:
 # print(process.memory_info().rss)
 # exe.produce_sorted_file_from_sorted_file_and_in_memory("file2.arrow","file.arrow",b)
 # exe.produce_sorted_file_from_two_sorted_files("file3.arrow","file2.arrow","file.arrow")
+
+
+exe = OutputCSVExecutor( "quokka-sorted-lineitem", "trash", output_line_limit = 100000)
+for k in range(1000):
+    item = polars.from_pandas(pd.DataFrame(np.random.normal(size=(25000,1000))))
+    exe.execute([item], 0,0)
+    
