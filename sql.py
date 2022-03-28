@@ -13,6 +13,8 @@ import pyarrow.csv as csv
 from io import StringIO, BytesIO
 from state import PersistentStateVariable
 from collections import deque
+import pyarrow.compute as compute
+import random
 
 class Executor:
     def __init__(self) -> None:
@@ -341,7 +343,7 @@ class CountExecutor(Executor):
 
 
 class MergeSortedExecutor(Executor):
-    def __init__(self, key, record_batch_rows = None, length_limit = 5000, file_prefix = "mergesort", output_line_limit = 1000) -> None:
+    def __init__(self, key, record_batch_rows = None, length_limit = 5000, file_prefix = "mergesort") -> None:
         self.num_states = 0
         self.states = []
         self.num = 1
@@ -351,7 +353,6 @@ class MergeSortedExecutor(Executor):
         self.length_limit = length_limit
         self.prefix = file_prefix # make sure this is different for different executors
 
-        self.output_line_limit = output_line_limit
         self.data_dir = "/data"
     
     def serialize(self):
@@ -464,33 +465,38 @@ class MergeSortedExecutor(Executor):
         process = psutil.Process(os.getpid())
         print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
 
-        cached_batches_in_mem = [polars.from_arrow(pa.Table.from_batches([source.get_batch(0)])) for source in sources]
+        cached_batches_in_mem = [pa.Table.from_batches([source.get_batch(0)]) for source in sources]
+        cached_batches_in_mem = [batch.append_column('asdasd', pa.array(np.ones(len(batch)) * j, pa.int32())) for batch, j in zip(cached_batches_in_mem, range(len(sources)))]
 
         while sum([len(i) != 0 for i in cached_batches_in_mem]) > 0:
         
-            print("mem usage", process.memory_info().rss)
+            print("mem usage", process.memory_info().rss,  pa.total_allocated_bytes())
                 
-            disk_portions = [cached_batch_in_mem[:self.record_batch_rows] for cached_batch_in_mem in cached_batches_in_mem]
-            for j in range(len(disk_portions)):
-                disk_portions[j]['asdasd'] = np.ones(len(disk_portions[j])) * j
+            disk_portions = [cached_batch_in_mem[:self.record_batch_rows].select([self.key, 'asdasd']) for cached_batch_in_mem in cached_batches_in_mem]
 
-            new_batch = polars.concat(disk_portions).sort(self.key)
-            new_batch = new_batch[:self.record_batch_rows]
-            disk_contribs = [(new_batch['asdasd'] == j).sum() for j in range(len(disk_portions))]
+            temp = pa.concat_tables(disk_portions)
+            idx = compute.sort_indices(temp[self.key], sort_keys = [(self.key, "ascending")])
+
+            new_batch = temp.take(idx)[:self.record_batch_rows]
+            disk_contribs = [compute.sum(compute.equal(new_batch['asdasd'] , j)).as_py() for j in range(len(disk_portions))]
             print(disk_contribs)
-            new_batch = new_batch.drop('asdasd')
-            
+            result = pa.concat_tables([cached_batches_in_mem[j][:disk_contribs[j]] for j in range(len(cached_batches_in_mem))])
+
+            del temp
 
             for j in range(len(cached_batches_in_mem)):
                 cached_batches_in_mem[j] = cached_batches_in_mem[j][disk_contribs[j]:]
+                
                 if len(cached_batches_in_mem[j]) < self.record_batch_rows and next_batch_to_gets[j] < number_of_batches_in_sources[j]:
-                    next_batch = sources[j].get_batch(next_batch_to_gets[j])
+                    next_batch = pa.Table.from_batches([sources[j].get_batch(next_batch_to_gets[j])])
+                    next_batch = next_batch.append_column('asdasd', pa.array(np.ones(len(next_batch)) * j, pa.int32()))
                     next_batch_to_gets[j] += 1
-                    next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
-                    cached_batches_in_mem[j] = cached_batches_in_mem[j].vstack(next_batch)
+                    cached_batches_in_mem[j] = pa.concat_tables([cached_batches_in_mem[j], next_batch])
             
-            yield new_batch
+            print(gc.collect())
+            yield result
 
+        
 
     # with minimal memory used!
     def produce_sorted_file_from_sorted_file_and_in_memory(self, target_filepath, input_filepath, input_mem_table):
@@ -532,7 +538,7 @@ class MergeSortedExecutor(Executor):
                 cached_batches_in_mem = cached_batches_in_mem.vstack(next_batch)
         
         writer.close()
-        
+    
     # this is some crazy wierd algo that I came up with, might be there before.
     def execute(self, batches, stream_id, executor_id):
         print("NUMBER OF INCOMING BATCHES", len(batches))
@@ -552,6 +558,7 @@ class MergeSortedExecutor(Executor):
         else:
             self.states[-1] = polars.concat([self.states[-1], batch]).sort(self.key)
             for k in range(1, highest_power_of_two):
+                print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
                 if type(self.states[-2]) == polars.internals.frame.DataFrame and type(self.states[-1]) == polars.internals.frame.DataFrame:
                     self.states[-2 ] = polars.concat([self.states[-2], self.states[-1]]).sort(self.key)
                     if len(self.states[-2 ]) >  self.length_limit:
@@ -583,11 +590,13 @@ class MergeSortedExecutor(Executor):
         gc.collect()
 
 #stuff = []
-#exe = MergeSortedExecutor('0', length_limit=10000)
-#for k in range(10):
-#    item = polars.from_pandas(pd.DataFrame(np.random.normal(size=(1000 - k * 50,1000))))
-#    exe.execute([item], 0, 0)
-#exe.experimental_end(0)
+exe = MergeSortedExecutor('0', length_limit=1000)
+for k in range(100):
+   item = polars.from_pandas(pd.DataFrame(np.random.normal(size=(random.randint(1, 2000),1000))))
+   exe.execute([item], 0, 0)
+da = exe.done(0)
+for bump in da:
+    pass
 
 # exe = MergeSortedExecutor('0', 3000)
 # a = polars.from_pandas(pd.DataFrame(np.random.normal(size=(10000,1000)))).sort('0')
