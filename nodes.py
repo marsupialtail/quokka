@@ -18,6 +18,15 @@ import types
 
 FT_I =False# True
 FT = False #True
+
+# above this limit we are going to start flushing things to disk
+INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
+
+# making a new class of things so we can easily type match when we start processing the input batch
+class FlushedMessage:
+    def __init__(self, loc) -> None:
+        self.loc = loc
+
 class Node:
 
     # will be overridden
@@ -407,6 +416,9 @@ class TaskNode(Node):
             self.ckpt_number = 0
             self.ckpt_files = {}
 
+            # this is used for buffering input mailbox things on disk
+            self.disk_fileno = 0
+
         else:
             if ckpt == "s3":
                 s3_resource = boto3.resource('s3')
@@ -414,6 +426,7 @@ class TaskNode(Node):
                 recovered_state = pickle.loads(s3_resource.Object(bucket, key).get()['Body'].read())
                 self.ckpt_number = recovered_state["function_object"]
                 self.ckpt_files = recovered_state["ckpt_files"]
+                self.disk_fileno = recovered_state["disk_fileno"]
                 object_states = []
                 for bucket, key in self.ckpt_files:
                     z=  {}
@@ -481,7 +494,7 @@ class TaskNode(Node):
 
         self.output_lock.acquire()
         state = {"latest_input_received": self.latest_input_received, "logged_outputs": self.logged_outputs, "out_seq" : self.out_seq,
-        "function_object": self.ckpt_number, "tag":self.state_tag, "target_output_state": self.target_output_state, "ckpt_files": self.ckpt_files}
+        "function_object": self.ckpt_number, "tag":self.state_tag, "target_output_state": self.target_output_state, "ckpt_files": self.ckpt_files,"disk_fileno":self.disk_fileno}
         state_str = pickle.dumps(state)
         self.output_lock.release()
 
@@ -525,7 +538,13 @@ class TaskNode(Node):
                 handler = self.parents[parent][channel]
                 recover_tasks.append(handler.update_target_ip_and_help_target_recover.remote(self.id, self.channel, self.state_tag[(parent,channel)], new_ip))
         ray.get(recover_tasks)
-        
+    
+    def get_buffered_inputs_mem_usage(self):
+        m = 0
+        for key in self.buffered_inputs:
+            m += sum([sys.getsizeof(i) for i in self.buffered_inputs[key]])
+        return m
+
     def get_batches(self, mailbox, mailbox_id):
         while True:
             message = self.p.get_message()
@@ -564,7 +583,17 @@ class TaskNode(Node):
                 
                 print("done", stream_id)
             else:
-                self.buffered_inputs[(stream_id,channel)].append(pickle.loads(first))
+                # check current size of the buffered inputs deque. This is rather primitive
+
+                curr_mem = self.get_buffered_inputs_mem_usage()
+                if curr_mem > INPUT_MAILBOX_SIZE_LIMIT:
+                    f = open("/data/input-mailbox-" + str(self.id) + "-" + str(self.channel) + "-" + str(self.disk_fileno) + ".pkl","wb")
+                    f.write(first)
+                    f.flush()
+                    self.buffered_inputs[(stream_id,channel)].append(FlushedMessage("/data/input-mailbox-" + str(self.id) + "-" + str(self.channel) + "-" + str(self.disk_fileno) + ".pkl"))
+                    self.disk_fileno += 1
+                else:
+                    self.buffered_inputs[(stream_id,channel)].append(pickle.loads(first))
             
         return batches_returned
     
@@ -601,7 +630,13 @@ class TaskNode(Node):
                 return None, None
 
             # now drain that source
-            batches = list(self.buffered_inputs[parent,channel])
+            batches = []
+            for message in self.buffered_inputs[parent, channel]:
+                if type(message) == FlushedMessage:
+                    batches.append(pickle.load(open(message.loc, "rb")))
+                    os.remove(message.loc)
+                else:
+                    batches.append(message)
             self.state_tag[(parent,channel)] += length
             self.buffered_inputs[parent,channel].clear()
             
@@ -628,7 +663,14 @@ class TaskNode(Node):
                 #print("CANNOT FULFILL EXPECTATION")
                 return None, None
             else:
-                batches = [self.buffered_inputs[parent,channel].popleft() for i in range(required_batches)]
+                batches = []
+                for i in range(required_batches):
+                    message = self.buffered_inputs[parent,channel].popleft()
+                    if type(message) == FlushedMessage:
+                        batches.append(pickle.load(open(message.loc, "rb")))
+                        os.remove(message.loc)
+                    else:
+                        batches.append(message)
             self.state_tag = expected
             self.expected_path.popleft()
             self.log_state_tag()
