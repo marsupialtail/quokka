@@ -79,14 +79,15 @@ class OutputCSVExecutor(Executor):
     def execute(self,batches,stream_id, executor_id):
 
         if self.exe is None:
-            self.exe = concurrent.futures.ThreadPoolExecutor(max_workers = 1)
+            self.exe = concurrent.futures.ThreadPoolExecutor(max_workers = 2)
         if self.executor_id is None:
             self.executor_id = executor_id
         else:
             assert self.executor_id == executor_id
 
         self.my_batches.extend([i for i in batches if i is not None])
-        
+        print("MY OUTPUT CSV STATE", [len(i) for i in self.my_batches] )
+
         curr_len = 0
         i = 0
         datas = []
@@ -96,17 +97,15 @@ class OutputCSVExecutor(Executor):
             i += 1
             if curr_len > self.output_line_limit:
                 print("writing")
-                datas.append(polars.concat([self.my_batches.popleft() for k in range(i)]))
+                datas.append(polars.concat([self.my_batches.popleft() for k in range(i)], rechunk = False))
                 i = 0
                 curr_len = 0
         asyncio.run(self.go(datas))
 
     def done(self,executor_id):
         if len(self.my_batches) > 0:
-            da = BytesIO()
-            csv.write_csv(polars.concat(list(self.my_batches)).to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
-            self.s3_resource.Object(self.bucket,self.prefix + "-" + str(executor_id) + "-" + str(self.name) + ".csv").put(Body=da.getvalue())
-            self.name += 1
+            datas = [polars.concat(list(self.my_batches), rechunk=False)]
+            asyncio.run(self.go(datas))
         print("done")
 
 
