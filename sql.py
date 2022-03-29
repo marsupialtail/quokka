@@ -6,7 +6,6 @@ import pandas as pd
 os.environ['ARROW_DEFAULT_MEMORY_POOL'] = 'system'
 
 import pyarrow as pa
-
 import time
 import numpy as np
 import os, psutil
@@ -18,6 +17,11 @@ from state import PersistentStateVariable
 from collections import deque
 import pyarrow.compute as compute
 import random
+import asyncio
+import concurrent.futures
+import sys
+from aiobotocore.session import get_session
+
 
 class Executor:
     def __init__(self) -> None:
@@ -38,10 +42,12 @@ class OutputCSVExecutor(Executor):
 
         self.bucket = bucket
         self.prefix = prefix
-        self.s3_resource = None
         self.output_line_limit = output_line_limit
         self.name = 0
         self.my_batches = deque()
+        self.exe = None
+        self.executor_id = None
+        self.session = get_session()
 
     def serialize(self):
         pass
@@ -49,29 +55,51 @@ class OutputCSVExecutor(Executor):
     def serialize(self, s):
         pass
 
+    def create_csv_file(self, data):
+        da = BytesIO()
+        csv.write_csv(data.to_arrow(), da,  write_options = csv.WriteOptions(include_header=False))
+        return da
+
+    async def do(self, client, data, name):
+        da = await asyncio.get_running_loop().run_in_executor(self.exe, self.create_csv_file, data)
+        resp = await client.put_object(Bucket=self.bucket,Key=self.prefix + "-" + str(self.executor_id) + "-" + str(name) + ".csv",Body=da.getvalue())
+        print(resp)
+
+    async def go(self, datas):
+        # this is expansion of async with, so you don't have to remake the client
+        
+        async with self.session.create_client("s3", region_name="us-west-2") as client:
+            todos = []
+            for i in range(len(datas)):
+                todos.append(self.do(client,datas[i], self.name))
+                self.name += 1
+        
+            await asyncio.gather(*todos)
+        
     def execute(self,batches,stream_id, executor_id):
 
-        if self.s3_resource is None:
-            self.s3_resource = boto3.resource('s3')
+        if self.exe is None:
+            self.exe = concurrent.futures.ThreadPoolExecutor(max_workers = 1)
+        if self.executor_id is None:
+            self.executor_id = executor_id
+        else:
+            assert self.executor_id == executor_id
 
-        #self.num += 1
         self.my_batches.extend([i for i in batches if i is not None])
         
         curr_len = 0
         i = 0
+        datas = []
         while i < len(self.my_batches):
             curr_len += len(self.my_batches[i])
             print(curr_len)
             i += 1
             if curr_len > self.output_line_limit:
                 print("writing")
-                da = BytesIO()
-                csv.write_csv(polars.concat([self.my_batches.popleft() for k in range(i)]).to_arrow(), da, write_options = csv.WriteOptions(include_header=False))
-                self.s3_resource.Object(self.bucket,self.prefix + "-" + str(executor_id) + "-" + str(self.name) + ".csv").put(Body=da.getvalue())
-                self.name += 1
+                datas.append(polars.concat([self.my_batches.popleft() for k in range(i)]))
                 i = 0
                 curr_len = 0
-
+        asyncio.run(self.go(datas))
 
     def done(self,executor_id):
         if len(self.my_batches) > 0:
@@ -465,7 +493,6 @@ class MergeSortedExecutor(Executor):
         number_of_batches_in_sources = [pa.ipc.open_file(pa.memory_map(source,'rb')).num_record_batches for source in sources]
         next_batch_to_gets = [1 for i in sources]
         
-        
         process = psutil.Process(os.getpid())
         print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
 
@@ -574,8 +601,8 @@ class MergeSortedExecutor(Executor):
 # exe.produce_sorted_file_from_two_sorted_files("file3.arrow","file2.arrow","file.arrow")
 
 
-#exe = OutputCSVExecutor( "quokka-sorted-lineitem", "trash", output_line_limit = 100000)
-#for k in range(1000):
-#    item = polars.from_pandas(pd.DataFrame(np.random.normal(size=(25000,1000))))
-#    exe.execute([item], 0,0)
+# exe = OutputCSVExecutor( "yugan", "trash", output_line_limit = 1000)
+# for k in range(100):
+#    item = [polars.from_pandas(pd.DataFrame(np.random.normal(size=(200,100)))) for i in range(np.random.randint(0,10))]
+#    exe.execute(item, 0,0)
     
