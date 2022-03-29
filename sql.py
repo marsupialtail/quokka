@@ -436,10 +436,14 @@ class MergeSortedExecutor(Executor):
             
             start = time.time()
             new_batch = polars.concat([disk_portion1, disk_portion2]).sort(self.key)[:self.record_batch_rows]
-            sort_time += time.time() - start
-            disk_contrib2 = int(new_batch['asdasd'].sum())
-            disk_contrib1 = len(new_batch) - disk_contrib2
+
+            result_idx = polars.concat([disk_portion1.select([self.key, "asdasd"]), disk_portion2.select([self.key, "asdasd"])]).sort(self.key)[:self.record_batch_rows]
+            disk_contrib2 = int(result_idx["asdasd"].sum())
+            disk_contrib1 = len(result_idx) - disk_contrib2
+            
+            new_batch = polars.concat([disk_portion1[:disk_contrib1], disk_portion2[:disk_contrib2]]).sort(self.key)[:self.record_batch_rows]
             new_batch.drop_in_place('asdasd')
+            sort_time += time.time() - start
 
             #print(source.schema, new_batch.to_arrow().schema)
             start = time.time()
@@ -487,7 +491,6 @@ class MergeSortedExecutor(Executor):
         print("MY DISK STATE", self.filename_to_size.keys())
 
         import os, psutil   
-
         
         sources = [self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(k) + ".arrow" for k in self.filename_to_size]
         number_of_batches_in_sources = [pa.ipc.open_file(pa.memory_map(source,'rb')).num_record_batches for source in sources]
@@ -507,11 +510,8 @@ class MergeSortedExecutor(Executor):
                 disk_portions[j]["asdasd"] = np.ones(len(disk_portions[j])) * j
             
             result_idx = polars.concat([portion.select([self.key, "asdasd"]) for portion in disk_portions]).sort(self.key)[:self.record_batch_rows]
-            
             disk_contribs = [(result_idx["asdasd"] == j).sum() for j in range(len(sources))]
-
             result = polars.concat([disk_portions[j][:disk_contribs[j]] for j in range(len(sources))]).sort(self.key)
-            
             result.drop_in_place("asdasd")
 
             #result = result.take(compute.sort_indices(result, sort_keys = [(self.key, "ascending")]))
@@ -520,8 +520,6 @@ class MergeSortedExecutor(Executor):
             for j in range(len(cached_batches_in_mem)):
                 cached_batches_in_mem[j] = cached_batches_in_mem[j][disk_contribs[j]:]
                 
-                #cached_batches_in_mem[j] = cached_batches_in_mem[j][1000:]#.copy()
-
                 if len(cached_batches_in_mem[j]) < self.record_batch_rows and next_batch_to_gets[j] < number_of_batches_in_sources[j]:
                     source = pa.ipc.open_file(pa.memory_map(sources[j], 'rb'))
                     next_batch = polars.from_arrow(pa.Table.from_batches([source.get_batch(next_batch_to_gets[j])]))
