@@ -479,9 +479,11 @@ class MergeSortedExecutor(Executor):
             for j in range(len(disk_portions)):
                 disk_portions[j]["asdasd"] = np.ones(len(disk_portions[j])) * j
             
-            result = polars.concat(disk_portions).sort(self.key)[:self.record_batch_rows]
+            result_idx = polars.concat([portion.select([self.key, "asdasd"]) for portion in disk_portions]).sort(self.key)[:self.record_batch_rows]
             
-            disk_contribs = [(result["asdasd"] == j).sum() for j in range(len(sources))]
+            disk_contribs = [(result_idx["asdasd"] == j).sum() for j in range(len(sources))]
+
+            result = polars.concat([disk_portions[j][:disk_contribs[j]] for j in range(len(sources))]).sort(self.key)
             
             result.drop_in_place("asdasd")
 
@@ -497,7 +499,7 @@ class MergeSortedExecutor(Executor):
                     source = pa.ipc.open_file(pa.memory_map(sources[j], 'rb'))
                     next_batch = polars.from_arrow(pa.Table.from_batches([source.get_batch(next_batch_to_gets[j])]))
                     next_batch_to_gets[j] += 1
-                    cached_batches_in_mem[j] = cached_batches_in_mem[j].vstack(next_batch)
+                    cached_batches_in_mem[j].vstack(next_batch, in_place = True)
                     del next_batch
             
             print(gc.collect())
@@ -540,9 +542,14 @@ class MergeSortedExecutor(Executor):
             os.remove(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[1]) + ".arrow")
             
             
-
-
-
+#executor = MergeSortedExecutor("l_partkey", record_batch_rows = 250000, length_limit = 500000)
+#executor.filename_to_size = {i: 0 for i in range(95, 127, 2)}
+#executor.filename_to_size[126] = 0
+#da = executor.done(7)
+#start = time.time()
+#for bump in da:
+#    pass
+#print(time.time() - start)
 #stuff = []
 #exe = MergeSortedExecutor('0', length_limit=1000)
 #for k in range(100):
@@ -567,8 +574,8 @@ class MergeSortedExecutor(Executor):
 # exe.produce_sorted_file_from_two_sorted_files("file3.arrow","file2.arrow","file.arrow")
 
 
-exe = OutputCSVExecutor( "quokka-sorted-lineitem", "trash", output_line_limit = 100000)
-for k in range(1000):
-    item = polars.from_pandas(pd.DataFrame(np.random.normal(size=(25000,1000))))
-    exe.execute([item], 0,0)
+#exe = OutputCSVExecutor( "quokka-sorted-lineitem", "trash", output_line_limit = 100000)
+#for k in range(1000):
+#    item = polars.from_pandas(pd.DataFrame(np.random.normal(size=(25000,1000))))
+#    exe.execute([item], 0,0)
     
