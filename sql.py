@@ -38,6 +38,7 @@ class Executor:
 class UDFExecutor:
     def __init__(self, udf) -> None:
         self.udf = udf
+        self.num_states = 0
 
     def serialize(self):
         pass
@@ -45,8 +46,12 @@ class UDFExecutor:
     def serialize(self, s):
         pass
 
-    def execute(self,batch,stream_id, executor_id):
-        return self.udf(batch)
+    def execute(self,batches,stream_id, executor_id):
+        batches = [i for i in batches if i is not None]
+        if len(batches) > 0:
+            return self.udf(polars.concat(batches))
+        else:
+            return None
 
     def done(self,executor_id):
         return
