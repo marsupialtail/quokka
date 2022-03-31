@@ -7,12 +7,26 @@ import pandas as pd
 from quokka_runtime import TaskGraph
 from sql import UDFExecutor, AggExecutor
 import ray
+import redis
+r = redis.Redis(host="localhost", port=6800, db=0)
+r.flushall()
 
 def udf(x):
     da = compute.list_flatten(compute.ascii_split_whitespace(x.to_arrow()["text"]))
     c = da.value_counts().flatten()
     return pa.Table.from_arrays([c[0], c[1]], names=["word","count"]).to_pandas().set_index("word")
 
+def udf2(x):
+    da = compute.list_flatten(compute.ascii_split_whitespace(x["text"]))
+    c = da.value_counts().flatten()
+    return pa.Table.from_arrays([c[0], c[1]], names=["word","count"]).to_pandas().set_index("word")
+
+def partition_key1(data, source_channel, target_channel):
+
+    if source_channel // 16 == target_channel:
+        return data
+    else:
+        return None
 def partition_key2(data, source_channel, target_channel):
 
     if source_channel == target_channel:
@@ -21,11 +35,16 @@ def partition_key2(data, source_channel, target_channel):
         return None
 
 task_graph = TaskGraph()
-words = task_graph.new_input_multicsv("wordcount-input",None,["text"],{'localhost':8}, sep="|")
+#words = task_graph.new_input_csv("wordcount-input","1.txt",["text"],{'localhost':16}, sep="|", batch_func = udf2)
+#words = task_graph.new_input_multicsv("wordcount-input",None,["text"],{'localhost':8, '172.31.11.134':8,'172.31.15.208':8, '172.31.10.96':8}, sep="|", batch_func = udf2)
+words = task_graph.new_input_multicsv("wordcount-input",None,["text"],{'localhost':16, '172.31.11.134':16,'172.31.15.208':16, '172.31.10.96':16}, sep="|", batch_func = udf2)
+#words = task_graph.new_input_multicsv("debug-bucket-wordcount",None,["text"],{'localhost':1, '172.31.11.134':1}, sep="|", batch_func = udf2)
 udf_exe = UDFExecutor(udf)
-output = task_graph.new_non_blocking_node({0:words},None,udf_exe,{"localhost":8},{0:partition_key2})
+#output = task_graph.new_non_blocking_node({0:words},None,udf_exe,{'localhost':16, '172.31.11.134':16,'172.31.15.208':16, '172.31.10.96':16},{0:partition_key2})
 agg = AggExecutor(fill_value=0)
-result = task_graph.new_blocking_node({0:output}, None, agg, {"localhost":1}, {0:None})
+intermediate = task_graph.new_non_blocking_node({0:words}, None, agg, {'localhost':1, '172.31.11.134':1,'172.31.15.208':1, '172.31.10.96':1}, {0:partition_key1})
+result = task_graph.new_blocking_node({0:intermediate}, None, agg, {"localhost":1}, {0:None})
+task_graph.create()
 start = time.time()
 task_graph.run_with_fault_tolerance()
 print(time.time() - start)

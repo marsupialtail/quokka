@@ -49,7 +49,7 @@ class UDFExecutor:
     def execute(self,batches,stream_id, executor_id):
         batches = [i for i in batches if i is not None]
         if len(batches) > 0:
-            return self.udf(polars.concat(batches))
+            return self.udf(polars.concat(batches, rechunk=False))
         else:
             return None
 
@@ -340,6 +340,7 @@ class AggExecutor(Executor):
     
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
+        batches = [i for i in batches if i is not None]
         for batch in batches:
             assert type(batch) == pd.core.frame.DataFrame # polars add has no index, will have wierd behavior
             if self.state is None:
@@ -348,7 +349,6 @@ class AggExecutor(Executor):
                 self.state = self.state.add(batch, fill_value = self.fill_value)
     
     def done(self,executor_id):
-        print(self.state)
         if self.final_func:
             return self.final_func(self.state)
         else:

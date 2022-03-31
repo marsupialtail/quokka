@@ -16,8 +16,8 @@ import pyarrow as pa
 import types
 # isolated simplified test bench for different fault tolerance protocols
 
-FT_I =False# True
-FT = False #True
+FT_I = True
+FT =True
 
 # above this limit we are going to start flushing things to disk
 INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
@@ -172,6 +172,7 @@ class Node:
                             payload = data[data[partition_key] % len(original_channel_to_ip) == channel]
                         elif callable(partition_key):
                             payload = partition_key(data, self.channel, channel)
+                            # you have to send the None, because otherwise the sequence number could be messed up.
                         else:
                             raise Exception("Can't understand partition strategy")
                     else:
@@ -556,6 +557,7 @@ class TaskNode(Node):
 
     def get_batches(self, mailbox, mailbox_id):
         while True:
+            #print("dead spinning here", len(mailbox), len(mailbox_id))
             message = self.p.get_message()
             if message is None:
                 break
@@ -567,6 +569,7 @@ class TaskNode(Node):
         
         batches_returned = 0
         while len(mailbox) > 0 and len(mailbox_id) > 0:
+            #print("dead spinning here 1", len(mailbox), len(mailbox_id))
             first = mailbox.popleft()
             stream_id, channel,  tag = mailbox_id.popleft()
 
@@ -594,15 +597,17 @@ class TaskNode(Node):
             else:
                 # check current size of the buffered inputs deque. This is rather primitive
 
-                curr_mem = self.get_buffered_inputs_mem_usage()
-                if curr_mem > INPUT_MAILBOX_SIZE_LIMIT:
+                #curr_mem = self.get_buffered_inputs_mem_usage()
+                if False: #curr_mem > INPUT_MAILBOX_SIZE_LIMIT:
                     f = open("/data/input-mailbox-" + str(self.id) + "-" + str(self.channel) + "-" + str(self.disk_fileno) + ".pkl","wb")
                     f.write(first)
                     f.flush()
                     self.buffered_inputs[(stream_id,channel)].append(FlushedMessage("/data/input-mailbox-" + str(self.id) + "-" + str(self.channel) + "-" + str(self.disk_fileno) + ".pkl"))
                     self.disk_fileno += 1
                 else:
+                    print("start", self.id, self.channel, time.time())
                     self.buffered_inputs[(stream_id,channel)].append(pickle.loads(first))
+                    print("end", self.id, self.channel, time.time())
             
         return batches_returned
     
@@ -773,9 +778,10 @@ class BlockingTaskNode(TaskNode):
 
             # append messages to the mailbox
             batches_returned = self.get_batches(mailbox, mailbox_meta)
+            #print(batches_returned)
             # deque messages from the mailbox in a way that makes sense
             stream_id, batches = self.schedule_for_execution()
-
+            #print(stream_id)
             if stream_id is None:
                 continue
 

@@ -223,13 +223,23 @@ class InputMultiCSVDataset:
         self.sep = sep
         self.stride = stride
 
-        z = self.s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
-        self.files = [i['Key'] for i in z['Contents']]
-        while 'NextContinuationToken' in z.keys():
-            z = self.s3.list_objects_v2(
-                Bucket=bucket, Prefix=prefix, ContinuationToken=z['NextContinuationToken'])
-            self.files.extend([i['Key'] for i in z['Contents']])
-
+        if prefix is not None:
+            z = self.s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+            self.files = [i['Key'] for i in z['Contents']]
+            while 'NextContinuationToken' in z.keys():
+                z = self.s3.list_objects_v2(
+                    Bucket=bucket, Prefix=prefix, ContinuationToken=z['NextContinuationToken'])
+                self.files.extend([i['Key'] for i in z['Contents']])
+        else:
+            z = self.s3.list_objects_v2(Bucket=bucket)
+            self.files = [i['Key'] for i in z['Contents']]
+            while 'NextContinuationToken' in z.keys():
+                z = self.s3.list_objects_v2(
+                    Bucket=bucket, ContinuationToken=z['NextContinuationToken'])
+                self.files.extend([i['Key'] for i in z['Contents']])
+        
+        self.files = sorted(self.files)
+        print(len(self.files))
     def set_num_mappers(self, num_mappers):
         self.num_mappers = num_mappers
 
@@ -246,7 +256,7 @@ class InputMultiCSVDataset:
             
             response = self.s3.head_object(
                 Bucket=self.bucket,
-                Key=self.key
+                Key=self.files[curr_pos]
             )
             length = response['ContentLength']
             pos = 0
@@ -254,7 +264,7 @@ class InputMultiCSVDataset:
 
             while pos < end-1:
 
-                resp = self.s3.get_object(Bucket=self.bucket, Key=self.key, Range='bytes={}-{}'.format(
+                resp = self.s3.get_object(Bucket=self.bucket, Key=self.files[curr_pos], Range='bytes={}-{}'.format(
                     pos, min(pos+self.stride, end)))['Body'].read()
                 last_newline = resp.rfind(bytes('\n', 'utf-8'))
 
