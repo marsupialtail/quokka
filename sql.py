@@ -35,6 +35,22 @@ class Executor:
     def done(self,executor_id):
         raise NotImplementedError    
 
+class UDFExecutor:
+    def __init__(self, udf) -> None:
+        self.udf = udf
+
+    def serialize(self):
+        pass
+    
+    def serialize(self, s):
+        pass
+
+    def execute(self,batch,stream_id, executor_id):
+        return self.udf(batch)
+
+    def done(self,executor_id):
+        return
+
 class OutputCSVExecutor(Executor):
     def __init__(self, bucket, prefix, output_line_limit = 1000000) -> None:
         self.num = 0
