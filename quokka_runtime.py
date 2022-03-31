@@ -197,6 +197,27 @@ class TaskGraph:
         self.node_args[self.current_node] = {"bucket":bucket, "key":key, "names":names, "batch_func":batch_func, "sep" : sep, "dependent_map" : dependent_map, "stride":stride}
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
     
+    def new_input_multicsv(self, bucket, key, names, ip_to_num_channel, batch_func=None, sep = ",", dependents = [], stride= 64 * 1024 * 1024):
+        
+        dependent_map = self.return_dependent_map(dependents)
+        channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
+
+        tasknode = {}
+        for channel in channel_to_ip:
+            ip = channel_to_ip[channel]
+            if ip != 'localhost':
+                tasknode[channel] = InputS3MultiCSVNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + ip : 0.001}
+                ).remote(self.current_node, channel, bucket,key,names, len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)),batch_func = batch_func,sep = sep, 
+                stride= stride, dependent_map = dependent_map, )
+            else:
+                tasknode[channel] = InputS3MultiCSVNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
+                ).remote(self.current_node, channel, bucket,key,names, len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)), batch_func = batch_func, sep = sep,
+                stride = stride, dependent_map = dependent_map, ) 
+        
+        self.node_type[self.current_node] = INPUT_CSV_DATASET
+        self.node_args[self.current_node] = {"bucket":bucket, "key":key, "names":names, "batch_func":batch_func, "sep" : sep, "dependent_map" : dependent_map, "stride":stride}
+        return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
+    
 
     def new_input_multiparquet(self, bucket, key,  ip_to_num_channel, batch_func=None, columns = None, filters = None, dependents = []):
         

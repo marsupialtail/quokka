@@ -21,7 +21,7 @@ def partition_key2(data, source_channel, target_channel):
         return None
 
 task_graph = TaskGraph()
-words = task_graph.new_input_csv("wordcount-input","1.txt",["text"],{'localhost':8}, sep="|")
+words = task_graph.new_input_multicsv("wordcount-input",None,["text"],{'localhost':8}, sep="|")
 udf_exe = UDFExecutor(udf)
 output = task_graph.new_non_blocking_node({0:words},None,udf_exe,{"localhost":8},{0:partition_key2})
 agg = AggExecutor(fill_value=0)

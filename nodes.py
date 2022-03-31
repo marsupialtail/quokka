@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import ray
 from collections import deque, OrderedDict
-from dataset import InputCSVDataset, InputMultiParquetDataset, InputSingleParquetDataset, RedisObjectsDataset
+from dataset import InputCSVDataset, InputMultiParquetDataset, InputSingleParquetDataset, RedisObjectsDataset, InputMultiCSVDataset
 import pickle
 import os
 import redis
@@ -357,6 +357,15 @@ class InputS3CSVNode(InputNode):
         self.accessor = InputCSVDataset(bucket, key, names, 0, sep=sep, stride = stride)
         self.accessor.set_num_mappers(num_channels)
         self.input_generator = self.accessor.get_next_batch(channel, self.state)    
+
+@ray.remote
+class InputS3MultiCSVNode(InputNode):
+    def __init__(self, id, channel, bucket, key, names, num_channels,checkpoint_location, batch_func = None, sep = ",", stride = 64 * 1024 * 1024, dependent_map = {}, ckpt = None) -> None:
+
+        super().__init__(id, channel, checkpoint_location, batch_func = batch_func, dependent_map = dependent_map, ckpt = ckpt)
+        self.accessor = InputMultiCSVDataset(bucket, key, names, 0, sep=sep, stride = stride)
+        self.accessor.set_num_mappers(num_channels)
+        self.input_generator = self.accessor.get_next_batch(channel, self.state)  
 
 @ray.remote
 class InputS3MultiParquetNode(InputNode):
