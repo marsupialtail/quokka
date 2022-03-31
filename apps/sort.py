@@ -51,7 +51,7 @@ elif sys.argv[2] == "parquet":
     else:
        lineitem = task_graph.new_input_multiparquet("tpc-h-parquet","lineitem.parquet", {'localhost':4,'172.31.11.134':4},columns=['l_shipdate','l_commitdate','l_shipmode','l_receiptdate','l_orderkey'], filters= [('l_shipmode', 'in', ['SHIP','MAIL']),('l_receiptdate','<',compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")), ('l_receiptdate','>=',compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s"))], batch_func=lineitem_filter_parquet)
 
-executor = MergeSortedExecutor("l_partkey", record_batch_rows = 250000, length_limit = 500000)
+executor = MergeSortedExecutor("l_partkey", record_batch_rows = 250000, length_limit = 1000000)
 stream = task_graph.new_non_blocking_node({0:lineitem}, None, executor, {'localhost':4, '172.31.11.134':4}, {0: partition_key})
 outputer = OutputCSVExecutor("quokka-sorted-lineitem","lineitem")
 output = task_graph.new_blocking_node({0:stream}, None,outputer, {'localhost':4, '172.31.11.134':4}, {0: partition_key2} )
