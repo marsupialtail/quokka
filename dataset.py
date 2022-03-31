@@ -178,7 +178,6 @@ class InputCSVDataset:
         while pos < end-1:
 
             resp = self.s3.get_object(Bucket=self.bucket,Key=self.key, Range='bytes={}-{}'.format(pos,min(pos+self.stride,end)))['Body'].read()
-
             last_newline = resp.rfind(bytes('\n','utf-8'))
 
             #import pdb;pdb.set_trace()
@@ -192,55 +191,4 @@ class InputCSVDataset:
                 #bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
                 bump = csv.read_csv(BytesIO(resp),read_options = csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)) 
                 #print("done convert,",time.time())
-                yield pos, bump
-
-
-class OutputCSVDataset:
-
-    def __init__(self, bucket, key, id) -> None:
-
-        self.s3 = boto3.client('s3') # needs boto3 client
-        self.bucket = bucket
-        self.key = key
-        self.id = id
-        self.num_reducers = None
-
-        self.multipart_upload = self.s3.create_multipart_upload(
-            Bucket=bucket,
-            Key=key,
-        )
-
-        self.parts = []
-
-    def set_num_reducer(self, num_reducer):
-        self.num_reducers = num_reducer
-        chunks = 10000 // num_reducer
-        self.reducer_current_part = [(i * chunks + 1) for i in range(num_reducer)]
-        self.reducer_partno_limit = self.reducer_current_part[1:] + [10000]
-
-    def upload_chunk(self, df, reducer_id):
-        if self.num_reducers is None:
-            raise Exception("I need to know the number of reducers")
-
-        current_part = self.reducer_current_part[reducer_id]
-        if current_part == self.reducer_partno_limit[reducer_id] - 1:
-            raise Exception("ran out of part numbers")
-        
-        csv_buffer = StringIO()
-        df.to_csv(csv_buffer, header = (True if current_part == 1 else False))
-        
-        uploadPart = self.s3.upload_part(
-            Bucket = self.bucket, 
-            Key = self.key, 
-            UploadId = self.multipart_upload['UploadId'],
-            PartNumber = current_part,
-            Body = csv_buffer.getvalue()
-        )
-
-        self.reducer_current_part[reducer_id] += 1
-        
-        self.parts.append({
-            'PartNumber': current_part,
-            'ETag': uploadPart['ETag']
-        })
-        
+                yield pos, bump       
