@@ -17,8 +17,8 @@ import types
 import pyarrow.plasma as plasma
 # isolated simplified test bench for different fault tolerance protocols
 
-FT_I = True
-FT =True
+FT_I = False #True
+FT = False # True
 
 # above this limit we are going to start flushing things to disk
 INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
@@ -203,8 +203,10 @@ class Node:
                             stream_writer.write_batch(batch)
                         data_size = mock_sink.size()
                         object_id = plasma.ObjectID.from_random()
-                        buf = self.plasma_client.create(object_id, data_size)
-
+                        try:
+                            buf = self.plasma_client.create(object_id, data_size)
+                        except PlasmaStoreFull:
+                            raise Exception
                         stream = pa.FixedSizeBufferWriter(buf)
                         with pa.RecordBatchStreamWriter(stream, batch.schema) as stream_writer:
                             stream_writer.write_batch(batch)
@@ -696,7 +698,7 @@ class TaskNode(Node):
                         batches.append(polars.from_arrow(pa.Table.from_batches([batch])))
                     else:
                         raise Exception
-                    self.plasma_client.delete(object_id)
+                    self.plasma_client.delete([object_id])
                 else:
                     batches.append(message)
             self.state_tag[(parent,channel)] += length
