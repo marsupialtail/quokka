@@ -14,7 +14,7 @@ import sys
 import polars
 import pyarrow as pa
 import types
-from multiprocessing import shared_memory
+import pyarrow.plasma as plasma
 # isolated simplified test bench for different fault tolerance protocols
 
 FT_I = True
@@ -46,6 +46,7 @@ class Node:
         self.targets = {}
         self.r = redis.Redis(host='localhost', port=6800, db=0)
         self.head_r = redis.Redis(host=ray.worker._global_node.address.split(":")[0], port=6800, db=0)
+        self.plasma_client = plasma.connect("/tmp/plasma")
 
         self.target_rs = {}
         self.target_ps = {}
@@ -201,12 +202,15 @@ class Node:
                         with pa.RecordBatchStreamWriter(mock_sink, batch.schema) as stream_writer:
                             stream_writer.write_batch(batch)
                         data_size = mock_sink.size()
-                        shm_a = shared_memory.SharedMemory(create=True, size=data_size)
-                        buf = pa.py_buffer(shm_a.buf)
+                        object_id = plasma.ObjectID.from_random()
+                        buf = self.plasma_client.create(object_id, data_size)
+
                         stream = pa.FixedSizeBufferWriter(buf)
                         with pa.RecordBatchStreamWriter(stream, batch.schema) as stream_writer:
                             stream_writer.write_batch(batch)
-                        payload = SharedMemMessage(my_format, shm_a.name)
+                        
+                        self.plasma_client.seal(object_id)
+                        payload = SharedMemMessage(my_format, object_id)
 
                     pipeline = self.target_rs[target][channel].pipeline()
                     pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
@@ -681,8 +685,9 @@ class TaskNode(Node):
                     os.remove(message.loc)
                 elif type(message) == SharedMemMessage:
                     message_format = message.format
-                    shm_b = shared_memory.SharedMemory(message.name)
-                    buffer = pa.BufferReader(shm_b.buf)
+                    object_id = message.name
+                    [data] = self.plasma_client.get_buffers([object_id])
+                    buffer = pa.BufferReader(data)
                     reader = pa.RecordBatchStreamReader(buffer)
                     batch = reader.read_next_batch()
                     if message_format == "pandas":
@@ -691,8 +696,7 @@ class TaskNode(Node):
                         batches.append(polars.from_arrow(pa.Table.from_batches([batch])))
                     else:
                         raise Exception
-                    shm_b.unlink()
-                    shm_b.close()
+                    self.plasma_client.delete(object_id)
                 else:
                     batches.append(message)
             self.state_tag[(parent,channel)] += length
