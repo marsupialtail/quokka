@@ -14,6 +14,7 @@ import sys
 import polars
 import pyarrow as pa
 import types
+from multiprocessing import shared_memory
 # isolated simplified test bench for different fault tolerance protocols
 
 FT_I = True
@@ -27,10 +28,17 @@ class FlushedMessage:
     def __init__(self, loc) -> None:
         self.loc = loc
 
+class SharedMemMessage:
+    def __init__(self, format, name):
+        self.format = format
+        self.name = name
+
 class Node:
 
     # will be overridden
     def __init__(self, id, channel, checkpoint_location) -> None:
+
+        self.ip = ray.util.get_node_ip_address() 
         self.id = id
         self.channel = channel
         self.checkpoint_location = checkpoint_location
@@ -52,7 +60,7 @@ class Node:
         node_id, channel_to_ip, partition_key = tup
 
         unique_ips = set(channel_to_ip.values())
-        redis_clients = {i: redis.Redis(host=i, port=6800, db=0) if i != ray.util.get_node_ip_address() else redis.Redis(host='localhost', port = 6800, db=0) for i in unique_ips}
+        redis_clients = {i: redis.Redis(host=i, port=6800, db=0) if i != self.ip else redis.Redis(host='localhost', port = 6800, db=0) for i in unique_ips}
         self.targets[node_id] = (channel_to_ip, partition_key)
         self.target_rs[node_id] = {}
         self.target_ps[node_id] = {}
@@ -178,6 +186,28 @@ class Node:
                     else:
                         payload = data
                     # don't worry about target being full for now.
+
+
+                    # if the target is on the same machine we are just going to use shared memory, and change the payload to the shared memory name!!
+
+                    if original_channel_to_ip[channel] == self.ip:
+                        if type(data) == pd.core.frame.DataFrame:
+                            batch = pa.RecordBatch.from_pandas(data)
+                            my_format = "pandas"
+                        else:
+                            batch = data.to_arrow().to_batches()[0]
+                            my_format = "polars"
+                        mock_sink = pa.MockOutputStream()
+                        with pa.RecordBatchStreamWriter(mock_sink, batch.schema) as stream_writer:
+                            stream_writer.write_batch(batch)
+                        data_size = mock_sink.size()
+                        shm_a = shared_memory.SharedMemory(create=True, size=data_size)
+                        buf = pa.py_buffer(shm_a.buf)
+                        stream = pa.FixedSizeBufferWriter(buf)
+                        with pa.RecordBatchStreamWriter(stream, batch.schema) as stream_writer:
+                            stream_writer.write_batch(batch)
+                        payload = SharedMemMessage(my_format, shm_a.name)
+
                     pipeline = self.target_rs[target][channel].pipeline()
                     pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
 
@@ -649,6 +679,20 @@ class TaskNode(Node):
                 if type(message) == FlushedMessage:
                     batches.append(pickle.load(open(message.loc, "rb")))
                     os.remove(message.loc)
+                elif type(message) == SharedMemMessage:
+                    message_format = message.format
+                    shm_b = shared_memory.SharedMemory(message.name)
+                    buffer = pa.BufferReader(shm_b.buf)
+                    reader = pa.RecordBatchStreamReader(buffer)
+                    batch = reader.read_next_batch()
+                    if message_format == "pandas":
+                        batches.append(batch.to_pandas())
+                    elif message_format == "polars":
+                        batches.append(polars.from_arrow(pa.Table.from_batches([batch])))
+                    else:
+                        raise Exception
+                    shm_b.unlink()
+                    shm_b.close()
                 else:
                     batches.append(message)
             self.state_tag[(parent,channel)] += length
@@ -683,6 +727,20 @@ class TaskNode(Node):
                     if type(message) == FlushedMessage:
                         batches.append(pickle.load(open(message.loc, "rb")))
                         os.remove(message.loc)
+                    elif type(message) == SharedMemMessage:
+                        message_format = message.format
+                        shm_b = shared_memory.SharedMemory(message.name)
+                        buffer = pa.BufferReader(shm_b.buf)
+                        reader = pa.RecordBatchStreamReader(buffer)
+                        batch = reader.read_next_batch()
+                        if message_format == "pandas":
+                            batches.append(batch.to_pandas())
+                        elif message_format == "polars":
+                            batches.append(polars.from_arrow(pa.Table.from_batches([batch])))
+                        else:
+                            raise Exception
+                        shm_b.unlink()
+                        shm_b.close()
                     else:
                         batches.append(message)
             self.state_tag = expected
