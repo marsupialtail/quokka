@@ -7,6 +7,8 @@ import boto3
 import s3fs
 import time
 import redis
+import h5py
+
 
 # this is used to convert an RDD into streams
 # gonna do some intelligent stuff by maximizing data locality
@@ -63,6 +65,36 @@ class InputSingleParquetDataset:
             yield curr_row_group, a
 
 # use this if you have a lot of small parquet files
+
+# I love this
+# currently only support chunking in one dimension. two-D chunking actually requires different algos
+class InputHDF5Dataset:
+
+    def __init__(self, bucket, filename, key, columns=None) -> None:
+        s3 = s3fs.S3FileSystem()
+        self.h5file = h5py.File(s3.open("s3://" + bucket + "/" + filename, "rb"))
+        self.dataset = self.h5file[key]
+        self.chunk_size = self.dataset.chunks
+        self.dataset_shape = self.dataset.shape
+
+        assert self.chunk_size[1] == self.dataset_shape[1]
+        self.num_chunks = (self.dataset_shape[0]-1) // self.chunk_size[0] + 1
+
+        self.num_mappers = None
+        
+    def set_num_mappers(self, num_mappers):
+        self.num_mappers = num_mappers
+
+    def get_next_batch(self, mapper_id, pos=None):
+        assert self.num_mappers is not None
+        if pos is None:
+            curr_chunk = mapper_id
+        else:
+            curr_chunk = pos
+        while curr_chunk < self.num_chunks:
+            chunk_start = curr_chunk * self.chunk_size[0]            
+            result = self.dataset[chunk_start:chunk_start + self.chunk_size[0]]
+            yield curr_chunk, result
 
 
 class InputMultiParquetDataset:
