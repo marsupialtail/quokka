@@ -66,6 +66,7 @@ class InputSingleParquetDataset:
         while curr_row_group < len(self.num_row_groups):
             a = self.parquet_file.read_row_group(
                 curr_row_group, columns=self.columns)
+            curr_row_group += self.num_mappers
             yield curr_row_group, a
 
 # use this if you have a lot of small parquet files
@@ -102,6 +103,7 @@ class InputHDF5Dataset:
         while curr_chunk < self.num_chunks:
             chunk_start = curr_chunk * self.chunk_size[0]            
             result = self.dataset[chunk_start:chunk_start + self.chunk_size[0]]
+            curr_chunk += self.num_mappers
             yield curr_chunk, result
 
 
@@ -152,13 +154,12 @@ class InputMultiParquetDataset:
 
 class InputCSVDataset:
 
-    def __init__(self, bucket, key, names, id, sep=",", stride=64 * 1024 * 1024) -> None:
+    def __init__(self, bucket, key, names, sep=",", stride=64 * 1024 * 1024) -> None:
        
         self.bucket = bucket
         self.key = key
         self.num_mappers = None
         self.names = names
-        self.id = id
         self.sep = sep
         self.stride = stride
 
@@ -255,12 +256,11 @@ class InputCSVDataset:
 
 
 class InputMultiCSVDataset:
-    def __init__(self, bucket, prefix, names, id, sep=",", stride=64 * 1024 * 1024) -> None:
+    def __init__(self, bucket, prefix, names, sep=",", stride=64 * 1024 * 1024) -> None:
         self.bucket = bucket
         self.prefix = prefix
         self.num_mappers = None
         self.names = names
-        self.id = id
         self.sep = sep
         self.stride = stride
         
