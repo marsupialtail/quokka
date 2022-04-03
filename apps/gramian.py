@@ -3,29 +3,47 @@ sys.path.append("/home/ubuntu/quokka/")
 import datetime
 import time
 from quokka_runtime import TaskGraph
-from sql import MergeSortedExecutor, OutputCSVExecutor
+from dataset import InputHDF5Dataset
 import pandas as pd
 import ray
 import os
-import polars
-import pyarrow as pa
-import pyarrow.compute as compute
+import numpy as np
 import redis
 r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
 
+class GramianExecutor:
+    def __init__(self) -> None:
+        self.state = None
+    def initialize(datasets):
+        pass
+    def serialize(self):
+        pass
+    def serialize(self, s):
+        pass
+
+    def execute(self,batches,stream_id, executor_id):
+        
+        batch = np.concat(batches)
+
+        if self.state is None:
+            self.state = np.dot(np.transpose(batch), batch)
+        else:
+            self.state += np.dot(np.transpose(batch), batch)
+
+    def done(self,executor_id):
+        print("done")
+        return self.state 
+
+reader = InputHDF5Dataset("yugan","bigmatrix2.hdf5","data")
+
 task_graph = TaskGraph()
 
-lineitem_filter = lambda x: polars.from_arrow(x).sort('l_partkey')
+matrix = task_graph.new_input_reader_node(reader, {'localhost':4})
 
+gramian = GramianExecutor()
 
-
-
-
-executor = MergeSortedExecutor("l_partkey", record_batch_rows = 250000, length_limit = 1000000)
-stream = task_graph.new_non_blocking_node({0:lineitem}, None, executor, {'localhost':4, '172.31.11.134':4}, {0: partition_key})
-outputer = OutputCSVExecutor("quokka-sorted-lineitem","lineitem")
-output = task_graph.new_blocking_node({0:stream}, None,outputer, {'localhost':4, '172.31.11.134':4}, {0: partition_key2} )
+output = task_graph.new_blocking_node({0:matrix}, None, gramian, {'localhost':1}, {0:None})
 
 task_graph.create()
 start = time.time()
