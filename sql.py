@@ -28,9 +28,13 @@ class Executor:
         raise NotImplementedError
     def initialize(datasets):
         pass
+    def serialize(self):
+        pass
+    def serialize(self, s):
+        pass
     def set_early_termination(self):
         self.early_termination = True
-    def execute(self,batch,stream_id, executor_id):
+    def execute(self,batches,stream_id, executor_id):
         raise NotImplementedError
     def done(self,executor_id):
         raise NotImplementedError    

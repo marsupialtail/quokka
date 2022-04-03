@@ -426,7 +426,7 @@ class TaskGraph:
                             for channel in affected_channels:
                                 self.nodes[node][channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" +new_channel_to_ip[channel] : 0.001}
                                     ).remote(node, channel, reader, len(new_channel_to_ip), (self.checkpoint_bucket, str(node) + "-" + str(channel)),
-                                    batch_func = batch_func,sdependent_map = dependent_map, checkpoint_interval = ckpt_interval, ckpt = "s3")
+                                    batch_func = batch_func,dependent_map = dependent_map, checkpoint_interval = ckpt_interval, ckpt = "s3")
 
                         else:
                             raise Exception("what is this node? Can't do that yet")

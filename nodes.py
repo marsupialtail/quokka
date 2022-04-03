@@ -46,7 +46,7 @@ class Node:
         self.targets = {}
         self.r = redis.Redis(host='localhost', port=6800, db=0)
         self.head_r = redis.Redis(host=ray.worker._global_node.address.split(":")[0], port=6800, db=0)
-        self.plasma_client = plasma.connect("/tmp/plasma")
+        #self.plasma_client = plasma.connect("/tmp/plasma")
 
         self.target_rs = {}
         self.target_ps = {}
