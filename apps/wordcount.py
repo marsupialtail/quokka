@@ -5,6 +5,8 @@ import pyarrow.compute as compute
 import pyarrow as pa
 import pandas as pd
 from quokka_runtime import TaskGraph
+from dataset import InputMultiCSVDataset
+
 from sql import UDFExecutor, AggExecutor
 import ray
 import redis
@@ -35,10 +37,11 @@ def partition_key2(data, source_channel, target_channel):
         return None
 
 task_graph = TaskGraph()
-#words = task_graph.new_input_csv("wordcount-input","1.txt",["text"],{'localhost':16}, sep="|", batch_func = udf2)
-#words = task_graph.new_input_multicsv("wordcount-input",None,["text"],{'localhost':8, '172.31.11.134':8,'172.31.15.208':8, '172.31.10.96':8}, sep="|", batch_func = udf2)
-words = task_graph.new_input_multicsv("wordcount-input",None,["text"],{'localhost':16, '172.31.11.134':16,'172.31.15.208':16, '172.31.10.96':16}, sep="|", batch_func = udf2)
-#words = task_graph.new_input_multicsv("debug-bucket-wordcount",None,["text"],{'localhost':1, '172.31.11.134':1}, sep="|", batch_func = udf2)
+
+reader = InputMultiCSVDataset("wordcount-input", None, ["text"],  sep="|")
+
+words = task_graph.new_input_reader_node(reader, {'localhost':16, '172.31.11.134':16,'172.31.15.208':16, '172.31.10.96':16}, batch_func = udf2)
+
 udf_exe = UDFExecutor(udf)
 #output = task_graph.new_non_blocking_node({0:words},None,udf_exe,{'localhost':16, '172.31.11.134':16,'172.31.15.208':16, '172.31.10.96':16},{0:partition_key2})
 agg = AggExecutor(fill_value=0)
