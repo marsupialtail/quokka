@@ -191,7 +191,7 @@ class Node:
 
                     # if the target is on the same machine we are just going to use shared memory, and change the payload to the shared memory name!!
 
-                    if original_channel_to_ip[channel] == self.ip:
+                    if False: #original_channel_to_ip[channel] == self.ip:
                         if type(data) == pd.core.frame.DataFrame:
                             batch = pa.RecordBatch.from_pandas(data)
                             my_format = "pandas"
