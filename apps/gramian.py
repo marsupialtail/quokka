@@ -25,7 +25,7 @@ class GramianExecutor:
 
     def execute(self,batches,stream_id, executor_id):
         
-        batch = np.concat(batches)
+        batch = np.vstack(batches)
 
         if self.state is None:
             self.state = np.dot(np.transpose(batch), batch)

@@ -228,10 +228,10 @@ class Node:
             # the data that you gave is a custom thing. so the partition function must be a callable
             for target in self.alive_targets:
                 original_channel_to_ip, partition_key = self.targets[target]
-                assert callable(partition_key)
+                assert callable(partition_key) or partition_key is None
                 for channel in self.alive_targets[target]:
                     print("PUSHING FROM",str(self.id),str(self.channel)," TO ",str(target),str(channel), " MY TAG ", self.out_seq)
-                    payload = partition_key(data, self.channel, channel)
+                    payload = partition_key(data, self.channel, channel) if partition_key is not None else data
                     # don't worry about target being full for now.
                     pipeline = self.target_rs[target][channel].pipeline()
                     pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
