@@ -187,7 +187,7 @@ class TaskGraph:
             if ip != 'localhost':
                 tasknode[channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + ip : 0.001}
                 ).remote(self.current_node, channel, reader, len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)),
-                batch_func = batch_func,sdependent_map = dependent_map, checkpoint_interval = ckpt_interval)
+                batch_func = batch_func,dependent_map = dependent_map, checkpoint_interval = ckpt_interval)
             else:
                 tasknode[channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
                 ).remote(self.current_node, channel, reader, len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)), 

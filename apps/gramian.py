@@ -15,6 +15,7 @@ r.flushall()
 class GramianExecutor:
     def __init__(self) -> None:
         self.state = None
+        self.num_states = 1
     def initialize(datasets):
         pass
     def serialize(self):
