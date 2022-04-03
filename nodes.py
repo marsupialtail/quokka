@@ -383,32 +383,12 @@ class InputNode(Node):
         print("INPUT DONE", self.id, self.channel)
         self.done()
         self.r.publish("input-done-" + str(self.id), "done")
-    
-@ray.remote
-class InputS3CSVNode(InputNode):
-    def __init__(self, id, channel, bucket, key, names, num_channels,checkpoint_location, batch_func = None, sep = ",", stride = 64 * 1024 * 1024, dependent_map = {}, ckpt = None) -> None:
-
-        super().__init__(id, channel, checkpoint_location, batch_func = batch_func, dependent_map = dependent_map, ckpt = ckpt)
-        self.accessor = InputCSVDataset(bucket, key, names, 0, sep=sep, stride = stride)
-        self.accessor.set_num_mappers(num_channels)
-        self.input_generator = self.accessor.get_next_batch(channel, self.state)    
 
 @ray.remote
-class InputS3MultiCSVNode(InputNode):
-    def __init__(self, id, channel, bucket, key, names, num_channels,checkpoint_location, batch_func = None, sep = ",", stride = 64 * 1024 * 1024, dependent_map = {}, ckpt = None) -> None:
-
-        super().__init__(id, channel, checkpoint_location, batch_func = batch_func, dependent_map = dependent_map, ckpt = ckpt)
-        self.accessor = InputMultiCSVDataset(bucket, key, names, 0, sep=sep, stride = stride)
-        self.accessor.set_num_mappers(num_channels)
-        self.input_generator = self.accessor.get_next_batch(channel, self.state)  
-
-@ray.remote
-class InputS3MultiParquetNode(InputNode):
-
-    def __init__(self, id, channel, bucket, key, num_channels, checkpoint_location,columns = None,filters = None, batch_func=None, dependent_map={}, ckpt = None):
-        
-        super().__init__(id, channel, checkpoint_location, batch_func = batch_func, dependent_map = dependent_map, ckpt = ckpt)
-        self.accessor = InputMultiParquetDataset(bucket, key, filters = filters, columns = columns)
+class InputReaderNode(InputNode):
+    def __init__(self, id, channel, accessor, num_channels, checkpoint_location, batch_func=None, dependent_map={}, checkpoint_interval=10, ckpt=None) -> None:
+        super().__init__(id, channel, checkpoint_location, batch_func, dependent_map, checkpoint_interval, ckpt)
+        self.accessor = accessor
         self.accessor.set_num_mappers(num_channels)
         self.input_generator = self.accessor.get_next_batch(channel, self.state)
 

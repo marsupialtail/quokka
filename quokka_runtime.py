@@ -19,6 +19,7 @@ BLOCKING_NODE = 2
 INPUT_REDIS_DATASET = 3
 INPUT_MULTIPARQUET_DATASET = 4
 INPUT_CSV_DATASET = 5
+INPUT_READER_DATASET = 6
 
 @ray.remote
 class Dataset:
@@ -176,69 +177,26 @@ class TaskGraph:
         self.node_args[self.current_node] = {"channel_objects":channel_objects, "batch_func": batch_func, "dependent_map":dependent_map}
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
-    def new_input_csv(self, bucket, key, names, ip_to_num_channel, batch_func=None, sep = ",", dependents = [], stride= 64 * 1024 * 1024):
-        
+    def new_input_reader_node(self, reader, ip_to_num_channel, batch_func = None, dependents = [], ckpt_interval = 10):
+
         dependent_map = self.return_dependent_map(dependents)
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
-
         tasknode = {}
         for channel in channel_to_ip:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
-                tasknode[channel] = InputS3CSVNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, channel, bucket,key,names, len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)),batch_func = batch_func,sep = sep, 
-                stride= stride, dependent_map = dependent_map, )
+                tasknode[channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + ip : 0.001}
+                ).remote(self.current_node, channel, reader, len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)),
+                batch_func = batch_func,sdependent_map = dependent_map, checkpoint_interval = ckpt_interval)
             else:
-                tasknode[channel] = InputS3CSVNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
-                ).remote(self.current_node, channel, bucket,key,names, len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)), batch_func = batch_func, sep = sep,
-                stride = stride, dependent_map = dependent_map, ) 
+                tasknode[channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
+                ).remote(self.current_node, channel, reader, len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)), 
+                batch_func = batch_func, dependent_map = dependent_map, checkpoint_interval = ckpt_interval) 
         
-        self.node_type[self.current_node] = INPUT_CSV_DATASET
-        self.node_args[self.current_node] = {"bucket":bucket, "key":key, "names":names, "batch_func":batch_func, "sep" : sep, "dependent_map" : dependent_map, "stride":stride}
+        self.node_type[self.current_node] = INPUT_READER_DATASET
+        self.node_args[self.current_node] = {"reader": reader, "batch_func":batch_func, "dependent_map" : dependent_map, "ckpt_interval": ckpt_interval}
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
     
-    def new_input_multicsv(self, bucket, key, names, ip_to_num_channel, batch_func=None, sep = ",", dependents = [], stride= 64 * 1024 * 1024):
-        
-        dependent_map = self.return_dependent_map(dependents)
-        channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
-
-        tasknode = {}
-        for channel in channel_to_ip:
-            ip = channel_to_ip[channel]
-            if ip != 'localhost':
-                tasknode[channel] = InputS3MultiCSVNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, channel, bucket,key,names, len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)),batch_func = batch_func,sep = sep, 
-                stride= stride, dependent_map = dependent_map, )
-            else:
-                tasknode[channel] = InputS3MultiCSVNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
-                ).remote(self.current_node, channel, bucket,key,names, len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)), batch_func = batch_func, sep = sep,
-                stride = stride, dependent_map = dependent_map, ) 
-        
-        self.node_type[self.current_node] = INPUT_CSV_DATASET
-        self.node_args[self.current_node] = {"bucket":bucket, "key":key, "names":names, "batch_func":batch_func, "sep" : sep, "dependent_map" : dependent_map, "stride":stride}
-        return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
-    
-
-    def new_input_multiparquet(self, bucket, key,  ip_to_num_channel, batch_func=None, columns = None, filters = None, dependents = []):
-        
-        dependent_map = self.return_dependent_map(dependents)
-        channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
-
-        tasknode = {}
-        for channel in channel_to_ip:
-            ip = channel_to_ip[channel]
-            if ip != 'localhost':
-                tasknode[channel] = InputS3MultiParquetNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, channel, bucket,key,len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)), columns = columns, filters = filters,
-                 batch_func = batch_func,dependent_map = dependent_map)
-            else:
-                tasknode[channel] = InputS3MultiParquetNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
-                ).remote(self.current_node, channel, bucket,key,len(channel_to_ip), (self.checkpoint_bucket, str(self.current_node) + "-" + str(channel)),columns = columns, filters = filters,
-                 batch_func = batch_func, dependent_map = dependent_map)
-        
-        self.node_type[self.current_node] = INPUT_MULTIPARQUET_DATASET
-        self.node_args[self.current_node] = {"bucket":bucket, "key":key, "batch_func": batch_func, "columns": columns, "filters": filters, "dependent_map": dependent_map}
-        return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
     
     def new_non_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 30):
         
@@ -450,18 +408,7 @@ class TaskGraph:
                                 if bump in self.node_parents and node in self.node_parents[bump] and bump not in restarted_actors: # this node was not restarted. noone will apped_targets to you, do it yourself
                                     bump_partition_key = self.node_args[bump]["partition_key"][self.node_args[bump]["mapping"][node]]
                                     ray.get([self.nodes[node][channel].append_to_targets.remote((bump, self.node_channel_to_ip[bump], bump_partition_key)) for channel in affected_channels])
-                        elif node_type == INPUT_CSV_DATASET:
-                            bucket = self.node_args[node]["bucket"]
-                            key = self.node_args[node]["key"]
-                            names = self.node_args[node]["names"]
-                            batch_func = self.node_args[node]["batch_func"]
-                            sep = self.node_args[node]["sep"]
-                            stride = self.node_args[node]["stride"]
-                            dependent_map = self.node_args[node]["dependent_map"]
-                            for channel in affected_channels:
-                                self.nodes[node][channel] = InputS3CSVNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + new_channel_to_ip[channel] : 0.001}
-                                    ).remote(node, channel, bucket,key,names, len(new_channel_to_ip), (self.checkpoint_bucket, str(node) + "-" + str(channel)),batch_func = batch_func,sep = sep, 
-                                    stride= stride, dependent_map = dependent_map, ckpt="s3")
+                        
                         elif node_type == INPUT_REDIS_DATASET:
                             channel_objects = self.node_args[node]["channel_objects"]
                             batch_func = self.node_args[node]["batch_func"]
@@ -470,17 +417,17 @@ class TaskGraph:
                                 self.nodes[node][channel] =  InputRedisDatasetNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + new_channel_to_ip[channel] : 0.001}
                                 ).remote(node, channel, channel_objects, (self.checkpoint_bucket, str(node) + "-" + str(channel)), 
                                 batch_func=batch_func, dependent_map=dependent_map, ckpt="s3")
-                        elif node_type == INPUT_MULTIPARQUET_DATASET:
-                            columns = self.node_args[node]["columns"]
-                            filters = self.node_args[node]["filters"]
-                            bucket = self.node_args[node]["bucket"]
-                            key = self.node_args[node]["key"]
+                        
+                        elif node_type == INPUT_READER_DATASET:
+                            reader = self.node_args[node]["reader"]
                             batch_func = self.node_args[node]["batch_func"]
                             dependent_map = self.node_args[node]["dependent_map"]
+                            ckpt_interval = self.node_args[node]["ckpt_interval"]
                             for channel in affected_channels:
-                                self.nodes[node][channel] = InputS3MultiParquetNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + new_channel_to_ip[channel] : 0.001}
-                                    ).remote(node, channel, bucket,key,len(new_channel_to_ip), (self.checkpoint_bucket, str(node) + "-" + str(channel)), columns = columns, filters = filters,
-                                    batch_func = batch_func,dependent_map = dependent_map, ckpt="s3")
+                                self.nodes[node][channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" +new_channel_to_ip[channel] : 0.001}
+                                    ).remote(node, channel, reader, len(new_channel_to_ip), (self.checkpoint_bucket, str(node) + "-" + str(channel)),
+                                    batch_func = batch_func,sdependent_map = dependent_map, checkpoint_interval = ckpt_interval, ckpt = "s3")
+
                         else:
                             raise Exception("what is this node? Can't do that yet")
 

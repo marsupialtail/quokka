@@ -4,10 +4,11 @@ sys.path.append("/home/ubuntu/quokka/")
 import datetime
 import time
 from quokka_runtime import TaskGraph
+from dataset import InputCSVDataset, InputMultiParquetDataset
 from sql import AggExecutor
-import ray
-import pandas as pd
 
+import pandas as pd
+import pyarrow.compute as compute
 import redis
 r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
@@ -19,26 +20,26 @@ lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quanti
 "l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
 "l_shipmode","l_comment", "null"]
 
+
 def lineitem_filter(df):
-    filtered_df = df[(df.l_shipdate > pd.to_datetime(datetime.date(1994,1,1))) & (df.l_discount >= 0.05) & (df.l_discount <= 0.07) & (df.l_quantity < 24)]
-    #filtered_df = df[  (df.l_discount >= 0.05) & (df.l_discount <= 0.07) & (df.l_quantity < 24)]
+    
+    filtered_df = df.to_pandas()
     return pd.DataFrame([ (filtered_df.l_extendedprice * filtered_df.l_discount).sum()],columns=['sum'])
 
 if sys.argv[2] == "csv":
     if sys.argv[1] == "small":
-        #lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme,{'localhost':8,'172.31.16.185':8},batch_func=lineitem_filter, sep="|")
-        lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme,{'localhost':8},batch_func=lineitem_filter, sep="|")
+        lineitem_csv_reader = InputCSVDataset("tpc-h-small", "lineitem.tbl", lineitem_scheme , sep="|")
+        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8}, batch_func = lineitem_filter)
     else:
-        #lineitem = task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl.1",lineitem_scheme,{'localhost':8, '172.31.16.185':8},batch_func=lineitem_filter, sep="|")
-        lineitem = task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl.1",lineitem_scheme,{'localhost':8},batch_func=lineitem_filter, sep="|")
+        lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|")
+        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8}, batch_func = lineitem_filter)
+
 elif sys.argv[2] == "parquet":
     if sys.argv[1] == "small":
-        lineitem = task_graph.new_input_multiparquet("tpc-h-small","parquet/lineitem", {'localhost':4},columns=["l_shipdate","l_discount","l_quantity","l_extendedprice"],
-       batch_func=lineitem_filter)
+        raise Exception("not implemented")
     else:
-        lineitem = task_graph.new_input_multiparquet("tpc-h-parquet","lineitem", {'localhost':8},columns=["l_shipdate","l_discount","l_quantity","l_extendedprice"],
-       batch_func=lineitem_filter)
-
+        lineitem_parquet_reader = InputMultiParquetDataset("tpc-h-parquet","lineitem.parquet",columns=["l_discount","l_extendedprice"], filters = [('l_shipdate','>',compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s")), ('l_discount','>=',0.05), ('l_discount','<=',0.07),('l_quantity','<',24)])
+        lineitem = task_graph.new_input_multiparquet(lineitem_parquet_reader, {'localhost':8}, batch_func=lineitem_filter)
 
 agg_executor = AggExecutor()
 agged = task_graph.new_blocking_node({0:lineitem},None, agg_executor, {'localhost':1}, {0:None})

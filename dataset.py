@@ -44,13 +44,17 @@ class RedisObjectsDataset:
 class InputSingleParquetDataset:
 
     def __init__(self, bucket, filename, columns=None) -> None:
-        s3 = s3fs.S3FileSystem()
-        self.parquet_file = pq.ParquetFile(s3.open(bucket + filename, "rb"))
-        self.num_row_groups = self.parquet_file.num_row_groups
+        
+        self.bucket = bucket
+        self.filename = filename
         self.num_mappers = None
         self.columns = columns
 
     def set_num_mappers(self, num_mappers):
+
+        s3 = s3fs.S3FileSystem()
+        self.parquet_file = pq.ParquetFile(s3.open(self.bucket + self.filename, "rb"))
+        self.num_row_groups = self.parquet_file.num_row_groups
         self.num_mappers = num_mappers
 
     def get_next_batch(self, mapper_id, pos=None):
@@ -70,20 +74,24 @@ class InputSingleParquetDataset:
 # currently only support chunking in one dimension. two-D chunking actually requires different algos
 class InputHDF5Dataset:
 
-    def __init__(self, bucket, filename, key, columns=None) -> None:
-        s3 = s3fs.S3FileSystem()
-        self.h5file = h5py.File(s3.open("s3://" + bucket + "/" + filename, "rb"))
-        self.dataset = self.h5file[key]
-        self.chunk_size = self.dataset.chunks
-        self.dataset_shape = self.dataset.shape
-
-        assert self.chunk_size[1] == self.dataset_shape[1]
-        self.num_chunks = (self.dataset_shape[0]-1) // self.chunk_size[0] + 1
+    def __init__(self, bucket, filename, key) -> None:
+        
+        self.bucket = bucket
+        self.filename = filename
+        self.key = key
 
         self.num_mappers = None
         
     def set_num_mappers(self, num_mappers):
         self.num_mappers = num_mappers
+        s3 = s3fs.S3FileSystem()
+        self.h5file = h5py.File(s3.open("s3://" + self.bucket + "/" + self.filename, "rb"))
+        self.dataset = self.h5file[self.key]
+        self.chunk_size = self.dataset.chunks
+        self.dataset_shape = self.dataset.shape
+
+        assert self.chunk_size[1] == self.dataset_shape[1]
+        self.num_chunks = (self.dataset_shape[0]-1) // self.chunk_size[0] + 1
 
     def get_next_batch(self, mapper_id, pos=None):
         assert self.num_mappers is not None
@@ -105,22 +113,25 @@ class InputMultiParquetDataset:
     # an interesting project in itself. Time for an intern?
 
     def __init__(self, bucket, prefix, columns=None, filters=None) -> None:
-        self.s3 = boto3.client('s3')
+        
         self.bucket = bucket
-        z = self.s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
-        self.files = [i['Key']
-                      for i in z['Contents'] if i['Key'].endswith(".parquet")]
+        self.prefix = prefix
+        
         self.num_mappers = None
         self.columns = columns
         self.filters = filters
-        while 'NextContinuationToken' in z.keys():
-            z = self.s3.list_objects_v2(
-                Bucket=bucket, Prefix=prefix, ContinuationToken=z['NextContinuationToken'])
-            self.files.extend([i['Key'] for i in z['Contents']
-                              if i['Key'].endswith(".parquet")])
 
     def set_num_mappers(self, num_mappers):
         self.num_mappers = num_mappers
+        self.s3 = boto3.client('s3')
+        z = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
+        self.files = [i['Key']
+                      for i in z['Contents'] if i['Key'].endswith(".parquet")]
+        while 'NextContinuationToken' in z.keys():
+            z = self.s3.list_objects_v2(
+                Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
+            self.files.extend([i['Key'] for i in z['Contents']
+                              if i['Key'].endswith(".parquet")])
 
     def get_next_batch(self, mapper_id, pos=None):
         assert self.num_mappers is not None
@@ -142,8 +153,7 @@ class InputMultiParquetDataset:
 class InputCSVDataset:
 
     def __init__(self, bucket, key, names, id, sep=",", stride=64 * 1024 * 1024) -> None:
-
-        self.s3 = boto3.client('s3')  # needs boto3 client
+       
         self.bucket = bucket
         self.key = key
         self.num_mappers = None
@@ -154,6 +164,7 @@ class InputCSVDataset:
 
     def set_num_mappers(self, num_mappers):
         self.num_mappers = num_mappers
+        self.s3 = boto3.client('s3')  # needs boto3 client
         self.length, self.adjusted_splits = self.get_csv_attributes()
 
     def get_csv_attributes(self, window=1024 * 32):
@@ -245,8 +256,6 @@ class InputCSVDataset:
 
 class InputMultiCSVDataset:
     def __init__(self, bucket, prefix, names, id, sep=",", stride=64 * 1024 * 1024) -> None:
-
-        self.s3 = boto3.client('s3')  # needs boto3 client
         self.bucket = bucket
         self.prefix = prefix
         self.num_mappers = None
@@ -254,26 +263,28 @@ class InputMultiCSVDataset:
         self.id = id
         self.sep = sep
         self.stride = stride
+        
+    def set_num_mappers(self, num_mappers):
+        self.num_mappers = num_mappers
 
-        if prefix is not None:
-            z = self.s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        self.s3 = boto3.client('s3')  # needs boto3 client  
+        if self.prefix is not None:
+            z = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
             self.files = [i['Key'] for i in z['Contents']]
             while 'NextContinuationToken' in z.keys():
                 z = self.s3.list_objects_v2(
-                    Bucket=bucket, Prefix=prefix, ContinuationToken=z['NextContinuationToken'])
+                    Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
                 self.files.extend([i['Key'] for i in z['Contents']])
         else:
-            z = self.s3.list_objects_v2(Bucket=bucket)
+            z = self.s3.list_objects_v2(Bucket=self.bucket)
             self.files = [i['Key'] for i in z['Contents']]
             while 'NextContinuationToken' in z.keys():
                 z = self.s3.list_objects_v2(
-                    Bucket=bucket, ContinuationToken=z['NextContinuationToken'])
+                    Bucket=self.bucket, ContinuationToken=z['NextContinuationToken'])
                 self.files.extend([i['Key'] for i in z['Contents']])
         
         self.files = sorted(self.files)
         print(len(self.files))
-    def set_num_mappers(self, num_mappers):
-        self.num_mappers = num_mappers
 
     def get_next_batch(self, mapper_id, curr_pos = None, pos=None):
         assert self.num_mappers is not None
