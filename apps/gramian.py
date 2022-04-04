@@ -20,9 +20,10 @@ class GramianExecutor:
     def initialize(datasets):
         pass
     def serialize(self):
-        pass
+        return {0: self.state}, "all"
     def serialize(self, s):
-        pass
+        assert type(s) == list and len(s) == 1
+        self.state = s[0][0]
 
     def execute(self,batches,stream_id, executor_id):
         print(mkl.set_num_threads(4))

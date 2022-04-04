@@ -17,8 +17,8 @@ import types
 import pyarrow.plasma as plasma
 # isolated simplified test bench for different fault tolerance protocols
 
-FT_I = False #True
-FT = False # True
+FT_I = True
+FT = True
 
 # above this limit we are going to start flushing things to disk
 INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
@@ -191,27 +191,15 @@ class Node:
 
                     # if the target is on the same machine we are just going to use shared memory, and change the payload to the shared memory name!!
 
-                    if False: #original_channel_to_ip[channel] == self.ip:
+                    if original_channel_to_ip[channel] == self.ip:
                         if type(data) == pd.core.frame.DataFrame:
-                            batch = pa.RecordBatch.from_pandas(data)
+                            batch = data
                             my_format = "pandas"
                         else:
-                            batch = data.to_arrow().to_batches()[0]
+                            batch = data.to_arrow()
                             my_format = "polars"
-                        mock_sink = pa.MockOutputStream()
-                        with pa.RecordBatchStreamWriter(mock_sink, batch.schema) as stream_writer:
-                            stream_writer.write_batch(batch)
-                        data_size = mock_sink.size()
-                        object_id = plasma.ObjectID.from_random()
-                        try:
-                            buf = self.plasma_client.create(object_id, data_size)
-                        except PlasmaStoreFull:
-                            raise Exception
-                        stream = pa.FixedSizeBufferWriter(buf)
-                        with pa.RecordBatchStreamWriter(stream, batch.schema) as stream_writer:
-                            stream_writer.write_batch(batch)
                         
-                        self.plasma_client.seal(object_id)
+                        object_id = ray.put(batch)
                         payload = SharedMemMessage(my_format, object_id)
 
                     pipeline = self.target_rs[target][channel].pipeline()
@@ -668,17 +656,14 @@ class TaskNode(Node):
                 elif type(message) == SharedMemMessage:
                     message_format = message.format
                     object_id = message.name
-                    [data] = self.plasma_client.get_buffers([object_id])
-                    buffer = pa.BufferReader(data)
-                    reader = pa.RecordBatchStreamReader(buffer)
-                    batch = reader.read_next_batch()
+                    batch = ray.get(object_id)
                     if message_format == "pandas":
-                        batches.append(batch.to_pandas())
+                        batches.append(batch)
                     elif message_format == "polars":
-                        batches.append(polars.from_arrow(pa.Table.from_batches([batch])))
+                        batches.append(polars.from_arrow(batch))
                     else:
                         raise Exception
-                    self.plasma_client.delete([object_id])
+                    ray.internal.internal_api.free(object_id)
                 else:
                     batches.append(message)
             self.state_tag[(parent,channel)] += length
@@ -715,18 +700,15 @@ class TaskNode(Node):
                         os.remove(message.loc)
                     elif type(message) == SharedMemMessage:
                         message_format = message.format
-                        shm_b = shared_memory.SharedMemory(message.name)
-                        buffer = pa.BufferReader(shm_b.buf)
-                        reader = pa.RecordBatchStreamReader(buffer)
-                        batch = reader.read_next_batch()
+                        object_id = message.name
+                        batch = ray.get(object_id)
                         if message_format == "pandas":
-                            batches.append(batch.to_pandas())
+                            batches.append(batch)
                         elif message_format == "polars":
-                            batches.append(polars.from_arrow(pa.Table.from_batches([batch])))
+                            batches.append(polars.from_arrow(batch))
                         else:
                             raise Exception
-                        shm_b.unlink()
-                        shm_b.close()
+                        ray.internal.internal_api.free(object_id)
                     else:
                         batches.append(message)
             self.state_tag = expected
