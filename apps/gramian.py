@@ -9,6 +9,7 @@ import ray
 import os
 import numpy as np
 import redis
+import mkl
 r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
 
@@ -24,13 +25,15 @@ class GramianExecutor:
         pass
 
     def execute(self,batches,stream_id, executor_id):
-        
-        batch = np.vstack(batches)
+        print(mkl.set_num_threads(4))
 
-        if self.state is None:
-            self.state = np.dot(np.transpose(batch), batch)
-        else:
-            self.state += np.dot(np.transpose(batch), batch)
+        print("start",time.time())
+        for batch in batches:
+            if self.state is None:
+                self.state = np.transpose(batch).dot(batch)
+            else:
+                self.state += np.transpose(batch).dot(batch)
+        print("end",time.time())
 
     def done(self,executor_id):
         print("done")
@@ -40,7 +43,7 @@ reader = InputHDF5Dataset("yugan","bigmatrix2.hdf5","data")
 
 task_graph = TaskGraph()
 
-matrix = task_graph.new_input_reader_node(reader, {'localhost':4})
+matrix = task_graph.new_input_reader_node(reader, {'localhost':8})
 
 gramian = GramianExecutor()
 
