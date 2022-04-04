@@ -37,15 +37,15 @@ lineitem_filter_parquet = lambda x: polars.from_arrow(x.filter(compute.and_(comp
 
 if sys.argv[2] == "csv":
     if sys.argv[1] == "small":
-        lineitem_csv_reader = InputCSVDataset("tpc-h-small", "lineitem.tbl", lineitem_scheme , 0, sep="|")
-        orders_csv_reader = InputCSVDataset("tpc-h-small", "orders.tbl", order_scheme , 0, sep="|")
+        lineitem_csv_reader = InputCSVDataset("tpc-h-small", "lineitem.tbl", lineitem_scheme , sep="|")
+        orders_csv_reader = InputCSVDataset("tpc-h-small", "orders.tbl", order_scheme , sep="|")
 
         lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8}, batch_func = lineitem_filter)
         orders = task_graph.new_input_reader_node(orders_csv_reader, {'localhost':8}, batch_func = orders_filter)
 
     else:
-        lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , 0, sep="|")
-        orders_csv_reader = InputCSVDataset("tpc-h-csv", "orders/orders.tbl.1", order_scheme , 0, sep="|")
+        lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|")
+        orders_csv_reader = InputCSVDataset("tpc-h-csv", "orders/orders.tbl.1", order_scheme , sep="|")
 
         # if perf is bad try changing lineitem num channels to 16
         lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8}, batch_func = lineitem_filter)

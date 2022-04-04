@@ -186,8 +186,6 @@ class Node:
                             raise Exception("Can't understand partition strategy")
                     else:
                         payload = data
-                    # don't worry about target being full for now.
-
 
                     # if the target is on the same machine we are just going to use shared memory, and change the payload to the shared memory name!!
 
@@ -220,6 +218,11 @@ class Node:
                 for channel in self.alive_targets[target]:
                     print("PUSHING FROM",str(self.id),str(self.channel)," TO ",str(target),str(channel), " MY TAG ", self.out_seq)
                     payload = partition_key(data, self.channel, channel) if partition_key is not None else data
+
+                    if original_channel_to_ip[channel] == self.ip:
+                        object_id = ray.put(payload)
+                        payload = SharedMemMessage("custom", object_id)
+
                     # don't worry about target being full for now.
                     pipeline = self.target_rs[target][channel].pipeline()
                     pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
@@ -657,7 +660,7 @@ class TaskNode(Node):
                     message_format = message.format
                     object_id = message.name
                     batch = ray.get(object_id)
-                    if message_format == "pandas":
+                    if message_format == "pandas" or message_format == "custom":
                         batches.append(batch)
                     elif message_format == "polars":
                         batches.append(polars.from_arrow(batch))
@@ -702,7 +705,7 @@ class TaskNode(Node):
                         message_format = message.format
                         object_id = message.name
                         batch = ray.get(object_id)
-                        if message_format == "pandas":
+                        if message_format == "pandas" or message_format == "custom":
                             batches.append(batch)
                         elif message_format == "polars":
                             batches.append(polars.from_arrow(batch))

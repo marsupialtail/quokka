@@ -21,7 +21,7 @@ class GramianExecutor:
         pass
     def serialize(self):
         return {0: self.state}, "all"
-    def serialize(self, s):
+    def deserialize(self, s):
         assert type(s) == list and len(s) == 1
         self.state = s[0][0]
 
