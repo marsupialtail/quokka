@@ -14,7 +14,7 @@ import sys
 import polars
 import pyarrow as pa
 import types
-import pyarrow.plasma as plasma
+import concurrent.futures
 # isolated simplified test bench for different fault tolerance protocols
 
 FT_I =  False # True
@@ -278,6 +278,8 @@ class InputNode(Node):
         self.dependent_rs = {}
         self.dependent_parallelism = {}
         self.checkpoint_interval = checkpoint_interval
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
 
         for key in dependent_map:
             self.dependent_parallelism[key] = dependent_map[key][1]
@@ -363,7 +365,14 @@ class InputNode(Node):
 
         # no need to log the state tag in an input node since we know the expected path...
 
-        for pos, batch in self.input_generator:
+        futs = deque()
+        futs.append(self.executor.submit(next, self.input_generator))
+        while True:
+            futs.append(self.executor.submit(next, self.input_generator))
+            try:
+                pos, batch = futs.popleft().result()
+            except StopIteration:
+                break
             self.state = pos
             if self.batch_func is not None:
                 result = self.batch_func(batch)
@@ -373,6 +382,7 @@ class InputNode(Node):
             if self.state_tag % self.checkpoint_interval == 0:
                 self.checkpoint()
             self.state_tag += 1
+
         print("INPUT DONE", self.id, self.channel)
         self.done()
         self.r.publish("input-done-" + str(self.id), "done")
