@@ -7,8 +7,9 @@ import time
 import random
 import pickle
 import utils as utils
+import psutil
 
-ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
+ray.init("auto",  ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
 
 #ray.init(ignore_reinit_error=True) # do this locally
 #ray.timeline("profile.json")

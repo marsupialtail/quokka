@@ -17,8 +17,8 @@ import types
 import pyarrow.plasma as plasma
 # isolated simplified test bench for different fault tolerance protocols
 
-FT_I = True
-FT = True
+FT_I =  False # True
+FT = False #  True
 
 # above this limit we are going to start flushing things to disk
 INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
@@ -29,8 +29,8 @@ class FlushedMessage:
         self.loc = loc
 
 class SharedMemMessage:
-    def __init__(self, format, name):
-        self.format = format
+    def __init__(self, form, name):
+        self.format = form
         self.name = name
 
 class Node:
@@ -198,7 +198,7 @@ class Node:
                             my_format = "polars"
                         
                         object_id = ray.put(batch)
-                        payload = SharedMemMessage(my_format, object_id)
+                        payload = SharedMemMessage(my_format, ray.cloudpickle.dumps(object_id))
 
                     pipeline = self.target_rs[target][channel].pipeline()
                     pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
@@ -221,7 +221,7 @@ class Node:
 
                     if original_channel_to_ip[channel] == self.ip:
                         object_id = ray.put(payload)
-                        payload = SharedMemMessage("custom", object_id)
+                        payload = SharedMemMessage("custom", ray.cloudpickle.dumps(object_id))
 
                     # don't worry about target being full for now.
                     pipeline = self.target_rs[target][channel].pipeline()
@@ -659,14 +659,14 @@ class TaskNode(Node):
                 elif type(message) == SharedMemMessage:
                     message_format = message.format
                     object_id = message.name
-                    batch = ray.get(object_id)
+                    batch = ray.get(ray.cloudpickle.loads(object_id))
                     if message_format == "pandas" or message_format == "custom":
                         batches.append(batch)
                     elif message_format == "polars":
                         batches.append(polars.from_arrow(batch))
                     else:
                         raise Exception
-                    ray.internal.internal_api.free(object_id)
+                    ray.internal.internal_api.free(ray.cloudpickle.loads(object_id))
                 else:
                     batches.append(message)
             self.state_tag[(parent,channel)] += length
