@@ -109,22 +109,7 @@ class Node:
         results = pipeline.execute()
         if False in results:
             raise Exception
-        self.output_lock.release()
-
-    def truncate_logged_outputs(self, target_id, channel, target_ckpt_state):
-        
-        print("STARTING TRUNCATE", target_id, channel, target_ckpt_state, self.target_output_state)
-        old_min = min(self.target_output_state[target_id].values())
-        self.target_output_state[target_id][channel] = target_ckpt_state
-        new_min = min(self.target_output_state[target_id].values())
-
-        self.output_lock.acquire()
-        if new_min > old_min:
-            for key in range(old_min, new_min):
-                if key in self.logged_outputs:
-                    print("REMOVING KEY",key,"FROM LOGGED OUTPUTS")
-                    self.logged_outputs.pop(key)
-        self.output_lock.release()    
+        self.output_lock.release()   
 
     def update_targets(self):
 
@@ -279,7 +264,7 @@ class InputNode(Node):
         self.dependent_parallelism = {}
         self.checkpoint_interval = checkpoint_interval
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-
+        self.logged_outputs = OrderedDict() # we are not going to checkpoint those logged outputs, which could be massive
 
         for key in dependent_map:
             self.dependent_parallelism[key] = dependent_map[key][1]
@@ -292,11 +277,12 @@ class InputNode(Node):
             self.dependent_rs[key] = ps
 
         if ckpt is None:
-            self.logged_outputs = OrderedDict()
+            
             self.target_output_state = {}
             self.out_seq = 0
             self.state_tag = 0
-            self.state = None
+            self.latest_stable_state = None
+            self.seq_state_map = {}
         else:
             if ckpt == "s3":
                 s3_resource = boto3.resource('s3')
@@ -305,13 +291,30 @@ class InputNode(Node):
             else:
                 recovered_state = pickle.load(open(ckpt,"rb"))
             
-            self.logged_outputs = recovered_state["logged_outputs"]
             self.target_output_state = recovered_state["target_output_state"]
-            self.state = recovered_state["state"]
+            self.latest_stable_state = recovered_state["state"]
+            self.seq_state_map = recovered_state["seq_state_map"]
             self.out_seq = recovered_state["out_seq"] 
             self.state_tag = recovered_state["tag"]
             print("INPUT NODE RECOVERED TO STATE", self.state)
 
+    def truncate_logged_outputs(self, target_id, channel, target_ckpt_state):
+        
+        print("STARTING TRUNCATE", target_id, channel, target_ckpt_state, self.target_output_state)
+        old_min = min(self.target_output_state[target_id].values())
+        self.target_output_state[target_id][channel] = target_ckpt_state
+        new_min = min(self.target_output_state[target_id].values())
+
+        self.output_lock.acquire()
+        if new_min > old_min:
+
+            self.latest_stable_state = self.seq_state_map[new_min]
+
+            for key in range(old_min, new_min):
+                if key in self.logged_outputs:
+                    print("REMOVING KEY",key,"FROM LOGGED OUTPUTS")
+                    self.logged_outputs.pop(key)
+        self.output_lock.release() 
         
     def checkpoint(self, method = "s3"):
         if not FT_I:
@@ -319,11 +322,9 @@ class InputNode(Node):
         # write logged outputs, state, state_tag to reliable storage
         # for input nodes, log the outputs instead of redownlaoding is probably worth it. since the outputs could be filtered by predicate
         
-        self.output_lock.acquire()
-        state = { "logged_outputs": self.logged_outputs, "out_seq" : self.out_seq, "tag":self.state_tag, "target_output_state":self.target_output_state,
-        "state":self.state}
+        state = { "out_seq" : self.out_seq, "tag":self.state_tag, "target_output_state":self.target_output_state,
+        "state":self.latest_stable_state, "seq_state_map": self.seq_state_map}
         state_str = pickle.dumps(state)
-        self.output_lock.release()
 
         if method == "s3":
 
@@ -334,18 +335,10 @@ class InputNode(Node):
             s3_resource.Object(bucket,key).put(Body=state_str)
         
         elif method == "local":
-            
-            f = open("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl","wb")
-            f.write(state_str)
-            f.flush()
-            os.fsync(f.fileno())
-            f.close()
-            os.rename("/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + "-temp.pkl", "/home/ubuntu/ckpt-" + str(self.id) + "-" + str(self.channel) + ".pkl")
+            raise Exception("not supported anymore")
 
         print("INPUT NODE CHECKPOINTING")
         
-        # if this fails we are dead, but probability of this failing much smaller than dump failing
-
         
     def execute(self):
         
@@ -373,7 +366,7 @@ class InputNode(Node):
             except StopIteration:
                 break
             futs.append(self.executor.submit(next, self.input_generator))
-            self.state = pos
+            self.seq_state_map[self.out_seq + 1] = pos
             if self.batch_func is not None:
                 result = self.batch_func(batch)
                 self.push(result)
@@ -393,7 +386,7 @@ class InputReaderNode(InputNode):
         super().__init__(id, channel, checkpoint_location, batch_func, dependent_map, checkpoint_interval, ckpt)
         self.accessor = accessor
         self.accessor.set_num_mappers(num_channels)
-        self.input_generator = self.accessor.get_next_batch(channel, self.state)
+        self.input_generator = self.accessor.get_next_batch(channel, self.latest_stable_state)
 
 @ray.remote
 class InputRedisDatasetNode(InputNode):
@@ -404,7 +397,7 @@ class InputRedisDatasetNode(InputNode):
             for object in channel_objects[da]:
                 ip_set.add(object[0])
         self.accessor = RedisObjectsDataset(channel_objects, ip_set)
-        self.input_generator = self.accessor.get_next_batch(channel, self.state)
+        self.input_generator = self.accessor.get_next_batch(channel, self.latest_stable_state)
 
 
 class TaskNode(Node):
@@ -489,6 +482,21 @@ class TaskNode(Node):
             
         
         self.log_state_tag()        
+
+    def truncate_logged_outputs(self, target_id, channel, target_ckpt_state):
+        
+        print("STARTING TRUNCATE", target_id, channel, target_ckpt_state, self.target_output_state)
+        old_min = min(self.target_output_state[target_id].values())
+        self.target_output_state[target_id][channel] = target_ckpt_state
+        new_min = min(self.target_output_state[target_id].values())
+
+        self.output_lock.acquire()
+        if new_min > old_min:
+            for key in range(old_min, new_min):
+                if key in self.logged_outputs:
+                    print("REMOVING KEY",key,"FROM LOGGED OUTPUTS")
+                    self.logged_outputs.pop(key)
+        self.output_lock.release() 
 
     def checkpoint(self, method = "s3"):
         if not FT:
