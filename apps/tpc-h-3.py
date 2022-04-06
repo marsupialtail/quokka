@@ -4,8 +4,7 @@ sys.path.append("/home/ubuntu/quokka/")
 import datetime
 import time
 from quokka_runtime import TaskGraph
-from sql import AggExecutor, OOCJoinExecutor
-import ray
+from sql import AggExecutor, PolarJoinExecutor
 import os
 import redis
 r = redis.Redis(host="localhost", port=6800, db=0)
@@ -52,8 +51,8 @@ else:
     customers = task_graph.new_input_csv("tpc-h-csv","customer/customer.tbl.1", customer_scheme, {'localhost':4, '172.31.16.185':4}, batch_func=customer_filter, sep="|")
 
 # join order picked by hand, might not be  the best one!
-join_executor1 = OOCJoinExecutor(left_on = "c_custkey", right_on = "o_custkey",batch_func=batch_func1, left_primary = True)
-join_executor2 = OOCJoinExecutor(left_on="o_orderkey",right_on="l_orderkey",batch_func=batch_func2, left_primary = True)
+join_executor1 = PolarJoinExecutor(left_on = "c_custkey", right_on = "o_custkey",batch_func=batch_func1, left_primary = True)
+join_executor2 = PolarJoinExecutor(left_on="o_orderkey",right_on="l_orderkey",batch_func=batch_func2, left_primary = True)
 temp = task_graph.new_non_blocking_node({0:customers,1:orders},None, join_executor1,{'localhost':2,'172.31.16.185':2}, {0:"c_custkey", 1:"o_custkey"})
 joined = task_graph.new_non_blocking_node({0:temp, 1: lineitem},None, join_executor2, {'localhost':2, '172.31.16.185':2}, {0: "o_orderkey", 1:"l_orderkey"})
 

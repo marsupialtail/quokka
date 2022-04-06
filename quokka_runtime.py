@@ -17,8 +17,6 @@ ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubu
 NONBLOCKING_NODE = 1
 BLOCKING_NODE = 2
 INPUT_REDIS_DATASET = 3
-INPUT_MULTIPARQUET_DATASET = 4
-INPUT_CSV_DATASET = 5
 INPUT_READER_DATASET = 6
 
 @ray.remote
