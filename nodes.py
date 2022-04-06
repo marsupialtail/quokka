@@ -17,8 +17,8 @@ import types
 import concurrent.futures
 # isolated simplified test bench for different fault tolerance protocols
 
-FT_I =  False # True
-FT = False #  True
+FT_I = True
+FT =  True
 
 # above this limit we are going to start flushing things to disk
 INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
@@ -190,11 +190,11 @@ class Node:
                     # if the target is on the same machine we are just going to use shared memory, and change the payload to the shared memory name!!
 
                     if original_channel_to_ip[channel] == self.ip:
-                        if type(data) == pd.core.frame.DataFrame:
-                            batch = data
+                        if type(payload) == pd.core.frame.DataFrame:
+                            batch = payload
                             my_format = "pandas"
                         else:
-                            batch = data.to_arrow()
+                            batch = payload.to_arrow()
                             my_format = "polars"
                         
                         object_id = ray.put(batch)
@@ -368,11 +368,11 @@ class InputNode(Node):
         futs = deque()
         futs.append(self.executor.submit(next, self.input_generator))
         while True:
-            futs.append(self.executor.submit(next, self.input_generator))
             try:
                 pos, batch = futs.popleft().result()
             except StopIteration:
                 break
+            futs.append(self.executor.submit(next, self.input_generator))
             self.state = pos
             if self.batch_func is not None:
                 result = self.batch_func(batch)

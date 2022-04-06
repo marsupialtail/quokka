@@ -25,7 +25,7 @@ def udf2(x):
 
 def partition_key1(data, source_channel, target_channel):
 
-    if source_channel // 16 == target_channel:
+    if source_channel // 8 == target_channel:
         return data
     else:
         return None
@@ -38,14 +38,12 @@ def partition_key2(data, source_channel, target_channel):
 
 task_graph = TaskGraph()
 
-reader = InputMultiCSVDataset("wordcount-input", None, ["text"],  sep="|")
+reader = InputMultiCSVDataset("wordcount-input", None, ["text"],  sep="|", stride = 128 * 1024 * 1024)
 
-words = task_graph.new_input_reader_node(reader, {'localhost':16, '172.31.11.134':16,'172.31.15.208':16, '172.31.10.96':16})#, batch_func = udf2)
+words = task_graph.new_input_reader_node(reader, {'localhost':8, '172.31.11.134':8,'172.31.15.208':8, '172.31.10.96':8}, batch_func = udf2)
 
-udf_exe = UDFExecutor(udf)
-output = task_graph.new_non_blocking_node({0:words},None,udf_exe,{'localhost':16, '172.31.11.134':16,'172.31.15.208':16, '172.31.10.96':16},{0:partition_key2})
 agg = AggExecutor(fill_value=0)
-intermediate = task_graph.new_non_blocking_node({0:output}, None, agg, {'localhost':1, '172.31.11.134':1,'172.31.15.208':1, '172.31.10.96':1}, {0:partition_key1})
+intermediate = task_graph.new_non_blocking_node({0:words}, None, agg, {'localhost':1, '172.31.11.134':1,'172.31.15.208':1, '172.31.10.96':1}, {0:partition_key1})
 result = task_graph.new_blocking_node({0:intermediate}, None, agg, {"localhost":1}, {0:None})
 task_graph.create()
 start = time.time()

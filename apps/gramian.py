@@ -26,6 +26,7 @@ class GramianExecutor:
         self.state = s[0][0]
 
     def execute(self,batches,stream_id, executor_id):
+        batches = [batch for batch in batches if batch is not None]
         print(mkl.set_num_threads(8))
 
         print("start",time.time())
@@ -40,16 +41,25 @@ class GramianExecutor:
         print("done")
         return self.state 
 
-#reader = InputHDF5Dataset("yugan","bigmatrix3.hdf5","data")
-reader = InputDiskHDF5Dataset("/data/bigmatrix3.hdf5","data")
+def partition_key1(data, source_channel, target_channel):
+
+    if source_channel // 8 == target_channel:
+        return data
+    else:
+        return None
+
+reader = InputHDF5Dataset("yugan","bigmatrix3.hdf5","data")
+#reader = InputDiskHDF5Dataset("/data/bigmatrix3.hdf5","data")
 
 task_graph = TaskGraph()
 
-matrix = task_graph.new_input_reader_node(reader, {'localhost':2})
+matrix = task_graph.new_input_reader_node(reader, {'localhost':8, '172.31.11.134':8,'172.31.15.208':8, '172.31.10.96':8})
+#matrix = task_graph.new_input_reader_node(reader, {'localhost':4})
 
 gramian = GramianExecutor()
 
-output = task_graph.new_blocking_node({0:matrix}, None, gramian, {'localhost':1}, {0:None})
+#output = task_graph.new_blocking_node({0:matrix}, None, gramian, {'localhost':1}, {0:None})
+output = task_graph.new_blocking_node({0:matrix}, None, gramian, {'localhost':1, '172.31.11.134':1,'172.31.15.208':1, '172.31.10.96':1}, {0:partition_key1})
 
 task_graph.create()
 start = time.time()
