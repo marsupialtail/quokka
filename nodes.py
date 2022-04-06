@@ -282,6 +282,7 @@ class InputNode(Node):
             self.out_seq = 0
             self.state_tag = 0
             self.latest_stable_state = None
+            self.latest_stable_seq = 0
             self.seq_state_map = {}
         else:
             if ckpt == "s3":
@@ -293,10 +294,10 @@ class InputNode(Node):
             
             self.target_output_state = recovered_state["target_output_state"]
             self.latest_stable_state = recovered_state["state"]
+            self.out_seq = recovered_state["out_seq"]
             self.seq_state_map = recovered_state["seq_state_map"]
-            self.out_seq = recovered_state["out_seq"] 
             self.state_tag = recovered_state["tag"]
-            print("INPUT NODE RECOVERED TO STATE", self.state)
+            print("INPUT NODE RECOVERED TO STATE", self.latest_stable_state)
 
     def truncate_logged_outputs(self, target_id, channel, target_ckpt_state):
         
@@ -309,6 +310,7 @@ class InputNode(Node):
         if new_min > old_min:
 
             self.latest_stable_state = self.seq_state_map[new_min]
+            self.latest_stable_seq = new_min
 
             for key in range(old_min, new_min):
                 if key in self.logged_outputs:
@@ -322,7 +324,7 @@ class InputNode(Node):
         # write logged outputs, state, state_tag to reliable storage
         # for input nodes, log the outputs instead of redownlaoding is probably worth it. since the outputs could be filtered by predicate
         
-        state = { "out_seq" : self.out_seq, "tag":self.state_tag, "target_output_state":self.target_output_state,
+        state = { "out_seq" : self.latest_stable_seq, "tag":self.state_tag, "target_output_state":self.target_output_state,
         "state":self.latest_stable_state, "seq_state_map": self.seq_state_map}
         state_str = pickle.dumps(state)
 
