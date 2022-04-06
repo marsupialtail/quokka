@@ -18,7 +18,7 @@ import concurrent.futures
 # isolated simplified test bench for different fault tolerance protocols
 
 FT_I = True
-FT = True
+FT =  True
 
 # above this limit we are going to start flushing things to disk
 INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
@@ -29,8 +29,8 @@ class FlushedMessage:
         self.loc = loc
 
 class SharedMemMessage:
-    def __init__(self, format, name):
-        self.format = format
+    def __init__(self, form, name):
+        self.format = form
         self.name = name
 
 class Node:
@@ -190,15 +190,15 @@ class Node:
                     # if the target is on the same machine we are just going to use shared memory, and change the payload to the shared memory name!!
 
                     if original_channel_to_ip[channel] == self.ip:
-                        if type(data) == pd.core.frame.DataFrame:
-                            batch = data
+                        if type(payload) == pd.core.frame.DataFrame:
+                            batch = payload
                             my_format = "pandas"
                         else:
-                            batch = data.to_arrow()
+                            batch = payload.to_arrow()
                             my_format = "polars"
                         
                         object_id = ray.put(batch)
-                        payload = SharedMemMessage(my_format, object_id)
+                        payload = SharedMemMessage(my_format, ray.cloudpickle.dumps(object_id))
 
                     pipeline = self.target_rs[target][channel].pipeline()
                     pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
@@ -221,7 +221,7 @@ class Node:
 
                     if original_channel_to_ip[channel] == self.ip:
                         object_id = ray.put(payload)
-                        payload = SharedMemMessage("custom", object_id)
+                        payload = SharedMemMessage("custom", ray.cloudpickle.dumps(object_id))
 
                     # don't worry about target being full for now.
                     pipeline = self.target_rs[target][channel].pipeline()
@@ -368,11 +368,11 @@ class InputNode(Node):
         futs = deque()
         futs.append(self.executor.submit(next, self.input_generator))
         while True:
-            futs.append(self.executor.submit(next, self.input_generator))
             try:
                 pos, batch = futs.popleft().result()
             except StopIteration:
                 break
+            futs.append(self.executor.submit(next, self.input_generator))
             self.state = pos
             if self.batch_func is not None:
                 result = self.batch_func(batch)
@@ -669,14 +669,14 @@ class TaskNode(Node):
                 elif type(message) == SharedMemMessage:
                     message_format = message.format
                     object_id = message.name
-                    batch = ray.get(object_id)
+                    batch = ray.get(ray.cloudpickle.loads(object_id))
                     if message_format == "pandas" or message_format == "custom":
                         batches.append(batch)
                     elif message_format == "polars":
                         batches.append(polars.from_arrow(batch))
                     else:
                         raise Exception
-                    ray.internal.internal_api.free(object_id)
+                    ray.internal.internal_api.free(ray.cloudpickle.loads(object_id))
                 else:
                     batches.append(message)
             self.state_tag[(parent,channel)] += length

@@ -106,6 +106,36 @@ class InputHDF5Dataset:
             curr_chunk += self.num_mappers
             yield curr_chunk, result
 
+class InputDiskHDF5Dataset:
+
+    def __init__(self, filename, key) -> None:
+        
+        self.filename = filename
+        self.key = key
+
+        self.num_mappers = None
+        
+    def set_num_mappers(self, num_mappers):
+        self.num_mappers = num_mappers
+        self.h5file = h5py.File(self.filename)
+        self.dataset = self.h5file[self.key]
+        self.chunk_size = self.dataset.chunks
+        self.dataset_shape = self.dataset.shape
+
+        assert self.chunk_size[1] == self.dataset_shape[1]
+        self.num_chunks = (self.dataset_shape[0]-1) // self.chunk_size[0] + 1
+
+    def get_next_batch(self, mapper_id, pos=None):
+        assert self.num_mappers is not None
+        if pos is None:
+            curr_chunk = mapper_id
+        else:
+            curr_chunk = pos
+        while curr_chunk < self.num_chunks:
+            chunk_start = curr_chunk * self.chunk_size[0]            
+            result = self.dataset[chunk_start:chunk_start + self.chunk_size[0]]
+            curr_chunk += self.num_mappers
+            yield curr_chunk, result
 
 class InputMultiParquetDataset:
 
