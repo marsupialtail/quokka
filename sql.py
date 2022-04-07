@@ -137,7 +137,7 @@ class OutputCSVExecutor(Executor):
 class PolarJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
-    def __init__(self, on = None, left_on = None, right_on = None, batch_func = None):
+    def __init__(self, on = None, left_on = None, right_on = None, batch_func = None, columns = None):
 
         # how many things you might checkpoint, the number of keys in the dict
         self.num_states = 2
@@ -146,7 +146,7 @@ class PolarJoinExecutor(Executor):
         self.state1 = None
         self.ckpt_start0 = 0
         self.ckpt_start1 = 0
-        self.lengths = {0:0, 1:0}
+        self.columns = columns
 
         if on is not None:
             assert left_on is None and right_on is None
@@ -180,8 +180,6 @@ class PolarJoinExecutor(Executor):
     def execute(self,batches, stream_id, executor_id):
         # state compaction
         batch = polars.concat(batches)
-        self.lengths[stream_id] += 1
-        print("state", self.lengths)
         result = None
         if stream_id == 0:
             if self.state1 is not None:
@@ -202,6 +200,9 @@ class PolarJoinExecutor(Executor):
             else:
                 self.state1.vstack(batch, in_place = True)
         
+        if self.columns is not None and result is not None and len(result) > 0:
+            result = result[self.columns]
+
         if result is not None and len(result) > 0:
             if self.batch_func is not None:
                 da =  self.batch_func(result.to_pandas())
