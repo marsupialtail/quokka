@@ -179,7 +179,11 @@ class PolarJoinExecutor(Executor):
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
         # state compaction
+        batches = [i for i in batches if i is not None and len(i) > 0]
+        if len(batches) == 0:
+            return
         batch = polars.concat(batches)
+
         result = None
         if stream_id == 0:
             if self.state1 is not None:
@@ -212,7 +216,7 @@ class PolarJoinExecutor(Executor):
                 return result
     
     def done(self,executor_id):
-        print(len(self.state0),len(self.state1))
+        #print(len(self.state0),len(self.state1))
         print("done join ", executor_id)
 
 

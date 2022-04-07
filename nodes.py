@@ -17,6 +17,8 @@ import types
 import concurrent.futures
 # isolated simplified test bench for different fault tolerance protocols
 
+#FT_I = True
+#FT =  True
 FT_I = True
 FT =  True
 

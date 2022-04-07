@@ -44,17 +44,16 @@ if sys.argv[2] == "csv":
         orders = task_graph.new_input_reader_node(orders_csv_reader, {'localhost':8}, batch_func = orders_filter)
 
     else:
-        lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|")
-        orders_csv_reader = InputCSVDataset("tpc-h-csv", "orders/orders.tbl.1", order_scheme , sep="|")
+        lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|", stride = 128 * 1024 * 1024)
+        orders_csv_reader = InputCSVDataset("tpc-h-csv", "orders/orders.tbl.1", order_scheme , sep="|", stride = 128 * 1024 * 1024)
 
         # if perf is bad try changing lineitem num channels to 16
         #lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8}, batch_func = lineitem_filter)
         #orders = task_graph.new_input_reader_node(orders_csv_reader, {'localhost':8}, batch_func = orders_filter)
-
-        # lineitem = task_graph.new_input_reader_node(lineitem_csv_reader,{'localhost':8, '172.31.11.134':8}, batch_func = lineitem_filter)
-        # orders = task_graph.new_input_reader_node(orders_csv_reader, {'localhost':8, '172.31.11.134':8}, batch_func = orders_filter)
-        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8, '172.31.11.134':8, '172.31.15.208':8, '172.31.10.96':8}, batch_func = lineitem_filter)
-        orders = task_graph.new_input_reader_node(orders_csv_reader, {'localhost':8, '172.31.11.134':8, '172.31.15.208':8, '172.31.10.96':8}, batch_func = orders_filter)
+        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader,{'localhost':8, '172.31.11.134':8}, batch_func = lineitem_filter)
+        orders = task_graph.new_input_reader_node(orders_csv_reader, {'localhost':8, '172.31.11.134':8}, batch_func = orders_filter)
+        #lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8, '172.31.11.134':8, '172.31.15.208':8, '172.31.10.96':8}, batch_func = lineitem_filter)
+        #orders = task_graph.new_input_reader_node(orders_csv_reader, {'localhost':8, '172.31.11.134':8, '172.31.15.208':8, '172.31.10.96':8}, batch_func = orders_filter)
 
 elif sys.argv[2] == "parquet":
     if sys.argv[1] == "small":
