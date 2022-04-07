@@ -64,17 +64,19 @@ elif sys.argv[2] == "parquet":
         lineitem_parquet_reader = InputMultiParquetDataset("tpc-h-parquet","lineitem.parquet",columns=['l_shipdate','l_commitdate','l_shipmode','l_receiptdate','l_orderkey'], filters= [('l_shipmode', 'in', ['SHIP','MAIL']),('l_receiptdate','<',compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")), ('l_receiptdate','>=',compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s"))])
         orders_parquet_reader = InputMultiParquetDataset("tpc-h-parquet","orders.parquet",columns = ['o_orderkey','o_orderpriority'])
 
-        lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, {'localhost':8}, batch_func = lineitem_filter_parquet)
-        orders = task_graph.new_input_reader_node(orders_parquet_reader, {'localhost':8}, batch_func = orders_filter_parquet)
+#        lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, {'localhost':8}, batch_func = lineitem_filter_parquet)
+#        orders = task_graph.new_input_reader_node(orders_parquet_reader, {'localhost':8}, batch_func = orders_filter_parquet)
 
-#        lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader,{'localhost':8,'172.31.11.134':8,'172.31.15.208':8,'172.31.10.96':8}, batch_func = lineitem_filter_parquet)
-#        orders = task_graph.new_input_reader_node(orders_parquet_reader, {'localhost':8,'172.31.11.134':8,'172.31.15.208':8,'172.31.10.96':8}, batch_func = orders_filter_parquet)
+        #lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader,{'localhost':8,'172.31.11.134':8,'172.31.15.208':8,'172.31.10.96':8}, batch_func = lineitem_filter_parquet)
+        #orders = task_graph.new_input_reader_node(orders_parquet_reader, {'localhost':8,'172.31.11.134':8,'172.31.15.208':8,'172.31.10.96':8}, batch_func = orders_filter_parquet)
+        lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader,{'localhost':8,'172.31.11.134':8}, batch_func = lineitem_filter_parquet)
+        orders = task_graph.new_input_reader_node(orders_parquet_reader, {'localhost':8,'172.31.11.134':8}, batch_func = orders_filter_parquet)
        
 
 join_executor = PolarJoinExecutor(left_on="o_orderkey",right_on="l_orderkey", batch_func=batch_func)
-#output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor,{'localhost':4, '172.31.11.134':4,'172.31.15.208':4,'172.31.10.96':4}, {0:"o_orderkey", 1:"l_orderkey"})
+output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor,{'localhost':4, '172.31.11.134':4,'172.31.15.208':4,'172.31.10.96':4}, {0:"o_orderkey", 1:"l_orderkey"})
 #output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor,{'localhost':4, '172.31.11.134':4}, {0:"o_orderkey", 1:"l_orderkey"})
-output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor,{'localhost':4}, {0:"o_orderkey", 1:"l_orderkey"})
+#output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor,{'localhost':4}, {0:"o_orderkey", 1:"l_orderkey"})
 #output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor,{'localhost':4,'172.31.16.185':4}, {0:"o_orderkey", 1:"l_orderkey"})
 agg_executor = AggExecutor()
 agged = task_graph.new_blocking_node({0:output_stream}, None, agg_executor, {'localhost':1}, {0:None})
