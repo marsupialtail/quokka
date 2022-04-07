@@ -5,7 +5,10 @@ import datetime
 import time
 from quokka_runtime import TaskGraph
 from sql import AggExecutor, PolarJoinExecutor
+from dataset import InputCSVDataset, InputMultiParquetDataset
+import pyarrow.compute as compute
 import os
+import polars
 import redis
 r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
@@ -37,23 +40,35 @@ order_scheme = ["o_orderkey", "o_custkey","o_orderstatus","o_totalprice","o_orde
 "o_shippriority","o_comment", "null"]
 customer_scheme = ["c_custkey","c_name","c_address","c_nationkey","c_phone","c_acctbal","c_mktsegment","c_comment", "null"]
 
-orders_filter = lambda x: x[x.o_orderdate < pd.to_datetime(datetime.date(1995,3,3))][["o_orderkey","o_custkey","o_shippriority", "o_orderdate"]]
-lineitem_filter = lambda x: x[x.l_shipdate > pd.to_datetime(datetime.date(1995,3,15))][["l_orderkey","l_extendedprice","l_discount"]]
-customer_filter = lambda x: x[x.c_mktsegment == 'BUILDING'][["c_custkey"]]
+orders_filter = lambda x: polars.from_arrow(x.filter(compute.less(x['o_orderdate'] , compute.strptime("1995-03-03",format="%Y-%m-%d",unit="s"))).select(["o_orderkey","o_custkey","o_shippriority", "o_orderdate"]))
+lineitem_filter = lambda x: polars.from_arrow(x.filter(compute.greater(x['l_shipdate'] , compute.strptime("1995-03-15",format="%Y-%m-%d",unit="s"))).select(["l_orderkey","l_extendedprice","l_discount"]))
+customer_filter = lambda x: polars.from_arrow(x.filter(compute.equal(x["c_mktsegment"] , 'BUILDING')).select(["c_custkey"]))
 
-if sys.argv[1] == "small":
-    orders = task_graph.new_input_csv("tpc-h-small","orders.tbl",order_scheme,{'localhost':4, '172.31.16.185':4},batch_func=orders_filter, sep="|")
-    lineitem = task_graph.new_input_csv("tpc-h-small","lineitem.tbl",lineitem_scheme,{'localhost':8, '172.31.16.185':8},batch_func=lineitem_filter, sep="|")
-    customers = task_graph.new_input_csv("tpc-h-small","customer.tbl", customer_scheme, {'localhost':4, '172.31.16.185':4}, batch_func=customer_filter, sep="|")
+if sys.argv[1] == "csv":
+    
+    lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|")
+    orders_csv_reader = InputCSVDataset("tpc-h-csv", "orders/orders.tbl.1", lineitem_scheme , sep="|")
+    customer_csv_reader = InputCSVDataset("tpc-h-csv", "customer/customer.tbl.1", lineitem_scheme , sep="|")
+
+    lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8}, batch_func = lineitem_filter)
+    orders = task_graph.new_input_reader_node(orders_csv_reader, {'localhost':8}, batch_func = orders_filter)
+    customer = task_graph.new_input_reader_node(customer_csv_reader, {'localhost':8}, batch_func = customer_filter)
+
 else:
-    orders = task_graph.new_input_csv("tpc-h-csv","orders/orders.tbl.1",order_scheme,{'localhost':4, '172.31.16.185':4},batch_func=orders_filter, sep="|")
-    lineitem = task_graph.new_input_csv("tpc-h-csv","lineitem/lineitem.tbl.1",lineitem_scheme,{'localhost':8, '172.31.16.185':8},batch_func=lineitem_filter, sep="|")
-    customers = task_graph.new_input_csv("tpc-h-csv","customer/customer.tbl.1", customer_scheme, {'localhost':4, '172.31.16.185':4}, batch_func=customer_filter, sep="|")
+
+    lineitem_parquet_reader = InputMultiParquetDataset("tpc-h-parquet","lineitem.parquet", columns = ["l_orderkey","l_extendedprice","l_discount"], filters= [('l_shipdate','>',compute.strptime("1995-03-15",format="%Y-%m-%d",unit="s"))])
+    orders_parquet_reader =InputMultiParquetDataset("tpc-h-parquet","orders.parquet", columns = ["o_orderkey","o_custkey","o_shippriority", "o_orderdate"], filters= [('o_orderdate','<',compute.strptime("1995-03-03",format="%Y-%m-%d",unit="s"))])
+    customer_parquet_reader = InputMultiParquetDataset("tpc-h-parquet","customer.parquet", columns = ["c_custkey"], filters= [("c_cmktsegment","==","BUILDING")])
+
+    lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, {'localhost':8}, batch_func = lineitem_filter)
+    orders = task_graph.new_input_reader_node(orders_parquet_reader, {'localhost':8}, batch_func = orders_filter)
+    customer = task_graph.new_input_reader_node(customer_parquet_reader, {'localhost':8}, batch_func = customer_filter)
+    
 
 # join order picked by hand, might not be  the best one!
-join_executor1 = PolarJoinExecutor(left_on = "c_custkey", right_on = "o_custkey",batch_func=batch_func1, left_primary = True)
-join_executor2 = PolarJoinExecutor(left_on="o_orderkey",right_on="l_orderkey",batch_func=batch_func2, left_primary = True)
-temp = task_graph.new_non_blocking_node({0:customers,1:orders},None, join_executor1,{'localhost':2,'172.31.16.185':2}, {0:"c_custkey", 1:"o_custkey"})
+join_executor1 = PolarJoinExecutor(left_on = "c_custkey", right_on = "o_custkey",batch_func=batch_func1)
+join_executor2 = PolarJoinExecutor(left_on="o_orderkey",right_on="l_orderkey",batch_func=batch_func2)
+temp = task_graph.new_non_blocking_node({0:customer,1:orders},None, join_executor1,{'localhost':2,'172.31.16.185':2}, {0:"c_custkey", 1:"o_custkey"})
 joined = task_graph.new_non_blocking_node({0:temp, 1: lineitem},None, join_executor2, {'localhost':2, '172.31.16.185':2}, {0: "o_orderkey", 1:"l_orderkey"})
 
 agg_executor = AggExecutor(final_func=final_func)
