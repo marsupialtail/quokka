@@ -843,9 +843,6 @@ class BlockingTaskNode(TaskNode):
                 print(self.id, "CHECKPOINTING")
                 self.checkpoint()
 
-            # this is a very subtle point. You will only breakout if length of self.target, i.e. the original length of 
-            # target list is bigger than 0. So you had somebody to send to but now you don't
-
             if results is not None and len(results) > 0:
                 key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
                 self.object_count += 1

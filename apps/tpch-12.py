@@ -15,6 +15,9 @@ import redis
 r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
 
+ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.10.96']
+workers = 4
+
 task_graph = TaskGraph()
 
 def batch_func(df):
@@ -47,14 +50,8 @@ if sys.argv[2] == "csv":
         lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|")
         orders_csv_reader = InputCSVDataset("tpc-h-csv", "orders/orders.tbl.1", order_scheme , sep="|")
 
-        # if perf is bad try changing lineitem num channels to 16
-        #lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8}, batch_func = lineitem_filter)
-        #orders = task_graph.new_input_reader_node(orders_csv_reader, {'localhost':8}, batch_func = orders_filter)
-
-        # lineitem = task_graph.new_input_reader_node(lineitem_csv_reader,{'localhost':8, '172.31.11.134':8}, batch_func = lineitem_filter)
-        # orders = task_graph.new_input_reader_node(orders_csv_reader, {'localhost':8, '172.31.11.134':8}, batch_func = orders_filter)
-        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8, '172.31.11.134':8, '172.31.15.208':8, '172.31.10.96':8}, batch_func = lineitem_filter)
-        orders = task_graph.new_input_reader_node(orders_csv_reader, {'localhost':8, '172.31.11.134':8, '172.31.15.208':8, '172.31.10.96':8}, batch_func = orders_filter)
+        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {ip:8 for ip in ips[:workers]}, batch_func = lineitem_filter)
+        orders = task_graph.new_input_reader_node(orders_csv_reader, {ip:8 for ip in ips[:workers]}, batch_func = orders_filter)
 
 elif sys.argv[2] == "parquet":
     if sys.argv[1] == "small":
@@ -64,18 +61,12 @@ elif sys.argv[2] == "parquet":
         lineitem_parquet_reader = InputMultiParquetDataset("tpc-h-parquet","lineitem.parquet",columns=['l_shipdate','l_commitdate','l_shipmode','l_receiptdate','l_orderkey'], filters= [('l_shipmode', 'in', ['SHIP','MAIL']),('l_receiptdate','<',compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")), ('l_receiptdate','>=',compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s"))])
         orders_parquet_reader = InputMultiParquetDataset("tpc-h-parquet","orders.parquet",columns = ['o_orderkey','o_orderpriority'])
 
-        lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, {'localhost':8}, batch_func = lineitem_filter_parquet)
-        orders = task_graph.new_input_reader_node(orders_parquet_reader, {'localhost':8}, batch_func = orders_filter_parquet)
-
-#        lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader,{'localhost':8,'172.31.11.134':8,'172.31.15.208':8,'172.31.10.96':8}, batch_func = lineitem_filter_parquet)
-#        orders = task_graph.new_input_reader_node(orders_parquet_reader, {'localhost':8,'172.31.11.134':8,'172.31.15.208':8,'172.31.10.96':8}, batch_func = orders_filter_parquet)
-       
+        lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, {ip:8 for ip in ips[:workers]}, batch_func = lineitem_filter_parquet)
+        orders = task_graph.new_input_reader_node(orders_parquet_reader, {ip:8 for ip in ips[:workers]}, batch_func = orders_filter_parquet)
+      
 
 join_executor = PolarJoinExecutor(left_on="o_orderkey",right_on="l_orderkey", batch_func=batch_func)
-#output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor,{'localhost':4, '172.31.11.134':4,'172.31.15.208':4,'172.31.10.96':4}, {0:"o_orderkey", 1:"l_orderkey"})
-#output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor,{'localhost':4, '172.31.11.134':4}, {0:"o_orderkey", 1:"l_orderkey"})
-output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor,{'localhost':4}, {0:"o_orderkey", 1:"l_orderkey"})
-#output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor,{'localhost':4,'172.31.16.185':4}, {0:"o_orderkey", 1:"l_orderkey"})
+output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor, {ip:4 for ip in ips[:workers]}, {0:"o_orderkey", 1:"l_orderkey"})
 agg_executor = AggExecutor()
 agged = task_graph.new_blocking_node({0:output_stream}, None, agg_executor, {'localhost':1}, {0:None})
 

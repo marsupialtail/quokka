@@ -10,7 +10,7 @@ class QuokkaCluster:
         self.private_ips = {}
         self.instance_ids = {}
 
-        for node in self.num_node:
+        for node in range(self.num_node):
             self.public_ips[node] = public_ips[node]
             self.private_ips[node] = private_ips[node]
             self.instance_ids[node] = instance_ids[node]
@@ -91,6 +91,32 @@ def create_cluster(aws_access_key, aws_access_id, num_instances, instance_type =
     if sum(z) != 0:
         raise Exception("ray workers failed to connect to ray head node")
     
+    print("Trying to set up spill dir.")
+
+    command =" sudo mkdir /data"
+    z = [os.system("ssh -oStrictHostKeyChecking=no -i /home/ziheng/Downloads/oregon-neurodb.pem ubuntu@" + public_ip + 
+    command) for public_ip in public_ips]
+    if sum(z) != 0:
+        raise Exception("failed to make temp spill directory")
+    
+    if "i3" in instance_type: # use a more sophisticated policy later
+        command =" sudo mkfs.ext4 -E nodiscard /dev/nvme0n1;"
+        z = [os.system("ssh -oStrictHostKeyChecking=no -i /home/ziheng/Downloads/oregon-neurodb.pem ubuntu@" + public_ip + 
+        command) for public_ip in public_ips]
+        if sum(z) != 0:
+            raise Exception("failed to format nvme ssd")
+        command =" sudo mount /dev/nvme0n1 /data;"
+        z = [os.system("ssh -oStrictHostKeyChecking=no -i /home/ziheng/Downloads/oregon-neurodb.pem ubuntu@" + public_ip + 
+        command) for public_ip in public_ips]
+        if sum(z) != 0:
+            raise Exception("failed to mount nvme ssd")
+    
+    command =" sudo chmod -R a+rw /data/"
+    z = [os.system("ssh -oStrictHostKeyChecking=no -i /home/ziheng/Downloads/oregon-neurodb.pem ubuntu@" + public_ip + 
+    command) for public_ip in public_ips]
+    if sum(z) != 0:
+        raise Exception("failed to give spill dir permissions")
+
     print("Quokka cluster started, coordinator IP address: ", leader_public_ip)
     return QuokkaCluster(public_ips, private_ips, instace_ids)
 

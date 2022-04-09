@@ -30,7 +30,7 @@ class Executor:
         pass
     def serialize(self):
         pass
-    def serialize(self, s):
+    def deserialize(self, s):
         pass
     def set_early_termination(self):
         self.early_termination = True
@@ -47,7 +47,7 @@ class UDFExecutor:
     def serialize(self):
         pass
     
-    def serialize(self, s):
+    def deserialize(self, s):
         pass
 
     def execute(self,batches,stream_id, executor_id):
@@ -56,6 +56,21 @@ class UDFExecutor:
             return self.udf(polars.concat(batches, rechunk=False))
         else:
             return None
+
+    def done(self,executor_id):
+        return
+
+# this is not fault tolerant. If the storage is lost you just re-read
+class StorageExecutor(Executor):
+    def __init__(self) -> None:
+        raise NotImplementedError
+    def serialize(self):
+        return {}, "all"
+    def deserialize(self, s):
+        pass
+    
+    def execute(self,batches,stream_id, executor_id):
+        return polars.concat([batch for batch in batches if batch is not None and len(batch) > 0])
 
     def done(self,executor_id):
         return
@@ -75,9 +90,9 @@ class OutputCSVExecutor(Executor):
         self.session = get_session()
 
     def serialize(self):
-        pass
+        return {}, "all"
     
-    def serialize(self, s):
+    def deserialize(self, s):
         pass
 
     def create_csv_file(self, data):
