@@ -47,8 +47,8 @@ if sys.argv[2] == "csv":
         orders = task_graph.new_input_reader_node(orders_csv_reader, {'localhost':8}, batch_func = orders_filter)
 
     else:
-        lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|")
-        orders_csv_reader = InputCSVDataset("tpc-h-csv", "orders/orders.tbl.1", order_scheme , sep="|")
+        lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|", stride = 128 * 1024 * 1024)
+        orders_csv_reader = InputCSVDataset("tpc-h-csv", "orders/orders.tbl.1", order_scheme , sep="|", stride = 128 * 1024 * 1024)
 
         lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {ip:8 for ip in ips[:workers]}, batch_func = lineitem_filter)
         orders = task_graph.new_input_reader_node(orders_csv_reader, {ip:8 for ip in ips[:workers]}, batch_func = orders_filter)

@@ -1,4 +1,4 @@
-
+import ray
 import sys
 sys.path.append("/home/ubuntu/quokka/")
 import datetime
@@ -23,6 +23,11 @@ lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quanti
 
 def lineitem_filter(df):
     
+    filtered_df = df.filter(compute.and_(compute.and_(compute.greater(df["l_shipdate"], compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s")), compute.greater_equal(df["l_discount"], 0.05)), compute.and_(compute.less_equal(df["l_discount"],0.07), compute.less(df["l_quantity"], 24)))).to_pandas()
+    return pd.DataFrame([ (filtered_df.l_extendedprice * filtered_df.l_discount).sum()],columns=['sum'])
+
+def lineitem_filter_parquet(df):
+    
     filtered_df = df.to_pandas()
     return pd.DataFrame([ (filtered_df.l_extendedprice * filtered_df.l_discount).sum()],columns=['sum'])
 
@@ -32,21 +37,24 @@ if sys.argv[2] == "csv":
         lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8}, batch_func = lineitem_filter)
     else:
         lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|")
-        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8}, batch_func = lineitem_filter)
+        #lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':16}, batch_func = lineitem_filter)
+        #lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':16,'172.31.11.134':16,'172.31.15.208':16,'172.31.10.96':16}, batch_func=lineitem_filter)
+        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':16,'172.31.11.134':16}, batch_func=lineitem_filter)
 
 elif sys.argv[2] == "parquet":
     if sys.argv[1] == "small":
         raise Exception("not implemented")
     else:
         lineitem_parquet_reader = InputMultiParquetDataset("tpc-h-parquet","lineitem.parquet",columns=["l_discount","l_extendedprice"], filters = [('l_shipdate','>',compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s")), ('l_discount','>=',0.05), ('l_discount','<=',0.07),('l_quantity','<',24)])
-        lineitem = task_graph.new_input_multiparquet(lineitem_parquet_reader, {'localhost':8}, batch_func=lineitem_filter)
-
+        #lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, {'localhost':8}, batch_func=lineitem_filter)
+        #lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, {'localhost':8,'172.31.11.134':8,'172.31.15.208':8,'172.31.10.96':8}, batch_func=lineitem_filter_parquet)
+        lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, {'localhost':8,'172.31.11.134':8}, batch_func=lineitem_filter_parquet)
 agg_executor = AggExecutor()
 agged = task_graph.new_blocking_node({0:lineitem},None, agg_executor, {'localhost':1}, {0:None})
-task_graph.initialize()
+task_graph.create()
 
 start = time.time()
 task_graph.run()
 print("total time ", time.time() - start)
-print(agged.to_pandas.remote())
+print(ray.get(agged.to_pandas.remote()))
 #import pdb;pdb.set_trace()

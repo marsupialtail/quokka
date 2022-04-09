@@ -229,7 +229,7 @@ class TaskGraph:
         self.node_args[self.current_node] = {"mapping":mapping, "datasets":datasets, "functionObject":functionObject, "ckpt_interval": ckpt_interval, "partition_key":partition_key}
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
-    def new_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 100):
+    def new_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 10):
         
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
         mapping = {}

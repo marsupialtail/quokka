@@ -17,8 +17,10 @@ import types
 import concurrent.futures
 # isolated simplified test bench for different fault tolerance protocols
 
+#FT_I = True
+#FT =  True
 FT_I = True
-FT =  True
+FT = False# True
 
 # above this limit we are going to start flushing things to disk
 INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
@@ -159,7 +161,7 @@ class Node:
             for target in self.alive_targets:
                 original_channel_to_ip, partition_key = self.targets[target]
                 for channel in self.alive_targets[target]:
-                    print("PUSHING FROM",str(self.id),str(self.channel)," TO ",str(target),str(channel), " MY TAG ", self.out_seq)
+                    #print("PUSHING FROM",str(self.id),str(self.channel)," TO ",str(target),str(channel), " MY TAG ", self.out_seq)
                     if partition_key is not None:
 
                         if type(partition_key) == str:
@@ -175,9 +177,13 @@ class Node:
                     # if the target is on the same machine we are just going to use shared memory, and change the payload to the shared memory name!!
 
                     if original_channel_to_ip[channel] == self.ip:
+                        #print("LOCAL CHANNEL", channel, self.ip)
                         if type(payload) == pd.core.frame.DataFrame:
                             batch = payload
                             my_format = "pandas"
+                        elif payload is None:
+                            batch = payload
+                            my_format = "custom"
                         else:
                             batch = payload.to_arrow()
                             my_format = "polars"
@@ -234,12 +240,14 @@ class Node:
 
         try:    
             if not self.update_targets():
+                print("WIERD STUFF IS HAPPENING")
                 return False
         except:
             print("downstream failure detected")
 
         for target in self.alive_targets:
             for channel in self.alive_targets[target]:
+                print("SAYING IM DONE TO", target, channel, "MY OUT SEQ", self.out_seq)
                 pipeline = self.target_rs[target][channel].pipeline()
                 pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps("done"))
                 pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),pickle.dumps((self.id, self.channel, self.out_seq)))
@@ -264,7 +272,7 @@ class InputNode(Node):
         self.dependent_parallelism = {}
         self.checkpoint_interval = checkpoint_interval
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-        self.logged_outputs = OrderedDict() # we are not going to checkpoint those logged outputs, which could be massive
+        self.logged_outputs = {} # we are not going to checkpoint those logged outputs, which could be massive
 
         for key in dependent_map:
             self.dependent_parallelism[key] = dependent_map[key][1]
@@ -288,16 +296,27 @@ class InputNode(Node):
             if ckpt == "s3":
                 s3_resource = boto3.resource('s3')
                 bucket, key = self.checkpoint_location
-                recovered_state = pickle.loads(s3_resource.Object(bucket, key).get()['Body'].read())
+                try:
+                    recovered_state = pickle.loads(s3_resource.Object(bucket, key).get()['Body'].read())
+                except: # failed to load checkpoint!
+                    self.target_output_state = {}
+                    self.out_seq = 0
+                    self.state_tag = 0
+                    self.latest_stable_state = None
+                    self.latest_stable_seq = 0
+                    self.seq_state_map = {}
+                    
             else:
                 recovered_state = pickle.load(open(ckpt,"rb"))
             
-            self.target_output_state = recovered_state["target_output_state"]
+            # what you do here don't matter, the target_output_state will be set to all zeros
+            self.target_output_state = {}
             self.latest_stable_state = recovered_state["state"]
             self.out_seq = recovered_state["out_seq"]
-            self.seq_state_map = recovered_state["seq_state_map"]
-            self.state_tag = recovered_state["tag"]
-            print("INPUT NODE RECOVERED TO STATE", self.latest_stable_state)
+            self.latest_stable_seq = self.out_seq
+            self.seq_state_map = {} #recovered_state["seq_state_map"]
+            self.state_tag =0# recovered_state["tag"]
+            print("INPUT NODE RECOVERED TO STATE", self.latest_stable_state, self.out_seq, self.seq_state_map, self.state_tag)
 
     def truncate_logged_outputs(self, target_id, channel, target_ckpt_state):
         
@@ -311,11 +330,13 @@ class InputNode(Node):
 
             self.latest_stable_state = self.seq_state_map[new_min]
             self.latest_stable_seq = new_min
+            print("UPDATING LATEST ", self.latest_stable_state, self.latest_stable_seq, self.seq_state_map)
 
             for key in range(old_min, new_min):
                 if key in self.logged_outputs:
                     print("REMOVING KEY",key,"FROM LOGGED OUTPUTS")
                     self.logged_outputs.pop(key)
+            gc.collect()
         self.output_lock.release() 
         
     def checkpoint(self, method = "s3"):
@@ -324,7 +345,7 @@ class InputNode(Node):
         # write logged outputs, state, state_tag to reliable storage
         # for input nodes, log the outputs instead of redownlaoding is probably worth it. since the outputs could be filtered by predicate
         
-        state = { "out_seq" : self.latest_stable_seq, "tag":self.state_tag, "target_output_state":self.target_output_state,
+        state = { "out_seq" : self.latest_stable_seq, "tag":self.state_tag,
         "state":self.latest_stable_state, "seq_state_map": self.seq_state_map}
         state_str = pickle.dumps(state)
 
@@ -377,6 +398,17 @@ class InputNode(Node):
             if self.state_tag % self.checkpoint_interval == 0:
                 self.checkpoint()
             self.state_tag += 1
+        
+        #for pos, batch in self.input_generator:
+        #    self.seq_state_map[self.out_seq + 1] = pos
+        #    if self.batch_func is not None:
+        #        result = self.batch_func(batch)
+        #        self.push(result)
+        #    else:
+        #        self.push(batch)
+        #    if self.state_tag % self.checkpoint_interval == 0:
+        #        self.checkpoint()
+        #    self.state_tag += 1
 
         print("INPUT DONE", self.id, self.channel)
         self.done()
@@ -428,7 +460,7 @@ class TaskNode(Node):
         if ckpt is None:
             self.state_tag =  {(parent,channel): 0 for parent in parents for channel in parents[parent]}
             self.latest_input_received = {(parent,channel): 0 for parent in parents for channel in parents[parent]}
-            self.logged_outputs = OrderedDict()
+            self.logged_outputs = {}
             self.target_output_state = {}
 
             self.out_seq = 0
@@ -632,9 +664,9 @@ class TaskNode(Node):
                     self.buffered_inputs[(stream_id,channel)].append(FlushedMessage("/data/input-mailbox-" + str(self.id) + "-" + str(self.channel) + "-" + str(self.disk_fileno) + ".pkl"))
                     self.disk_fileno += 1
                 else:
-                    print("start", self.id, self.channel, time.time())
+                    #print("start", self.id, self.channel, time.time())
                     self.buffered_inputs[(stream_id,channel)].append(pickle.loads(first))
-                    print("end", self.id, self.channel, time.time())
+                    #print("end", self.id, self.channel, time.time())
             
         return batches_returned
     
@@ -724,14 +756,14 @@ class TaskNode(Node):
                     elif type(message) == SharedMemMessage:
                         message_format = message.format
                         object_id = message.name
-                        batch = ray.get(object_id)
+                        batch = ray.get(ray.cloudpickle.loads(object_id))
                         if message_format == "pandas" or message_format == "custom":
                             batches.append(batch)
                         elif message_format == "polars":
                             batches.append(polars.from_arrow(batch))
                         else:
                             raise Exception
-                        ray.internal.internal_api.free(object_id)
+                        ray.internal.internal_api.free(ray.cloudpickle.loads(object_id))
                     else:
                         batches.append(message)
             self.state_tag = expected

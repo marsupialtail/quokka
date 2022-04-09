@@ -103,7 +103,7 @@ class OutputCSVExecutor(Executor):
     async def do(self, client, data, name):
         da = await asyncio.get_running_loop().run_in_executor(self.exe, self.create_csv_file, data)
         resp = await client.put_object(Bucket=self.bucket,Key=self.prefix + "-" + str(self.executor_id) + "-" + str(name) + ".csv",Body=da.getvalue())
-        print(resp)
+        #print(resp)
 
     async def go(self, datas):
         # this is expansion of async with, so you don't have to remake the client
@@ -126,25 +126,29 @@ class OutputCSVExecutor(Executor):
             assert self.executor_id == executor_id
 
         self.my_batches.extend([i for i in batches if i is not None])
-        print("MY OUTPUT CSV STATE", [len(i) for i in self.my_batches] )
+        #print("MY OUTPUT CSV STATE", [len(i) for i in self.my_batches] )
 
         curr_len = 0
         i = 0
         datas = []
+        process = psutil.Process(os.getpid())
+        print("mem usage output", process.memory_info().rss, pa.total_allocated_bytes())
         while i < len(self.my_batches):
             curr_len += len(self.my_batches[i])
-            print(curr_len)
+            #print(curr_len)
             i += 1
             if curr_len > self.output_line_limit:
-                print("writing")
-                datas.append(polars.concat([self.my_batches.popleft() for k in range(i)], rechunk = False))
+                #print("writing")
+                datas.append(polars.concat([self.my_batches.popleft() for k in range(i)], rechunk = True))
                 i = 0
                 curr_len = 0
+        #print("writing ", len(datas), " files")
         asyncio.run(self.go(datas))
+        #print("mem usage after", process.memory_info().rss, pa.total_allocated_bytes())
 
     def done(self,executor_id):
         if len(self.my_batches) > 0:
-            datas = [polars.concat(list(self.my_batches), rechunk=False)]
+            datas = [polars.concat(list(self.my_batches), rechunk=True)]
             asyncio.run(self.go(datas))
         print("done")
 
@@ -194,7 +198,11 @@ class PolarJoinExecutor(Executor):
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
         # state compaction
+        batches = [i for i in batches if i is not None and len(i) > 0]
+        if len(batches) == 0:
+            return
         batch = polars.concat(batches)
+
         result = None
         if stream_id == 0:
             if self.state1 is not None:
@@ -227,7 +235,7 @@ class PolarJoinExecutor(Executor):
                 return result
     
     def done(self,executor_id):
-        print(len(self.state0),len(self.state1))
+        #print(len(self.state0),len(self.state1))
         print("done join ", executor_id)
 
 
@@ -510,7 +518,7 @@ class MergeSortedExecutor(Executor):
 
         
         writer.close()
-        import os, psutil
+
         process = psutil.Process(os.getpid())
         print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
         print(read_time, write_time, sort_time)
@@ -573,10 +581,13 @@ class MergeSortedExecutor(Executor):
     # this is some crazy wierd algo that I came up with, might be there before.
     def execute(self, batches, stream_id, executor_id):
         print("NUMBER OF INCOMING BATCHES", len(batches))
-        print("MY SORT STATE", [(type(i), len(i)) for i in self.states if type(i) == polars.internals.frame.DataFrame])
+        #print("MY SORT STATE", [(type(i), len(i)) for i in self.states if type(i) == polars.internals.frame.DataFrame])
         import os, psutil
         process = psutil.Process(os.getpid())
         print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
+        batches = [batch for batch in batches if batch is not None and len(batch) > 0]
+        if len(batches) == 0:
+            return
         batch = polars.concat(batches).sort(self.key)
         print("LENGTH OF INCOMING BATCH", len(batch))
         if self.record_batch_rows is None:
@@ -596,7 +607,7 @@ class MergeSortedExecutor(Executor):
         else:
             self.states.append(batch)
         
-        while len(self.filename_to_size) > 16:
+        while len(self.filename_to_size) > 4:
             files_to_merge = [y[0] for y in sorted(self.filename_to_size.items(), key = lambda x: x[1])[:2]]
             self.produce_sorted_file_from_two_sorted_files(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", 
             self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[0]) + ".arrow",
