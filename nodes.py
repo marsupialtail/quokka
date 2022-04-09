@@ -20,7 +20,7 @@ import concurrent.futures
 #FT_I = True
 #FT =  True
 FT_I = True
-FT =  True
+FT = False# True
 
 # above this limit we are going to start flushing things to disk
 INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
@@ -177,10 +177,13 @@ class Node:
                     # if the target is on the same machine we are just going to use shared memory, and change the payload to the shared memory name!!
 
                     if original_channel_to_ip[channel] == self.ip:
-                        print("LOCAL CHANNEL", channel, self.ip)
+                        #print("LOCAL CHANNEL", channel, self.ip)
                         if type(payload) == pd.core.frame.DataFrame:
                             batch = payload
                             my_format = "pandas"
+                        elif payload is None:
+                            batch = payload
+                            my_format = "custom"
                         else:
                             batch = payload.to_arrow()
                             my_format = "polars"
@@ -269,7 +272,7 @@ class InputNode(Node):
         self.dependent_parallelism = {}
         self.checkpoint_interval = checkpoint_interval
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-        self.logged_outputs = OrderedDict() # we are not going to checkpoint those logged outputs, which could be massive
+        self.logged_outputs = {} # we are not going to checkpoint those logged outputs, which could be massive
 
         for key in dependent_map:
             self.dependent_parallelism[key] = dependent_map[key][1]
@@ -333,6 +336,7 @@ class InputNode(Node):
                 if key in self.logged_outputs:
                     print("REMOVING KEY",key,"FROM LOGGED OUTPUTS")
                     self.logged_outputs.pop(key)
+            gc.collect()
         self.output_lock.release() 
         
     def checkpoint(self, method = "s3"):
@@ -456,7 +460,7 @@ class TaskNode(Node):
         if ckpt is None:
             self.state_tag =  {(parent,channel): 0 for parent in parents for channel in parents[parent]}
             self.latest_input_received = {(parent,channel): 0 for parent in parents for channel in parents[parent]}
-            self.logged_outputs = OrderedDict()
+            self.logged_outputs = {}
             self.target_output_state = {}
 
             self.out_seq = 0

@@ -21,7 +21,7 @@ lineitem_filter = lambda x: polars.from_arrow(x).sort('l_partkey')
 
 def partition_key(data, source_channel,  target_channel):
     
-    interval = (200000000 // 8)
+    interval = (200000000 // 16)
     #interval = (200000 // 4)
     range_start = interval * target_channel
 
@@ -39,21 +39,23 @@ lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quanti
 "l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
 "l_shipmode","l_comment", "null"]
 
-if sys.argv[2] == "csv":
+drop_null = lambda x: polars.from_arrow(x).drop("null")
 
-    lineitem_csv_reader = InputCSVDataset("tpc-h-small", "lineitem.tbl", lineitem_scheme , sep="|")
-    lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8})
+if sys.argv[1] == "csv":
+
+    lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|")
+    lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8, '172.31.11.134':8, '172.31.15.208':8, '172.31.11.188':8}, batch_func = drop_null)
     
     #lineitem = task_graph.new_input_reader_node(lineitem_csv_reader,{'localhost':8, '172.31.11.134':8})
     #lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8, '172.31.11.134':8, '172.31.15.208':8, '172.31.10.96':8})
 
-elif sys.argv[2] == "parquet":
+elif sys.argv[1] == "parquet":
     raise Exception("not implemented")
 
 executor = MergeSortedExecutor("l_partkey", record_batch_rows = 250000, length_limit = 1000000)
-stream = task_graph.new_non_blocking_node({0:lineitem}, None, executor, {'localhost':4, '172.31.11.134':4}, {0: partition_key})
+stream = task_graph.new_non_blocking_node({0:lineitem}, None, executor, {'localhost':4, '172.31.11.134':4, '172.31.15.208':4, '172.31.11.188':4}, {0: partition_key})
 outputer = OutputCSVExecutor("quokka-sorted-lineitem","lineitem")
-output = task_graph.new_blocking_node({0:stream}, None,outputer, {'localhost':4, '172.31.11.134':4}, {0: partition_key2} )
+output = task_graph.new_blocking_node({0:stream}, None,outputer, {'localhost':4, '172.31.11.134':4, '172.31.15.208':4, '172.31.11.188':4}, {0: partition_key2} )
 
 task_graph.create()
 start = time.time()
