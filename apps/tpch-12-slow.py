@@ -58,13 +58,13 @@ task_graph.create()
 task_graph.run_with_fault_tolerance()
 
 task_graph2 = TaskGraph()
-lineitem = task_graph.new_input_redis(cached_lineitem, {ip:4 for ip in ips[:workers]})
-orders = task_graph.new_input_redis(cached_orders, {ip:4 for ip in ips[:workers]})
+lineitem = task_graph2.new_input_redis(cached_lineitem, {ip:4 for ip in ips[:workers]})
+orders = task_graph2.new_input_redis(cached_orders, {ip:4 for ip in ips[:workers]})
 
 join_executor = PolarJoinExecutor(left_on="o_orderkey",right_on="l_orderkey", batch_func=batch_func)
-output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor, {ip:4 for ip in ips[:workers]}, {0:"o_orderkey", 1:"l_orderkey"})
+output_stream = task_graph2.new_non_blocking_node({0:orders,1:lineitem},None,join_executor, {ip:4 for ip in ips[:workers]}, {0:"o_orderkey", 1:"l_orderkey"})
 agg_executor = AggExecutor()
-agged = task_graph.new_blocking_node({0:output_stream}, None, agg_executor, {'localhost':1}, {0:None})
+agged = task_graph2.new_blocking_node({0:output_stream}, None, agg_executor, {'localhost':1}, {0:None})
 
 
 task_graph.create()
