@@ -14,7 +14,8 @@ r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
 task_graph = TaskGraph()
 
-# unless I was dreaming, and my dreams somehow manifested themselves in the EC2 instance execution logs, sometimes the results are wrong. Though it is extremely infrequent.
+ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.11.188']
+workers = 4
 
 lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
 "l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
@@ -31,15 +32,20 @@ def lineitem_filter_parquet(df):
     filtered_df = df.to_pandas()
     return pd.DataFrame([ (filtered_df.l_extendedprice * filtered_df.l_discount).sum()],columns=['sum'])
 
+def partition_key1(data, source_channel, target_channel):
+
+    if source_channel // 8 == target_channel:
+        return data
+    else:
+        return None
+
 if sys.argv[2] == "csv":
     if sys.argv[1] == "small":
         lineitem_csv_reader = InputCSVDataset("tpc-h-small", "lineitem.tbl", lineitem_scheme , sep="|")
-        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8}, batch_func = lineitem_filter)
+        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':16}, batch_func = lineitem_filter)
     else:
         lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|")
-        #lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':16}, batch_func = lineitem_filter)
-        #lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':16,'172.31.11.134':16,'172.31.15.208':16,'172.31.10.96':16}, batch_func=lineitem_filter)
-        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':16,'172.31.11.134':16}, batch_func=lineitem_filter)
+        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {ip:8 for ip in ips[:workers]}, batch_func=lineitem_filter)
 
 elif sys.argv[2] == "parquet":
     if sys.argv[1] == "small":
@@ -50,7 +56,9 @@ elif sys.argv[2] == "parquet":
         #lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, {'localhost':8,'172.31.11.134':8,'172.31.15.208':8,'172.31.10.96':8}, batch_func=lineitem_filter_parquet)
         lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, {'localhost':8,'172.31.11.134':8}, batch_func=lineitem_filter_parquet)
 agg_executor = AggExecutor()
-agged = task_graph.new_blocking_node({0:lineitem},None, agg_executor, {'localhost':1}, {0:None})
+# does not actually make things faster here
+intermediate = task_graph.new_non_blocking_node({0:lineitem},None, agg_executor, {ip:1 for ip in ips[:workers]}, {0:partition_key1})
+agged = task_graph.new_blocking_node({0:intermediate},None, agg_executor, {'localhost':1}, {0:None})
 task_graph.create()
 
 start = time.time()
