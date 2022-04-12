@@ -15,7 +15,7 @@ import redis
 r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
 
-ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.10.96']
+ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.11.188']
 workers = 4
 
 task_graph = TaskGraph()
@@ -50,7 +50,7 @@ if sys.argv[2] == "csv":
         lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|", stride = 128 * 1024 * 1024)
         orders_csv_reader = InputCSVDataset("tpc-h-csv", "orders/orders.tbl.1", order_scheme , sep="|", stride = 128 * 1024 * 1024)
 
-        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {ip:8 for ip in ips[:workers]}, batch_func = lineitem_filter)
+        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {ip:16 for ip in ips[:workers]}, batch_func = lineitem_filter)
         orders = task_graph.new_input_reader_node(orders_csv_reader, {ip:8 for ip in ips[:workers]}, batch_func = orders_filter)
 
 elif sys.argv[2] == "parquet":
@@ -69,6 +69,7 @@ join_executor = PolarJoinExecutor(left_on="o_orderkey",right_on="l_orderkey", ba
 output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor, {ip:4 for ip in ips[:workers]}, {0:"o_orderkey", 1:"l_orderkey"})
 agg_executor = AggExecutor()
 agged = task_graph.new_blocking_node({0:output_stream}, None, agg_executor, {'localhost':1}, {0:None})
+
 
 
 task_graph.create()

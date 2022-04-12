@@ -15,8 +15,8 @@ import redis
 r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
 
-ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.10.96']
-workers = 4
+ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.11.188']
+workers = 2
 
 task_graph = TaskGraph()
 
@@ -54,22 +54,35 @@ storage = StorageExecutor()
 cached_lineitem = task_graph.new_blocking_node({0:lineitem},None, storage, {ip:1 for ip in ips[:workers]}, {0:partition_key1})
 cached_orders = task_graph.new_blocking_node({0:orders},None, storage, {ip:1 for ip in ips[:workers]}, {0:partition_key1})
 
-task_graph.create()
-task_graph.run_with_fault_tolerance()
-
-task_graph2 = TaskGraph()
-lineitem = task_graph.new_input_redis(cached_lineitem, {ip:4 for ip in ips[:workers]})
-orders = task_graph.new_input_redis(cached_orders, {ip:4 for ip in ips[:workers]})
-
-join_executor = PolarJoinExecutor(left_on="o_orderkey",right_on="l_orderkey", batch_func=batch_func)
-output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor, {ip:4 for ip in ips[:workers]}, {0:"o_orderkey", 1:"l_orderkey"})
-agg_executor = AggExecutor()
-agged = task_graph.new_blocking_node({0:output_stream}, None, agg_executor, {'localhost':1}, {0:None})
-
 
 task_graph.create()
 start = time.time()
 task_graph.run_with_fault_tolerance()
-print("total time ", time.time() - start)
+load_time = time.time() - start
+
+task_graph2 = TaskGraph()
+lineitem = task_graph2.new_input_redis(cached_lineitem, {ip:4 for ip in ips[:workers]})
+orders = task_graph2.new_input_redis(cached_orders, {ip:4 for ip in ips[:workers]})
+
+join_executor = PolarJoinExecutor(left_on="o_orderkey",right_on="l_orderkey", batch_func=batch_func)
+cached_joined = task_graph2.new_blocking_node({0:orders,1:lineitem},None,join_executor, {ip:4 for ip in ips[:workers]}, {0:"o_orderkey", 1:"l_orderkey"})
+
+task_graph2.create()
+start = time.time()
+task_graph2.run_with_fault_tolerance()
+compute_time = time.time() - start
+
+task_graph3 = TaskGraph()
+joined = task_graph3.new_input_redis(cached_joined, {ip:4 for ip in ips[:workers]})
+agg_executor = AggExecutor()
+agged = task_graph3.new_blocking_node({0:joined}, None, agg_executor, {'localhost':1}, {0:None})
+
+task_graph3.create()
+start = time.time()
+task_graph3.run_with_fault_tolerance()
+compute_time += time.time() - start
+
+print("load time ", load_time)
+print("compute time ", compute_time)
 
 print(ray.get(agged.to_pandas.remote()))

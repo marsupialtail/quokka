@@ -18,8 +18,8 @@ task_graph = TaskGraph()
 # aggregation push down might be interesting to think about
 # this is not very good because we don't know the thing is actually sorted in l_order on lineitem
 
-ips = [ 'localhost','172.31.11.134','172.31.15.208','172.31.10.96']
-workers = 1
+ips = [ 'localhost','172.31.11.134','172.31.15.208','172.31.11.188']
+workers = 2
 
 def batch_func2(df):
     df["product"] = df["l_extendedprice"] * (1 - df["l_discount"])
@@ -45,7 +45,7 @@ if sys.argv[1] == "csv":
     orders_csv_reader = InputCSVDataset("tpc-h-csv", "orders/orders.tbl.1", order_scheme , sep="|", stride = 128 * 1024 * 1024)
     customer_csv_reader = InputCSVDataset("tpc-h-csv", "customer/customer.tbl.1", customer_scheme , sep="|", stride = 128 * 1024 * 1024)
 
-    lineitem = task_graph.new_input_reader_node(lineitem_csv_reader,{ips[i]: 8 for i in range(workers)}, batch_func = lineitem_filter)
+    lineitem = task_graph.new_input_reader_node(lineitem_csv_reader,{ips[i]: 16 for i in range(workers)}, batch_func = lineitem_filter)
     orders = task_graph.new_input_reader_node(orders_csv_reader, {ips[i]: 8 for i in range(workers)}, batch_func = orders_filter)
     customer = task_graph.new_input_reader_node(customer_csv_reader,{ips[i]: 8 for i in range(workers)}, batch_func = customer_filter)
 
