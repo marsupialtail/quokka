@@ -7,7 +7,7 @@ import boto3
 import s3fs
 import time
 import redis
-import h5py
+#import h5py
 from collections import deque
 
 
@@ -297,6 +297,10 @@ class InputMultiCSVDataset:
         self.stride = stride
     
 
+    def set_num_mappers(self, num_mappers):
+        assert self.num_mappers == num_mappers
+        self.s3 = boto3.client('s3')  # needs boto3 client
+    
     # we need to rethink this whole setting num mappers business. For this operator we don't want each node to do redundant work!
     def get_own_state(self, num_mappers, window = 1024 * 32):
         self.num_mappers = num_mappers
