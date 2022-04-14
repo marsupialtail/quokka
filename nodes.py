@@ -680,7 +680,10 @@ class TaskNode(Node):
         if self.head_r.llen("state-tag-" + str(self.id) + "-" + str(self.channel)) == 0:
             return
         first_state = pickle.loads(self.head_r.lrange("state-tag-" + str(self.id) + "-" + str(self.channel), 0, 1)[0])
-        diffs = np.array([first_state[i] - self.state_tag[i] for i in first_state])
+        try:
+            diffs = np.array([first_state[i] - self.state_tag[i] for i in first_state])
+        except:
+            raise Exception(first_state, self.state_tag)
         hmm = np.count_nonzero(diffs > 0)
         huh = np.count_nonzero(diffs < 0)
         if hmm > 0 and huh > 0:
@@ -803,7 +806,7 @@ class NonBlockingTaskNode(TaskNode):
                 continue
 
             #print("BUFFERED INPUT LENGTHS",{i:len(i) for i in self.buffered_inputs})
-            print(self.state_tag)
+            #print(self.state_tag)
             #print(self.latest_input_received)
             for key in self.state_tag:
                 assert self.state_tag[key] <= self.latest_input_received[key]
