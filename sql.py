@@ -63,14 +63,19 @@ class UDFExecutor:
 # this is not fault tolerant. If the storage is lost you just re-read
 class StorageExecutor(Executor):
     def __init__(self) -> None:
-        raise NotImplementedError
+        self.num_states = 0
     def serialize(self):
         return {}, "all"
     def deserialize(self, s):
         pass
     
     def execute(self,batches,stream_id, executor_id):
-        return polars.concat([batch for batch in batches if batch is not None and len(batch) > 0])
+        batches = [batch for batch in batches if batch is not None and len(batch) > 0]
+        if len(batches) > 0:
+            if type(batches[0]) == polars.internals.frame.DataFrame:
+                return polars.concat(batches)
+            else:
+                return pd.vstack(batches)
 
     def done(self,executor_id):
         return

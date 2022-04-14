@@ -87,6 +87,10 @@ class TaskGraph:
         s3 = boto3.resource('s3')
         bucket = s3.Bucket(checkpoint_bucket)
         bucket.objects.all().delete()
+        r = redis.Redis(host="localhost", port=6800, db=0)
+        state_tags = [i.decode("utf-8") for i in r.keys() if "state-tag" in i.decode("utf-8")] 
+        for state_tag in state_tags:
+            r.delete(state_tag)
     
     def flip_ip_channels(self, ip_to_num_channel):
         ips = sorted(list(ip_to_num_channel.keys()))
@@ -197,7 +201,7 @@ class TaskGraph:
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
     
     
-    def new_non_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 30):
+    def new_non_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 10):
         
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
         # this is the mapping of physical node id to the key the user called in streams. i.e. if you made a node, task graph assigns it an internal id #

@@ -202,7 +202,7 @@ class InputCSVDataset:
 
         if self.num_mappers is None:
             raise Exception
-        splits = 64
+        splits = 192
 
         response = self.s3.head_object(
             Bucket=self.bucket,
