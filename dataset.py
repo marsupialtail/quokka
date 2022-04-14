@@ -377,15 +377,15 @@ class InputMultiCSVDataset:
         print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
 
 
-    def get_next_batch(self, mapper_id, curr_pos = None, pos=None):
+    def get_next_batch(self, mapper_id, state = None):
         assert self.num_mappers is not None
         files = self.channel_infos[mapper_id][1]
         
-        if curr_pos is None and pos is None:
+        if state is None:
             curr_pos = 0
             pos = self.channel_infos[mapper_id][0]
         else:
-            assert curr_pos is not None and pos is not None # restart
+            curr_pos, pos = state
             
         while curr_pos < len(files):
             

@@ -20,7 +20,7 @@ import concurrent.futures
 #FT_I = True
 #FT =  True
 FT_I = True
-FT = False# True
+FT = True
 
 # above this limit we are going to start flushing things to disk
 INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
@@ -798,7 +798,7 @@ class NonBlockingTaskNode(TaskNode):
                 continue
 
             #print("BUFFERED INPUT LENGTHS",{i:len(i) for i in self.buffered_inputs})
-            #print(self.state_tag)
+            print(self.state_tag)
             #print(self.latest_input_received)
             for key in self.state_tag:
                 assert self.state_tag[key] <= self.latest_input_received[key]
