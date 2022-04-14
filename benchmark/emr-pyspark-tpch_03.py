@@ -1,12 +1,13 @@
 import argparse
 import time
+from tokenize import String
 
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, FloatType, LongType, DecimalType, IntegerType, StringType, DateType
 
-def run_tpch_q12(source_lineitem, source_orders, output_uri):
+def run_tpch_q06(source_lineitem, source_orders, source_customers, output_uri):
     
-    with SparkSession.builder.appName("TPC-H_q12").getOrCreate() as spark:
+    with SparkSession.builder.appName("TPC-H_q06").getOrCreate() as spark:
        
         timing = []
         start = time.time()
@@ -29,6 +30,7 @@ def run_tpch_q12(source_lineitem, source_orders, output_uri):
             .add("l_shipmode",StringType(),True)\
             .add("l_comment",StringType(),True)\
             .add("l_extra",StringType(),True)
+
         schema_orders = StructType()\
             .add("o_orderkey",LongType(),True)\
             .add("o_custkey",LongType(),True)\
@@ -41,40 +43,59 @@ def run_tpch_q12(source_lineitem, source_orders, output_uri):
             .add("o_comment",StringType(),True)\
             .add("o_extra",StringType(),True)
 
+        schema_customers = StructType()\
+            .add("c_custkey", LongType(), True)\
+            .add("c_name", StringType(), True)\
+            .add("c_address", StringType(), True)\
+            .add("c_nationkey", LongType(), True)\
+            .add("c_phone", StringType(), True)\
+            .add("c_acctbal", DecimalType(10,2),True)\
+            .add("c_mktsegment", StringType(), True)\
+            .add("c_comment", StringType(), True)
+
         df_lineitem = spark.read.option("header", "false").option("delimiter","|")\
             .schema(schema_lineitem)\
-            .csv(source_lineitem)
+            .csv("s3://tpc-h-csv/lineitem/lineitem.tbl.1")
         df_orders = spark.read.option("header", "false").option("delimiter","|")\
             .schema(schema_orders)\
-            .csv(source_orders)
+            .csv("s3://tpc-h-csv/orders/orders.tbl.1")
+        df_customers = spark.read.option("header", "false").option("delimiter","|")\
+            .schema(schema_customers)\
+            .csv("s3://tpc-h-csv/customer/customer.tbl.1")
 
-        #df_lineitem = spark.read.parquet("s3://tpc-h-parquet/lineitem.parquet"); df_orders = spark.read.parquet("s3://tpc-h-parquet/orders.parquet")
-
-        df_lineitem.createOrReplaceTempView("lineitem")
-        df_orders.createOrReplaceTempView("orders")
+        df_lineitem.createOrReplaceTempView("lineitem");df_orders.createOrReplaceTempView("orders");df_customers.createOrReplaceTempView("customer")
 
         query_output = spark.sql("""
-            SELECT l.l_shipmode
-                 , SUM(CASE WHEN (o.o_orderpriority == '1-URGENT' OR  o.o_orderpriority == '2-HIGH') THEN 1 ELSE 0 END) AS high_line_count
-                 , SUM(CASE WHEN (o.o_orderpriority != '1-URGENT' AND o.o_orderpriority != '2-HIGH') THEN 1 ELSE 0 END) AS low_line_count
-              FROM orders AS o 
-              JOIN lineitem AS l ON (l.l_orderkey = o.o_orderkey)
-             WHERE l.l_shipmode IN ('MAIL', 'SHIP')
-               AND l.l_commitdate < l.l_receiptdate
-               AND l.l_shipdate < l.l_commitdate
-               AND l.l_receiptdate >= date '1994-01-01'
-               AND l.l_receiptdate < date '1995-01-01'
-          GROUP BY l.l_shipmode
-            """)
+            select
+                    l_orderkey,
+                    sum(l_extendedprice * (1 - l_discount)) as revenue,
+                    o_orderdate,
+                    o_shippriority
+            from
+                    customer,
+                    orders,
+                    lineitem
+            where
+                    c_mktsegment = 'BUILDING'
+                    and c_custkey = o_custkey
+                    and l_orderkey = o_orderkey
+                    and o_orderdate < date '1995-03-15'
+                    and l_shipdate > date '1995-03-15'
+            group by
+                    l_orderkey,
+                    o_orderdate,
+                    o_shippriority
+            order by
+                    revenue desc,
+                    o_orderdate
+            limit 10;
+        """)
         query_output.collect()
 
         end = time.time()
         timing.append(end - start)
 
-
         # query_output.write.option("header", "true").mode("overwrite").csv(output_uri)
-        # query_output.coalesce(1).write.option("header", "true").mode("overwrite").csv(output_uri)
-        # query_output.repartition(1).write.option("header", "true").mode("overwrite").csv(output_uri)
         timing_df = spark.createDataFrame(timing, FloatType())
         timing_df.coalesce(1).write.option("header", "false").mode("overwrite").csv(output_uri)
         timing_df.repartition(1).write.option("header", "false").mode("overwrite").csv(output_uri)
@@ -83,8 +104,7 @@ def run_tpch_q12(source_lineitem, source_orders, output_uri):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--source_lineitem')
-    parser.add_argument('--source_orders')
     parser.add_argument('--output_uri')
     args = parser.parse_args()
 
-    run_tpch_q12(args.source_lineitem, args.source_orders, args.output_uri)
+    run_tpch_q06(args.source_lineitem, args.output_uri)

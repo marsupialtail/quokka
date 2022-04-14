@@ -704,25 +704,28 @@ class TaskNode(Node):
 
             # now drain that source
             batches = []
-            for message in self.buffered_inputs[parent, channel]:
-                if type(message) == FlushedMessage:
-                    batches.append(pickle.load(open(message.loc, "rb")))
-                    os.remove(message.loc)
-                elif type(message) == SharedMemMessage:
-                    message_format = message.format
-                    object_id = message.name
-                    batch = ray.get(ray.cloudpickle.loads(object_id))
-                    if message_format == "pandas" or message_format == "custom":
-                        batches.append(batch)
-                    elif message_format == "polars":
-                        batches.append(polars.from_arrow(batch))
+            for daparent, channel in self.buffered_inputs:
+                if daparent != parent:
+                    continue
+                for message in self.buffered_inputs[parent, channel]:
+                    if type(message) == FlushedMessage:
+                        batches.append(pickle.load(open(message.loc, "rb")))
+                        os.remove(message.loc)
+                    elif type(message) == SharedMemMessage:
+                        message_format = message.format
+                        object_id = message.name
+                        batch = ray.get(ray.cloudpickle.loads(object_id))
+                        if message_format == "pandas" or message_format == "custom":
+                            batches.append(batch)
+                        elif message_format == "polars":
+                            batches.append(polars.from_arrow(batch))
+                        else:
+                            raise Exception
+                        ray.internal.internal_api.free(ray.cloudpickle.loads(object_id))
                     else:
-                        raise Exception
-                    ray.internal.internal_api.free(ray.cloudpickle.loads(object_id))
-                else:
-                    batches.append(message)
-            self.state_tag[(parent,channel)] += length
-            self.buffered_inputs[parent,channel].clear()
+                        batches.append(message)
+                self.state_tag[(parent,channel)] += lengths[parent, channel]
+                self.buffered_inputs[parent,channel].clear()
             
             self.log_state_tag()
             return parent, batches
@@ -798,7 +801,7 @@ class NonBlockingTaskNode(TaskNode):
                 continue
 
             #print("BUFFERED INPUT LENGTHS",{i:len(i) for i in self.buffered_inputs})
-            #print(self.state_tag)
+            print(self.state_tag)
             #print(self.latest_input_received)
             for key in self.state_tag:
                 assert self.state_tag[key] <= self.latest_input_received[key]

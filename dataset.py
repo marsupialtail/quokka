@@ -7,7 +7,8 @@ import boto3
 import s3fs
 import time
 import redis
-import h5py
+#import h5py
+from collections import deque
 
 
 # this is used to convert an RDD into streams
@@ -202,7 +203,7 @@ class InputCSVDataset:
 
         if self.num_mappers is None:
             raise Exception
-        splits = 192
+        splits = self.num_mappers * 4
 
         response = self.s3.head_object(
             Bucket=self.bucket,
@@ -285,6 +286,7 @@ class InputCSVDataset:
                 yield pos, bump
 
 
+# this should work for 1 CSV up to multiple
 class InputMultiCSVDataset:
     def __init__(self, bucket, prefix, names, sep=",", stride=64 * 1024 * 1024) -> None:
         self.bucket = bucket
@@ -293,66 +295,128 @@ class InputMultiCSVDataset:
         self.names = names
         self.sep = sep
         self.stride = stride
-        
+    
+
     def set_num_mappers(self, num_mappers):
+        assert self.num_mappers == num_mappers
+        self.s3 = boto3.client('s3')  # needs boto3 client
+    
+    # we need to rethink this whole setting num mappers business. For this operator we don't want each node to do redundant work!
+    def get_own_state(self, num_mappers, window = 1024 * 32):
         self.num_mappers = num_mappers
 
-        self.s3 = boto3.client('s3')  # needs boto3 client  
+        s3 = boto3.client('s3')  # needs boto3 client, however it is transient and is not part of own state, so Ray can send this thing! 
         if self.prefix is not None:
-            z = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
-            self.files = [i['Key'] for i in z['Contents']]
+            z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
+            files = z['Contents']
             while 'NextContinuationToken' in z.keys():
-                z = self.s3.list_objects_v2(
+                z = s3.list_objects_v2(
                     Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
-                self.files.extend([i['Key'] for i in z['Contents']])
+                files.extend(z['Contents'])
         else:
-            z = self.s3.list_objects_v2(Bucket=self.bucket)
-            self.files = [i['Key'] for i in z['Contents']]
+            z = s3.list_objects_v2(Bucket=self.bucket)
+            files = z['Contents']
             while 'NextContinuationToken' in z.keys():
-                z = self.s3.list_objects_v2(
+                z = s3.list_objects_v2(
                     Bucket=self.bucket, ContinuationToken=z['NextContinuationToken'])
-                self.files.extend([i['Key'] for i in z['Contents']])
+                files.extend(z['Contents'])
         
-        self.files = sorted(self.files)
-        print(len(self.files))
+        sizes = deque([i['Size'] for i in files])
+        files = deque([i['Key'] for i in files])
+        total_size = sum(sizes)
+        size_per_channel = total_size // num_mappers
+        channel_infos = {}
 
-    def get_next_batch(self, mapper_id, curr_pos = None, pos=None):
-        assert self.num_mappers is not None
+        start_byte = 0
+        real_off = 0
+
+        for channel in range(num_mappers):
+            my_file = []
+            curr_size = 0
+            done = False
+            while curr_size + sizes[0] <= size_per_channel:
+                my_file.append(files.popleft())
+                end_byte = sizes.popleft()
+                if len(sizes) == 0:
+                    done = True
+                    break # we are taking off a bit more work each time so the last channel might leave before filling up size per channel
+                curr_size += end_byte
+                real_off = 0
         
-        if curr_pos is None and pos is None:
-            curr_pos = mapper_id
-            pos = 0
+            if done:
+                channel_infos[channel] = (start_byte, my_file.copy(), real_off + end_byte)
+                break
+
+            #curr_size + size[0] > size_per_channel, the leftmost file has enough bytes to satisfy the channel
+            # this never gonna happen in real life
+            if curr_size == size_per_channel:
+                channel_infos[channel] = (start_byte, my_file.copy(), real_off + end_byte)
+                continue
+
+            my_file.append(files[0])
+            candidate = size_per_channel - curr_size
+
+            start = max(0, candidate - window)
+            end = min(candidate + window, sizes[0])
+
+            resp = s3.get_object(
+                Bucket="tpc-h-csv", Key=files[0], Range='bytes={}-{}'.format(real_off + start,real_off + end))['Body'].read()
+            last_newline = resp.rfind(bytes('\n', 'utf-8'))
+            if last_newline == -1:
+                raise Exception
+            else:
+                bytes_to_take = start + last_newline
+
+            sizes[0] -= bytes_to_take
+            end_byte = real_off + bytes_to_take
+            real_off += bytes_to_take
+            channel_infos[channel] = (start_byte, my_file.copy(), end_byte)
+            start_byte = real_off
+        
+        self.channel_infos = channel_infos
+        print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
+
+
+    def get_next_batch(self, mapper_id, state = None):
+        assert self.num_mappers is not None
+        files = self.channel_infos[mapper_id][1]
+        
+        if state is None:
+            curr_pos = 0
+            pos = self.channel_infos[mapper_id][0]
         else:
-            assert curr_pos is not None and pos is not None # restart
+            curr_pos, pos = state
             
-        while curr_pos < len(self.files):
+        while curr_pos < len(files):
             
-            response = self.s3.head_object(
-                Bucket=self.bucket,
-                Key=self.files[curr_pos]
-            )
-            length = response['ContentLength']
-            pos = 0
-            end = length
+            file = files[curr_pos]
+            if curr_pos != len(files) - 1:
+                response = self.s3.head_object(
+                    Bucket=self.bucket,
+                    Key= file
+                )
+                length = response['ContentLength']
+                end = length
+            else:
+                end = self.channel_infos[mapper_id][2]
 
             while pos < end-1:
 
-                resp = self.s3.get_object(Bucket=self.bucket, Key=self.files[curr_pos], Range='bytes={}-{}'.format(
+                resp = self.s3.get_object(Bucket=self.bucket, Key=file, Range='bytes={}-{}'.format(
                     pos, min(pos+self.stride, end)))['Body'].read()
                 last_newline = resp.rfind(bytes('\n', 'utf-8'))
-
-                #import pdb;pdb.set_trace()
 
                 if last_newline == -1:
                     raise Exception
                 else:
                     resp = resp[:last_newline]
                     pos += last_newline
-                    #print("start convert,",time.time())
-                    #bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
                     bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
                         column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-                    #print("done convert,",time.time())
                     yield (curr_pos, pos) , bump
 
+            pos = 0
             curr_pos += self.num_mappers
+
+
+
