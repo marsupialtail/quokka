@@ -391,6 +391,7 @@ class InputMultiCSVDataset:
         while curr_pos < len(files):
             
             file = files[curr_pos]
+            print("READING FROM", file)
             if curr_pos != len(files) - 1:
                 response = self.s3.head_object(
                     Bucket=self.bucket,
@@ -417,7 +418,7 @@ class InputMultiCSVDataset:
                     yield (curr_pos, pos) , bump
 
             pos = 0
-            curr_pos += self.num_mappers
+            curr_pos += 1
 
 
 
