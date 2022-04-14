@@ -16,7 +16,7 @@ r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
 
 ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.11.188']
-workers = 1
+workers = 4
 
 task_graph = TaskGraph()
 
@@ -49,7 +49,8 @@ if sys.argv[2] == "csv":
     else:
         lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|", stride = 128 * 1024 * 1024)
         orders_csv_reader = InputCSVDataset("tpc-h-csv", "orders/orders.tbl.1", order_scheme , sep="|", stride = 128 * 1024 * 1024)
-
+        lineitem_csv_reader.get_csv_attributes(16 * workers)
+        orders_csv_reader.get_csv_attributes(8 * workers)
         lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {ip:16 for ip in ips[:workers]}, batch_func = lineitem_filter)
         orders = task_graph.new_input_reader_node(orders_csv_reader, {ip:8 for ip in ips[:workers]}, batch_func = orders_filter)
 

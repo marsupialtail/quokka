@@ -735,7 +735,7 @@ class TaskNode(Node):
             expected = self.expected_path[0]
             diffs = {i: expected[i] - self.state_tag[i] for i in expected}
             # there could be more than one possible difference, since we now allow scheduling all batches for different channels in a single task node
-            to_do = {}
+            to_do = set()
             for key in diffs:
                 if diffs[key] > 0:
                     to_do.add(key)

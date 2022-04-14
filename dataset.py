@@ -195,17 +195,17 @@ class InputCSVDataset:
         self.stride = stride
 
     def set_num_mappers(self, num_mappers):
-        self.num_mappers = num_mappers
+        assert self.num_mappers == num_mappers
         self.s3 = boto3.client('s3')  # needs boto3 client
-        self.length, self.adjusted_splits = self.get_csv_attributes()
 
-    def get_csv_attributes(self, window=1024 * 32):
 
-        if self.num_mappers is None:
-            raise Exception
+    def get_csv_attributes(self,num_mappers, window=1024 * 32):
+
+        s3 = boto3.client('s3')
+        self.num_mappers = num_mappers
         splits = self.num_mappers * 4
 
-        response = self.s3.head_object(
+        response = s3.head_object(
             Bucket=self.bucket,
             Key=self.key
         )
@@ -218,7 +218,7 @@ class InputCSVDataset:
         # the first value is going to be the start of the second row
         # -- we assume there's a header and skip it!
 
-        resp = self.s3.get_object(Bucket=self.bucket, Key=self.key,
+        resp = s3.get_object(Bucket=self.bucket, Key=self.key,
                                   Range='bytes={}-{}'.format(0, window))['Body'].read()
 
         first_newline = resp.find(bytes('\n', 'utf-8'))
@@ -232,7 +232,7 @@ class InputCSVDataset:
             start = max(0, potential_split - window)
             end = min(potential_split + window, length)
 
-            resp = self.s3.get_object(
+            resp = s3.get_object(
                 Bucket=self.bucket, Key=self.key, Range='bytes={}-{}'.format(start, end))['Body'].read()
             last_newline = resp.rfind(bytes('\n', 'utf-8'))
             if last_newline == -1:
@@ -243,7 +243,8 @@ class InputCSVDataset:
         adjusted_splits[-1] = length
 
         print(length, adjusted_splits)
-        return length, adjusted_splits
+        self.length = length
+        self.adjusted_splits = adjusted_splits
 
     # default is to get 16 KB batches at a time.
     def get_next_batch(self, mapper_id, pos=None):
