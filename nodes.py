@@ -305,6 +305,7 @@ class InputNode(Node):
                     self.latest_stable_state = None
                     self.latest_stable_seq = 0
                     self.seq_state_map = {}
+                    return
                     
             else:
                 recovered_state = pickle.load(open(ckpt,"rb"))
