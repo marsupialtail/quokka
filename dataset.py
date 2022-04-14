@@ -203,7 +203,7 @@ class InputCSVDataset:
 
         s3 = boto3.client('s3')
         self.num_mappers = num_mappers
-        splits = self.num_mappers * 4
+        splits = self.num_mappers * 4 
 
         response = s3.head_object(
             Bucket=self.bucket,

@@ -15,6 +15,8 @@ import redis
 r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
 
+ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.11.188']
+workers = 4
 task_graph = TaskGraph()
 
 lineitem_filter = lambda x: polars.from_arrow(x).sort('l_partkey')
@@ -44,18 +46,16 @@ drop_null = lambda x: polars.from_arrow(x).drop("null")
 if sys.argv[1] == "csv":
 
     lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|")
-    lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8, '172.31.11.134':8, '172.31.15.208':8, '172.31.11.188':8}, batch_func = drop_null)
-    
-    #lineitem = task_graph.new_input_reader_node(lineitem_csv_reader,{'localhost':8, '172.31.11.134':8})
-    #lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8, '172.31.11.134':8, '172.31.15.208':8, '172.31.10.96':8})
+    lineitem_csv_reader.get_csv_attributes(8 * workers)
+    lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {ip:8 for ip in ips[:workers]}, batch_func = drop_null)
 
 elif sys.argv[1] == "parquet":
     raise Exception("not implemented")
 
 executor = MergeSortedExecutor("l_partkey", record_batch_rows = 250000, length_limit = 1000000)
-stream = task_graph.new_non_blocking_node({0:lineitem}, None, executor, {'localhost':4, '172.31.11.134':4, '172.31.15.208':4, '172.31.11.188':4}, {0: partition_key})
+stream = task_graph.new_non_blocking_node({0:lineitem}, None, executor, {ip:4 for ip in ips[:workers]}, {0: partition_key})
 outputer = OutputCSVExecutor("quokka-sorted-lineitem","lineitem")
-output = task_graph.new_blocking_node({0:stream}, None,outputer, {'localhost':4, '172.31.11.134':4, '172.31.15.208':4, '172.31.11.188':4}, {0: partition_key2} )
+output = task_graph.new_blocking_node({0:stream}, None,outputer, {ip:4 for ip in ips[:workers]}, {0: partition_key2} )
 
 task_graph.create()
 start = time.time()
