@@ -15,7 +15,7 @@ r.flushall()
 task_graph = TaskGraph()
 
 ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.11.188']
-workers = 4
+workers = 1
 
 lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
 "l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
@@ -34,7 +34,7 @@ def lineitem_filter_parquet(df):
 
 def partition_key1(data, source_channel, target_channel):
 
-    if source_channel // 8 == target_channel:
+    if source_channel // 16 == target_channel:
         return data
     else:
         return None
@@ -45,16 +45,14 @@ if sys.argv[2] == "csv":
         lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':16}, batch_func = lineitem_filter)
     else:
         lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|")
-        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {ip:8 for ip in ips[:workers]}, batch_func=lineitem_filter)
+        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {ip:16 for ip in ips[:workers]}, batch_func=lineitem_filter)
 
 elif sys.argv[2] == "parquet":
     if sys.argv[1] == "small":
         raise Exception("not implemented")
     else:
         lineitem_parquet_reader = InputMultiParquetDataset("tpc-h-parquet","lineitem.parquet",columns=["l_discount","l_extendedprice"], filters = [('l_shipdate','>',compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s")), ('l_discount','>=',0.05), ('l_discount','<=',0.07),('l_quantity','<',24)])
-        #lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, {'localhost':8}, batch_func=lineitem_filter)
-        #lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, {'localhost':8,'172.31.11.134':8,'172.31.15.208':8,'172.31.10.96':8}, batch_func=lineitem_filter_parquet)
-        lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, {'localhost':8,'172.31.11.134':8}, batch_func=lineitem_filter_parquet)
+        lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader,{ip:8 for ip in ips[:workers]}, batch_func=lineitem_filter_parquet)
 agg_executor = AggExecutor()
 # does not actually make things faster here
 intermediate = task_graph.new_non_blocking_node({0:lineitem},None, agg_executor, {ip:1 for ip in ips[:workers]}, {0:partition_key1})
