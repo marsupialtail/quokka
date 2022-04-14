@@ -681,9 +681,10 @@ class TaskNode(Node):
         first_state = pickle.loads(self.head_r.lrange("state-tag-" + str(self.id) + "-" + str(self.channel), 0, 1)[0])
         diffs = np.array([first_state[i] - self.state_tag[i] for i in first_state])
         hmm = np.count_nonzero(diffs > 0)
-        if hmm > 1:
-            raise Exception("I think you truncated something you shouldn't have", first_state, self.state_tag)
-        if hmm == 1:
+        huh = np.count_nonzero(diffs < 0)
+        if hmm > 0 and huh > 0:
+            raise Exception("inconsistent first state in WAL with current state tag", first_state, self.state_tag)
+        elif hmm > 0:
             return
         
         while True:
@@ -733,42 +734,42 @@ class TaskNode(Node):
         else:
             expected = self.expected_path[0]
             diffs = {i: expected[i] - self.state_tag[i] for i in expected}
-            # there should only be one nonzero value in diffs. we need to figure out which one that is.
-            to_do = None
+            # there could be more than one possible difference, since we now allow scheduling all batches for different channels in a single task node
+            to_do = {}
             for key in diffs:
                 if diffs[key] > 0:
-                    if to_do is None:
-                        to_do = key
-                    else:
-                        raise Exception("shouldn't have more than one source > 0")
-            if to_do is None:
+                    to_do.add(key)
+            if len(to_do) == 0:
                 raise Exception("there should be some difference..",self.state_tag,expected)
-            parent, channel = to_do
-            required_batches = diffs[(parent, channel)]
-            if len(self.buffered_inputs[parent,channel]) < required_batches:
-                # cannot fulfill expectation
-                #print("CANNOT FULFILL EXPECTATION")
-                return None, None
+
+            
+            for parent, channel in to_do:
+                required_batches = diffs[(parent, channel)]
+                if len(self.buffered_inputs[parent,channel]) < required_batches:
+                    # cannot fulfill expectation
+                    #print("CANNOT FULFILL EXPECTATION")
+                    return None, None
             else:
                 batches = []
-                for i in range(required_batches):
-                    message = self.buffered_inputs[parent,channel].popleft()
-                    if type(message) == FlushedMessage:
-                        batches.append(pickle.load(open(message.loc, "rb")))
-                        os.remove(message.loc)
-                    elif type(message) == SharedMemMessage:
-                        message_format = message.format
-                        object_id = message.name
-                        batch = ray.get(ray.cloudpickle.loads(object_id))
-                        if message_format == "pandas" or message_format == "custom":
-                            batches.append(batch)
-                        elif message_format == "polars":
-                            batches.append(polars.from_arrow(batch))
+                for parent, channel in to_do:
+                    for i in range(diffs[(parent, channel)]):
+                        message = self.buffered_inputs[parent,channel].popleft()
+                        if type(message) == FlushedMessage:
+                            batches.append(pickle.load(open(message.loc, "rb")))
+                            os.remove(message.loc)
+                        elif type(message) == SharedMemMessage:
+                            message_format = message.format
+                            object_id = message.name
+                            batch = ray.get(ray.cloudpickle.loads(object_id))
+                            if message_format == "pandas" or message_format == "custom":
+                                batches.append(batch)
+                            elif message_format == "polars":
+                                batches.append(polars.from_arrow(batch))
+                            else:
+                                raise Exception
+                            ray.internal.internal_api.free(ray.cloudpickle.loads(object_id))
                         else:
-                            raise Exception
-                        ray.internal.internal_api.free(ray.cloudpickle.loads(object_id))
-                    else:
-                        batches.append(message)
+                            batches.append(message)
             self.state_tag = expected
             self.expected_path.popleft()
             self.log_state_tag()
