@@ -369,10 +369,10 @@ class TaskGraph:
                         node_type = self.node_type[node]
                         new_channel_to_ip = self.node_channel_to_ip[node].copy()
                         for channel in affected_channels:
-                            #new_ip = random.sample(all_ips,1)[0]
+                            new_ip = random.sample(all_ips,1)[0]
                             
                             # schedule everything on the same one
-                            new_ip = min(all_ips)
+                            #new_ip = min(all_ips)
 
                             new_channel_to_ip[channel] = new_ip
                             to_add.add(new_ip)
