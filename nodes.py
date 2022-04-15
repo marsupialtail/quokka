@@ -20,7 +20,7 @@ import concurrent.futures
 #FT_I = True
 #FT =  True
 FT_I = True
-FT = False#True
+FT = True
 
 # above this limit we are going to start flushing things to disk
 INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
@@ -880,11 +880,19 @@ class BlockingTaskNode(TaskNode):
                 self.checkpoint()
 
             if results is not None and len(results) > 0:
-                key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
-                self.object_count += 1
-                self.r.set(key, pickle.dumps(results))
-                # we really should be doing sys.getsizeof(result), but that doesn't work for polars dfs
-                self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(results)))                    
+                cursor = 0
+                stride = 1000000
+                while cursor < len(results):
+                    key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
+                    self.object_count += 1
+                    try:
+                        self.r.set(key, pickle.dumps(results[cursor : cursor + stride]))
+                    except:
+                        print(results)
+                        raise Exception
+                    # we really should be doing sys.getsizeof(result), but that doesn't work for polars dfs
+                    self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, stride))
+                    cursor += stride
             else:
                 pass
         

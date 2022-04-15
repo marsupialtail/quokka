@@ -16,7 +16,7 @@ r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
 
 ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.11.188']
-workers = 4
+workers = 1
 
 task_graph = TaskGraph()
 
