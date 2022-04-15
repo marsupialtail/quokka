@@ -308,6 +308,8 @@ class TaskGraph:
         
         all_processes_by_ip = processes_by_ip.copy()
 
+        cpu_time = {ip: time.time() for ip in processes_by_ip}
+
         all_ips = ip_set.copy()
         while len(ip_set) > 0:
             time.sleep(0.01) # be nice
@@ -319,6 +321,7 @@ class TaskGraph:
                     #print(finished, unfinished)
                     if len(unfinished) == 0:
                         to_remove.add(ip)
+                        cpu_time[ip] = time.time() - cpu_time[ip]
                         print("ADDING ", ip , " TO TOREMOVE")
                     ray.get(finished)
                     # this ordering is very important. if we do this line before ray.get(finished), we might discard the actor who triggered the failure! If there is an actor failure, then we don't update the processes.
@@ -365,7 +368,11 @@ class TaskGraph:
                         node_type = self.node_type[node]
                         new_channel_to_ip = self.node_channel_to_ip[node].copy()
                         for channel in affected_channels:
-                            new_ip = random.sample(all_ips,1)[0]
+                            #new_ip = random.sample(all_ips,1)[0]
+                            
+                            # schedule everything on the same one
+                            new_ip = min(all_ips)
+
                             new_channel_to_ip[channel] = new_ip
                             to_add.add(new_ip)
                         self.node_channel_to_ip[node] = new_channel_to_ip
@@ -448,3 +455,5 @@ class TaskGraph:
                 ip_set.remove(ip)
             for ip in to_add:
                 ip_set.add(ip)
+        
+        print("TOTAL CPU TIME", sum(cpu_time.values()), cpu_time)
