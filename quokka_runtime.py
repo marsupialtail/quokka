@@ -340,6 +340,7 @@ class TaskGraph:
                     print("=======================================================")
                     print("ATTEMPTING TO RESCHEDULE ITS WORK")
                     print("=======================================================")
+                    cpu_time[ip] = time.time() - cpu_time[ip]
                     restarted_actors = {}
                     # this is a very subtle point. you need to reschedule all the actors, even the ones who are done. Because they might have to replay some of their logged outputs downstream
                     for old_process in all_processes_by_ip[ip]:
