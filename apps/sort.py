@@ -41,7 +41,7 @@ lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quanti
 "l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
 "l_shipmode","l_comment", "null"]
 
-drop_null = lambda x: polars.from_arrow(x).drop("null")
+drop_null = lambda x: polars.from_arrow(x).drop("null").sort("l_partkey")
 
 if sys.argv[1] == "csv":
 
@@ -52,12 +52,13 @@ if sys.argv[1] == "csv":
 elif sys.argv[1] == "parquet":
     raise Exception("not implemented")
 
-executor = MergeSortedExecutor("l_partkey", record_batch_rows = 250000, length_limit = 1000000)
-stream = task_graph.new_non_blocking_node({0:lineitem}, None, executor, {ip:4 for ip in ips[:workers]}, {0: partition_key})
-outputer = OutputCSVExecutor("quokka-sorted-lineitem","lineitem")
-output = task_graph.new_blocking_node({0:stream}, None,outputer, {ip:4 for ip in ips[:workers]}, {0: partition_key2} )
+executor = MergeSortedExecutor("l_partkey", record_batch_rows = 2500000, length_limit = 10000000)
+stream = task_graph.new_blocking_node({0:lineitem}, None, executor, {ip:4 for ip in ips[:workers]}, {0: partition_key})
+#outputer = OutputCSVExecutor("quokka-sorted-lineitem","lineitem")
+#output = task_graph.new_blocking_node({0:stream}, None,outputer, {ip:4 for ip in ips[:workers]}, {0: partition_key2} )
 
 task_graph.create()
 start = time.time()
 task_graph.run_with_fault_tolerance()
 print("total time ", time.time() - start)
+print(ray.get(stream.to_dict.remote()))

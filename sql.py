@@ -552,37 +552,41 @@ class MergeSortedExecutor(Executor):
         import os, psutil
         process = psutil.Process(os.getpid())
         print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
-        batches = [batch for batch in batches if batch is not None and len(batch) > 0]
+        batches = deque([batch for batch in batches if batch is not None and len(batch) > 0])
         if len(batches) == 0:
             return
-        batch = polars.concat(batches).sort(self.key)
-        print("LENGTH OF INCOMING BATCH", len(batch))
-        if self.record_batch_rows is None:
-            self.record_batch_rows = len(batch)
 
-        if len(batch) > self.length_limit:
-            self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", batch)
-            self.filename_to_size[self.fileno] = len(batch)
-            self.fileno += 1
-        elif sum([len(i) for i in self.states if type(i) == polars.internals.frame.DataFrame]) + len(batch) > self.length_limit:
-            mega_batch = polars.concat([i for i in self.states if type(i) == polars.internals.frame.DataFrame] + [batch]).sort(self.key)
-            self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", mega_batch)
-            self.filename_to_size[self.fileno] = len(mega_batch)
-            del mega_batch
-            self.fileno += 1
-            self.states = []
-        else:
-            self.states.append(batch)
-        
-        while len(self.filename_to_size) > 4:
-            files_to_merge = [y[0] for y in sorted(self.filename_to_size.items(), key = lambda x: x[1])[:2]]
-            self.produce_sorted_file_from_two_sorted_files(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", 
-            self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[0]) + ".arrow",
-            self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[1]) + ".arrow")
-            self.filename_to_size[self.fileno] = self.filename_to_size.pop(files_to_merge[0]) + self.filename_to_size.pop(files_to_merge[1])
-            self.fileno += 1
-            os.remove(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[0]) + ".arrow")
-            os.remove(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[1]) + ".arrow")
+        while len(batches) > 0:
+            batch = batches.popleft()
+            #batch = batch.sort(self.key)
+            print("LENGTH OF INCOMING BATCH", len(batch))
+            
+            if self.record_batch_rows is None:
+                self.record_batch_rows = len(batch)
+
+            if len(batch) > self.length_limit:
+                self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", batch)
+                self.filename_to_size[self.fileno] = len(batch)
+                self.fileno += 1
+            elif sum([len(i) for i in self.states if type(i) == polars.internals.frame.DataFrame]) + len(batch) > self.length_limit:
+                mega_batch = polars.concat([i for i in self.states if type(i) == polars.internals.frame.DataFrame] + [batch]).sort(self.key)
+                self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", mega_batch)
+                self.filename_to_size[self.fileno] = len(mega_batch)
+                del mega_batch
+                self.fileno += 1
+                self.states = []
+            else:
+                self.states.append(batch)
+            
+            while len(self.filename_to_size) > 4:
+                files_to_merge = [y[0] for y in sorted(self.filename_to_size.items(), key = lambda x: x[1])[:2]]
+                self.produce_sorted_file_from_two_sorted_files(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", 
+                self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[0]) + ".arrow",
+                self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[1]) + ".arrow")
+                self.filename_to_size[self.fileno] = self.filename_to_size.pop(files_to_merge[0]) + self.filename_to_size.pop(files_to_merge[1])
+                self.fileno += 1
+                os.remove(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[0]) + ".arrow")
+                os.remove(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[1]) + ".arrow")
             
             
 #executor = MergeSortedExecutor("l_partkey", record_batch_rows = 250000, length_limit = 500000)

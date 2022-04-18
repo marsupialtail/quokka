@@ -79,7 +79,11 @@ class Dataset:
         for channel in self.objects:
             for object in self.objects[channel]:
                 r = redis.Redis(host=object[0], port=6800, db=0)
-                d[channel].append(pickle.loads(r.get(object[1])))
+                thing = pickle.loads(r.get(object[1]))
+                if type(thing) == list:
+                    d[channel].extend(thing)
+                else:
+                    d[channel].append(thing)
         return d
 
 class TaskGraph:
