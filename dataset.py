@@ -1,7 +1,6 @@
 import pickle
 import pyarrow.csv as csv
 import pyarrow.parquet as pq
-import pandas as pd
 from io import BytesIO, StringIO
 import boto3
 import s3fs
@@ -9,10 +8,61 @@ import time
 import redis
 #import h5py
 from collections import deque
+import pyarrow as pa
+import polars
+import numpy as np
+import gc
 
+class SortPhase2Dataset:
 
-# this is used to convert an RDD into streams
-# gonna do some intelligent stuff by maximizing data locality
+    def __init__(self, channel_files) -> None:
+        self.channel_files = channel_files
+    
+    def set_num_mappers(self, num_mappers):
+        pass
+
+    def get_next_batch(self, mapper_id, pos = None):
+        # let's not support fault tolerance for now.
+
+        if pos is not None:
+            raise Exception
+
+        import os, psutil   
+        
+        sources = self.channel_files[mapper_id]
+        number_of_batches_in_sources = [pa.ipc.open_file(pa.memory_map(source,'rb')).num_record_batches for source in sources]
+        next_batch_to_gets = [1 for i in sources]
+        
+        process = psutil.Process(os.getpid())
+        print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
+
+        cached_batches_in_mem = [polars.from_arrow(pa.Table.from_batches([pa.ipc.open_file(pa.memory_map(source,'rb')).get_batch(0)])) for source in sources]
+
+        while sum([len(i) != 0 for i in cached_batches_in_mem]) > 0:
+        
+            print("mem usage", process.memory_info().rss,  pa.total_allocated_bytes())
+
+            disk_portions = [batch[:self.record_batch_rows] for batch in cached_batches_in_mem]
+            for j in range(len(disk_portions)):
+                disk_portions[j]["asdasd"] = np.ones(len(disk_portions[j])) * j
+            
+            result_idx = polars.concat([portion.select([self.key, "asdasd"]) for portion in disk_portions]).sort(self.key)[:self.record_batch_rows]
+            disk_contribs = [(result_idx["asdasd"] == j).sum() for j in range(len(sources))]
+            result = polars.concat([disk_portions[j][:disk_contribs[j]] for j in range(len(sources))]).sort(self.key)
+            result.drop_in_place("asdasd")
+
+            for j in range(len(cached_batches_in_mem)):
+                cached_batches_in_mem[j] = cached_batches_in_mem[j][disk_contribs[j]:]
+                
+                if len(cached_batches_in_mem[j]) < self.record_batch_rows and next_batch_to_gets[j] < number_of_batches_in_sources[j]:
+                    source = pa.ipc.open_file(pa.memory_map(sources[j], 'rb'))
+                    next_batch = polars.from_arrow(pa.Table.from_batches([source.get_batch(next_batch_to_gets[j])]))
+                    next_batch_to_gets[j] += 1
+                    cached_batches_in_mem[j].vstack(next_batch, in_place = True)
+                    del next_batch
+            
+            print(gc.collect())
+            yield None, result
 
 
 class RedisObjectsDataset:

@@ -73,6 +73,15 @@ class Dataset:
         except:
             return pd.concat(dfs)
 
+    def to_dict(self):
+        assert self.is_complete()
+        d = {channel:[] for channel in self.objects}
+        for channel in self.objects:
+            for object in self.objects[channel]:
+                r = redis.Redis(host=object[0], port=6800, db=0)
+                d[channel].append(pickle.loads(r.get(object[1])))
+        return d
+
 class TaskGraph:
     # this keeps the logical dependency DAG between tasks 
     def __init__(self, checkpoint_bucket = "quokka-checkpoint") -> None:
