@@ -17,7 +17,9 @@ class SortPhase2Dataset:
 
     def __init__(self, channel_files) -> None:
         self.channel_files = channel_files
-    
+        self.record_batch_rows = 2500000
+        self.key = "l_partkey"
+
     def set_num_mappers(self, num_mappers):
         pass
 
@@ -30,6 +32,7 @@ class SortPhase2Dataset:
         import os, psutil   
         
         sources = self.channel_files[mapper_id]
+        print(sources)
         number_of_batches_in_sources = [pa.ipc.open_file(pa.memory_map(source,'rb')).num_record_batches for source in sources]
         next_batch_to_gets = [1 for i in sources]
         

@@ -14,7 +14,7 @@ r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
 
 ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.11.188']
-workers = 4
+workers = 2
 
 def udf2(x):
     da = compute.list_flatten(compute.ascii_split_whitespace(x["text"]))
@@ -23,7 +23,7 @@ def udf2(x):
 
 def partition_key1(data, source_channel, target_channel):
 
-    if source_channel // 16 == target_channel:
+    if source_channel // 8 == target_channel:
         return data
     else:
         return None
@@ -31,7 +31,7 @@ def partition_key1(data, source_channel, target_channel):
 task_graph = TaskGraph()
 
 reader = InputMultiCSVDataset("wordcount-input", None, ["text"],  sep="|", stride = 128 * 1024 * 1024)
-reader.get_own_state(8 * 4)
+reader.get_own_state(8 * workers)
 words = task_graph.new_input_reader_node(reader, {ip:8 for ip in ips[:workers]}, batch_func = udf2)
 
 agg = AggExecutor(fill_value=0)
