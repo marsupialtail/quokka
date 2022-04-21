@@ -1,5 +1,4 @@
-# Quokka Core
-![Alt text](docs/quokka.png?raw=true "Title")
+![Alt text](docs/quokka-banner.png?raw=true "Title")
 
 Docs: https://marsupialtail.github.io/quokka/runtime/
 
