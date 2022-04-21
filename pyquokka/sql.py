@@ -13,7 +13,7 @@ import boto3
 import gc
 import pyarrow.csv as csv
 from io import StringIO, BytesIO
-from state import PersistentStateVariable
+from pyquokka.state import PersistentStateVariable
 from collections import deque
 import pyarrow.compute as compute
 import random

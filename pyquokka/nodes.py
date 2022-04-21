@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import ray
 from collections import deque, OrderedDict
-from dataset import InputCSVDataset, InputMultiParquetDataset, InputSingleParquetDataset, RedisObjectsDataset, InputMultiCSVDataset
+from pyquokka.dataset import InputCSVDataset, InputMultiParquetDataset, InputSingleParquetDataset, RedisObjectsDataset, InputMultiCSVDataset
 import pickle
 import os
 import redis
