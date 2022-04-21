@@ -1,6 +1,6 @@
 import time
 import sys
-sys.path.append("/home/ubuntu/quokka/")
+sys.path.append("/home/ubuntu/quokka/pyquokka")
 import pyarrow.compute as compute
 import pyarrow as pa
 import pandas as pd

@@ -1,5 +1,5 @@
 import sys
-sys.path.append("/home/ubuntu/quokka/")
+sys.path.append("/home/ubuntu/quokka/pyquokka")
 import ray
 import time
 from quokka_runtime import TaskGraph
