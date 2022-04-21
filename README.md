@@ -1,5 +1,5 @@
 # Quokka Core
-![alt text](https://github.com/marsupialtail/quokka/tree/master/docs/quokka.png?raw=true)
+![Alt text](docs/quokka.png?raw=true "Title")
 
 Docs: https://marsupialtail.github.io/quokka/runtime/
 
