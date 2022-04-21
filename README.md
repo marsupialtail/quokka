@@ -1,5 +1,9 @@
 ![Alt text](docs/quokka-banner.png?raw=true "Title")
 
+<p align="center">
+  <img src="https://github.com/marsupialtail/quokka/blob/master/docs/quokka-banner.png?raw=true" alt="Sublime's custom image"/>
+</p>
+
 Docs: https://marsupialtail.github.io/quokka/runtime/
 
 Quokka is a fast data processing engine whose core consists of ~1000 lines of Python code. However it can be leveraged to obtain near-peak performance on SQL queries on data "lakes" with CSV and Parquet file formats. It is often several times faster than SparkSQL and an order of magnitude faster than Dask.
