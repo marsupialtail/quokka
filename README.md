@@ -1,4 +1,6 @@
-![Alt text](docs/quokka-banner.png?raw=true "Title")
+<p align="center">
+  <img src="https://github.com/marsupialtail/quokka/blob/master/docs/quokka-banner.png?raw=true" alt="Title"/>
+</p>
 
 Docs: https://marsupialtail.github.io/quokka/runtime/
 
