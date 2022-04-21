@@ -1,5 +1,5 @@
 # Quokka Core
-![alt text](https://github.com/marsupialtail/quokka/blob/master/docs/image.jpg?raw=true)
+![alt text](https://github.com/marsupialtail/quokka/tree/master/docs/quokka.png?raw=true)
 
 Docs: https://marsupialtail.github.io/quokka/runtime/
 
