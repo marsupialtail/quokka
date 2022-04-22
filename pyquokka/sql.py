@@ -157,6 +157,79 @@ class OutputCSVExecutor(Executor):
             asyncio.run(self.go(datas))
         print("done")
 
+class BroadcastJoinExecutor(Executor):
+    # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
+    # batch func must return a list of dfs too
+    def __init__(self, small_table, on = None, small_on = None, big_on = None, batch_func = None, columns = None):
+
+        # how many things you might checkpoint, the number of keys in the dict
+        self.num_states = 1
+        self.state = None
+
+        if type(small_table) == pd.core.frame.DataFrame:
+            self.state = polars.from_pandas(small_table)
+        elif type(small_table) == polars.internals.frame.DataFrame:
+            self.state = small_table
+        else:
+            raise Exception("small table data type not accepted")
+
+        self.state = small_table
+        self.columns = columns
+        self.checkpointed = False
+
+        if on is not None:
+            assert small_on is None and big_on is None
+            self.small_on = on
+            self.big_on = on
+        else:
+            assert small_on is not None and big_on is not None
+            self.small_on = small_on
+            self.big_on = big_on
+        
+        assert self.small_on in self.state
+
+        self.batch_func = batch_func
+        # keys that will never be seen again, safe to delete from the state on the other side
+
+    def serialize(self):
+        # if you have already checkpointed the small table, don't checkpoint anything
+
+        # otherwise checkpoint the small table
+        if not self.checkpointed:
+            assert self.state is not None
+            self.checkpointed = True
+            return self.state, "all"
+        else:
+            return None, "inc" # second argument here doesn't really matter
+    
+    def deserialize(self, s):
+        assert type(s) == list
+        self.state = s[0][0]
+    
+    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
+    def execute(self,batches, stream_id, executor_id):
+        # state compaction
+        batches = [i for i in batches if i is not None and len(i) > 0]
+        if len(batches) == 0:
+            return
+        batch = polars.concat(batches)
+
+        result = batch.join(self.state, left_on = self.big_on, right_on = self.small_on, how = "inner")
+        
+        if self.columns is not None and result is not None and len(result) > 0:
+            result = result[self.columns]
+
+        if result is not None and len(result) > 0:
+            if self.batch_func is not None:
+                da =  self.batch_func(result.to_pandas())
+                return da
+            else:
+                print("RESULT LENGTH",len(result))
+                return result
+    
+    def done(self,executor_id):
+        #print(len(self.state0),len(self.state1))
+        print("done join ", executor_id)
 
 class PolarJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
