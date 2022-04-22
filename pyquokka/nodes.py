@@ -539,6 +539,10 @@ class TaskNode(Node):
         # write logged outputs, state, state_tag to reliable storage
 
         function_object_state, mode = self.functionObject.serialize()
+
+        if function_object_state is None:
+            return
+
         s3_resource = boto3.resource('s3')
         bucket, key = self.checkpoint_location
 

@@ -6,6 +6,7 @@ import time
 from quokka_runtime import TaskGraph
 from sql import AggExecutor, PolarJoinExecutor
 from dataset import InputCSVDataset, InputMultiParquetDataset
+from schema import * 
 import pyarrow.compute as compute
 import os
 import polars
@@ -27,13 +28,6 @@ def batch_func2(df):
 
 def final_func(state):
     return state.sort_values(['revenue','o_orderdate'],ascending = [False,True])[:10]
-
-lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
-"l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
-"l_shipmode","l_comment", "null"]
-order_scheme = ["o_orderkey", "o_custkey","o_orderstatus","o_totalprice","o_orderdate","o_orderpriority","o_clerk",
-"o_shippriority","o_comment", "null"]
-customer_scheme = ["c_custkey","c_name","c_address","c_nationkey","c_phone","c_acctbal","c_mktsegment","c_comment", "null"]
 
 orders_filter = lambda x: polars.from_arrow(x.filter(compute.less(x['o_orderdate'] , compute.strptime("1995-03-03",format="%Y-%m-%d",unit="s"))).select(["o_orderkey","o_custkey","o_shippriority", "o_orderdate"]))
 lineitem_filter = lambda x: polars.from_arrow(x.filter(compute.greater(x['l_shipdate'] , compute.strptime("1995-03-15",format="%Y-%m-%d",unit="s"))).select(["l_orderkey","l_extendedprice","l_discount"]))

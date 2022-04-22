@@ -2,9 +2,9 @@ import sys
 sys.path.append("/home/ubuntu/quokka/pyquokka")
 import datetime
 import time
-from quokka_runtime import TaskGraph
-from sql import AggExecutor, PolarJoinExecutor
-from dataset import InputCSVDataset, InputMultiParquetDataset
+from pyquokka.quokka_runtime import TaskGraph
+from pyquokka.sql import AggExecutor, PolarJoinExecutor
+from pyquokka.dataset import InputCSVDataset, InputMultiParquetDataset
 import pandas as pd
 import ray
 import os
@@ -12,6 +12,7 @@ import polars
 import pyarrow as pa
 import pyarrow.compute as compute
 import redis
+from schema import * 
 r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
 
@@ -25,12 +26,6 @@ def batch_func(df):
     df["low"] = ((df["o_orderpriority"] != "1-URGENT") & (df["o_orderpriority"] != "2-HIGH")).astype(int)
     result = df.groupby("l_shipmode").agg({'high':['sum'],'low':['sum']})
     return result
-
-lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
-"l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
-"l_shipmode","l_comment", "null"]
-order_scheme = ["o_orderkey", "o_custkey","o_orderstatus","o_totalprice","o_orderdate","o_orderpriority","o_clerk",
-"o_shippriority","o_comment", "null"]
 
 orders_filter = lambda x: polars.from_arrow(x.select(["o_orderkey","o_orderpriority"]))
 lineitem_filter = lambda x: polars.from_arrow(x.filter(compute.and_(compute.and_(compute.and_(compute.is_in(x["l_shipmode"],value_set = pa.array(["SHIP","MAIL"])), compute.less(x["l_commitdate"], x["l_receiptdate"])), compute.and_(compute.less(x["l_shipdate"], x["l_commitdate"]), compute.greater_equal(x["l_receiptdate"], compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s")))), compute.less(x["l_receiptdate"], compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")))).select(["l_orderkey","l_shipmode"]))
