@@ -7,7 +7,7 @@ LONG_DESCRIPTION = 'Dope way to do cloud analytics'
 # Setting up
 setup(
        # the name must match the folder name 'verysimplemodule'
-        name="pyquokka-dev", 
+        name="pyquokka", 
         version=VERSION,
         author="Tony Wang",
         author_email="zihengw@stanford.edu",

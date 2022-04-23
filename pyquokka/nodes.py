@@ -20,7 +20,7 @@ import concurrent.futures
 #FT_I = True
 #FT =  True
 FT_I = True
-FT = False#True
+FT = True
 
 # above this limit we are going to start flushing things to disk
 INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
@@ -727,6 +727,8 @@ class TaskNode(Node):
                         if message_format == "pandas" or message_format == "custom":
                             batches.append(batch)
                         elif message_format == "polars":
+                            if len(batch) == 0:
+                                continue
                             batches.append(polars.from_arrow(batch))
                         else:
                             raise Exception

@@ -173,7 +173,6 @@ class BroadcastJoinExecutor(Executor):
         else:
             raise Exception("small table data type not accepted")
 
-        self.state = small_table
         self.columns = columns
         self.checkpointed = False
 
@@ -186,7 +185,7 @@ class BroadcastJoinExecutor(Executor):
             self.small_on = small_on
             self.big_on = big_on
         
-        assert self.small_on in self.state
+        assert self.small_on in self.state.columns
 
         self.batch_func = batch_func
         # keys that will never be seen again, safe to delete from the state on the other side
@@ -198,7 +197,7 @@ class BroadcastJoinExecutor(Executor):
         if not self.checkpointed:
             assert self.state is not None
             self.checkpointed = True
-            return self.state, "all"
+            return {0:self.state}, "all"
         else:
             return None, "inc" # second argument here doesn't really matter
     
@@ -213,7 +212,6 @@ class BroadcastJoinExecutor(Executor):
         if len(batches) == 0:
             return
         batch = polars.concat(batches)
-
         result = batch.join(self.state, left_on = self.big_on, right_on = self.small_on, how = "inner")
         
         if self.columns is not None and result is not None and len(result) > 0:
