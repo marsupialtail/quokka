@@ -26,6 +26,7 @@ customer_filter = lambda x: polars.from_arrow(x.drop(["null"])).select(["c_custk
 part_filter = lambda x: polars.from_arrow(x.drop(["null"]).filter(compute.equal(x["p_type"],"ECONOMY ANODIZED STEEL"))).select(["p_partkey"])
 supplier_filter = lambda x:polars.from_arrow(x.drop(["null"])).select(["s_suppkey","s_nationkey"])
 
+
 if sys.argv[1] == "csv":
     lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|", stride = 128 * 1024 * 1024)
     orders_csv_reader = InputCSVDataset("tpc-h-csv", "orders/orders.tbl.1", order_scheme , sep="|", stride = 128 * 1024 * 1024)
@@ -48,12 +49,12 @@ elif sys.argv[1] == "parquet":
     filters= [('o_orderdate','<',compute.strptime("1996-12-31",format="%Y-%m-%d",unit="s")),('o_orderdate','>',compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s"))])
     customer_parquet_reader = InputMultiParquetDataset("tpc-h-parquet","customer.parquet", columns = ["c_custkey","c_nationkey"])
     part_parquet_reader = InputMultiParquetDataset("tpc-h-parquet","part.parquet", columns = ["p_partkey"], filters = [('p_type','==','ECONOMY ANODIZED STEEL')])
-    supplier_parquet_reader = InputMultiParquetDataset("tpc-h-parquet","part.parquet", columns = ["s_suppkey","s_nationkey"])
-    lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader,{ips[i]: 4 for i in range(workers)}, batch_func = lineitem_filter)
-    orders = task_graph.new_input_reader_node(orders_parquet_reader, {ips[i]: 4 for i in range(workers)}, batch_func = orders_filter)
-    customer = task_graph.new_input_reader_node(customer_parquet_reader,{ips[i]: 4 for i in range(workers)}, batch_func = customer_filter)
-    part = task_graph.new_input_reader_node(part_parquet_reader,{ips[i]: 4 for i in range(workers)}, batch_func = part_filter)
-    supplier = task_graph.new_input_reader_node(supplier_parquet_reader, {ips[i]: 4 for i in range(workers)}, batch_func =supplier_filter)
+    supplier_parquet_reader = InputMultiParquetDataset("tpc-h-parquet","supplier.parquet", columns = ["s_suppkey","s_nationkey"])
+    lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader,{ips[i]: 4 for i in range(workers)})
+    orders = task_graph.new_input_reader_node(orders_parquet_reader, {ips[i]: 4 for i in range(workers)})
+    customer = task_graph.new_input_reader_node(customer_parquet_reader,{ips[i]: 4 for i in range(workers)})
+    part = task_graph.new_input_reader_node(part_parquet_reader,{ips[i]: 4 for i in range(workers)})
+    supplier = task_graph.new_input_reader_node(supplier_parquet_reader, {ips[i]: 4 for i in range(workers)})
 
 def pass_thru(data, source_channel, target_channel):
 
