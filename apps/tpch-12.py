@@ -35,11 +35,7 @@ lineitem_filter_parquet = lambda x: polars.from_arrow(x.filter(compute.and_(comp
 
 if sys.argv[2] == "csv":
     if sys.argv[1] == "small":
-        lineitem_csv_reader = InputCSVDataset("tpc-h-small", "lineitem.tbl", lineitem_scheme , sep="|")
-        orders_csv_reader = InputCSVDataset("tpc-h-small", "orders.tbl", order_scheme , sep="|")
-
-        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, {'localhost':8}, batch_func = lineitem_filter)
-        orders = task_graph.new_input_reader_node(orders_csv_reader, {'localhost':8}, batch_func = orders_filter)
+        raise Exception
 
     else:
         lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|", stride = 128 * 1024 * 1024)
