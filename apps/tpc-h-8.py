@@ -58,7 +58,7 @@ elif sys.argv[1] == "parquet":
 
 def pass_thru(data, source_channel, target_channel):
 
-    if source_channel == target_channel:
+    if source_channel//4 == target_channel:
         return data
     else:
         return None
@@ -77,19 +77,19 @@ def final_func(x):
     return x
 
 bjoin = BroadcastJoinExecutor(america,small_on="n_nationkey",big_on="c_nationkey",columns=["c_custkey"])
-filtered_customer = task_graph.new_non_blocking_node({0:customer},None,bjoin,{ip:4 for ip in ips[:workers]},{0:pass_thru})
+filtered_customer = task_graph.new_non_blocking_node({0:customer},None,bjoin,{ip:1 for ip in ips[:workers]},{0:pass_thru})
 join1 = PolarJoinExecutor(left_on="p_partkey",right_on="l_partkey",columns =["l_suppkey", "l_orderkey","l_extendedprice","l_discount"])
-part_lineitem = task_graph.new_non_blocking_node({0:part, 1:lineitem},None,join1, {ip:2 for ip in ips[:workers]},{0:"p_partkey",1:"l_partkey"})
+part_lineitem = task_graph.new_non_blocking_node({0:part, 1:lineitem},None,join1, {ip:1 for ip in ips[:workers]},{0:"p_partkey",1:"l_partkey"})
 join2 = PolarJoinExecutor(left_on = "l_orderkey", right_on="o_orderkey", columns =["l_suppkey", "o_custkey", "o_orderdate", "l_extendedprice","l_discount"])
-part_lineitem_orders = task_graph.new_non_blocking_node({0:part_lineitem, 1:orders},None,join2,{ip:2 for ip in ips[:workers]},{0:"l_orderkey",1:"o_orderkey"})
+part_lineitem_orders = task_graph.new_non_blocking_node({0:part_lineitem, 1:orders},None,join2,{ip:1 for ip in ips[:workers]},{0:"l_orderkey",1:"o_orderkey"})
 join3 = PolarJoinExecutor(left_on="o_custkey",right_on="c_custkey",columns = ["l_suppkey", "o_orderdate", "l_extendedprice","l_discount"])
-part_lineitem_orders_customers = task_graph.new_non_blocking_node({0:part_lineitem_orders, 1:filtered_customer}, None, join3,{ip:2 for ip in ips[:workers]}, {0:"o_custkey",1:"c_custkey"})
+part_lineitem_orders_customers = task_graph.new_non_blocking_node({0:part_lineitem_orders, 1:filtered_customer}, None, join3,{ip:1 for ip in ips[:workers]}, {0:"o_custkey",1:"c_custkey"})
 
 bjoin2 = BroadcastJoinExecutor(nation, small_on = "n_nationkey",big_on="s_nationkey")
-filtered_supplier = task_graph.new_non_blocking_node({0:supplier},None,bjoin2, {ip:4 for ip in ips[:workers]},{0:pass_thru})
+filtered_supplier = task_graph.new_non_blocking_node({0:supplier},None,bjoin2, {ip:1 for ip in ips[:workers]},{0:pass_thru})
 
 join4 = PolarJoinExecutor(left_on="l_suppkey",right_on="s_suppkey",columns =["o_orderdate", "l_extendedprice","l_discount","n_name"], batch_func = batch_func)
-all_nations = task_graph.new_non_blocking_node({0:part_lineitem_orders_customers, 1: filtered_supplier}, None, join4,{ip:2 for ip in ips[:workers]}, {0:"l_suppkey",1:"s_suppkey"} )
+all_nations = task_graph.new_non_blocking_node({0:part_lineitem_orders_customers, 1: filtered_supplier}, None, join4,{ip:1 for ip in ips[:workers]}, {0:"l_suppkey",1:"s_suppkey"} )
 
 agg = AggExecutor(final_func=final_func)
 result = task_graph.new_blocking_node({0:all_nations},None,agg,{'localhost':1},{0:None})
