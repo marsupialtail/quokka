@@ -22,7 +22,7 @@ setup(
             'ray==1.11.0',
             'aiobotocore',
             'h5py',
-            'polars==0.13.0'
+            'polars' # latest version
             ], # add any additional packages that 
         license='http://www.apache.org/licenses/LICENSE-2.0',
         keywords=['python'],
