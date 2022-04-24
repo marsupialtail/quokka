@@ -15,10 +15,10 @@ import gc
 
 class SortPhase2Dataset:
 
-    def __init__(self, channel_files) -> None:
+    def __init__(self, channel_files, key, record_batch_rows) -> None:
         self.channel_files = channel_files
-        self.record_batch_rows = 2500000
-        self.key = "l_partkey"
+        self.record_batch_rows = record_batch_rows
+        self.key = key
 
     def set_num_mappers(self, num_mappers):
         pass
@@ -252,7 +252,7 @@ class InputCSVDataset:
         self.s3 = boto3.client('s3')  # needs boto3 client
 
 
-    def get_csv_attributes(self,num_mappers, window=1024 * 32):
+    def get_own_state(self,num_mappers, window=1024 * 32):
 
         s3 = boto3.client('s3')
         self.num_mappers = num_mappers

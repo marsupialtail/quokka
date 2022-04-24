@@ -31,7 +31,6 @@ def partition_key1(data, source_channel, target_channel):
 task_graph = TaskGraph()
 
 reader = InputMultiCSVDataset("wordcount-input", None, ["text"],  sep="|", stride = 128 * 1024 * 1024)
-reader.get_own_state(8 * workers)
 words = task_graph.new_input_reader_node(reader, {ip:8 for ip in ips[:workers]}, batch_func = udf2)
 
 agg = AggExecutor(fill_value=0)

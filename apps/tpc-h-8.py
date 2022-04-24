@@ -8,10 +8,13 @@ import pyarrow.compute as compute
 import ray
 import sys
 
+import redis
+r = redis.Redis(host="localhost", port=6800, db=0)
+r.flushall()
+
 ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.11.188']
 workers = 1
 task_graph = TaskGraph()
-
 
 nation = pd.read_csv("s3://tpc-h-csv/nation/nation.tbl",header = None, names = nation_scheme,sep="|")
 region = pd.read_csv("s3://tpc-h-csv/region/region.tbl",header = None, names = region_scheme,sep="|")
@@ -33,11 +36,6 @@ if sys.argv[1] == "csv":
     customer_csv_reader = InputCSVDataset("tpc-h-csv", "customer/customer.tbl.1", customer_scheme , sep="|", stride = 128 * 1024 * 1024)
     part_csv_reader =  InputCSVDataset("tpc-h-csv", "part/part.tbl.1", part_scheme , sep="|", stride = 128 * 1024 * 1024)
     supplier_csv_reader = InputCSVDataset("tpc-h-csv", "supplier/supplier.tbl.1", supplier_scheme , sep="|", stride = 128 * 1024 * 1024)
-    lineitem_csv_reader.get_csv_attributes(8 * workers)
-    orders_csv_reader.get_csv_attributes(4 * workers)
-    customer_csv_reader.get_csv_attributes(4 * workers)
-    part_csv_reader.get_csv_attributes(4 * workers)
-    supplier_csv_reader.get_csv_attributes(4 * workers)
     lineitem = task_graph.new_input_reader_node(lineitem_csv_reader,{ips[i]: 8 for i in range(workers)}, batch_func = lineitem_filter)
     orders = task_graph.new_input_reader_node(orders_csv_reader, {ips[i]: 4 for i in range(workers)}, batch_func = orders_filter)
     customer = task_graph.new_input_reader_node(customer_csv_reader,{ips[i]: 4 for i in range(workers)}, batch_func = customer_filter)

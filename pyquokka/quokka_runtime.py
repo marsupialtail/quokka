@@ -197,6 +197,14 @@ class TaskGraph:
 
         dependent_map = self.return_dependent_map(dependents)
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
+
+        # this is some state that is associated with the number of mappers. typically for reading csvs or text files where you have to decide the split points.
+        
+        if hasattr(reader, "get_own_state"):
+            reader.get_own_state(len(channel_to_ip))
+        
+        # set num mappers is still needed later to initialize the self.s3 object, which can't be pickled!
+
         tasknode = {}
         for channel in channel_to_ip:
             ip = channel_to_ip[channel]
