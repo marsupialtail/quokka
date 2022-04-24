@@ -17,6 +17,8 @@ The core Quokka API allows you to construct a computation DAG with stateful exec
 2) start a local redis server instance. you will need to download the redis-server binary to do this: 
 ```./redis-server ../redis.conf --port 6800 --protected-mode no& ``` with the redis.conf included in the Quokka repo.
 4) start a ray cluster locally: ray start --head --port=6379
+
+
 **Distributed**:
 1) Pick a node to be the head node.
 2) You only have to pull the repo and install on the head node.
