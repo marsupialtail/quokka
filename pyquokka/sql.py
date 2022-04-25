@@ -692,7 +692,7 @@ class MergeSortedExecutor(Executor):
 # exe.produce_sorted_file_from_two_sorted_files("file3.arrow","file2.arrow","file.arrow")
 
 
-# exe = OutputCSVExecutor( "yugan", "trash", output_line_limit = 1000)
+# exe = OutputCSVExecutor( "quokka-examples", "trash", output_line_limit = 1000)
 # for k in range(100):
 #    item = [polars.from_pandas(pd.DataFrame(np.random.normal(size=(200,100)))) for i in range(np.random.randint(0,10))]
 #    exe.execute(item, 0,0)

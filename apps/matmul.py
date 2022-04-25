@@ -77,8 +77,8 @@ class MatMulExecutor(StatelessExecutor):
         print("done join ", executor_id) 
 
 
-A = task_graph.new_input_csv("yugan","matrix.csv",["key"] + ["avalue" + str(i) for i in range(MATRIX_SIZE)],{'localhost':4})
-AT = task_graph.new_input_csv("yugan","matrix.csv",["key"] + ["avalue" + str(i) for i in range(MATRIX_SIZE)],{'localhost':4})
+A = task_graph.new_input_csv("quokka-examples","matrix.csv",["key"] + ["avalue" + str(i) for i in range(MATRIX_SIZE)],{'localhost':4})
+AT = task_graph.new_input_csv("quokka-examples","matrix.csv",["key"] + ["avalue" + str(i) for i in range(MATRIX_SIZE)],{'localhost':4})
 
 mm_executor = MatMulExecutor()
 #output_stream = task_graph.new_stateless_node({0:quotes,1:trades},join_executor,4,ip="172.31.48.233")
@@ -86,7 +86,7 @@ output_stream = task_graph.new_stateless_node({0:A,1:AT},mm_executor,{'localhost
 #agg_executor = AggExecutor()
 #agged = task_graph.new_stateless_node({0:output_stream}, agg_executor, {'localhost':1},{0:None})
 #counted = task_graph.new_stateless_node({0:output_stream}, count_executor, {'localhost':1}, {0:None})
-#output_executor = OutputCSVExecutor(4,"yugan","result")
+#output_executor = OutputCSVExecutor(4,"quokka-examples","result")
 #wrote = task_graph.new_stateless_node({0:output_stream},output_executor,4)
 
 task_graph.initialize()
