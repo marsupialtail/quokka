@@ -17,12 +17,13 @@ setup(
         install_requires=['pyarrow==7.0.0',
             'redis==4.1.0',
             'boto3==1.17.24',
-            'pandas==1.2.2',
+            'pandas==1.4.1',
             'numpy==1.21.4',
             'ray==1.11.0',
             'aiobotocore',
             'h5py',
-            'polars' # latest version
+            'polars' # latest version,
+            's3fs',
             ], # add any additional packages that 
         license='http://www.apache.org/licenses/LICENSE-2.0',
         keywords=['python'],
