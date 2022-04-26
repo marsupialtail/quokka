@@ -13,8 +13,9 @@ The core Quokka API allows you to construct a computation DAG with stateful exec
 # Quickstart
 
 **Local**: 
-1) Pull the repo, cd into it and do pip3 install .
-2) start a local redis server instance. you will need to download the redis-server binary to do this: 
+1) Pull the repo, cd into it and do:
+```pip3 install .```
+3) start a local redis server instance. you will need to download the redis-server binary to do this: 
 ```./redis-server ../redis.conf --port 6800 --protected-mode no& ``` with the redis.conf included in the Quokka repo.
 4) start a ray cluster locally: ray start --head --port=6379
 
