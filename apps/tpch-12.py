@@ -13,8 +13,10 @@ from schema import *
 r = redis.Redis(host="localhost", port=6800, db=0)
 r.flushall()
 
+ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
+
 ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.11.188']
-workers = 4
+workers = 2
 
 task_graph = TaskGraph()
 
