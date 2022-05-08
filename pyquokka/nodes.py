@@ -452,7 +452,7 @@ class TaskNode(Node):
         self.parents = parents # dict of id -> dict of channel -> actor handles        
         self.datasets = datasets
         self.functionObject = functionObject
-        assert hasattr(functionObject, "num_states") # for recovery
+        #assert hasattr(functionObject, "num_states") # for recovery
         if self.datasets is not None:
             self.functionObject.initialize(self.datasets, self.channel)
         self.physical_to_logical_mapping = mapping
