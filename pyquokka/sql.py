@@ -29,7 +29,7 @@ class Executor:
     def initialize(datasets):
         pass
     def serialize(self):
-        pass
+        return {}, "all"
     def deserialize(self, s):
         pass
     def set_early_termination(self):

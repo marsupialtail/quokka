@@ -31,7 +31,7 @@ class StageOne(Executor):
             s3_client = boto3.client("s3")
             s3_client.download_file(self.model_file[0],self.model_file[1],"/data/model.caffemodel")
             s3_client.download_file(self.config_file[0],self.config_file[1],"/data/deploy.txt")
-            self.net = cv2.dnn.readNetFromCaffe("/data/model.caffemodel","/data/deploy.txt")
+            self.net = cv2.dnn.readNetFromCaffe("/data/deploy.txt","/data/model.caffemodel")
             os.remove("/data/model.caffemodel")
             os.remove("/data/deploy.txt")
         
@@ -63,7 +63,9 @@ class StageOne(Executor):
 class StageTwo(Executor):
     def __init__(self) -> None:
         self.img2vec = None
+        self.counter = 0
     def execute(self, batches, stream_id, executor_id):
+        print("PROCESSED",self.counter)
         if self.img2vec is None:
             self.img2vec = Img2Vec(cuda=False, model='resnet-18')
         
@@ -72,11 +74,15 @@ class StageTwo(Executor):
             for filename in obj:
                 images = obj[filename]
                 for image in images:
-                    img = Image.fromarray(image)
-                    vec = self.img2vec.get_vec(img, tensor=True)
-                    print(vec.numpy().flatten())
-
-print("WARNING DO NOT PUSH THIS TO GITHUB!")
+                    self.counter += 1
+                    try:
+                        img = Image.fromarray(image)
+                        vec = self.img2vec.get_vec(img, tensor=True)
+                    except:
+                        pass
+                    #print(vec.numpy().flatten())
+    def done(self):
+        pass
 
 def partition_key1(data, source_channel, target_channel):
 
