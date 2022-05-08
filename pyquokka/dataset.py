@@ -202,6 +202,7 @@ class InputMultiParquetDataset:
         
         self.bucket = bucket
         self.prefix = prefix
+        assert self.prefix is not None
         
         self.num_mappers = None
         self.columns = columns
@@ -211,8 +212,7 @@ class InputMultiParquetDataset:
         self.num_mappers = num_mappers
         self.s3 = boto3.client('s3')
         z = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
-        self.files = [i['Key']
-                      for i in z['Contents'] if i['Key'].endswith(".parquet")]
+        self.files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
         while 'NextContinuationToken' in z.keys():
             z = self.s3.list_objects_v2(
                 Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
@@ -235,6 +235,45 @@ class InputMultiParquetDataset:
             curr_pos += self.num_mappers
             yield curr_pos, a
 
+# this works for a directoy of objects.
+class InputFilesDataset:
+
+    def __init__(self, bucket, prefix= None) -> None:
+        
+        self.bucket = bucket
+        self.prefix = prefix
+        
+        self.num_mappers = None
+
+    def set_num_mappers(self, num_mappers):
+        self.num_mappers = num_mappers
+        self.s3 = boto3.client('s3')
+        if self.prefix is not None:
+            z = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
+            self.files = [i['Key'] for i in z['Contents']]
+            while 'NextContinuationToken' in z.keys():
+                z = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
+                self.files.extend([i['Key'] for i in z['Contents']])
+        else:
+            z = self.s3.list_objects_v2(Bucket=self.bucket)
+            self.files = [i['Key'] for i in z['Contents']]
+            while 'NextContinuationToken' in z.keys():
+                z = self.s3.list_objects_v2(Bucket=self.bucket, ContinuationToken=z['NextContinuationToken'])
+                self.files.extend([i['Key'] for i in z['Contents']])
+
+    def get_next_batch(self, mapper_id, pos=None):
+        assert self.num_mappers is not None
+        if pos is None:
+            curr_pos = mapper_id
+        else:
+            curr_pos = pos
+        while curr_pos < len(self.files):
+            print("input batch", (curr_pos - mapper_id) / self.num_mappers)
+            # since these are arbitrary byte files (most likely some image format), it is probably useful to keep the filename around or you can't tell these things apart
+            a = (self.files[curr_pos], self.s3.get_object(Bucket=self.bucket, Key=self.files[curr_pos])['Body'].read())
+            #print("ending reading ",time.time())
+            curr_pos += self.num_mappers
+            yield curr_pos, a
 
 class InputCSVDataset:
 
