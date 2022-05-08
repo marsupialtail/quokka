@@ -9,7 +9,7 @@ import pickle
 import psutil
 import json
 #ray.init("auto", _system_config={"worker_register_timeout_seconds": 60}, ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
-ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
+ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/.local/lib/python3.8/site-packages/pyquokka/"})
 
 #ray.init(ignore_reinit_error=True) # do this locally
 #ray.timeline("profile.json")
