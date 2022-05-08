@@ -16,7 +16,7 @@ task_graph = TaskGraph()
 # this is not very good because we don't know the thing is actually sorted in l_order on lineitem
 
 ips = [ 'localhost','172.31.4.47', '172.31.4.177', '172.31.10.39', '172.31.8.11', '172.31.10.151', '172.31.13.215', '172.31.8.52', '172.31.9.247', '172.31.4.185', '172.31.4.25', '172.31.11.56', '172.31.11.153', '172.31.13.223', '172.31.6.251', '172.31.3.59']
-workers = 16
+workers = 1
 
 def batch_func2(df):
     df["product"] = df["l_extendedprice"] * (1 - df["l_discount"])

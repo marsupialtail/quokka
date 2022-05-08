@@ -4,10 +4,9 @@ sys.path.append("/home/ubuntu/quokka/pyquokka")
 import pyarrow.compute as compute
 import pyarrow as pa
 import pandas as pd
-from quokka_runtime import TaskGraph
-from dataset import InputMultiCSVDataset
-
-from sql import UDFExecutor, AggExecutor
+from pyquokka.quokka_runtime import TaskGraph
+from pyquokka.dataset import InputMultiCSVDataset
+from pyquokka.sql import UDFExecutor, AggExecutor
 import ray
 import redis
 r = redis.Redis(host="localhost", port=6800, db=0)

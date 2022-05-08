@@ -20,8 +20,8 @@ order_scheme = ["o_orderkey", "o_custkey","o_orderstatus","o_totalprice","o_orde
 
 lineitem_csv_reader = InputCSVDataset("tpc-h-csv", "lineitem/lineitem.tbl.1", lineitem_scheme , sep="|", stride = 128 * 1024 * 1024)
 orders_csv_reader = InputCSVDataset("tpc-h-csv", "orders/orders.tbl.1", order_scheme , sep="|", stride = 128 * 1024 * 1024)
-lineitem_csv_reader.get_csv_attributes(NUM_MAPPERS)
-orders_csv_reader.get_csv_attributes(NUM_MAPPERS)
+lineitem_csv_reader.get_own_state(NUM_MAPPERS)
+orders_csv_reader.get_own_state(NUM_MAPPERS)
 
 input_actors_a = {k: InputReaderNode.options(max_concurrency = 2, num_cpus = 0.001).remote(0,k,lineitem_csv_reader, NUM_MAPPERS, ("quokka-checkpoint","ckpt-0-" + str(k))) for k in range(NUM_MAPPERS)}
 input_actors_b = {k: InputReaderNode.options(max_concurrency = 2, num_cpus = 0.001).remote(1,k,orders_csv_reader, NUM_MAPPERS, ("quokka-checkpoint","ckpt-1-" + str(k))) for k in range(NUM_MAPPERS)}
