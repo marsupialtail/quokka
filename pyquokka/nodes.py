@@ -822,15 +822,16 @@ class NonBlockingTaskNode(TaskNode):
             # this is a very subtle point. You will only breakout if length of self.target, i.e. the original length of 
             # target list is bigger than 0. So you had somebody to send to but now you don't
 
+            break_out = False
             if results is not None and len(self.targets) > 0:
-                break_out = False
                 if self.push(results) is False:
                     break_out = True
                     break
-                if break_out:
-                    break
             else:
                 pass
+        
+            if break_out:
+                break
             
             self.ckpt_counter += 1
             if FT and self.ckpt_counter % self.checkpoint_interval == 0:
