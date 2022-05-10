@@ -3,6 +3,7 @@ import time
 
 from pyspark.sql import SparkSession
 from pyspark.sql.types import StructType, StructField, FloatType, LongType, DecimalType, IntegerType, StringType, DateType
+from schema import * 
 
 def run_tpch_q12(source_lineitem, source_orders, output_uri):
     
@@ -11,35 +12,6 @@ def run_tpch_q12(source_lineitem, source_orders, output_uri):
         timing = []
         start = time.time()
 
-        schema_lineitem = StructType()\
-            .add("l_orderkey",LongType(),True)\
-            .add("l_partkey",LongType(),True)\
-            .add("l_suppkey",LongType(),True)\
-            .add("l_linenumber",IntegerType(),True)\
-            .add("l_quantity",DecimalType(10,2),True)\
-            .add("l_extendedprice",DecimalType(10,2),True)\
-            .add("l_discount",DecimalType(10,2),True)\
-            .add("l_tax",DecimalType(10,2),True)\
-            .add("l_returnflag",StringType(),True)\
-            .add("l_linestatus",StringType(),True)\
-            .add("l_shipdate",DateType(),True)\
-            .add("l_commitdate",DateType(),True)\
-            .add("l_receiptdate",DateType(),True)\
-            .add("l_shipinstruct",StringType(),True)\
-            .add("l_shipmode",StringType(),True)\
-            .add("l_comment",StringType(),True)\
-            .add("l_extra",StringType(),True)
-        schema_orders = StructType()\
-            .add("o_orderkey",LongType(),True)\
-            .add("o_custkey",LongType(),True)\
-            .add("o_orderstatus",StringType(),True)\
-            .add("o_totalprice",DecimalType(10,2),True)\
-            .add("o_orderdate",DateType(),True)\
-            .add("o_orderpriority",StringType(),True)\
-            .add("o_clerk",StringType(),True)\
-            .add("o_shippriority",IntegerType(),True)\
-            .add("o_comment",StringType(),True)\
-            .add("o_extra",StringType(),True)
 
         df_lineitem = spark.read.option("header", "false").option("delimiter","|")\
             .schema(schema_lineitem)\

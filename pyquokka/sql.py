@@ -45,7 +45,7 @@ class UDFExecutor:
         self.num_states = 0
 
     def serialize(self):
-        pass
+        return {}, "all"
     
     def deserialize(self, s):
         pass
@@ -222,12 +222,134 @@ class BroadcastJoinExecutor(Executor):
                 da =  self.batch_func(result.to_pandas())
                 return da
             else:
-                print("RESULT LENGTH",len(result))
                 return result
     
     def done(self,executor_id):
         #print(len(self.state0),len(self.state1))
         print("done join ", executor_id)
+
+
+# the inputs must be sorted on the asof join column
+class GroupAsOfJoinExecutor(Executor):
+    # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
+    # batch func must return a list of dfs too
+    def __init__(self, group_on= None, group_left_on = None, group_right_on = None, on = None, left_on = None, right_on = None, batch_func = None, columns = None):
+
+        # how many things you might checkpoint, the number of keys in the dict
+        self.num_states = 2
+
+        self.trade = {}
+        self.quote = {}
+        self.ckpt_start0 = 0
+        self.ckpt_start1 = 0
+        self.columns = columns
+
+        if on is not None:
+            assert left_on is None and right_on is None
+            self.left_on = on
+            self.right_on = on
+        else:
+            assert left_on is not None and right_on is not None
+            self.left_on = left_on
+            self.right_on = right_on
+        
+        if group_on is not None:
+            assert group_left_on is None and group_right_on is None
+            self.group_left_on = group_on
+            self.group_right_on = group_on
+        else:
+            assert group_left_on is not None and group_right_on is not None
+            self.group_left_on = group_left_on
+            self.group_right_on = group_right_on
+
+        self.batch_func = batch_func
+        # keys that will never be seen again, safe to delete from the state on the other side
+
+    def serialize(self):
+        result = {0:self.trade, 1:self.quote}        
+        return result, "all"
+    
+    def deserialize(self, s):
+        assert type(s) == list
+        self.trade = s[0][0]
+        self.quote = s[0][1]
+    
+    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
+    def execute(self,batches, stream_id, executor_id):
+        # state compaction
+        batches = [i for i in batches if i is not None and len(i) > 0]
+        if len(batches) == 0:
+            return
+        batch = polars.concat(batches)
+        ret_vals = []
+        # trade
+        if stream_id == 0:
+            frames = batch.partition_by(self.group_left_on)
+            for frame in frames:
+                symbol = frame["symbol"][0]
+                if symbol in self.trade:
+                    self.trade[symbol].vstack(frame,in_place=True)
+                else:
+                    self.trade[symbol] = frame
+                # now do the join
+                if symbol not in self.quote:
+                    continue
+                else:
+                    trades = self.trade[symbol]
+                    quotes = self.quote[symbol]
+                    joinable_trades = trades[trades[self.left_on] < quotes[-1][self.right_on]]
+                    joinable_quotes = quotes[quotes[self.right_on] < joinable_trades[-1][self.left_on]]
+                    self.trade[symbol] = trades[len(joinable_trades):]
+                    self.quote[symbol] = quotes[len(joinable_quotes):]
+                    ret_vals.append(joinable_trades.join_asof(joinable_quotes.drop(self.group_right_on), left_on = self.left_on, right_on = self.right_on))
+
+        #quote
+        elif stream_id == 1:
+            frames = batch.partition_by(self.group_right_on)
+            for frame in frames:
+                symbol = frame["symbol"][0]
+                if symbol in self.quote:
+                    self.quote[symbol].vstack(frame,in_place=True)
+                else:
+                    self.quote[symbol] = frame
+                if symbol not in self.trade:
+                    continue
+                else:
+                    trades = self.trade[symbol]
+                    quotes = self.quote[symbol]
+                    joinable_trades = trades[trades[self.left_on] < quotes[-1][self.right_on]]
+                    joinable_quotes = quotes[quotes[self.right_on] < joinable_trades[-1][self.left_on]]
+                    self.trade[symbol] = trades[len(joinable_trades):]
+                    self.quote[symbol] = quotes[len(joinable_quotes):]
+                    ret_vals.append(joinable_trades.join_asof(joinable_quotes.drop(self.group_right_on), left_on = self.left_on, right_on = self.right_on))
+
+
+        result = polars.concat(ret_vals).drop_nulls()
+        
+        if self.columns is not None and result is not None and len(result) > 0:
+            result = result[self.columns]
+
+        if result is not None and len(result) > 0:
+            if self.batch_func is not None:
+                da =  self.batch_func(result.to_pandas())
+                return da
+            else:
+                print("RESULT LENGTH",len(result))
+                return result
+    
+    def done(self,executor_id):
+        #print(len(self.state0),len(self.state1))
+        ret_vals = []
+        for symbol in self.trade:
+            if symbol not in self.quote:
+                continue
+            else:
+                trades = self.trade[symbol]
+                quotes = self.quote[symbol]
+                ret_vals.append(trades.join_asof(quotes.drop(self.group_right_on), left_on = self.left_on, right_on = self.right_on))
+        
+        print("done asof join ", executor_id)
+        return polars.concat(ret_vals).drop_nulls()
 
 class PolarJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
@@ -312,72 +434,6 @@ class PolarJoinExecutor(Executor):
     
     def done(self,executor_id):
         #print(len(self.state0),len(self.state1))
-        print("done join ", executor_id)
-
-
-class Polar3JoinExecutor(Executor):
-    # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
-    # batch func must return a list of dfs too
-    def __init__(self, on = None, left_on = None, right_on = None, batch_func = None):
-        self.state0 = None
-        self.state1 = None
-        self.lengths = {0:0, 1:0}
-
-        if on is not None:
-            assert left_on is None and right_on is None
-            self.left_on = on
-            self.right_on = on
-        else:
-            assert left_on is not None and right_on is not None
-            self.left_on = left_on
-            self.right_on = right_on
-        self.batch_func = batch_func
-        # keys that will never be seen again, safe to delete from the state on the other side
-
-    def serialize(self):
-        return pickle.dumps({"state0":self.state0, "state1":self.state1})
-    
-    def deserialize(self, s):
-        stuff = pickle.loads(s)
-        self.state0 = stuff["state0"]
-        self.state1 = stuff["state1"]
-    
-    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
-    def execute(self,batches, stream_id, executor_id):
-        # state compaction
-        batch = polars.concat(batches)
-        self.lengths[stream_id] += 1
-        print("state", self.lengths)
-        result = None
-        if stream_id == 0:
-            if self.state1 is not None:
-                try:
-                    result = batch.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how='inner')
-                except:
-                    print(batch)
-            if self.state0 is None:
-                self.state0 = batch
-            else:
-                self.state0.vstack(batch, in_place = True)
-             
-        elif stream_id == 1:
-            if self.state0 is not None:
-                result = self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how='inner')
-            if self.state1 is None:
-                self.state1 = batch
-            else:
-                self.state1.vstack(batch, in_place = True)
-        
-        if result is not None and len(result) > 0:
-            if self.batch_func is not None:
-                da =  self.batch_func(result.to_pandas())
-                return da
-            else:
-                print("RESULT LENGTH",len(result))
-                return result
-    
-    def done(self,executor_id):
-        print(len(self.state0),len(self.state1))
         print("done join ", executor_id)
 
 

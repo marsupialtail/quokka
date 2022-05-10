@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import ray
 from collections import deque, OrderedDict
-from pyquokka.dataset import InputCSVDataset, InputMultiParquetDataset, InputSingleParquetDataset, RedisObjectsDataset, InputMultiCSVDataset
+from pyquokka.dataset import RedisObjectsDataset
 import pickle
 import os
 import redis
@@ -162,17 +162,32 @@ class Node:
                 original_channel_to_ip, partition_key = self.targets[target]
                 for channel in self.alive_targets[target]:
                     #print("PUSHING FROM",str(self.id),str(self.channel)," TO ",str(target),str(channel), " MY TAG ", self.out_seq)
-                    if partition_key is not None:
 
-                        if type(partition_key) == str:
-                            payload = data[data[partition_key] % len(original_channel_to_ip) == channel]
-                        elif callable(partition_key):
-                            payload = partition_key(data, self.channel, channel)
-                            # you have to send the None, because otherwise the sequence number could be messed up.
-                        else:
-                            raise Exception("Can't understand partition strategy")
-                    else:
+                    if type(partition_key) == str:
+                        if type(data) == pd.core.frame.DataFrame:
+                            if "int" in str(data.dtypes[partition_key]).lower() or "float" in str(data.dtypes[partition_key]).lower():
+                                payload = data[data[partition_key] % len(original_channel_to_ip) == channel]
+                            elif data.dtypes[partition_key] == 'object': # str
+                                # this is not the fastest. we rehashing this everytime.
+                                payload = data[pd.util.hash_array(data[partition_key].to_numpy()) % len(original_channel_to_ip) == channel]
+                            else:
+                                raise Exception("invalid partition column type, supports ints, floats and strs")
+                        elif type(data) == polars.internals.frame.DataFrame:
+                            if "int" in str(data[partition_key].dtype).lower() or "float" in str(data[partition_key].dtype).lower():
+                                payload = data[data[partition_key] % len(original_channel_to_ip) == channel]
+                            elif data[partition_key].dtype == polars.datatypes.Utf8:
+                                payload = data[data[partition_key].hash() % len(original_channel_to_ip) == channel]
+                            else:
+                                raise Exception("invalid partition column type, supports ints, floats and strs")
+                    elif callable(partition_key):
+                        payload = partition_key(data, self.channel, channel)
+                        # you have to send the None, because otherwise the sequence number could be messed up.
+                    
+                    elif partition_key == None:
                         payload = data
+                    
+                    else:
+                        raise Exception("Can't understand partition strategy")
 
                     # if the target is on the same machine we are just going to use shared memory, and change the payload to the shared memory name!!
 

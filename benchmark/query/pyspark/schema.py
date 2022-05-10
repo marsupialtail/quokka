@@ -1,4 +1,4 @@
-from pyspark.sql.types import StructType, StructField, FloatType, LongType, DecimalType, IntegerType, StringType, DateType
+from pyspark.sql.types import StructType, StructField, FloatType, LongType, DecimalType, IntegerType, StringType, DateType, BooleanType
 
 schema_lineitem = StructType()\
     .add("l_orderkey",LongType(),True)\
@@ -67,3 +67,8 @@ df_nation.createOrReplaceTempView("nation")
 df_region.createOrReplaceTempView("region")
 df_supplier.createOrReplaceTempView("supplier")
 '''
+
+schema_quotes = StructType([StructField("time",LongType(),False),StructField("symbol",StringType(),False),
+StructField("seq",FloatType(),False),StructField("bid",FloatType(),False),StructField("ask",FloatType(),False),StructField("bsize",FloatType(),False),
+StructField("asize",FloatType(),False),StructField("is_nbbo",BooleanType(),False)])
+schema_trades = StructType([StructField("time",LongType(),False),StructField("symbol",StringType(),False),StructField("size",FloatType(),False),StructField("price",FloatType(),False)])
