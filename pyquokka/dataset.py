@@ -453,7 +453,7 @@ class InputMultiCSVDataset:
             end = min(candidate + window, sizes[0])
 
             resp = s3.get_object(
-                Bucket="tpc-h-csv", Key=files[0], Range='bytes={}-{}'.format(real_off + start,real_off + end))['Body'].read()
+                Bucket=self.bucket, Key=files[0], Range='bytes={}-{}'.format(real_off + start,real_off + end))['Body'].read()
             last_newline = resp.rfind(bytes('\n', 'utf-8'))
             if last_newline == -1:
                 raise Exception

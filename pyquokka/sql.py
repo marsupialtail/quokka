@@ -233,7 +233,7 @@ class BroadcastJoinExecutor(Executor):
 class GroupAsOfJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
-    def __init__(self, group_on= None, group_left_on = None, group_right_on = None, on = None, left_on = None, right_on = None, batch_func = None, columns = None):
+    def __init__(self, group_on= None, group_left_on = None, group_right_on = None, on = None, left_on = None, right_on = None, batch_func = None, columns = None, suffix="_right"):
 
         # how many things you might checkpoint, the number of keys in the dict
         self.num_states = 2
@@ -243,6 +243,7 @@ class GroupAsOfJoinExecutor(Executor):
         self.ckpt_start0 = 0
         self.ckpt_start1 = 0
         self.columns = columns
+        self.suffix = suffix
 
         if on is not None:
             assert left_on is None and right_on is None
@@ -301,7 +302,7 @@ class GroupAsOfJoinExecutor(Executor):
                     joinable_quotes = quotes[quotes[self.right_on] < joinable_trades[-1][self.left_on]]
                     self.trade[symbol] = trades[len(joinable_trades):]
                     self.quote[symbol] = quotes[len(joinable_quotes):]
-                    ret_vals.append(joinable_trades.join_asof(joinable_quotes.drop(self.group_right_on), left_on = self.left_on, right_on = self.right_on))
+                    ret_vals.append(joinable_trades.join_asof(joinable_quotes.drop(self.group_right_on), left_on = self.left_on, right_on = self.right_on, suffix=self.suffix))
 
         #quote
         elif stream_id == 1:
@@ -321,7 +322,7 @@ class GroupAsOfJoinExecutor(Executor):
                     joinable_quotes = quotes[quotes[self.right_on] < joinable_trades[-1][self.left_on]]
                     self.trade[symbol] = trades[len(joinable_trades):]
                     self.quote[symbol] = quotes[len(joinable_quotes):]
-                    ret_vals.append(joinable_trades.join_asof(joinable_quotes.drop(self.group_right_on), left_on = self.left_on, right_on = self.right_on))
+                    ret_vals.append(joinable_trades.join_asof(joinable_quotes.drop(self.group_right_on), left_on = self.left_on, right_on = self.right_on, suffix=self.suffix))
 
 
         result = polars.concat(ret_vals).drop_nulls()
@@ -346,7 +347,7 @@ class GroupAsOfJoinExecutor(Executor):
             else:
                 trades = self.trade[symbol]
                 quotes = self.quote[symbol]
-                ret_vals.append(trades.join_asof(quotes.drop(self.group_right_on), left_on = self.left_on, right_on = self.right_on))
+                ret_vals.append(trades.join_asof(quotes.drop(self.group_right_on), left_on = self.left_on, right_on = self.right_on, suffix=self.suffix))
         
         print("done asof join ", executor_id)
         return polars.concat(ret_vals).drop_nulls()
@@ -354,7 +355,7 @@ class GroupAsOfJoinExecutor(Executor):
 class PolarJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
-    def __init__(self, on = None, left_on = None, right_on = None, batch_func = None, columns = None):
+    def __init__(self, on = None, left_on = None, right_on = None, batch_func = None, columns = None, suffix="_right"):
 
         # how many things you might checkpoint, the number of keys in the dict
         self.num_states = 2
@@ -364,6 +365,7 @@ class PolarJoinExecutor(Executor):
         self.ckpt_start0 = 0
         self.ckpt_start1 = 0
         self.columns = columns
+        self.suffix = suffix
 
         if on is not None:
             assert left_on is None and right_on is None
@@ -405,7 +407,7 @@ class PolarJoinExecutor(Executor):
         if stream_id == 0:
             if self.state1 is not None:
                 try:
-                    result = batch.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how='inner')
+                    result = batch.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how='inner', suffix=self.suffix)
                 except:
                     print(batch)
             if self.state0 is None:
@@ -415,7 +417,7 @@ class PolarJoinExecutor(Executor):
              
         elif stream_id == 1:
             if self.state0 is not None:
-                result = self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how='inner')
+                result = self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how='inner', suffix=self.suffix)
             if self.state1 is None:
                 self.state1 = batch
             else:
