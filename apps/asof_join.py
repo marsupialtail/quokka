@@ -13,8 +13,8 @@ workers = 1
 
 task_graph = TaskGraph()
 
-quote_reader = InputMultiCSVDataset("quokka-asofjoin", "quotes", schema_quotes , stride = 128 * 1024 * 1024)
-trades_reader = InputMultiCSVDataset("quokka-asofjoin", "trades", schema_trades , stride = 128 * 1024 * 1024)
+quote_reader = InputMultiCSVDataset("quokka-asofjoin", "quotes", schema_quotes , stride = 128 * 1024 * 1024, header= True)
+trades_reader = InputMultiCSVDataset("quokka-asofjoin", "trades", schema_trades , stride = 128 * 1024 * 1024, header= True)
 quotes = task_graph.new_input_reader_node(quote_reader, {ip:16 for ip in ips[:workers]})
 trades = task_graph.new_input_reader_node(trades_reader, {ip:8 for ip in ips[:workers]})
 

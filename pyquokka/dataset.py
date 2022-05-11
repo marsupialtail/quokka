@@ -277,7 +277,7 @@ class InputFilesDataset:
 
 class InputCSVDataset:
 
-    def __init__(self, bucket, key, names, sep=",", stride=64 * 1024 * 1024) -> None:
+    def __init__(self, bucket, key, names, sep=",", stride=64 * 1024 * 1024, header = False) -> None:
        
         self.bucket = bucket
         self.key = key
@@ -285,6 +285,7 @@ class InputCSVDataset:
         self.names = names
         self.sep = sep
         self.stride = stride
+        self.header = header
 
     def set_num_mappers(self, num_mappers):
         assert self.num_mappers == num_mappers
@@ -370,24 +371,30 @@ class InputCSVDataset:
                 raise Exception
             else:
                 resp = resp[:last_newline]
-                pos += last_newline
                 #print("start convert,",time.time())
                 #bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
                 bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
                     column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+                
+                if self.header and pos == 0:
+                    bump = bump[1:]
+                
+                pos += last_newline
+
                 #print("done convert,",time.time())
                 yield pos, bump
 
 
 # this should work for 1 CSV up to multiple
 class InputMultiCSVDataset:
-    def __init__(self, bucket, prefix, names, sep=",", stride=64 * 1024 * 1024) -> None:
+    def __init__(self, bucket, prefix, names, sep=",", stride=64 * 1024 * 1024, header = False) -> None:
         self.bucket = bucket
         self.prefix = prefix
         self.num_mappers = None
         self.names = names
         self.sep = sep
         self.stride = stride
+        self.header = header
     
 
     def set_num_mappers(self, num_mappers):
@@ -504,9 +511,12 @@ class InputMultiCSVDataset:
                     raise Exception
                 else:
                     resp = resp[:last_newline]
-                    pos += last_newline
                     bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
                         column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+                    if self.header and pos == 0:
+                        bump = bump[1:]
+                    
+                    pos += last_newline
                     yield (curr_pos, pos) , bump
 
             pos = 0
