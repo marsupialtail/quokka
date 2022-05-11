@@ -371,13 +371,16 @@ class InputCSVDataset:
                 raise Exception
             else:
                 resp = resp[:last_newline]
+
+                if self.header and pos == 0:
+                    first_newline = resp.find(bytes('\n','utf-8'))
+                    if first_newline == -1:
+                        raise Exception
+                    resp = resp[first_newline + 1:]
                 #print("start convert,",time.time())
                 #bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
                 bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
                     column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-                
-                if self.header and pos == 0:
-                    bump = bump[1:]
                 
                 pos += last_newline
 
@@ -511,10 +514,15 @@ class InputMultiCSVDataset:
                     raise Exception
                 else:
                     resp = resp[:last_newline]
+
+                    if self.header and pos == 0:
+                        first_newline = resp.find(bytes('\n','utf-8'))
+                        if first_newline == -1:
+                            raise Exception
+                        resp = resp[first_newline + 1:]
+
                     bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
                         column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-                    if self.header and pos == 0:
-                        bump = bump[1:]
                     
                     pos += last_newline
                     yield (curr_pos, pos) , bump
