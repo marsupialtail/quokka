@@ -10,10 +10,9 @@ import pyarrow as pa
 import pyarrow.compute as compute
 import redis
 from schema import * 
-r = redis.Redis(host="localhost", port=6800, db=0)
-r.flushall()
+ray.init(address='ray://54.185.64.11:10001', runtime_env={"py_modules":["/home/ziheng/.local/lib/python3.8/site-packages/pyquokka/"]})
 
-ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.11.188']
+ips = ['172.31.4.33', '172.31.11.134', '172.31.15.208', '172.31.11.188']
 workers = 2
 
 task_graph = TaskGraph()
@@ -46,7 +45,7 @@ elif sys.argv[1] == "parquet":
 join_executor = PolarJoinExecutor(left_on="o_orderkey",right_on="l_orderkey", batch_func=batch_func)
 output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},None,join_executor, {ip:4 for ip in ips[:workers]}, {0:"o_orderkey", 1:"l_orderkey"})
 agg_executor = AggExecutor()
-agged = task_graph.new_blocking_node({0:output_stream}, None, agg_executor, {'localhost':1}, {0:None})
+agged = task_graph.new_blocking_node({0:output_stream}, None, agg_executor, {ips[0]:1}, {0:None})
 
 task_graph.create()
 start = time.time()

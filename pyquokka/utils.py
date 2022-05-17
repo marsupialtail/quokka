@@ -1,11 +1,14 @@
-from curses import keyname
 import os
 import time
 import boto3
 import subprocess
+import multiprocessing
+import pyquokka
+import ray
+import json
 
 class QuokkaCluster:
-    def __init__(self, public_ips, private_ips, instance_ids) -> None:
+    def __init__(self, public_ips, private_ips, instance_ids, cpu_count_per_instance) -> None:
         
         self.num_node = len(public_ips)
         self.public_ips = {}
@@ -18,9 +21,27 @@ class QuokkaCluster:
             self.instance_ids[node] = instance_ids[node]
         
         self.state = "running"
+        self.cpu_count = cpu_count_per_instance
+        self.leader_public_ip = self.public_ips[0]
+        self.leader_private_ip = self.private_ips[0]
 
-    def get_leader_ip(self):
-        return self.public_ips[0]
+        #pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
+        # connect to that ray cluster
+        #ray.init(address='ray://' + str(self.leader_public_ip) + ':10001', runtime_env={"py_modules":[pyquokka_loc]})
+    
+    def to_json(self, output = "cluster.json"):
+
+        json.dump({"public_ips":self.public_ips, "private_ips":self.private_ips,"instance_ids":self.instance_ids,"cpu_count_per_instance":self.cpu_count})
+
+
+class LocalCluster:
+    def __init__(self) -> None:
+        self.cpu_count = multiprocessing.cpu_count()
+        self.leader_public_ip = "localhost"
+        self.leader_private_ip = "localhost"
+
+        # we assume you have pyquokka installed, and we are going to spin up a ray cluster locally
+        ray.init(ignore_reinit_error=True)
 
 class QuokkaClusterManager:
 
@@ -46,6 +67,7 @@ class QuokkaClusterManager:
 
     def launch_new_instances(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", requirements = []):
         ec2 = boto3.client("ec2")
+        vcpu_per_node = ec2.describe_instance_types(InstanceTypes=['i3.2xlarge'])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
         waiter = ec2.get_waiter('instance_running')
 
         # important 2 things:
@@ -76,14 +98,17 @@ class QuokkaClusterManager:
 
         for req in requirements:
             assert type(req) == str
-            self.launch_all("pip3 install " + req, public_ips, "Failed to install " + req)
+            try:
+                self.launch_all("pip3 install " + req, public_ips, "Failed to install " + req)
+            except:
+                pass
 
-        return public_ips, private_ips, instance_ids
+        return public_ips, private_ips, instance_ids, vcpu_per_node
 
-    def create_cluster(self, aws_access_key, aws_access_id, num_instances, instance_type = "i3.2xlarge"):
+    def create_cluster(self, aws_access_key, aws_access_id, num_instances, instance_type = "i3.2xlarge", requirements=[]):
         
         start_time = time.time()
-        public_ips, private_ips, instace_ids = self.launch_new_instances(aws_access_key, aws_access_id, num_instances, instance_type)
+        public_ips, private_ips, instace_ids, vcpu_per_node = self.launch_new_instances(aws_access_key, aws_access_id, num_instances, instance_type, requirements)
         print("Launching of EC2 on-demand instances used: ", time.time() - start_time)
 
         leader_public_ip = public_ips[0]
@@ -106,7 +131,7 @@ class QuokkaClusterManager:
         self.launch_all("sudo chmod -R a+rw /data/", public_ips, "failed to give spill dir permissions")
 
         print("Quokka cluster started, coordinator IP address: ", leader_public_ip)
-        return QuokkaCluster(public_ips, private_ips, instace_ids)
+        return QuokkaCluster(public_ips, private_ips, instace_ids, vcpu_per_node)
 
     def stop_cluster(self, quokka_cluster):
         ec2 = boto3.client("ec2")

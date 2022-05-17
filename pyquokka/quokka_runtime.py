@@ -1,15 +1,15 @@
-import pyarrow as pa
 import polars
 from pyquokka.nodes import * 
+from pyquokka.utils import * 
 import numpy as np
 import pandas as pd
 import time
 import random
 import pickle
-import psutil
-import json
+
+
 #ray.init("auto", _system_config={"worker_register_timeout_seconds": 60}, ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
-ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/.local/lib/python3.8/site-packages/pyquokka/"})
+#ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ziheng/.local/lib/python3.8/site-packages/pyquokka/"})
 
 #ray.init(ignore_reinit_error=True) # do this locally
 #ray.timeline("profile.json")
@@ -87,7 +87,8 @@ class Dataset:
 
 class TaskGraph:
     # this keeps the logical dependency DAG between tasks 
-    def __init__(self, checkpoint_bucket = "quokka-checkpoint") -> None:
+    def __init__(self, cluster, checkpoint_bucket = "quokka-checkpoint") -> None:
+        self.cluster = cluster
         self.current_node = 0
         self.nodes = {}
         self.node_channel_to_ip = {}
@@ -100,7 +101,7 @@ class TaskGraph:
         s3 = boto3.resource('s3')
         bucket = s3.Bucket(checkpoint_bucket)
         bucket.objects.all().delete()
-        r = redis.Redis(host="localhost", port=6800, db=0)
+        r = redis.Redis(host="54.185.64.11", port=6800, db=0)
         state_tags = [i.decode("utf-8") for i in r.keys() if "state-tag" in i.decode("utf-8")] 
         for state_tag in state_tags:
             r.delete(state_tag)
@@ -270,7 +271,7 @@ class TaskGraph:
 
         # the datasets will all be managed on the head node. Note that they are not in charge of actually storing the objects, they just 
         # track the ids.
-        output_dataset = Dataset.options(num_cpus = 0.001, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.001}).remote(len(channel_to_ip))
+        output_dataset = Dataset.options(num_cpus = 0.001, resources={"node:" + "172.31.4.33": 0.001}).remote(len(channel_to_ip))
 
         tasknode = {}
         for channel in channel_to_ip:
