@@ -157,90 +157,49 @@ class Node:
         except:
             print("downstream failure detected")
 
-        if type(data) == pd.core.frame.DataFrame or type(data) == polars.internals.frame.DataFrame:
-            for target in self.alive_targets:
-                original_channel_to_ip, partition_key = self.targets[target]
-                for channel in self.alive_targets[target]:
-                    #print("PUSHING FROM",str(self.id),str(self.channel)," TO ",str(target),str(channel), " MY TAG ", self.out_seq)
+        for target in self.alive_targets:
+            original_channel_to_ip, partition_key = self.targets[target]
+            # partition key will be a function that takes in three arguments
+            # the data (arbitrary python object)
+            # self.channel, channel of this node
+            # number of downstream channels
+            # it must return a dictionary of downstream channel number -> arbitrary python object
+            # this partition key could be user specified or be supplied by Quokka from default strategies
 
-                    if type(partition_key) == str:
-                        if type(data) == pd.core.frame.DataFrame:
-                            if "int" in str(data.dtypes[partition_key]).lower() or "float" in str(data.dtypes[partition_key]).lower():
-                                payload = data[data[partition_key] % len(original_channel_to_ip) == channel]
-                            elif data.dtypes[partition_key] == 'object': # str
-                                # this is not the fastest. we rehashing this everytime.
-                                payload = data[pd.util.hash_array(data[partition_key].to_numpy()) % len(original_channel_to_ip) == channel]
-                            else:
-                                raise Exception("invalid partition column type, supports ints, floats and strs")
-                        elif type(data) == polars.internals.frame.DataFrame:
-                            if "int" in str(data[partition_key].dtype).lower() or "float" in str(data[partition_key].dtype).lower():
-                                payload = data[data[partition_key] % len(original_channel_to_ip) == channel]
-                            elif data[partition_key].dtype == polars.datatypes.Utf8:
-                                payload = data[data[partition_key].hash() % len(original_channel_to_ip) == channel]
-                            else:
-                                raise Exception("invalid partition column type, supports ints, floats and strs")
-                    elif callable(partition_key):
-                        payload = partition_key(data, self.channel, channel)
-                        # you have to send the None, because otherwise the sequence number could be messed up.
-                    
-                    elif partition_key == None:
-                        payload = data
-                    
+            partitioned_payload = partition_key(data, self.channel, len(original_channel_to_ip))
+            assert type(partitioned_payload) == dict and max(partitioned_payload.keys()) < len(original_channel_to_ip)
+            
+            for channel in self.alive_targets[target]:
+                #print("PUSHING FROM",str(self.id),str(self.channel)," TO ",str(target),str(channel), " MY TAG ", self.out_seq)
+                payload = partitioned_payload[channel]
+
+                # if the target is on the same machine we are just going to use shared memory, and change the payload to the shared memory name!!
+                if original_channel_to_ip[channel] == self.ip:
+                    #print("LOCAL CHANNEL", channel, self.ip)
+                    if type(payload) == pd.core.frame.DataFrame:
+                        batch = payload
+                        my_format = "pandas"
+                    elif type(payload) == polars.internals.frame.DataFrame:
+                        batch = payload.to_arrow()
+                        my_format = "polars"
                     else:
-                        raise Exception("Can't understand partition strategy")
+                        batch = payload
+                        my_format = "custom"
+                    
+                    object_id = ray.put(batch)
+                    payload = SharedMemMessage(my_format, ray.cloudpickle.dumps(object_id))
 
-                    # if the target is on the same machine we are just going to use shared memory, and change the payload to the shared memory name!!
+                pipeline = self.target_rs[target][channel].pipeline()
+                pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
 
-                    if original_channel_to_ip[channel] == self.ip:
-                        #print("LOCAL CHANNEL", channel, self.ip)
-                        if type(payload) == pd.core.frame.DataFrame:
-                            batch = payload
-                            my_format = "pandas"
-                        elif payload is None:
-                            batch = payload
-                            my_format = "custom"
-                        else:
-                            batch = payload.to_arrow()
-                            my_format = "polars"
-                        
-                        object_id = ray.put(batch)
-                        payload = SharedMemMessage(my_format, ray.cloudpickle.dumps(object_id))
-
-                    pipeline = self.target_rs[target][channel].pipeline()
-                    pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
-
-                    pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),pickle.dumps((self.id, self.channel, self.out_seq)))
-                    try:    
-                        results = pipeline.execute()
-                        if False in results:
-                            print("Downstream failure detected")
-                    except:
+                pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),pickle.dumps((self.id, self.channel, self.out_seq)))
+                try:    
+                    results = pipeline.execute()
+                    if False in results:
                         print("Downstream failure detected")
-        else:
-            # the data that you gave is a custom thing. so the partition function must be a callable
-            for target in self.alive_targets:
-                original_channel_to_ip, partition_key = self.targets[target]
-                assert callable(partition_key) or partition_key is None
-                for channel in self.alive_targets[target]:
-                    print("PUSHING FROM",str(self.id),str(self.channel)," TO ",str(target),str(channel), " MY TAG ", self.out_seq)
-                    payload = partition_key(data, self.channel, channel) if partition_key is not None else data
-
-                    if original_channel_to_ip[channel] == self.ip:
-                        object_id = ray.put(payload)
-                        payload = SharedMemMessage("custom", ray.cloudpickle.dumps(object_id))
-
-                    # don't worry about target being full for now.
-                    pipeline = self.target_rs[target][channel].pipeline()
-                    pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
-
-                    pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),pickle.dumps((self.id, self.channel, self.out_seq)))
-                    try:    
-                        results = pipeline.execute()
-                        if False in results:
-                            print("Downstream failure detected")
-                    except:
-                        print("Downstream failure detected")
-
+                except:
+                    print("Downstream failure detected")
+       
         return True
 
     def done(self):
@@ -451,7 +410,7 @@ class InputRedisDatasetNode(InputNode):
 
 
 class TaskNode(Node):
-    def __init__(self, id, channel,  mapping, datasets, functionObject, parents, checkpoint_location, checkpoint_interval = 10, ckpt = None) -> None:
+    def __init__(self, id, channel,  mapping, functionObject, parents, checkpoint_location, checkpoint_interval = 10, ckpt = None) -> None:
 
         # id: int. Id of the node
         # channel: int. Channel of the node
@@ -465,11 +424,8 @@ class TaskNode(Node):
         self.buffered_inputs = {(parent, channel): deque() for parent in parents for channel in parents[parent]}
         self.id = id 
         self.parents = parents # dict of id -> dict of channel -> actor handles        
-        self.datasets = datasets
         self.functionObject = functionObject
         #assert hasattr(functionObject, "num_states") # for recovery
-        if self.datasets is not None:
-            self.functionObject.initialize(self.datasets, self.channel)
         self.physical_to_logical_mapping = mapping
         self.checkpoint_interval = checkpoint_interval
 
@@ -808,8 +764,8 @@ class TaskNode(Node):
     
 @ray.remote
 class NonBlockingTaskNode(TaskNode):
-    def __init__(self, id, channel,  mapping, datasets, functionObject, parents, checkpoint_location, checkpoint_interval = 10, ckpt = None) -> None:
-        super().__init__(id, channel,  mapping, datasets, functionObject, parents, checkpoint_location, checkpoint_interval , ckpt )
+    def __init__(self, id, channel,  mapping, functionObject, parents, checkpoint_location, checkpoint_interval = 10, ckpt = None) -> None:
+        super().__init__(id, channel,  mapping, functionObject, parents, checkpoint_location, checkpoint_interval , ckpt )
     
     def execute(self):
         
@@ -832,6 +788,7 @@ class NonBlockingTaskNode(TaskNode):
             for key in self.state_tag:
                 assert self.state_tag[key] <= self.latest_input_received[key]
 
+            batches = [i for i in batches if i is not None]
             results = self.functionObject.execute( batches, self.physical_to_logical_mapping[stream_id], self.channel)
             
             # this is a very subtle point. You will only breakout if length of self.target, i.e. the original length of 
@@ -872,8 +829,8 @@ class NonBlockingTaskNode(TaskNode):
     
 @ray.remote
 class BlockingTaskNode(TaskNode):
-    def __init__(self, id, channel,  mapping, datasets, output_dataset, functionObject, parents, checkpoint_location, checkpoint_interval = 10, ckpt = None) -> None:
-        super().__init__(id, channel,  mapping, datasets, functionObject, parents, checkpoint_location, checkpoint_interval , ckpt )
+    def __init__(self, id, channel,  mapping, output_dataset, functionObject, parents, checkpoint_location, checkpoint_interval = 10, ckpt = None) -> None:
+        super().__init__(id, channel,  mapping, functionObject, parents, checkpoint_location, checkpoint_interval , ckpt )
         self.output_dataset = output_dataset
         self.object_count = 0 
     # explicit override with error. Makes no sense to append to targets for a blocking node. Need to use the dataset instead.
@@ -897,7 +854,8 @@ class BlockingTaskNode(TaskNode):
                 continue
 
             print(self.state_tag)
-
+            
+            batches = [i for i in batches if i is not None]
             results = self.functionObject.execute( batches,self.physical_to_logical_mapping[stream_id], self.channel)
             
             self.ckpt_counter += 1

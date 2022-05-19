@@ -6,7 +6,8 @@ import pandas as pd
 import time
 import random
 import pickle
-
+from functools import partial
+import random
 
 #ray.init("auto", _system_config={"worker_register_timeout_seconds": 60}, ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
 #ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ziheng/.local/lib/python3.8/site-packages/pyquokka/"})
@@ -93,7 +94,6 @@ class TaskGraph:
         self.nodes = {}
         self.node_channel_to_ip = {}
         self.node_ips = {}
-        self.datasets = {}
         self.node_type = {}
         self.node_parents = {}
         self.node_args = {}
@@ -101,7 +101,7 @@ class TaskGraph:
         s3 = boto3.resource('s3')
         bucket = s3.Bucket(checkpoint_bucket)
         bucket.objects.all().delete()
-        r = redis.Redis(host="54.185.64.11", port=6800, db=0)
+        r = redis.Redis(host=str(self.cluster.leader_public_ip), port=6800, db=0)
         state_tags = [i.decode("utf-8") for i in r.keys() if "state-tag" in i.decode("utf-8")] 
         for state_tag in state_tags:
             r.delete(state_tag)
@@ -194,9 +194,14 @@ class TaskGraph:
         self.node_args[self.current_node] = {"channel_objects":channel_objects, "batch_func": batch_func, "dependent_map":dependent_map}
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
-    def new_input_reader_node(self, reader, ip_to_num_channel, batch_func = None, dependents = [], ckpt_interval = 10):
+    def new_input_reader_node(self, reader, ip_to_num_channel = None, batch_func = None, dependents = [], ckpt_interval = 10):
 
         dependent_map = self.return_dependent_map(dependents)
+
+        if ip_to_num_channel is None:
+            # automatically come up with some policy
+            ip_to_num_channel = {ip: self.cluster.cpu_count for ip in list(self.cluster.public_ips.values())}
+
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
 
         # this is some state that is associated with the number of mappers. typically for reading csvs or text files where you have to decide the split points.
@@ -222,14 +227,106 @@ class TaskGraph:
         self.node_args[self.current_node] = {"reader": reader, "batch_func":batch_func, "dependent_map" : dependent_map, "ckpt_interval": ckpt_interval}
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
     
+    def flip_channels_ip(self, channel_to_ip):
+        ips = channel_to_ip.values()
+        result = {ip: 0 for ip in ips}
+        for channel in channel_to_ip:
+            result[channel_to_ip[channel]] += 1
+        return result
     
-    def new_non_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 10):
+    def get_default_partition(self, source_ip_to_num_channel, target_ip_to_num_channel):
+        # this can get more sophisticated in the future. For now it's super dumb.
         
-        channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
+        def partition_key_0(ratio, data, source_channel, num_target_channels):
+            target_channel = source_channel // ratio
+            return {target_channel: data}
+        def partition_key_1(ratio, data, source_channel, num_target_channels):
+            # return entirety of data to a random channel between source_channel * ratio and source_channel * ratio + ratio
+            target_channel = int(random.random() * ratio) + source_channel * ratio
+            return {target_channel: data}
+        assert(set(source_ip_to_num_channel) == set(target_ip_to_num_channel))
+        ratio = None
+        direction = None
+        for ip in source_ip_to_num_channel:
+            if ratio is None:
+                if source_ip_to_num_channel[ip] % target_ip_to_num_channel[ip] == 0:
+                    ratio = source_ip_to_num_channel[ip] // target_ip_to_num_channel[ip]
+                    direction = 0
+                elif target_ip_to_num_channel[ip] % source_ip_to_num_channel[ip] == 0:
+                    ratio = target_ip_to_num_channel[ip] // source_ip_to_num_channel[ip]
+                    direction = 1
+                else:
+                    raise Exception("Can't support automated partition function generation since number of channels not a whole multiple of each other between source and target")
+            elif ratio is not None:
+                if direction == 0:
+                    assert target_ip_to_num_channel[ip] * ratio == source_ip_to_num_channel[ip], "ratio of number of channels between source and target must be same for every ip right now"
+                elif direction == 1:
+                    assert source_ip_to_num_channel[ip] * ratio == target_ip_to_num_channel[ip], "ratio of number of channels between source and target must be same for every ip right now"
+        if direction == 0:
+            return partial(partition_key_0, ratio)
+        elif direction == 1:
+            return partial(partition_key_1, ratio)
+        else:
+            return "Something is wrong"
+
+    def prologue(self, streams, ip_to_num_channel, channel_to_ip, partition_key):
+        def partition_key(partition_key, data, source_channel, num_target_channels):
+            result = {}
+            for channel in range(num_target_channels):
+                if type(data) == pd.core.frame.DataFrame:
+                    if "int" in str(data.dtypes[partition_key]).lower() or "float" in str(data.dtypes[partition_key]).lower():
+                        payload = data[data[partition_key] % num_target_channels == channel]
+                    elif data.dtypes[partition_key] == 'object': # str
+                        # this is not the fastest. we rehashing this everytime.
+                        payload = data[pd.util.hash_array(data[partition_key].to_numpy()) % num_target_channels == channel]
+                    else:
+                        raise Exception("invalid partition column type, supports ints, floats and strs")
+                elif type(data) == polars.internals.frame.DataFrame:
+                    if "int" in str(data[partition_key].dtype).lower() or "float" in str(data[partition_key].dtype).lower():
+                        payload = data[data[partition_key] % num_target_channels == channel]
+                    elif data[partition_key].dtype == polars.datatypes.Utf8:
+                        payload = data[data[partition_key].hash() % num_target_channels == channel]
+                    else:
+                        raise Exception("invalid partition column type, supports ints, floats and strs")
+                result[channel] = payload
+            return result
+        
+        def broadcast(data, source_channel, num_target_channels):
+            return {i: data for i in range(num_target_channels)}
+
+        if ip_to_num_channel is None and channel_to_ip is None: 
+            # automatically come up with some policy, user supplied no information
+            ip_to_num_channel = {ip: 1 for ip in list(self.cluster.public_ips.values())}
+            channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
+        elif channel_to_ip is None:
+            channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
+        elif ip_to_num_channel is None:
+            ip_to_num_channel = self.flip_channels_ip(channel_to_ip)
+        else:
+            raise Exception("Cannot specify both ip_to_num_channel and channel_to_ip")
+        
+        
+        for key in streams:
+            if key not in partition_key:
+                source = streams[key]
+                source_ip_to_num_channel = self.flip_channels_ip(self.node_channel_to_ip[source])
+                partition_key[key] = self.get_default_partition(source_ip_to_num_channel, ip_to_num_channel)
+            else:
+                # this has been provided
+                if type(partition_key[key]) == str:
+                    print("Inferring hash partitioning strategy for column ", partition_key[key], "the source node must produce pyarrow, polars or pandas dataframes, and the dataframes must have this column!")
+                    partition_key[key] = partial(partition_key, partition_key[key])
+                elif partition_key[key] == None:
+                    partition_key[key] = broadcast
+                elif callable(partition_key[key]):
+                    from inspect import signature
+                    assert len(signature(partition_key[key])) == 3, "custom partition function must accept three arguments: data object, source channel id, and the number of target channels"
+                else:
+                    raise Exception("Can't understand user defined partition strategy")
+
         # this is the mapping of physical node id to the key the user called in streams. i.e. if you made a node, task graph assigns it an internal id #
         # then if you set this node as the input of this new non blocking task node and do streams = {0: node}, then mapping will be {0: the internal id of that node}
         mapping = {}
-        # this is a dictionary of {id: {channel: Actor}}
         parents = {}
         for key in streams:
             source = streams[key]
@@ -240,51 +337,47 @@ class TaskGraph:
             parents[source] = self.nodes[source]
         self.node_parents[self.current_node] = parents
         
-        print("MAPPING", mapping)
+        return ip_to_num_channel, channel_to_ip, partition_key, mapping, parents
+
+    def new_non_blocking_node(self, streams, functionObject, ip_to_num_channel = None, channel_to_ip = None, partition_key = {}, ckpt_interval = 10):
+        
+        ip_to_num_channel, channel_to_ip, partition_key, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip, partition_key)
+
+        #print("MAPPING", mapping)
         tasknode = {}
         for channel in channel_to_ip:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
-                tasknode[channel] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(self.current_node, channel, mapping, datasets, functionObject, 
+                tasknode[channel] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(self.current_node, channel, mapping,  functionObject, 
                 parents, (self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)), checkpoint_interval = ckpt_interval)
             else:
                 tasknode[channel] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.001}).remote(self.current_node,
-                 channel, mapping, datasets, functionObject, parents, (self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)), checkpoint_interval = ckpt_interval)
+                 channel, mapping, functionObject, parents, (self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)), checkpoint_interval = ckpt_interval)
         
         self.node_type[self.current_node] = NONBLOCKING_NODE
-        self.node_args[self.current_node] = {"mapping":mapping, "datasets":datasets, "functionObject":functionObject, "ckpt_interval": ckpt_interval, "partition_key":partition_key}
+        self.node_args[self.current_node] = {"mapping":mapping,  "functionObject":functionObject, "ckpt_interval": ckpt_interval, "partition_key":partition_key}
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
-    def new_blocking_node(self, streams, datasets, functionObject, ip_to_num_channel, partition_key, ckpt_interval = 10):
+    def new_blocking_node(self, streams, functionObject,ip_to_num_channel = None, channel_to_ip = None, partition_key = {},ckpt_interval = 10):
         
-        channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
-        mapping = {}
-        parents = {}
-        for key in streams:
-            source = streams[key]
-            if source not in self.nodes:
-                raise Exception("stream source not registered")
-            ray.get([self.nodes[source][i].append_to_targets.remote((self.current_node, channel_to_ip, partition_key[key])) for i in self.nodes[source]])
-            mapping[source] = key
-            parents[source] = self.nodes[source]
-        self.node_parents[self.current_node] = parents
+        ip_to_num_channel, channel_to_ip, partition_key, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip, partition_key)
 
         # the datasets will all be managed on the head node. Note that they are not in charge of actually storing the objects, they just 
         # track the ids.
-        output_dataset = Dataset.options(num_cpus = 0.001, resources={"node:" + "172.31.4.33": 0.001}).remote(len(channel_to_ip))
+        output_dataset = Dataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote(len(channel_to_ip))
 
         tasknode = {}
         for channel in channel_to_ip:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
-                tasknode[channel] = BlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(self.current_node, channel, mapping, datasets, output_dataset, functionObject, 
+                tasknode[channel] = BlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(self.current_node, channel, mapping, output_dataset, functionObject, 
                 parents, (self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)), checkpoint_interval = ckpt_interval)
             else:
                 tasknode[channel] = BlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.001}).remote(self.current_node, 
-                channel, mapping, datasets, output_dataset, functionObject, parents, (self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)), checkpoint_interval = ckpt_interval)
+                channel, mapping, output_dataset, functionObject, parents, (self.checkpoint_bucket , str(self.current_node) + "-" + str(channel)), checkpoint_interval = ckpt_interval)
             
         self.node_type[self.current_node] = BLOCKING_NODE
-        self.node_args[self.current_node] = {"mapping":mapping, "datasets":datasets, "output_dataset": output_dataset, "functionObject":functionObject, "ckpt_interval": ckpt_interval,"partition_key":partition_key}
+        self.node_args[self.current_node] = {"mapping":mapping, "output_dataset": output_dataset, "functionObject":functionObject, "ckpt_interval": ckpt_interval,"partition_key":partition_key}
         self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
         return output_dataset
     
@@ -405,7 +498,6 @@ class TaskGraph:
                             my_parents = self.node_parents[node] # all the channels should have the same parents
                             mapping = self.node_args[node]["mapping"]
                             partition_key = self.node_args[node]["partition_key"]
-                            datasets = self.node_args[node]["datasets"]
                             functionObject = self.node_args[node]["functionObject"]
                             ckpt_interval = self.node_args[node]["ckpt_interval"]
                             for source in my_parents:
@@ -413,7 +505,7 @@ class TaskGraph:
 
                             for channel in affected_channels:
                                 self.nodes[node][channel] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + new_channel_to_ip[channel] : 0.001}).remote(node, channel, 
-                                        mapping, datasets, functionObject, my_parents, (self.checkpoint_bucket , str(node) + "-" + str(channel)), checkpoint_interval = ckpt_interval, ckpt = 's3')
+                                        mapping,  functionObject, my_parents, (self.checkpoint_bucket , str(node) + "-" + str(channel)), checkpoint_interval = ckpt_interval, ckpt = 's3')
                                 helps.append(self.nodes[node][channel].ask_upstream_for_help.remote(new_channel_to_ip[channel]))
 
                             for bump in self.nodes:
@@ -427,14 +519,13 @@ class TaskGraph:
                             mapping = self.node_args[node]["mapping"]
                             partition_key = self.node_args[node]["partition_key"]
                             output_dataset = self.node_args[node]["output_dataset"]
-                            datasets = self.node_args[node]["datasets"]
                             functionObject = self.node_args[node]["functionObject"]
                             ckpt_interval = self.node_args[node]["ckpt_interval"]
                             for source in my_parents:
                                 ray.get([self.nodes[source][channel].append_to_targets.remote((node, new_channel_to_ip, partition_key[mapping[source]])) for channel in restarted_actors[source]])
                             for channel in affected_channels:
                                 self.nodes[node][channel] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" +new_channel_to_ip[channel] : 0.001}).remote(node, channel, 
-                                    mapping, datasets, output_dataset, functionObject, my_parents, (self.checkpoint_bucket , str(node) + "-" + str(channel)), checkpoint_interval = ckpt_interval, ckpt = 's3')
+                                    mapping, output_dataset, functionObject, my_parents, (self.checkpoint_bucket , str(node) + "-" + str(channel)), checkpoint_interval = ckpt_interval, ckpt = 's3')
                                 helps.append(self.nodes[node][channel].ask_upstream_for_help.remote(new_channel_to_ip[channel]))
                             
                             for bump in self.nodes:

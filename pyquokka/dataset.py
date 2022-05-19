@@ -236,7 +236,7 @@ class InputMultiParquetDataset:
             yield curr_pos, a
 
 # this works for a directoy of objects.
-class InputFilesDataset:
+class InputS3FilesDataset:
 
     def __init__(self, bucket, prefix= None) -> None:
         

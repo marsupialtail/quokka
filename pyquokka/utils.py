@@ -25,13 +25,21 @@ class QuokkaCluster:
         self.leader_public_ip = self.public_ips[0]
         self.leader_private_ip = self.private_ips[0]
 
-        #pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
+        pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
         # connect to that ray cluster
-        #ray.init(address='ray://' + str(self.leader_public_ip) + ':10001', runtime_env={"py_modules":[pyquokka_loc]})
+        ray.init(address='ray://' + str(self.leader_public_ip) + ':10001', runtime_env={"py_modules":[pyquokka_loc]})
+
+    @classmethod
+    def from_json(cls, json_file):
+        def str_key_to_int(d):
+            return {int(i):d[i] for i in d}
+        stuff = json.load(open(json_file,"r"))
+        return cls(str_key_to_int(stuff["public_ips"]), str_key_to_int(stuff["private_ips"]), str_key_to_int(stuff["instance_ids"]), int(stuff["cpu_count_per_instance"]))
     
     def to_json(self, output = "cluster.json"):
+        json.dump({"public_ips":self.public_ips, "private_ips":self.private_ips,"instance_ids":self.instance_ids,"cpu_count_per_instance":self.cpu_count},open(output,"w"))
+    
 
-        json.dump({"public_ips":self.public_ips, "private_ips":self.private_ips,"instance_ids":self.instance_ids,"cpu_count_per_instance":self.cpu_count})
 
 
 class LocalCluster:
@@ -65,7 +73,7 @@ class QuokkaClusterManager:
         else:
             return True
 
-    def launch_new_instances(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", requirements = []):
+    def launch_new_instances(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", requirements = ["ray==1.12.0"]):
         ec2 = boto3.client("ec2")
         vcpu_per_node = ec2.describe_instance_types(InstanceTypes=['i3.2xlarge'])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
         waiter = ec2.get_waiter('instance_running')

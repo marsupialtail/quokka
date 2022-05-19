@@ -11,14 +11,16 @@ from img2vec_pytorch import Img2Vec
 from PIL import Image
 from pyquokka.sql import Executor
 from pyquokka.quokka_runtime import TaskGraph
-from pyquokka.dataset import InputFilesDataset
+from pyquokka.dataset import InputS3FilesDataset
+from pyquokka.utils import QuokkaCluster
+import torch
+import ray
 
 # in Quokka, downstream operators always receive a list of outputs from the upstream. So if the upstream produces some arbitrary type A, downstream will receive a list of A.
 # Type preservation happens if all operators take a list of numpys say, and return a single numpy. Then all the operators in the graph will operate on similar data types
 # Types can become more complicated if oeprators start producing nested types etc. etc.
 
-ips = ['localhost']
-workers = 1
+cluster = QuokkaCluster.from_json("config.json")
 
 class StageOne(Executor):
     def __init__(self, model_bucket, model_key, config_bucket, config_key) -> None:
@@ -65,6 +67,8 @@ class StageTwo(Executor):
         self.img2vec = None
         self.counter = 0
     def execute(self, batches, stream_id, executor_id):
+
+        torch.set_num_threads(8)
         print("PROCESSED",self.counter)
         if self.img2vec is None:
             self.img2vec = Img2Vec(cuda=False, model='resnet-18')
@@ -81,31 +85,17 @@ class StageTwo(Executor):
                     except:
                         pass
                     #print(vec.numpy().flatten())
-    def done(self):
+    def done(self, executor_id):
         pass
 
-def partition_key1(data, source_channel, target_channel):
+task_graph = TaskGraph(cluster)
 
-    if source_channel//8 == target_channel:
-        return data
-    else:
-        return None
-
-def pass_thru(data, source_channel, target_channel):
-
-    if source_channel == target_channel:
-        return data
-    else:
-        return None
-
-task_graph = TaskGraph()
-
-reader = InputFilesDataset("fddb")
-images = task_graph.new_input_reader_node(reader, {ip:8 for ip in ips[:workers]})
+reader = InputS3FilesDataset("fddb")
+images = task_graph.new_input_reader_node(reader)
 stage_one = StageOne("quokka-examples","res10_300x300_ssd_iter_140000.caffemodel","quokka-examples","deploy.prototxt.txt")
-faces = task_graph.new_non_blocking_node({0:images}, None, stage_one, {ip:1 for ip in ips[:workers]}, {0:partition_key1})
+faces = task_graph.new_non_blocking_node({0:images}, stage_one)
 stage_two = StageTwo()
-vecs = task_graph.new_non_blocking_node({0:faces}, None, stage_two, {ip:1 for ip in ips[:workers]}, {0:pass_thru})
+vecs = task_graph.new_non_blocking_node({0:faces}, stage_two)
 
 import time
 task_graph.create()
