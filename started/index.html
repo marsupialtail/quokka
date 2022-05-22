@@ -99,16 +99,21 @@
               
                 <h1 id="getting-started">Getting Started</h1>
 <h2 id="quokka-in-three-cartoons">Quokka in Three Cartoons</h2>
-<p>The fundamental concept in Quokka is a <strong>stream of Python objects</strong>, which we call a <strong>QStream</strong> (Quokka Stream). Quokka doesn't quite care about the object's type -- integers, Python lists, dictionaries, Numpy arrays, Pandas tables, Torch arrays, they all work, as long as the object can be pickled. The user defines <strong>input sources</strong> that generate a QStream from a dataset. For example, Quokka's cloud CSV reader generates a QStream of Pyarrow Tables from an S3 bucket of CSV files. The user can also define <strong>stateful operators</strong> that operate on one or more QStreams to produce one more QStream. Finally a QStream could be written to an <strong>output sink</strong>, which could be a distributed in-memory dataset that can be converted to Pandas or stable storage on disk or S3.</p>
+<p>The fundamental concept in Quokka is a <strong>stream of Python objects</strong>, which we call a <strong>QStream</strong> (Quokka Stream). Quokka doesn't quite care about the object's type -- integers, Python lists, dictionaries, Numpy arrays, Pandas tables, Torch arrays, they all work, as long as the object can be pickled. The user defines <strong>input readers</strong> that generate a QStream from a dataset. For example, Quokka's cloud CSV reader generates a QStream of Pyarrow Tables from an S3 bucket of CSV files. The user can also define <strong>stateful operators</strong> that operate on one or more QStreams to produce one more QStream. Finally a QStream could be written to an <strong>output sink</strong>, which could be a distributed in-memory dataset that can be converted to Pandas or stable storage on disk or S3. </p>
 <p><img alt="Quokka Stream" src="../quokkas-stream.svg" /></p>
+<p>In this illustration, the bush produces a QStream of leaves and the forest produces a QStream of acorns. The brown quokka consumes those two streams and magically turn it into a stream of strawberries. The grey quokka takes in this stream of strawberries, slices them up and puts them in a salad bowl.</p>
+<p>It would be a dismal world if there is only one quokka of each kind. Quokka supports parallelism for stateful operators with <strong>channels</strong>, which are parallel instantiations of a stateful operator to achieve data parallelism. Input sources can also have channels to parallelize the reading of a data source. For example, we can have two bushes and two forests, and four brown quokkas.</p>
+<p style="text-align:center;"><img src="../quokkas-channel.svg" width=800></p>
+
+<p>The single QStream of leaves from the bush to the brown Quokka actually consists of eight links of data, one from each channel in the input readers to each channel in the stateful operator! Quokka allows you to specify a <strong>partition function</strong>, which specifies for each object you produce in a channel in the source, how it gets sent to downstream channels. You can send the object to only one of the downstream channels, slice it up and send different slices to different channels, or send the same object to all the downstream channels! </p>
+<p>At its core, Quokka is an actor framework. Each channel in an input source or stateful operator constitutes an actor that can be scheduled independently to a machine in a cluster. Actors on the same machine talk to each other through memory while actors on different machines communicate through the network. Typically we want to minimize network communications. Note that different channels of a stateful operator can be scheduled on different machines. An example scheduling of our quokkas is shown below.</p>
+<p style="text-align:center;"><img src="../quokkas-placement.svg" width=800></p>
+
+<p>Quokka has default strategies to choose the number of channels for input readers and stateful oeprators based on the number of machines in the cluster, as well as the partition functions and the actor scheduling. However, the user can easily override these defaults to get better performance.</p>
+<h2 id="hello-world">Hello World!</h2>
 <p align = "center">
 Image credits: some icons taken from flaticon.com.
 </p>
-
-<p>In this illustration, the bush produces a QStream of leaves and the forest produces a QStream of acorns. The brown quokka munches on the leaves to produce a QStream of chewed leaves. Similarly, the grey quokka produces a QStream of half-eaten acorns. The gold quokka takes in these two QStreams to (magically) produce a QStream of strawberries, which we put in a salad bowl.</p>
-<p style="text-align:center;"><img src="../quokkas-channel.svg" width=800></p>
-
-<h2 id="hello-world">Hello World!</h2>
               
             </div>
           </div>
