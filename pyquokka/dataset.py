@@ -226,7 +226,7 @@ class InputMultiParquetDataset:
         else:
             curr_pos = pos
         while curr_pos < len(self.files):
-            print("input batch", (curr_pos - mapper_id) / self.num_mappers)
+            #print("input batch", (curr_pos - mapper_id) / self.num_mappers)
             #print("starting reading ",time.time())
             #a = pq.read_table("s3://" + self.bucket + "/" + self.files[curr_pos],columns=self.columns, filters = self.filters).to_pandas()
             a = pq.read_table("s3://" + self.bucket + "/" +
@@ -268,7 +268,7 @@ class InputS3FilesDataset:
         else:
             curr_pos = pos
         while curr_pos < len(self.files):
-            print("input batch", (curr_pos - mapper_id) / self.num_mappers)
+            #print("input batch", (curr_pos - mapper_id) / self.num_mappers)
             # since these are arbitrary byte files (most likely some image format), it is probably useful to keep the filename around or you can't tell these things apart
             a = (self.files[curr_pos], self.s3.get_object(Bucket=self.bucket, Key=self.files[curr_pos])['Body'].read())
             #print("ending reading ",time.time())

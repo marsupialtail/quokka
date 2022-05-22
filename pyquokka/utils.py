@@ -28,16 +28,9 @@ class QuokkaCluster:
         pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
         # connect to that ray cluster
         ray.init(address='ray://' + str(self.leader_public_ip) + ':10001', runtime_env={"py_modules":[pyquokka_loc]})
-
-    @classmethod
-    def from_json(cls, json_file):
-        def str_key_to_int(d):
-            return {int(i):d[i] for i in d}
-        stuff = json.load(open(json_file,"r"))
-        return cls(str_key_to_int(stuff["public_ips"]), str_key_to_int(stuff["private_ips"]), str_key_to_int(stuff["instance_ids"]), int(stuff["cpu_count_per_instance"]))
     
     def to_json(self, output = "cluster.json"):
-        json.dump({"public_ips":self.public_ips, "private_ips":self.private_ips,"instance_ids":self.instance_ids,"cpu_count_per_instance":self.cpu_count},open(output,"w"))
+        json.dump({"instance_ids":self.instance_ids,"cpu_count_per_instance":self.cpu_count},open(output,"w"))
     
 
 
@@ -47,9 +40,10 @@ class LocalCluster:
         self.cpu_count = multiprocessing.cpu_count()
         self.leader_public_ip = "localhost"
         self.leader_private_ip = "localhost"
-
+        pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
         # we assume you have pyquokka installed, and we are going to spin up a ray cluster locally
         ray.init(ignore_reinit_error=True)
+        os.system("redis-server " + pyquokka_loc + "redis.conf --port 6800 --protected-mode no&")
 
 class QuokkaClusterManager:
 
@@ -58,6 +52,9 @@ class QuokkaClusterManager:
         self.key_location = key_location
         self.security_group = security_group
         pass
+
+    def str_key_to_int(self, d):
+        return {int(i):d[i] for i in d}
 
     def launch_all(self, command, ips, error = "Error"):
         commands = ["ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + str(ip) + " " + command for ip in ips]
@@ -72,17 +69,11 @@ class QuokkaClusterManager:
             return False
         else:
             return True
-
-    def launch_new_instances(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", requirements = ["ray==1.12.0"]):
+    
+    def _initialize_instances(self, instance_ids):
+        num_instances = len(instance_ids)
         ec2 = boto3.client("ec2")
-        vcpu_per_node = ec2.describe_instance_types(InstanceTypes=['i3.2xlarge'])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
         waiter = ec2.get_waiter('instance_running')
-
-        # important 2 things:
-        # this instance needs to have all the things installed on it
-        # this instance needs to have the right tcp permissions
-        res = ec2.run_instances(ImageId="ami-0ac46f512c1730e1a", InstanceType = instance_type, SecurityGroupIds = [self.security_group], KeyName=self.key_name ,MaxCount=num_instances, MinCount=num_instances)
-        instance_ids = [res['Instances'][i]['InstanceId'] for i in range(num_instances)] 
         waiter.wait(InstanceIds=instance_ids)
         a = ec2.describe_instances(InstanceIds = instance_ids)
         public_ips = [a['Reservations'][0]['Instances'][i]['PublicIpAddress'] for i in range(num_instances)]
@@ -99,10 +90,37 @@ class QuokkaClusterManager:
                     raise Exception("Couldn't connect to new instance in 30 seconds.")
                 time.sleep(5)
         
-        print(public_ips)
+        self.launch_all("redis-6.2.6/src/redis-server redis-6.2.6/redis.conf --port 6800 --protected-mode no&", public_ips, "Failed to start Redis server on new worker")
+        leader_public_ip = public_ips[0]
+        leader_private_ip = private_ips[0]
+        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + 
+        " /home/ubuntu/.local/bin/ray start --head --port=6380")
+        if z != 0:
+            raise Exception("failed to start ray head node")
+        
+        command ="/home/ubuntu/.local/bin/ray start --address='" + str(leader_private_ip) + ":6380' --redis-password='5241590000000000'"
+        self.launch_all(command, public_ips, "ray workers failed to connect to ray head node")
+
+    def create_cluster(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", requirements = ["ray==1.12.0"]):
+
+        start_time = time.time()
+        ec2 = boto3.client("ec2")
+        vcpu_per_node = ec2.describe_instance_types(InstanceTypes=['i3.2xlarge'])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
+        waiter = ec2.get_waiter('instance_running')
+
+        # important 2 things:
+        # this instance needs to have all the things installed on it
+        # this instance needs to have the right tcp permissions
+        res = ec2.run_instances(ImageId="ami-0ac46f512c1730e1a", InstanceType = instance_type, SecurityGroupIds = [self.security_group], KeyName=self.key_name ,MaxCount=num_instances, MinCount=num_instances)
+        instance_ids = [res['Instances'][i]['InstanceId'] for i in range(num_instances)] 
+        waiter.wait(InstanceIds=instance_ids)
+        a = ec2.describe_instances(InstanceIds = instance_ids)
+        public_ips = [a['Reservations'][0]['Instances'][i]['PublicIpAddress'] for i in range(num_instances)]
+        private_ips = [a['Reservations'][0]['Instances'][i]['PrivateIpAddress'] for i in range(num_instances)]
+
+        self._initialize_instances(instance_ids)
         self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
         self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
-        self.launch_all("redis-6.2.6/src/redis-server redis-6.2.6/redis.conf --port 6800 --protected-mode no&", public_ips, "Failed to start Redis server on new worker")
 
         for req in requirements:
             assert type(req) == str
@@ -111,35 +129,18 @@ class QuokkaClusterManager:
             except:
                 pass
 
-        return public_ips, private_ips, instance_ids, vcpu_per_node
-
-    def create_cluster(self, aws_access_key, aws_access_id, num_instances, instance_type = "i3.2xlarge", requirements=[]):
-        
-        start_time = time.time()
-        public_ips, private_ips, instace_ids, vcpu_per_node = self.launch_new_instances(aws_access_key, aws_access_id, num_instances, instance_type, requirements)
-        print("Launching of EC2 on-demand instances used: ", time.time() - start_time)
-
-        leader_public_ip = public_ips[0]
-        leader_private_ip = private_ips[0]
-        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + 
-        " /home/ubuntu/.local/bin/ray start --head --port=6379")
-        if z != 0:
-            raise Exception("failed to start ray head node")
-        
-        command ="/home/ubuntu/.local/bin/ray start --address='" + str(leader_private_ip) + ":6379' --redis-password='5241590000000000'"
-        self.launch_all(command, public_ips, "ray workers failed to connect to ray head node")
-        
         print("Trying to set up spill dir.")
         self.launch_all("sudo mkdir /data", public_ips, "failed to make temp spill directory")
-        
         if "i3" in instance_type: # use a more sophisticated policy later
             self.launch_all("sudo mkfs.ext4 -E nodiscard /dev/nvme0n1;", public_ips, "failed to format nvme ssd")
             self.launch_all("sudo mount /dev/nvme0n1 /data;", public_ips, "failed to mount nvme ssd")
         
         self.launch_all("sudo chmod -R a+rw /data/", public_ips, "failed to give spill dir permissions")
 
-        print("Quokka cluster started, coordinator IP address: ", leader_public_ip)
-        return QuokkaCluster(public_ips, private_ips, instace_ids, vcpu_per_node)
+        print("Launching of Quokka cluster used: ", time.time() - start_time)
+
+        return QuokkaCluster(public_ips, private_ips, instance_ids, vcpu_per_node)  
+        
 
     def stop_cluster(self, quokka_cluster):
         ec2 = boto3.client("ec2")
@@ -169,3 +170,29 @@ class QuokkaClusterManager:
             else:
                 break
         del quokka_cluster
+
+    
+    def get_cluster_from_json(self, json_file):
+        
+        ec2 = boto3.client("ec2")
+        
+        stuff = json.load(open(json_file,"r"))
+        cpu_count = int(stuff["cpu_count_per_instance"])
+        instance_ids = self.str_key_to_int(stuff["instance_ids"])
+        instance_ids = [instance_ids[i] for i in range(len(instance_ids))]
+        a = ec2.describe_instances(InstanceIds = instance_ids)
+        states = [a['Reservations'][0]['Instances'][i]['State']['Name'] for i in range(len(instance_ids))]
+        if sum([i=="stopped" for i in states]) == len(states):
+            ec2.start_instances(InstanceIds = instance_ids)
+            self._initialize_instances(instance_ids)
+            a = ec2.describe_instances(InstanceIds = instance_ids)
+            public_ips = [a['Reservations'][0]['Instances'][i]['PublicIpAddress'] for i in range(len(instance_ids))]
+            private_ips = [a['Reservations'][0]['Instances'][i]['PrivateIpAddress'] for i in range(len(instance_ids))]
+            return QuokkaCluster(public_ips, private_ips, instance_ids, cpu_count)
+        if sum([i=="running" for i in states]) == len(states):
+            public_ips = [a['Reservations'][0]['Instances'][i]['PublicIpAddress'] for i in range(len(instance_ids))]
+            private_ips = [a['Reservations'][0]['Instances'][i]['PrivateIpAddress'] for i in range(len(instance_ids))]
+            return QuokkaCluster(public_ips, private_ips, instance_ids, cpu_count)
+        else:
+            print("Cluster in an inconsistent state. Either only some machines are running or some machines have been terminated.")
+            return False

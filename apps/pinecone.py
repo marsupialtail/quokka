@@ -12,7 +12,7 @@ from PIL import Image
 from pyquokka.sql import Executor
 from pyquokka.quokka_runtime import TaskGraph
 from pyquokka.dataset import InputS3FilesDataset
-from pyquokka.utils import QuokkaCluster
+from pyquokka.utils import QuokkaCluster, QuokkaClusterManager
 import torch
 import ray
 
@@ -20,7 +20,8 @@ import ray
 # Type preservation happens if all operators take a list of numpys say, and return a single numpy. Then all the operators in the graph will operate on similar data types
 # Types can become more complicated if oeprators start producing nested types etc. etc.
 
-cluster = QuokkaCluster.from_json("config.json")
+manager = QuokkaClusterManager()
+cluster = manager.get_cluster_from_json("config.json")
 
 class StageOne(Executor):
     def __init__(self, model_bucket, model_key, config_bucket, config_key) -> None:
@@ -39,7 +40,11 @@ class StageOne(Executor):
         
         ret_vals = {}
         for thing in batches:
-            filename, obj = thing
+            try:
+                filename, obj = thing
+            except:
+                print(thing)
+                raise Exception
             img = cv2.imdecode(np.asarray(bytearray(obj)), cv2.IMREAD_COLOR)
             ret_vals[filename] = []
             h, w = img.shape[:2]

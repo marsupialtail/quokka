@@ -83,7 +83,7 @@ class Node:
         self.target_output_state[node_id] = {channel:0 for channel in channel_to_ip}
 
 
-    def update_target_ip_and_help_target_recover(self, target_id, channel, target_out_seq_state, new_ip):
+    def update_target_ip_and_help_target_recover(self, target_id, channel, total_channels, target_out_seq_state, new_ip):
 
         if new_ip != self.targets[target_id][0][channel]: # shouldn't schedule to same IP address ..
             redis_client = redis.Redis(host=new_ip, port = 6800, db=0) 
@@ -102,10 +102,8 @@ class Node:
                     payload = "done"
                 else:
                     partition_key = self.targets[target_id][1]
-                    if type(partition_key) == str:
-                        payload = self.logged_outputs[key][self.logged_outputs[key][partition_key] % len(self.targets[target_id][0]) == channel]
-                    elif callable(partition_key):
-                        payload = partition_key(self.logged_outputs[key], self.channel, channel)
+                    result = partition_key(self.logged_outputs[key], self.channel, total_channels)
+                    payload = result[channel] if channel in result else None
                 pipeline.publish("mailbox-"+str(target_id) + "-" + str(channel),pickle.dumps(payload))
                 pipeline.publish("mailbox-id-"+str(target_id) + "-" + str(channel),pickle.dumps((self.id, self.channel, key)))
         results = pipeline.execute()
@@ -170,8 +168,11 @@ class Node:
             assert type(partitioned_payload) == dict and max(partitioned_payload.keys()) < len(original_channel_to_ip)
             
             for channel in self.alive_targets[target]:
+                if channel not in partitioned_payload:
+                    payload = None
                 #print("PUSHING FROM",str(self.id),str(self.channel)," TO ",str(target),str(channel), " MY TAG ", self.out_seq)
-                payload = partitioned_payload[channel]
+                else:
+                    payload = partitioned_payload[channel]
 
                 # if the target is on the same machine we are just going to use shared memory, and change the payload to the shared memory name!!
                 if original_channel_to_ip[channel] == self.ip:
@@ -575,13 +576,13 @@ class TaskNode(Node):
             print("A PARENT HAS FAILED")
             pass
     
-    def ask_upstream_for_help(self, new_ip):
+    def ask_upstream_for_help(self, new_ip, total_channels):
         recover_tasks = []
         print("UPSTREAM",self.parents)
         for parent in self.parents:
             for channel in self.parents[parent]:
                 handler = self.parents[parent][channel]
-                recover_tasks.append(handler.update_target_ip_and_help_target_recover.remote(self.id, self.channel, self.state_tag[(parent,channel)], new_ip))
+                recover_tasks.append(handler.update_target_ip_and_help_target_recover.remote(self.id, self.channel, total_channels, self.state_tag[(parent,channel)], new_ip))
         ray.get(recover_tasks)
     
     def get_buffered_inputs_mem_usage(self):

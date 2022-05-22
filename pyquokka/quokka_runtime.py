@@ -200,7 +200,7 @@ class TaskGraph:
 
         if ip_to_num_channel is None:
             # automatically come up with some policy
-            ip_to_num_channel = {ip: self.cluster.cpu_count for ip in list(self.cluster.public_ips.values())}
+            ip_to_num_channel = {ip: self.cluster.cpu_count for ip in list(self.cluster.private_ips.values())}
 
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
 
@@ -262,6 +262,8 @@ class TaskGraph:
                     assert target_ip_to_num_channel[ip] * ratio == source_ip_to_num_channel[ip], "ratio of number of channels between source and target must be same for every ip right now"
                 elif direction == 1:
                     assert source_ip_to_num_channel[ip] * ratio == target_ip_to_num_channel[ip], "ratio of number of channels between source and target must be same for every ip right now"
+        
+        #print("RATIO", ratio)
         if direction == 0:
             return partial(partition_key_0, ratio)
         elif direction == 1:
@@ -269,23 +271,24 @@ class TaskGraph:
         else:
             return "Something is wrong"
 
-    def prologue(self, streams, ip_to_num_channel, channel_to_ip, partition_key):
-        def partition_key(partition_key, data, source_channel, num_target_channels):
+    def prologue(self, streams, ip_to_num_channel, channel_to_ip, partition_key_supplied):
+        partition_key = {}
+        def partition_key_str(key, data, source_channel, num_target_channels):
             result = {}
             for channel in range(num_target_channels):
                 if type(data) == pd.core.frame.DataFrame:
-                    if "int" in str(data.dtypes[partition_key]).lower() or "float" in str(data.dtypes[partition_key]).lower():
-                        payload = data[data[partition_key] % num_target_channels == channel]
-                    elif data.dtypes[partition_key] == 'object': # str
+                    if "int" in str(data.dtypes[key]).lower() or "float" in str(data.dtypes[key]).lower():
+                        payload = data[data[key] % num_target_channels == channel]
+                    elif data.dtypes[key] == 'object': # str
                         # this is not the fastest. we rehashing this everytime.
-                        payload = data[pd.util.hash_array(data[partition_key].to_numpy()) % num_target_channels == channel]
+                        payload = data[pd.util.hash_array(data[key].to_numpy()) % num_target_channels == channel]
                     else:
                         raise Exception("invalid partition column type, supports ints, floats and strs")
                 elif type(data) == polars.internals.frame.DataFrame:
-                    if "int" in str(data[partition_key].dtype).lower() or "float" in str(data[partition_key].dtype).lower():
-                        payload = data[data[partition_key] % num_target_channels == channel]
-                    elif data[partition_key].dtype == polars.datatypes.Utf8:
-                        payload = data[data[partition_key].hash() % num_target_channels == channel]
+                    if "int" in str(data[key].dtype).lower() or "float" in str(data[key].dtype).lower():
+                        payload = data[data[key] % num_target_channels == channel]
+                    elif data[key].dtype == polars.datatypes.Utf8:
+                        payload = data[data[key].hash() % num_target_channels == channel]
                     else:
                         raise Exception("invalid partition column type, supports ints, floats and strs")
                 result[channel] = payload
@@ -296,7 +299,7 @@ class TaskGraph:
 
         if ip_to_num_channel is None and channel_to_ip is None: 
             # automatically come up with some policy, user supplied no information
-            ip_to_num_channel = {ip: 1 for ip in list(self.cluster.public_ips.values())}
+            ip_to_num_channel = {ip: 1 for ip in list(self.cluster.private_ips.values())}
             channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
         elif channel_to_ip is None:
             channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
@@ -307,20 +310,21 @@ class TaskGraph:
         
         
         for key in streams:
-            if key not in partition_key:
+            if key not in partition_key_supplied:
                 source = streams[key]
                 source_ip_to_num_channel = self.flip_channels_ip(self.node_channel_to_ip[source])
                 partition_key[key] = self.get_default_partition(source_ip_to_num_channel, ip_to_num_channel)
             else:
                 # this has been provided
-                if type(partition_key[key]) == str:
-                    print("Inferring hash partitioning strategy for column ", partition_key[key], "the source node must produce pyarrow, polars or pandas dataframes, and the dataframes must have this column!")
-                    partition_key[key] = partial(partition_key, partition_key[key])
-                elif partition_key[key] == None:
+                if type(partition_key_supplied[key]) == str:
+                    print("Inferring hash partitioning strategy for column ", partition_key_supplied[key], "the source node must produce pyarrow, polars or pandas dataframes, and the dataframes must have this column!")
+                    partition_key[key] = partial(partition_key_str, partition_key_supplied[key])
+                elif partition_key_supplied[key] == None:
                     partition_key[key] = broadcast
-                elif callable(partition_key[key]):
+                elif callable(partition_key_supplied[key]):
                     from inspect import signature
-                    assert len(signature(partition_key[key])) == 3, "custom partition function must accept three arguments: data object, source channel id, and the number of target channels"
+                    assert len(signature(partition_key_supplied[key]).parameters) == 3, "custom partition function must accept three arguments: data object, source channel id, and the number of target channels"
+                    partition_key[key] = partition_key_supplied[key]
                 else:
                     raise Exception("Can't understand user defined partition strategy")
 
@@ -339,10 +343,9 @@ class TaskGraph:
         
         return ip_to_num_channel, channel_to_ip, partition_key, mapping, parents
 
-    def new_non_blocking_node(self, streams, functionObject, ip_to_num_channel = None, channel_to_ip = None, partition_key = {}, ckpt_interval = 10):
+    def new_non_blocking_node(self, streams, functionObject, ip_to_num_channel = None, channel_to_ip = None, partition_key_supplied = {}, ckpt_interval = 10):
         
-        ip_to_num_channel, channel_to_ip, partition_key, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip, partition_key)
-
+        ip_to_num_channel, channel_to_ip, partition_key, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip, partition_key_supplied)
         #print("MAPPING", mapping)
         tasknode = {}
         for channel in channel_to_ip:
@@ -358,9 +361,9 @@ class TaskGraph:
         self.node_args[self.current_node] = {"mapping":mapping,  "functionObject":functionObject, "ckpt_interval": ckpt_interval, "partition_key":partition_key}
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
-    def new_blocking_node(self, streams, functionObject,ip_to_num_channel = None, channel_to_ip = None, partition_key = {},ckpt_interval = 10):
+    def new_blocking_node(self, streams, functionObject,ip_to_num_channel = None, channel_to_ip = None, partition_key_supplied = {},ckpt_interval = 10):
         
-        ip_to_num_channel, channel_to_ip, partition_key, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip, partition_key)
+        ip_to_num_channel, channel_to_ip, partition_key, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip, partition_key_supplied)
 
         # the datasets will all be managed on the head node. Note that they are not in charge of actually storing the objects, they just 
         # track the ids.
@@ -506,7 +509,7 @@ class TaskGraph:
                             for channel in affected_channels:
                                 self.nodes[node][channel] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + new_channel_to_ip[channel] : 0.001}).remote(node, channel, 
                                         mapping,  functionObject, my_parents, (self.checkpoint_bucket , str(node) + "-" + str(channel)), checkpoint_interval = ckpt_interval, ckpt = 's3')
-                                helps.append(self.nodes[node][channel].ask_upstream_for_help.remote(new_channel_to_ip[channel]))
+                                helps.append(self.nodes[node][channel].ask_upstream_for_help.remote(new_channel_to_ip[channel], len(new_channel_to_ip)))
 
                             for bump in self.nodes:
                                 if bump in self.node_parents and node in self.node_parents[bump] and bump not in restarted_actors: # this node was not restarted. noone will apped_targets to you, do it yourself
@@ -526,7 +529,7 @@ class TaskGraph:
                             for channel in affected_channels:
                                 self.nodes[node][channel] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" +new_channel_to_ip[channel] : 0.001}).remote(node, channel, 
                                     mapping, output_dataset, functionObject, my_parents, (self.checkpoint_bucket , str(node) + "-" + str(channel)), checkpoint_interval = ckpt_interval, ckpt = 's3')
-                                helps.append(self.nodes[node][channel].ask_upstream_for_help.remote(new_channel_to_ip[channel]))
+                                helps.append(self.nodes[node][channel].ask_upstream_for_help.remote(new_channel_to_ip[channel], len(new_channel_to_ip)))
                             
                             for bump in self.nodes:
                                 if bump in self.node_parents and node in self.node_parents[bump] and bump not in restarted_actors: # this node was not restarted. noone will apped_targets to you, do it yourself
