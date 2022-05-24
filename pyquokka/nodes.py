@@ -395,7 +395,7 @@ class InputReaderNode(InputNode):
     def __init__(self, id, channel, accessor, num_channels, checkpoint_location, batch_func=None, dependent_map={}, checkpoint_interval=10, ckpt=None) -> None:
         super().__init__(id, channel, checkpoint_location, batch_func, dependent_map, checkpoint_interval, ckpt)
         self.accessor = accessor
-        self.accessor.set_num_mappers(num_channels)
+        self.accessor.set_num_channels(num_channels)
         self.input_generator = self.accessor.get_next_batch(channel, self.latest_stable_state)
 
 @ray.remote
