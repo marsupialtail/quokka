@@ -1,8 +1,9 @@
 site_name: Quokka
+
 nav:
         - Home: index.md
+        - Getting Started: started.md
         - Quokka Runtime API: runtime.md
-        - DataFrame API: dataframe.md
 
 theme: readthedocs
 

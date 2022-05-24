@@ -20,7 +20,7 @@ class SortPhase2Dataset:
         self.record_batch_rows = record_batch_rows
         self.key = key
 
-    def set_num_mappers(self, num_mappers):
+    def set_num_channels(self, num_channels):
         pass
 
     def get_next_batch(self, mapper_id, pos = None):
@@ -101,18 +101,18 @@ class InputSingleParquetDataset:
         
         self.bucket = bucket
         self.filename = filename
-        self.num_mappers = None
+        self.num_channels = None
         self.columns = columns
 
-    def set_num_mappers(self, num_mappers):
+    def set_num_channels(self, num_channels):
 
         s3 = s3fs.S3FileSystem()
         self.parquet_file = pq.ParquetFile(s3.open(self.bucket + self.filename, "rb"))
         self.num_row_groups = self.parquet_file.num_row_groups
-        self.num_mappers = num_mappers
+        self.num_channels = num_channels
 
     def get_next_batch(self, mapper_id, pos=None):
-        assert self.num_mappers is not None
+        assert self.num_channels is not None
         if pos is None:
             curr_row_group = mapper_id
         else:
@@ -120,7 +120,7 @@ class InputSingleParquetDataset:
         while curr_row_group < len(self.num_row_groups):
             a = self.parquet_file.read_row_group(
                 curr_row_group, columns=self.columns)
-            curr_row_group += self.num_mappers
+            curr_row_group += self.num_channels
             yield curr_row_group, a
 
 # use this if you have a lot of small parquet files
@@ -135,10 +135,11 @@ class InputHDF5Dataset:
         self.filename = filename
         self.key = key
 
-        self.num_mappers = None
+        self.num_channels = None
         
-    def set_num_mappers(self, num_mappers):
-        self.num_mappers = num_mappers
+    def set_num_channels(self, num_channels):
+        import h5py
+        self.num_channels = num_channels
         s3 = s3fs.S3FileSystem()
         self.h5file = h5py.File(s3.open("s3://" + self.bucket + "/" + self.filename, "rb"))
         self.dataset = self.h5file[self.key]
@@ -149,7 +150,7 @@ class InputHDF5Dataset:
         self.num_chunks = (self.dataset_shape[0]-1) // self.chunk_size[0] + 1
 
     def get_next_batch(self, mapper_id, pos=None):
-        assert self.num_mappers is not None
+        assert self.num_channels is not None
         if pos is None:
             curr_chunk = mapper_id
         else:
@@ -157,7 +158,7 @@ class InputHDF5Dataset:
         while curr_chunk < self.num_chunks:
             chunk_start = curr_chunk * self.chunk_size[0]            
             result = self.dataset[chunk_start:chunk_start + self.chunk_size[0]]
-            curr_chunk += self.num_mappers
+            curr_chunk += self.num_channels
             yield curr_chunk, result
 
 class InputDiskHDF5Dataset:
@@ -167,10 +168,10 @@ class InputDiskHDF5Dataset:
         self.filename = filename
         self.key = key
 
-        self.num_mappers = None
+        self.num_channels = None
         
-    def set_num_mappers(self, num_mappers):
-        self.num_mappers = num_mappers
+    def set_num_channels(self, num_channels):
+        self.num_channels = num_channels
         self.h5file = h5py.File(self.filename)
         self.dataset = self.h5file[self.key]
         self.chunk_size = self.dataset.chunks
@@ -180,7 +181,7 @@ class InputDiskHDF5Dataset:
         self.num_chunks = (self.dataset_shape[0]-1) // self.chunk_size[0] + 1
 
     def get_next_batch(self, mapper_id, pos=None):
-        assert self.num_mappers is not None
+        assert self.num_channels is not None
         if pos is None:
             curr_chunk = mapper_id
         else:
@@ -188,7 +189,7 @@ class InputDiskHDF5Dataset:
         while curr_chunk < self.num_chunks:
             chunk_start = curr_chunk * self.chunk_size[0]            
             result = self.dataset[chunk_start:chunk_start + self.chunk_size[0]]
-            curr_chunk += self.num_mappers
+            curr_chunk += self.num_channels
             yield curr_chunk, result
 
 class InputMultiParquetDataset:
@@ -204,12 +205,12 @@ class InputMultiParquetDataset:
         self.prefix = prefix
         assert self.prefix is not None
         
-        self.num_mappers = None
+        self.num_channels = None
         self.columns = columns
         self.filters = filters
 
-    def set_num_mappers(self, num_mappers):
-        self.num_mappers = num_mappers
+    def set_num_channels(self, num_channels):
+        self.num_channels = num_channels
         self.s3 = boto3.client('s3')
         z = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
         self.files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
@@ -220,19 +221,19 @@ class InputMultiParquetDataset:
                               if i['Key'].endswith(".parquet")])
 
     def get_next_batch(self, mapper_id, pos=None):
-        assert self.num_mappers is not None
+        assert self.num_channels is not None
         if pos is None:
             curr_pos = mapper_id
         else:
             curr_pos = pos
         while curr_pos < len(self.files):
-            #print("input batch", (curr_pos - mapper_id) / self.num_mappers)
+            #print("input batch", (curr_pos - mapper_id) / self.num_channels)
             #print("starting reading ",time.time())
             #a = pq.read_table("s3://" + self.bucket + "/" + self.files[curr_pos],columns=self.columns, filters = self.filters).to_pandas()
             a = pq.read_table("s3://" + self.bucket + "/" +
                               self.files[curr_pos], columns=self.columns, filters=self.filters)
             #print("ending reading ",time.time())
-            curr_pos += self.num_mappers
+            curr_pos += self.num_channels
             yield curr_pos, a
 
 # this works for a directoy of objects.
@@ -243,10 +244,10 @@ class InputS3FilesDataset:
         self.bucket = bucket
         self.prefix = prefix
         
-        self.num_mappers = None
+        self.num_channels = None
 
-    def set_num_mappers(self, num_mappers):
-        self.num_mappers = num_mappers
+    def set_num_channels(self, num_channels):
+        self.num_channels = num_channels
         self.s3 = boto3.client('s3')
         if self.prefix is not None:
             z = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
@@ -262,178 +263,70 @@ class InputS3FilesDataset:
                 self.files.extend([i['Key'] for i in z['Contents']])
 
     def get_next_batch(self, mapper_id, pos=None):
-        assert self.num_mappers is not None
+        assert self.num_channels is not None
         if pos is None:
             curr_pos = mapper_id
         else:
             curr_pos = pos
         while curr_pos < len(self.files):
-            #print("input batch", (curr_pos - mapper_id) / self.num_mappers)
+            #print("input batch", (curr_pos - mapper_id) / self.num_channels)
             # since these are arbitrary byte files (most likely some image format), it is probably useful to keep the filename around or you can't tell these things apart
             a = (self.files[curr_pos], self.s3.get_object(Bucket=self.bucket, Key=self.files[curr_pos])['Body'].read())
             #print("ending reading ",time.time())
-            curr_pos += self.num_mappers
+            curr_pos += self.num_channels
             yield curr_pos, a
 
-class InputCSVDataset:
-
-    def __init__(self, bucket, key, names, sep=",", stride=64 * 1024 * 1024, header = False) -> None:
-       
-        self.bucket = bucket
-        self.key = key
-        self.num_mappers = None
-        self.names = names
-        self.sep = sep
-        self.stride = stride
-        self.header = header
-
-    def set_num_mappers(self, num_mappers):
-        assert self.num_mappers == num_mappers
-        self.s3 = boto3.client('s3')  # needs boto3 client
-
-
-    def get_own_state(self,num_mappers, window=1024 * 32):
-
-        s3 = boto3.client('s3')
-        self.num_mappers = num_mappers
-        splits = self.num_mappers * 4 
-
-        response = s3.head_object(
-            Bucket=self.bucket,
-            Key=self.key
-        )
-        length = response['ContentLength']
-        assert length // splits > window * 2
-        potential_splits = [length//splits * i for i in range(splits)]
-        # adjust the splits now
-        adjusted_splits = []
-
-        # the first value is going to be the start of the second row
-        # -- we assume there's a header and skip it!
-
-        resp = s3.get_object(Bucket=self.bucket, Key=self.key,
-                                  Range='bytes={}-{}'.format(0, window))['Body'].read()
-
-        first_newline = resp.find(bytes('\n', 'utf-8'))
-        if first_newline == -1:
-            raise Exception
-        else:
-            adjusted_splits.append(first_newline)
-
-        for i in range(1, len(potential_splits)):
-            potential_split = potential_splits[i]
-            start = max(0, potential_split - window)
-            end = min(potential_split + window, length)
-
-            resp = s3.get_object(
-                Bucket=self.bucket, Key=self.key, Range='bytes={}-{}'.format(start, end))['Body'].read()
-            last_newline = resp.rfind(bytes('\n', 'utf-8'))
-            if last_newline == -1:
-                raise Exception
-            else:
-                adjusted_splits.append(start + last_newline)
-
-        adjusted_splits[-1] = length
-
-        print(length, adjusted_splits)
-        self.length = length
-        self.adjusted_splits = adjusted_splits
-
-    # default is to get 16 KB batches at a time.
-    def get_next_batch(self, mapper_id, pos=None):
-
-        if self.num_mappers is None:
-            raise Exception(
-                "I need to know the total number of mappers you are planning on using.")
-
-        splits = len(self.adjusted_splits)
-        assert self.num_mappers < splits + 1
-        assert mapper_id < self.num_mappers + 1
-        chunks = splits // self.num_mappers
-        if pos is None:
-            start = self.adjusted_splits[chunks * mapper_id]
-            pos = start
-
-        if mapper_id == self.num_mappers - 1:
-            end = self.adjusted_splits[splits - 1]
-        else:
-            end = self.adjusted_splits[chunks * mapper_id + chunks]
-
-        while pos < end-1:
-
-            resp = self.s3.get_object(Bucket=self.bucket, Key=self.key, Range='bytes={}-{}'.format(
-                pos, min(pos+self.stride, end)))['Body'].read()
-            last_newline = resp.rfind(bytes('\n', 'utf-8'))
-
-            #import pdb;pdb.set_trace()
-
-            if last_newline == -1:
-                raise Exception
-            else:
-                resp = resp[:last_newline]
-
-                if self.header and pos == 0:
-                    first_newline = resp.find(bytes('\n','utf-8'))
-                    if first_newline == -1:
-                        raise Exception
-                    resp = resp[first_newline + 1:]
-                #print("start convert,",time.time())
-                #bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
-                bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
-                    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-                
-                pos += last_newline
-
-                #print("done convert,",time.time())
-                yield pos, bump
-
-
 # this should work for 1 CSV up to multiple
-class InputMultiCSVDataset:
-    def __init__(self, bucket, prefix, names, sep=",", stride=64 * 1024 * 1024, header = False) -> None:
+class InputS3CSVDataset:
+    def __init__(self, bucket, names, prefix = None, key = None, sep=",", stride=64 * 1024 * 1024, header = False) -> None:
         self.bucket = bucket
         self.prefix = prefix
-        self.num_mappers = None
+        self.key = key
+        self.num_channels = None
         self.names = names
         self.sep = sep
         self.stride = stride
         self.header = header
     
 
-    def set_num_mappers(self, num_mappers):
-        assert self.num_mappers == num_mappers
+    def set_num_channels(self, num_channels):
+        assert self.num_channels == num_channels
         self.s3 = boto3.client('s3')  # needs boto3 client
     
-    # we need to rethink this whole setting num mappers business. For this operator we don't want each node to do redundant work!
-    def get_own_state(self, num_mappers, window = 1024 * 32):
-        self.num_mappers = num_mappers
+    # we need to rethink this whole setting num channels business. For this operator we don't want each node to do redundant work!
+    def get_own_state(self, num_channels, window = 1024 * 32):
+        self.num_channels = num_channels
 
         s3 = boto3.client('s3')  # needs boto3 client, however it is transient and is not part of own state, so Ray can send this thing! 
-        if self.prefix is not None:
-            z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
-            files = z['Contents']
-            while 'NextContinuationToken' in z.keys():
-                z = s3.list_objects_v2(
-                    Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
-                files.extend(z['Contents'])
+        if self.key is not None:
+            files = deque([self.key])
+            response = s3.head_object(Bucket=self.bucket, Key=self.key)
+            sizes = deque([response['ContentLength']])
         else:
-            z = s3.list_objects_v2(Bucket=self.bucket)
-            files = z['Contents']
-            while 'NextContinuationToken' in z.keys():
-                z = s3.list_objects_v2(
-                    Bucket=self.bucket, ContinuationToken=z['NextContinuationToken'])
-                files.extend(z['Contents'])
-        
-        sizes = deque([i['Size'] for i in files])
-        files = deque([i['Key'] for i in files])
+            if self.prefix is not None:
+                z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
+                files = z['Contents']
+                while 'NextContinuationToken' in z.keys():
+                    z = s3.list_objects_v2(
+                        Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
+                    files.extend(z['Contents'])
+            else:
+                z = s3.list_objects_v2(Bucket=self.bucket)
+                files = z['Contents']
+                while 'NextContinuationToken' in z.keys():
+                    z = s3.list_objects_v2(
+                        Bucket=self.bucket, ContinuationToken=z['NextContinuationToken'])
+                    files.extend(z['Contents'])
+            sizes = deque([i['Size'] for i in files])
+            files = deque([i['Key'] for i in files])
         total_size = sum(sizes)
-        size_per_channel = total_size // num_mappers
+        size_per_channel = total_size // num_channels
         channel_infos = {}
 
         start_byte = 0
         real_off = 0
 
-        for channel in range(num_mappers):
+        for channel in range(num_channels):
             my_file = []
             curr_size = 0
             done = False
@@ -481,7 +374,7 @@ class InputMultiCSVDataset:
 
 
     def get_next_batch(self, mapper_id, state = None):
-        assert self.num_mappers is not None
+        assert self.num_channels is not None
         files = self.channel_infos[mapper_id][1]
         
         if state is None:
@@ -493,7 +386,6 @@ class InputMultiCSVDataset:
         while curr_pos < len(files):
             
             file = files[curr_pos]
-            print("READING FROM", file)
             if curr_pos != len(files) - 1:
                 response = self.s3.head_object(
                     Bucket=self.bucket,

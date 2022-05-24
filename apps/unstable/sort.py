@@ -5,13 +5,12 @@ from pyquokka.sql import MergeSortedExecutor, OutputCSVExecutor
 from pyquokka.dataset import InputCSVDataset, SortPhase2Dataset
 import ray
 import polars
-import redis
-r = redis.Redis(host="localhost", port=6800, db=0)
-r.flushall()
+from pyquokka.utils import LocalCluster, QuokkaClusterManager
+from schema import * 
+manager = QuokkaClusterManager()
+cluster = manager.get_cluster_from_json("config.json")
 
-ips = ['localhost', '172.31.11.134', '172.31.15.208', '172.31.11.188']
-workers = 4
-task_graph = TaskGraph()
+task_graph = TaskGraph(cluster)
 
 lineitem_filter = lambda x: polars.from_arrow(x).sort('l_partkey')
 
@@ -30,10 +29,6 @@ def partition_key2(data, source_channel, target_channel):
         return data
     else:
         return None
-
-lineitem_scheme = ["l_orderkey","l_partkey","l_suppkey","l_linenumber","l_quantity","l_extendedprice", 
-"l_discount","l_tax","l_returnflag","l_linestatus","l_shipdate","l_commitdate","l_receiptdate","l_shipinstruct",
-"l_shipmode","l_comment", "null"]
 
 drop_null = lambda x: polars.from_arrow(x).drop("null").sort("l_partkey")
 
@@ -65,5 +60,5 @@ output = task_graph.new_blocking_node({0:stream}, None,outputer, {ip:4 for ip in
 
 task_graph.create()
 start = time.time()
-task_graph.run_with_fault_tolerance()
+task_graph.run()
 print("total time ", time.time() - start)

@@ -132,9 +132,12 @@ class TaskGraph:
         self.current_node += 1
         return self.current_node - 1
 
-    def new_input_redis(self, dataset, ip_to_num_channel, policy = "default", batch_func=None, dependents = []):
+    def new_input_redis(self, dataset, ip_to_num_channel = None, policy = "default", batch_func=None, dependents = []):
         
         dependent_map = self.return_dependent_map(dependents)
+        if ip_to_num_channel is None:
+            # automatically come up with some policy
+            ip_to_num_channel = {ip: self.cluster.cpu_count for ip in list(self.cluster.private_ips.values())}
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
 
         # this will assert that the dataset is complete. You can only call this API on a completed dataset
@@ -204,12 +207,12 @@ class TaskGraph:
 
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
 
-        # this is some state that is associated with the number of mappers. typically for reading csvs or text files where you have to decide the split points.
+        # this is some state that is associated with the number of channels. typically for reading csvs or text files where you have to decide the split points.
         
         if hasattr(reader, "get_own_state"):
             reader.get_own_state(len(channel_to_ip))
         
-        # set num mappers is still needed later to initialize the self.s3 object, which can't be pickled!
+        # set num channels is still needed later to initialize the self.s3 object, which can't be pickled!
 
         tasknode = {}
         for channel in channel_to_ip:

@@ -40,6 +40,8 @@ class LocalCluster:
         self.cpu_count = multiprocessing.cpu_count()
         self.leader_public_ip = "localhost"
         self.leader_private_ip = "localhost"
+        self.public_ips = {0:"localhost"}
+        self.private_ips = {0:"localhost"}
         pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
         # we assume you have pyquokka installed, and we are going to spin up a ray cluster locally
         ray.init(ignore_reinit_error=True)

@@ -275,55 +275,93 @@ class GroupAsOfJoinExecutor(Executor):
         self.trade = s[0][0]
         self.quote = s[0][1]
     
+    def find_second_smallest(self, batch, key):
+        smallest = batch[0][key]
+        for i in range(len(batch)):
+            if batch[i][key] > smallest:
+                return batch[i][key]
+    
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
         # state compaction
-        batches = [i for i in batches if i is not None and len(i) > 0]
+        batches = [i for i in batches if len(i) > 0]
         if len(batches) == 0:
             return
-        batch = polars.concat(batches)
-        ret_vals = []
-        # trade
-        if stream_id == 0:
-            frames = batch.partition_by(self.group_left_on)
-            for frame in frames:
-                symbol = frame["symbol"][0]
-                if symbol in self.trade:
-                    self.trade[symbol].vstack(frame,in_place=True)
-                else:
-                    self.trade[symbol] = frame
-                # now do the join
-                if symbol not in self.quote:
-                    continue
-                else:
-                    trades = self.trade[symbol]
-                    quotes = self.quote[symbol]
-                    joinable_trades = trades[trades[self.left_on] < quotes[-1][self.right_on]]
-                    joinable_quotes = quotes[quotes[self.right_on] < joinable_trades[-1][self.left_on]]
-                    self.trade[symbol] = trades[len(joinable_trades):]
-                    self.quote[symbol] = quotes[len(joinable_quotes):]
-                    ret_vals.append(joinable_trades.join_asof(joinable_quotes.drop(self.group_right_on), left_on = self.left_on, right_on = self.right_on, suffix=self.suffix))
+        
+        # self.trade will be a dictionary of lists. 
+        # self.quote will be a dictionary of lists.
 
+        # trade
+        ret_vals = []
+        if stream_id == 0:
+            for batch in batches:
+                frames = batch.partition_by(self.group_left_on)
+                for trade_chunk in frames:
+                    symbol = trade_chunk["symbol"][0]
+                    min_trade_ts = trade_chunk[0][self.left_on]
+                    max_trade_ts = trade_chunk[-1][self.left_on]
+                    current_quotes_for_symbol = self.quote[symbol]
+                    for i in range(len(current_quotes_for_symbol)):
+                        quote_chunk = current_quotes_for_symbol[i]
+                        min_quote_ts = trade_chunk[0][self.right_on]
+                        max_quote_ts = trade_chunk[-1][self.right_on]
+                        if max_trade_ts < min_quote_ts or min_trade_ts > max_quote_ts:
+                            # no overlap.
+                            continue
+                        else:
+                            second_smallest_quote_ts = self.find_second_smallest(quote_chunk, self.right_on)
+                            joinable_trades = trade_chunk[trade_chunk[self.left_on] >= second_smallest_quote_ts and trade_chunk[self.left_on] < max_quote_ts]
+                            trade_start_ts = joinable_trades[0][self.left_on]
+                            trade_end_ts = joinable_trades[-1][self.left_on]
+                            if len(joinable_trades) == 0:
+                                continue
+                            quote_start_ts = quote_chunk[self.right_on][quote_chunk[self.right_on] <= trade_start_ts][-1]
+                            quote_end_ts = quote_chunk[self.right_on][quote_chunk[self.right_on] <= trade_end_ts][-1]
+                            joinable_quotes = quote_chunk[quote_chunk[self.right_on] >= quote_start_ts and quote_chunk[self.right_on] <= quote_end_ts]
+                            if len(joinable_quotes) == 0:
+                                continue
+                            trade_chunk = trade_chunk[trade_chunk[self.left_on] < trade_start_ts and trade_chunk[self.left_on] > trade_end_ts]
+                            self.quote[symbol][i] = quote_chunk[quote_chunk[self.right_on] < quote_start_ts and quote_chunk[self.left_on] > quote_end_ts]
+                            ret_vals.append(joinable_trades.join_asof(joinable_quotes.drop(self.group_right_on), left_on = self.left_on, right_on = self.right_on))
+                    if symbol in self.trade:
+                        self.trade[symbol].append(trade_chunk)
+                    else:
+                        self.trade[symbol] = [trade_chunk]
         #quote
         elif stream_id == 1:
-            frames = batch.partition_by(self.group_right_on)
-            for frame in frames:
-                symbol = frame["symbol"][0]
-                if symbol in self.quote:
-                    self.quote[symbol].vstack(frame,in_place=True)
-                else:
-                    self.quote[symbol] = frame
-                if symbol not in self.trade:
-                    continue
-                else:
-                    trades = self.trade[symbol]
-                    quotes = self.quote[symbol]
-                    joinable_trades = trades[trades[self.left_on] < quotes[-1][self.right_on]]
-                    joinable_quotes = quotes[quotes[self.right_on] < joinable_trades[-1][self.left_on]]
-                    self.trade[symbol] = trades[len(joinable_trades):]
-                    self.quote[symbol] = quotes[len(joinable_quotes):]
-                    ret_vals.append(joinable_trades.join_asof(joinable_quotes.drop(self.group_right_on), left_on = self.left_on, right_on = self.right_on, suffix=self.suffix))
-
+            for batch in batches:
+                frames = batch.partition_by(self.group_right_on)
+                for quote_chunk in frames:
+                    symbol = quote_chunk["symbol"][0]
+                    min_quote_ts = quote_chunk[0][self.right_on]
+                    max_quote_ts = quote_chunk[-1][self.right_on]
+                    current_trades_for_symbol = self.trade[symbol]
+                    for i in range(len(current_trades_for_symbol)):
+                        trade_chunk = current_trades_for_symbol[i]
+                        min_trade_ts = trade_chunk[0][self.left_on]
+                        max_trade_ts = trade_chunk[-1][self.left_on]
+                        if max_trade_ts < min_quote_ts or min_trade_ts > max_quote_ts:
+                            # no overlap.
+                            continue
+                        else:
+                            second_smallest_quote_ts = self.find_second_smallest(quote_chunk, self.right_on)
+                            joinable_trades = trade_chunk[trade_chunk[self.left_on] >= second_smallest_quote_ts and trade_chunk[self.left_on] < max_quote_ts]
+                            trade_start_ts = joinable_trades[0][self.left_on]
+                            trade_end_ts = joinable_trades[-1][self.left_on]
+                            if len(joinable_trades) == 0:
+                                continue
+                            quote_start_ts = quote_chunk[self.right_on][quote_chunk[self.right_on] <= trade_start_ts][-1]
+                            quote_end_ts = quote_chunk[self.right_on][quote_chunk[self.right_on] <= trade_end_ts][-1]
+                            joinable_quotes = quote_chunk[quote_chunk[self.right_on] >= quote_start_ts and quote_chunk[self.right_on] <= quote_end_ts]
+                            if len(joinable_quotes) == 0:
+                                continue
+                            self.trade[symbol][i] = trade_chunk[trade_chunk[self.left_on] < trade_start_ts and trade_chunk[self.left_on] > trade_end_ts]
+                            quote_chunk = quote_chunk[quote_chunk[self.right_on] < quote_start_ts and quote_chunk[self.left_on] > quote_end_ts]
+                            ret_vals.append(joinable_trades.join_asof(joinable_quotes.drop(self.group_right_on), left_on = self.left_on, right_on = self.right_on))
+                    if symbol in self.quote:
+                        self.quote[symbol].append(quote_chunk)
+                    else:
+                        self.quote[symbol] = [quote_chunk]
 
         result = polars.concat(ret_vals).drop_nulls()
         
@@ -345,8 +383,8 @@ class GroupAsOfJoinExecutor(Executor):
             if symbol not in self.quote:
                 continue
             else:
-                trades = self.trade[symbol]
-                quotes = self.quote[symbol]
+                trades = polars.concat(self.trade[symbol]).sort(self.left_on)
+                quotes = polars.concat(self.quote[symbol]).sort(self.right_on)
                 ret_vals.append(trades.join_asof(quotes.drop(self.group_right_on), left_on = self.left_on, right_on = self.right_on, suffix=self.suffix))
         
         print("done asof join ", executor_id)
