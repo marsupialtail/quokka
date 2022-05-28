@@ -23,6 +23,9 @@ Quokka has default strategies to choose the number of channels for input readers
 
 
 ## Installation
+
+If you plan on trying out Quokka for whatever reason, I'd love to hear from you. Please send an email to zihengw@stanford.edu.
+
 Quokka can be installed as a pip package: 
 ~~~bash
 pip3 install pyquokka
@@ -34,7 +37,7 @@ echo "deb https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/
 apt-get update
 apt-get install redis
 ~~~
-If you plan on using Quokka for cloud, there's a bit more setup that needs to be done. Currently Quokka only provides support for AWS. (If you want ) Quokka provides a utility library under `pyquokka.utils` which allows you to manager clusters and connect to them. It assumes that awscli is configured locally.
+If you plan on using Quokka for cloud, there's a bit more setup that needs to be done. Currently Quokka only provides support for AWS. Quokka provides a utility library under `pyquokka.utils` which allows you to manager clusters and connect to them. It assumes that awscli is configured locally and you have a keypair and a security group with the proper configurations. To set these things up, you can follow the [AWS guide](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-quickstart.html). 
 
 
 <p align = "center">

@@ -4,7 +4,7 @@ import pyarrow.parquet as pq
 from io import BytesIO, StringIO
 import boto3
 import s3fs
-import time
+import os
 import redis
 #import h5py
 from collections import deque
@@ -223,10 +223,10 @@ class InputMultiParquetDataset:
     def get_next_batch(self, mapper_id, pos=None):
         assert self.num_channels is not None
         if pos is None:
-            curr_pos = mapper_id
+            start_pos = mapper_id
         else:
-            curr_pos = pos
-        while curr_pos < len(self.files):
+            start_pos = pos
+        for curr_pos in range(start_pos, len(self.files), self.num_channels):
             #print("input batch", (curr_pos - mapper_id) / self.num_channels)
             #print("starting reading ",time.time())
             #a = pq.read_table("s3://" + self.bucket + "/" + self.files[curr_pos],columns=self.columns, filters = self.filters).to_pandas()
@@ -276,6 +276,117 @@ class InputS3FilesDataset:
             curr_pos += self.num_channels
             yield curr_pos, a
 
+class InputDiskCSVDataset:
+
+    def __init__(self, filepath , names, sep=",", stride=16 * 1024 * 1024, header = False) -> None:
+       
+        self.filepath = filepath
+        assert os.path.exists(filepath)
+        self.num_channels = None
+        self.names = names
+        self.sep = sep
+        self.stride = stride
+        self.header = header
+
+    def set_num_channels(self, num_channels):
+        assert self.num_channels == num_channels
+
+    def get_own_state(self,num_channels, window=1024):
+
+        self.num_channels = num_channels
+        splits = self.num_channels * 2
+
+        length = os.path.getsize(self.filepath)
+        assert length // splits > window * 2
+        potential_splits = [length//splits * i for i in range(splits)]
+        # adjust the splits now
+        adjusted_splits = []
+
+        # the first value is going to be the start of the second row
+        # -- we assume there's a header and skip it!
+
+        f = open(self.filepath,"rb")
+        resp = f.read(window)
+
+        first_newline = resp.find(bytes('\n', 'utf-8'))
+        if first_newline == -1:
+            raise Exception
+        else:
+            adjusted_splits.append(first_newline)
+
+        for i in range(1, len(potential_splits)):
+            potential_split = potential_splits[i]
+            start = max(0, potential_split - window)
+            end = min(potential_split + window, length)
+
+            f.seek(start)
+            resp = f.read(end-start)
+
+            last_newline = resp.rfind(bytes('\n', 'utf-8'))
+            if last_newline == -1:
+                raise Exception
+            else:
+                adjusted_splits.append(start + last_newline)
+
+        adjusted_splits[-1] = length
+
+        print(length, adjusted_splits)
+        self.length = length
+        self.adjusted_splits = adjusted_splits
+        f.close()
+
+    # default is to get 16 KB batches at a time.
+    def get_next_batch(self, mapper_id, pos=None):
+
+        if self.num_channels is None:
+            raise Exception(
+                "I need to know the total number of channels you are planning on using.")
+
+        splits = len(self.adjusted_splits)
+        assert self.num_channels < splits + 1
+        assert mapper_id < self.num_channels + 1
+        chunks = splits // self.num_channels
+        if pos is None:
+            start = self.adjusted_splits[chunks * mapper_id]
+            pos = start
+
+        if mapper_id == self.num_channels - 1:
+            end = self.adjusted_splits[splits - 1]
+        else:
+            end = self.adjusted_splits[chunks * mapper_id + chunks]
+
+        f = open(self.filepath,"rb")
+        while pos < end-1:
+
+            f.seek(pos)
+            bytes_to_read = min(pos+self.stride, end) - pos
+            resp = f.read(bytes_to_read)
+            last_newline = resp.rfind(bytes('\n', 'utf-8'))
+
+            #import pdb;pdb.set_trace()
+
+            if last_newline == -1:
+                raise Exception
+            else:
+                resp = resp[:last_newline]
+
+                if self.header and pos == 0:
+                    first_newline = resp.find(bytes('\n','utf-8'))
+                    if first_newline == -1:
+                        raise Exception
+                    resp = resp[first_newline + 1:]
+                #print("start convert,",time.time())
+                #bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
+                bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
+                    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+                
+                pos += last_newline
+
+                #print("done convert,",time.time())
+                yield pos, bump
+        f.close()
+
+
 # this should work for 1 CSV up to multiple
 class InputS3CSVDataset:
     def __init__(self, bucket, names, prefix = None, key = None, sep=",", stride=64 * 1024 * 1024, header = False) -> None:
@@ -295,6 +406,7 @@ class InputS3CSVDataset:
     
     # we need to rethink this whole setting num channels business. For this operator we don't want each node to do redundant work!
     def get_own_state(self, num_channels, window = 1024 * 32):
+        print("intiializing CSV reading strategy. This is currently done locally, which might take a while.")
         self.num_channels = num_channels
 
         s3 = boto3.client('s3')  # needs boto3 client, however it is transient and is not part of own state, so Ray can send this thing! 
@@ -396,6 +508,7 @@ class InputS3CSVDataset:
             else:
                 end = self.channel_infos[mapper_id][2]
 
+            
             while pos < end-1:
 
                 resp = self.s3.get_object(Bucket=self.bucket, Key=file, Range='bytes={}-{}'.format(
@@ -417,6 +530,7 @@ class InputS3CSVDataset:
                         column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
                     
                     pos += last_newline
+                    
                     yield (curr_pos, pos) , bump
 
             pos = 0

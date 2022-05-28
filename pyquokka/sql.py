@@ -469,7 +469,7 @@ class PolarJoinExecutor(Executor):
                 da =  self.batch_func(result.to_pandas())
                 return da
             else:
-                print("RESULT LENGTH",len(result))
+                #print("RESULT LENGTH",len(result))
                 return result
     
     def done(self,executor_id):

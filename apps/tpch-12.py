@@ -42,7 +42,7 @@ elif sys.argv[1] == "parquet":
       
 
 join_executor = PolarJoinExecutor(left_on="o_orderkey",right_on="l_orderkey", batch_func=batch_func)
-output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},join_executor, ip_to_num_channel = {ip: 4 for ip in list(cluster.private_ips.values())}, partition_key_supplied={0:"o_orderkey", 1:"l_orderkey"})
+output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},join_executor,partition_key_supplied={0:"o_orderkey", 1:"l_orderkey"})
 agg_executor = AggExecutor()
 agged = task_graph.new_blocking_node({0:output_stream},  agg_executor, ip_to_num_channel={cluster.leader_private_ip: 1}, partition_key_supplied={0:None})
 

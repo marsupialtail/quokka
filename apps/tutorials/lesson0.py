@@ -1,15 +1,16 @@
 from pyquokka.quokka_runtime import TaskGraph
 from pyquokka.utils import LocalCluster
+from pyquokka.sql import Executor
+import time
+import ray
 
 cluster = LocalCluster()
 
 # this dataset will generate a sequence of numbers, from 0 to limit. Channel 
 class SimpleDataset:
-    def __init__(self, bucket, limit, prefix= None) -> None:
+    def __init__(self, limit) -> None:
         
-        self.bucket = bucket
-        self.prefix = prefix
-        
+        self.limit = limit
         self.num_channels = None
 
     def set_num_channels(self, num_channels):
@@ -18,11 +19,33 @@ class SimpleDataset:
     def get_next_batch(self, mapper_id, pos=None):
         # let's ignore the keyword pos = None, which is only relevant for fault tolerance capabilities.
         assert self.num_channels is not None
-        curr_number = 0
-        while curr_pos < len(self.files):
-            #print("input batch", (curr_pos - mapper_id) / self.num_channels)
-            # since these are arbitrary byte files (most likely some image format), it is probably useful to keep the filename around or you can't tell these things apart
-            a = (self.files[curr_pos], self.s3.get_object(Bucket=self.bucket, Key=self.files[curr_pos])['Body'].read())
-            #print("ending reading ",time.time())
-            curr_pos += self.num_channels
-            yield curr_pos, a
+        curr_number = mapper_id
+        while curr_number < self.limit:
+            yield curr_number, curr_number
+            curr_number += self.num_channels
+
+class AddExecutor(Executor):
+    def __init__(self) -> None:
+        self.sum = 0
+    def execute(self,batches,stream_id, executor_id):
+        for batch in batches:
+            assert type(batch) == int
+            self.sum += batch
+    def done(self,executor_id):
+        print("I am executor ", executor_id, " my sum is ", self.sum)
+        return self.sum
+
+task_graph = TaskGraph(cluster)
+reader = SimpleDataset(80)
+numbers = task_graph.new_input_reader_node(reader)
+
+executor = AddExecutor()
+sum = task_graph.new_blocking_node({0:numbers},executor)
+
+task_graph.create()
+
+start = time.time()
+task_graph.run()
+print("total time ", time.time() - start)
+
+print(ray.get(sum.to_list.remote()))

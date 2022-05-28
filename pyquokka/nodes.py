@@ -21,6 +21,7 @@ import concurrent.futures
 #FT =  True
 FT_I = True
 FT = True
+VERBOSE = False
 
 # above this limit we are going to start flushing things to disk
 INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
@@ -121,7 +122,8 @@ class Node:
                     message = client.get_message()
                     
                     if message is not None:
-                        print(message['data'])
+                        if VERBOSE:
+                            print(message['data'])
                         self.alive_targets[target_node].remove(int(message['data']))
                         if len(self.alive_targets[target_node]) == 0:
                             self.alive_targets.pop(target_node)
@@ -153,7 +155,8 @@ class Node:
             if not self.update_targets():
                 return False
         except:
-            print("downstream failure detected")
+            if VERBOSE:
+                print("downstream failure detected")
 
         for target in self.alive_targets:
             original_channel_to_ip, partition_key = self.targets[target]
@@ -196,7 +199,7 @@ class Node:
                 pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),pickle.dumps((self.id, self.channel, self.out_seq)))
                 try:    
                     results = pipeline.execute()
-                    if False in results:
+                    if False in results and VERBOSE:
                         print("Downstream failure detected")
                 except:
                     print("Downstream failure detected")
@@ -206,8 +209,8 @@ class Node:
     def done(self):
 
         self.out_seq += 1
-
-        print("IM DONE", self.id)
+        if VERBOSE:
+            print("IM DONE", self.id)
 
         self.output_lock.acquire()
         self.logged_outputs[self.out_seq] = "done"
@@ -215,20 +218,22 @@ class Node:
 
         try:    
             if not self.update_targets():
-                print("WIERD STUFF IS HAPPENING")
+                if VERBOSE:
+                    print("WIERD STUFF IS HAPPENING")
                 return False
         except:
             print("downstream failure detected")
 
         for target in self.alive_targets:
             for channel in self.alive_targets[target]:
-                print("SAYING IM DONE TO", target, channel, "MY OUT SEQ", self.out_seq)
+                if VERBOSE:
+                    print("SAYING IM DONE TO", target, channel, "MY OUT SEQ", self.out_seq)
                 pipeline = self.target_rs[target][channel].pipeline()
                 pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps("done"))
                 pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),pickle.dumps((self.id, self.channel, self.out_seq)))
                 try:
                     results = pipeline.execute()
-                    if False in results:
+                    if False in results and VERBOSE:
                         print("Downstream failure detected")
                 except:
                     print("Downstream failure detected")
@@ -239,8 +244,8 @@ class InputNode(Node):
 
         super().__init__( id, channel, checkpoint_location) 
 
-        # track the targets that are still alive
-        print("INPUT ACTOR LAUNCH", self.id)
+        if VERBOSE:
+            print("INPUT ACTOR LAUNCH", self.id)
 
         self.batch_func = batch_func
         self.dependent_rs = {}
@@ -295,8 +300,8 @@ class InputNode(Node):
             print("INPUT NODE RECOVERED TO STATE", self.latest_stable_state, self.out_seq, self.seq_state_map, self.state_tag)
 
     def truncate_logged_outputs(self, target_id, channel, target_ckpt_state):
-        
-        print("STARTING TRUNCATE", target_id, channel, target_ckpt_state, self.target_output_state)
+        if VERBOSE:
+            print("STARTING TRUNCATE", target_id, channel, target_ckpt_state, self.target_output_state)
         old_min = min(self.target_output_state[target_id].values())
         self.target_output_state[target_id][channel] = target_ckpt_state
         new_min = min(self.target_output_state[target_id].values())
@@ -306,11 +311,13 @@ class InputNode(Node):
 
             self.latest_stable_state = self.seq_state_map[new_min]
             self.latest_stable_seq = new_min
-            print("UPDATING LATEST ", self.latest_stable_state, self.latest_stable_seq, self.seq_state_map)
+            if VERBOSE:
+                print("UPDATING LATEST ", self.latest_stable_state, self.latest_stable_seq, self.seq_state_map)
 
             for key in range(old_min, new_min):
                 if key in self.logged_outputs:
-                    print("REMOVING KEY",key,"FROM LOGGED OUTPUTS")
+                    if VERBOSE:
+                        print("REMOVING KEY",key,"FROM LOGGED OUTPUTS")
                     self.logged_outputs.pop(key)
             gc.collect()
         self.output_lock.release() 
@@ -335,8 +342,8 @@ class InputNode(Node):
         
         elif method == "local":
             raise Exception("not supported anymore")
-
-        print("INPUT NODE CHECKPOINTING")
+        if VERBOSE:
+            print("INPUT NODE CHECKPOINTING")
         
         
     def execute(self):
@@ -375,18 +382,8 @@ class InputNode(Node):
                 self.checkpoint()
             self.state_tag += 1
         
-        #for pos, batch in self.input_generator:
-        #    self.seq_state_map[self.out_seq + 1] = pos
-        #    if self.batch_func is not None:
-        #        result = self.batch_func(batch)
-        #        self.push(result)
-        #    else:
-        #        self.push(batch)
-        #    if self.state_tag % self.checkpoint_interval == 0:
-        #        self.checkpoint()
-        #    self.state_tag += 1
-
-        print("INPUT DONE", self.id, self.channel)
+        if VERBOSE:
+            print("INPUT DONE", self.id, self.channel)
         self.done()
         self.r.publish("input-done-" + str(self.id), "done")
 
@@ -492,7 +489,8 @@ class TaskNode(Node):
 
     def truncate_logged_outputs(self, target_id, channel, target_ckpt_state):
         
-        print("STARTING TRUNCATE", target_id, channel, target_ckpt_state, self.target_output_state)
+        if VERBOSE:
+            print("STARTING TRUNCATE", target_id, channel, target_ckpt_state, self.target_output_state)
         old_min = min(self.target_output_state[target_id].values())
         self.target_output_state[target_id][channel] = target_ckpt_state
         new_min = min(self.target_output_state[target_id].values())
@@ -501,7 +499,8 @@ class TaskNode(Node):
         if new_min > old_min:
             for key in range(old_min, new_min):
                 if key in self.logged_outputs:
-                    print("REMOVING KEY",key,"FROM LOGGED OUTPUTS")
+                    if VERBOSE:
+                        print("REMOVING KEY",key,"FROM LOGGED OUTPUTS")
                     self.logged_outputs.pop(key)
         self.output_lock.release() 
 
@@ -628,8 +627,8 @@ class TaskNode(Node):
                 #raise Exception
                 if len(self.parents[stream_id]) == 0:
                     self.parents.pop(stream_id)
-                
-                print("done", stream_id)
+                if VERBOSE:
+                    print("done", stream_id)
             else:
                 # check current size of the buffered inputs deque. This is rather primitive
 
@@ -808,7 +807,8 @@ class NonBlockingTaskNode(TaskNode):
             
             self.ckpt_counter += 1
             if FT and self.ckpt_counter % self.checkpoint_interval == 0:
-                print(self.id, "CHECKPOINTING")
+                if VERBOSE:
+                    print(self.id, "CHECKPOINTING")
                 self.checkpoint()
         
         obj_done =  self.functionObject.done(self.channel) 
@@ -823,8 +823,8 @@ class NonBlockingTaskNode(TaskNode):
             gc.collect()
             if obj_done is not None:
                 self.push(obj_done)
-        
-        print("TASK NODE DONE", self.id, self.channel)
+        if VERBOSE:
+            print("TASK NODE DONE", self.id, self.channel)
         self.done()
         self.r.publish("node-done-"+str(self.id),str(self.channel))
     
@@ -853,15 +853,17 @@ class BlockingTaskNode(TaskNode):
             #print(stream_id)
             if stream_id is None:
                 continue
-
-            print(self.state_tag)
+            
+            if VERBOSE:
+                print(self.state_tag)
             
             batches = [i for i in batches if i is not None]
             results = self.functionObject.execute( batches,self.physical_to_logical_mapping[stream_id], self.channel)
             
             self.ckpt_counter += 1
             if FT and self.ckpt_counter % self.checkpoint_interval == 0:
-                print(self.id, "CHECKPOINTING")
+                if VERBOSE:
+                    print(self.id, "CHECKPOINTING")
                 self.checkpoint()
 
             if results is not None and len(results) > 0:
@@ -889,7 +891,10 @@ class BlockingTaskNode(TaskNode):
                     key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
                     self.object_count += 1
                     self.r.set(key, pickle.dumps(object))
-                    self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(object))) 
+                    if hasattr(object, "__len__"):
+                        self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(object))) 
+                    else:
+                        self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key,sys.getsizeof(object))) 
             del self.functionObject
             gc.collect()
         else:
@@ -900,8 +905,11 @@ class BlockingTaskNode(TaskNode):
                 key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
                 self.object_count += 1
                 self.r.set(key, pickle.dumps(obj_done))
-                self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(obj_done))) 
-                           
+                if hasattr(obj_done, "__len__"):
+                    self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(obj_done))) 
+                else:
+                    self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, sys.getsizeof(obj_done))) 
+     
         self.output_dataset.done_channel.remote(self.channel)
         
         #self.done()

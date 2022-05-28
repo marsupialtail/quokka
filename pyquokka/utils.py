@@ -38,14 +38,14 @@ class QuokkaCluster:
 class LocalCluster:
     def __init__(self) -> None:
         self.cpu_count = multiprocessing.cpu_count()
-        self.leader_public_ip = "localhost"
-        self.leader_private_ip = "localhost"
-        self.public_ips = {0:"localhost"}
-        self.private_ips = {0:"localhost"}
         pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
         # we assume you have pyquokka installed, and we are going to spin up a ray cluster locally
         ray.init(ignore_reinit_error=True)
-        os.system("redis-server " + pyquokka_loc + "redis.conf --port 6800 --protected-mode no&")
+        os.system("redis-server " + pyquokka_loc + "redis.conf --port 6800 --protected-mode no >/dev/null 2>&1 & ")
+        self.leader_public_ip = "localhost"
+        self.leader_private_ip = ray.worker._global_node.address.split(":")[0]
+        self.public_ips = {0:"localhost"}
+        self.private_ips = {0: ray.worker._global_node.address.split(":")[0]}
 
 class QuokkaClusterManager:
 
