@@ -306,13 +306,17 @@ class InputDiskCSVDataset:
         # -- we assume there's a header and skip it!
 
         f = open(self.filepath,"rb")
-        resp = f.read(window)
 
-        first_newline = resp.find(bytes('\n', 'utf-8'))
-        if first_newline == -1:
-            raise Exception
+        if self.header:
+            resp = f.read(window)
+
+            first_newline = resp.find(bytes('\n', 'utf-8'))
+            if first_newline == -1:
+                raise Exception
+            else:
+                adjusted_splits.append(first_newline)
         else:
-            adjusted_splits.append(first_newline)
+            adjusted_splits.append(0)
 
         for i in range(1, len(potential_splits)):
             potential_split = potential_splits[i]
@@ -356,34 +360,36 @@ class InputDiskCSVDataset:
             end = self.adjusted_splits[chunks * mapper_id + chunks]
 
         f = open(self.filepath,"rb")
-        while pos < end-1:
+        while pos < end:
 
             f.seek(pos)
             bytes_to_read = min(pos+self.stride, end) - pos
             resp = f.read(bytes_to_read)
             last_newline = resp.rfind(bytes('\n', 'utf-8'))
 
-            #import pdb;pdb.set_trace()
-
             if last_newline == -1:
-                raise Exception
-            else:
-                resp = resp[:last_newline]
+                last_newline = len(resp)
+            
+            resp = resp[:last_newline]
 
-                if self.header and pos == 0:
-                    first_newline = resp.find(bytes('\n','utf-8'))
-                    if first_newline == -1:
-                        raise Exception
-                    resp = resp[first_newline + 1:]
-                #print("start convert,",time.time())
-                #bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
-                bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
-                    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-                
-                pos += last_newline
+            #print(resp, last_newline)
 
-                #print("done convert,",time.time())
-                yield pos, bump
+            if self.header and pos == 0:
+                first_newline = resp.find(bytes('\n','utf-8'))
+                if first_newline == -1:
+                    raise Exception
+                resp = resp[first_newline + 1:]
+            #print("start convert,",time.time())
+            #bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
+
+            
+            bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
+                column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+            
+            pos += last_newline + 1
+
+            #print("done convert,",time.time())
+            yield pos, bump
         f.close()
 
 

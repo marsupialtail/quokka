@@ -1,8 +1,7 @@
 import sys
-sys.path.append("/home/ubuntu/quokka/pyquokka")
 import time
 from pyquokka.quokka_runtime import TaskGraph
-from pyquokka.sql import AggExecutor, PolarJoinExecutor, StorageExecutor
+from pyquokka.executors import AggExecutor, PolarJoinExecutor, StorageExecutor
 from pyquokka.dataset import InputMultiParquetDataset
 import ray
 import polars
@@ -69,4 +68,4 @@ compute_time += time.time() - start
 print("load time ", load_time)
 print("compute time ", compute_time)
 
-print(ray.get(agged.to_pandas.remote()))
+print(agged.to_pandas())

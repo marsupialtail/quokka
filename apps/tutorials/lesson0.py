@@ -1,6 +1,6 @@
 from pyquokka.quokka_runtime import TaskGraph
 from pyquokka.utils import LocalCluster
-from pyquokka.sql import Executor
+from pyquokka.executors import Executor
 import time
 import ray
 
@@ -48,4 +48,4 @@ start = time.time()
 task_graph.run()
 print("total time ", time.time() - start)
 
-print(ray.get(sum.to_list.remote()))
+print(sum.to_list())

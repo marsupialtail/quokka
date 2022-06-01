@@ -9,7 +9,7 @@ import cv2
 import os
 from img2vec_pytorch import Img2Vec
 from PIL import Image
-from pyquokka.sql import Executor
+from pyquokka.executors import Executor
 from pyquokka.quokka_runtime import TaskGraph
 from pyquokka.dataset import InputS3FilesDataset
 from pyquokka.utils import QuokkaCluster, QuokkaClusterManager
@@ -105,6 +105,5 @@ vecs = task_graph.new_non_blocking_node({0:faces}, stage_two)
 import time
 task_graph.create()
 start = time.time()
-task_graph.run_with_fault_tolerance()
+task_graph.run()
 print(time.time() - start)
-#print(ray.get(result.to_pandas.remote()))

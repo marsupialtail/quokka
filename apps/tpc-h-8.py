@@ -3,7 +3,7 @@ import polars
 from schema import * 
 from pyquokka.quokka_runtime import TaskGraph
 from pyquokka.dataset import InputS3CSVDataset, InputMultiParquetDataset
-from pyquokka.sql import AggExecutor, BroadcastJoinExecutor, PolarJoinExecutor
+from pyquokka.executors import AggExecutor, BroadcastJoinExecutor, PolarJoinExecutor
 import pyarrow.compute as compute
 import ray
 import sys
@@ -91,4 +91,4 @@ start = time.time()
 task_graph.run()
 print("total time ", time.time() - start)
 
-print(ray.get(result.to_pandas.remote()))
+print(result.to_pandas())

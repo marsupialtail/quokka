@@ -47,7 +47,7 @@ task_graph.create()
 start = time.time()
 task_graph.run_with_fault_tolerance()
 print("total time ", time.time() - start)
-files = ray.get(stream.to_dict.remote())
+files = stream.to_dict()
 print(files)
 
 del task_graph

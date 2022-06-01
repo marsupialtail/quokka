@@ -6,7 +6,7 @@ import pyarrow as pa
 import pandas as pd
 from pyquokka.quokka_runtime import TaskGraph
 from pyquokka.dataset import InputS3CSVDataset
-from pyquokka.sql import UDFExecutor, AggExecutor
+from pyquokka.executors import UDFExecutor, AggExecutor
 import ray
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 
@@ -30,4 +30,4 @@ task_graph.create()
 start = time.time()
 task_graph.run()
 print(time.time() - start)
-print(ray.get(result.to_pandas.remote()))
+print(result.to_pandas())

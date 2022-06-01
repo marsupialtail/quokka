@@ -21,8 +21,22 @@ BLOCKING_NODE = 2
 INPUT_REDIS_DATASET = 3
 INPUT_READER_DATASET = 6
 
-@ray.remote
 class Dataset:
+
+    def __init__(self, wrapped_dataset) -> None:
+        self.wrapped_dataset = wrapped_dataset
+    
+    def to_list(self):
+        return ray.get(self.wrapped_dataset.to_list.remote())
+    
+    def to_pandas(self):
+        return ray.get(self.wrapped_dataset.to_pandas.remote())
+    
+    def to_dict(self):
+        return ray.get(self.wrapped_dataset.to_dict.remote())
+
+@ray.remote
+class WrappedDataset:
 
     def __init__(self, num_channels) -> None:
         self.num_channels = num_channels
@@ -275,7 +289,7 @@ class TaskGraph:
                 elif direction == 1:
                     assert source_ip_to_num_channel[ip] * ratio == target_ip_to_num_channel[ip], "ratio of number of channels between source and target must be same for every ip right now"
         
-        #print("RATIO", ratio)
+        print("RATIO", ratio)
         if direction == 0:
             return partial(partition_key_0, ratio)
         elif direction == 1:
@@ -379,7 +393,7 @@ class TaskGraph:
 
         # the datasets will all be managed on the head node. Note that they are not in charge of actually storing the objects, they just 
         # track the ids.
-        output_dataset = Dataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote(len(channel_to_ip))
+        output_dataset = WrappedDataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote(len(channel_to_ip))
 
         tasknode = {}
         for channel in channel_to_ip:
@@ -394,7 +408,7 @@ class TaskGraph:
         self.node_type[self.current_node] = BLOCKING_NODE
         self.node_args[self.current_node] = {"mapping":mapping, "output_dataset": output_dataset, "functionObject":functionObject, "ckpt_interval": ckpt_interval,"partition_key":partition_key}
         self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
-        return output_dataset
+        return Dataset(output_dataset)
     
     def create(self):
         launches = []

@@ -1,7 +1,7 @@
 import sys
 import time
 from pyquokka.quokka_runtime import TaskGraph
-from pyquokka.sql import AggExecutor, PolarJoinExecutor
+from pyquokka.executors import AggExecutor, PolarJoinExecutor
 from pyquokka.dataset import InputS3CSVDataset, InputMultiParquetDataset
 from schema import * 
 import pyarrow.compute as compute
@@ -62,4 +62,4 @@ start = time.time()
 task_graph.run()
 print("total time ", time.time() - start)
 
-print(ray.get(agged.to_pandas.remote()))
+print(agged.to_pandas())
