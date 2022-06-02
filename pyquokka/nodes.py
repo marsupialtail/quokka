@@ -419,8 +419,6 @@ class TaskNode(Node):
 
         super().__init__(id, channel, checkpoint_location)
 
-        self.p = self.r.pubsub(ignore_subscribe_messages=True)
-        self.p.subscribe("mailbox-" + str(id) + "-" + str(channel), "mailbox-id-" + str(id) + "-" + str(channel))
         self.buffered_inputs = {(parent, channel): deque() for parent in parents for channel in parents[parent]}
         self.id = id 
         self.parents = parents # dict of id -> dict of channel -> actor handles        
@@ -592,18 +590,11 @@ class TaskNode(Node):
             m += sum([sys.getsizeof(i) for i in self.buffered_inputs[key]])
         return m
 
-    def get_batches(self, mailbox, mailbox_id):
+    def get_batches(self):
 
         batches_returned = 0
-        if self.id == 2 and self.channel == 2:
-            print("trying to list flights", self.id, self.channel)
         flights = self.flight_client.list_flights()
-        if self.id == 2 and self.channel == 2:
-            print("managed to list flights", self.id, self.channel)
-            #print(next(flights))
         for flight in flights:
-            if self.id == 2 and self.channel == 2:
-                print("ITERATING!")
             descriptor = flight.descriptor
             metadata = pickle.loads(flight.descriptor.command)
             target_id, target_channel, stream_id, channel, tag , my_format = metadata
@@ -632,7 +623,7 @@ class TaskNode(Node):
                 #raise Exception
                 if len(self.parents[stream_id]) == 0:
                     self.parents.pop(stream_id)
-                print("I am ", self.id, self.channel, " I got done", stream_id, channel)
+                #print("I am ", self.id, self.channel, " I got done", stream_id, channel)
 
             info = self.flight_client.get_flight_info(descriptor)
             assert len(info.endpoints) == 1
@@ -741,24 +732,12 @@ class NonBlockingTaskNode(TaskNode):
         print("I'm initialized")
     
     def execute(self):
-        
-        mailbox = deque()
-        mailbox_meta = deque()
-        print("I'm starting working")
-        print(self.parents)
-        print(self.input_buffers_drained())
 
         while not (len(self.parents) == 0 and self.input_buffers_drained()):
 
-            # append messages to the mailbox
-            print("I'm working 1")
-
-            batches_returned = self.get_batches(mailbox, mailbox_meta)
+            batches_returned = self.get_batches()
             # deque messages from the mailbox in a way that makes sense
-
-            time.sleep(0.1)
             
-            print("I'm working 2")
             stream_id, batches = self.schedule_for_execution()
             if stream_id is None:
                 continue
@@ -820,14 +799,12 @@ class BlockingTaskNode(TaskNode):
         raise Exception("Trying to stream from a blocking node")
     
     def execute(self):
-        
-        mailbox = deque()
-        mailbox_meta = deque()
+
+        add_tasks = []
 
         while not (len(self.parents) == 0 and self.input_buffers_drained()):
 
-            # append messages to the mailbox
-            batches_returned = self.get_batches(mailbox, mailbox_meta)
+            batches_returned = self.get_batches()
             #print(batches_returned)
             # deque messages from the mailbox in a way that makes sense
             stream_id, batches = self.schedule_for_execution()
@@ -859,7 +836,7 @@ class BlockingTaskNode(TaskNode):
                         print(results)
                         raise Exception
                     # we really should be doing sys.getsizeof(result), but that doesn't work for polars dfs
-                    self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, stride))
+                    add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, stride)))
                     cursor += stride
             else:
                 pass
@@ -873,9 +850,9 @@ class BlockingTaskNode(TaskNode):
                     self.object_count += 1
                     self.r.set(key, pickle.dumps(object))
                     if hasattr(object, "__len__"):
-                        self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(object))) 
+                        add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(object))))
                     else:
-                        self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key,sys.getsizeof(object))) 
+                        add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key,sys.getsizeof(object))))
             del self.functionObject
             gc.collect()
         else:
@@ -887,11 +864,12 @@ class BlockingTaskNode(TaskNode):
                 self.object_count += 1
                 self.r.set(key, pickle.dumps(obj_done))
                 if hasattr(obj_done, "__len__"):
-                    self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(obj_done))) 
+                    add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(obj_done))))
                 else:
-                    self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, sys.getsizeof(obj_done))) 
+                    add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, sys.getsizeof(obj_done))))
      
-        self.output_dataset.done_channel.remote(self.channel)
+        ray.get(add_tasks)
+        ray.get(self.output_dataset.done_channel.remote(self.channel))
         
         #self.done()
         self.r.publish("node-done-"+str(self.id),str(self.channel))

@@ -102,3 +102,7 @@ class FlightServerWrapper():
     def start_server(self):
         self.server = FlightServer(self.host, self.location)
         self.server.serve()
+
+if __name__ == '__main__':
+    server = FlightServer("0.0.0.0", location = "grpc+tcp://0.0.0.0:5005")
+    server.serve()

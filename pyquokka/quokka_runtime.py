@@ -414,11 +414,11 @@ class TaskGraph:
     def create(self):
 
         # launch a flight server actor on each machine
-        launches = []
-        private_ips = list(self.cluster.private_ips.values())
-        for ip in private_ips:
-            server = FlightServerWrapper.options(max_concurrency = 2, num_cpus = 0.001, resources = {"node:" + ip : 0.001}).remote("0.0.0.0", location = "grpc+tcp://0.0.0.0:5005")
-            server.start_server.remote()
+        # launches = []
+        # private_ips = list(self.cluster.private_ips.values())
+        # for ip in private_ips:
+        #     server = FlightServerWrapper.options(max_concurrency = 2, num_cpus = 0.001, resources = {"node:" + ip : 0.001}).remote("0.0.0.0", location = "grpc+tcp://0.0.0.0:5005")
+        #     server.start_server.remote()
 
         launches = []
         for key in self.nodes:
