@@ -8,6 +8,7 @@ import random
 import pickle
 from functools import partial
 import random
+from pyquokka.flight import * 
 
 #ray.init("auto", _system_config={"worker_register_timeout_seconds": 60}, ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
 #ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ziheng/.local/lib/python3.8/site-packages/pyquokka/"})
@@ -411,6 +412,14 @@ class TaskGraph:
         return Dataset(output_dataset)
     
     def create(self):
+
+        # launch a flight server actor on each machine
+        launches = []
+        private_ips = list(self.cluster.private_ips.values())
+        for ip in private_ips:
+            server = FlightServerWrapper.options(max_concurrency = 1, num_cpus = 0.001, resources = {"node:" + ip : 0.001}).remote("0.0.0.0", location = "grpc+tcp://0.0.0.0:5005")
+            server.start_server.remote()
+
         launches = []
         for key in self.nodes:
             node = self.nodes[key]
@@ -418,6 +427,7 @@ class TaskGraph:
                 replica = node[channel]
                 launches.append(replica.initialize.remote())
         ray.get(launches)
+        
     def run(self):
         processes = []
         for key in self.nodes:

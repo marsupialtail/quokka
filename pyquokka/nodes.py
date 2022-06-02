@@ -15,6 +15,7 @@ import polars
 import pyarrow as pa
 import types
 import concurrent.futures
+import pyarrow.flight
 # isolated simplified test bench for different fault tolerance protocols
 
 #FT_I = True
@@ -54,6 +55,9 @@ class Node:
         self.target_rs = {}
         self.target_ps = {}
 
+        self.flight_clients = {}
+        self.flight_client = pyarrow.flight.connect("grpc://0.0.0.0:5005")
+
         # track the targets that are still alive
         self.alive_targets = {}
         self.output_lock = Lock()
@@ -68,6 +72,12 @@ class Node:
         self.targets[node_id] = (channel_to_ip, partition_key)
         self.target_rs[node_id] = {}
         self.target_ps[node_id] = {}
+        
+        self.flight_clients[node_id] = {}
+
+        flight_clients = {i: pyarrow.flight.connect("grpc://" + str(i) + ":5005") if i != self.ip else pyarrow.flight.connect("grpc://0.0.0.0:5005") for i in unique_ips}
+        for channel in channel_to_ip:
+            self.flight_clients[node_id][channel] = flight_clients[channel_to_ip[channel]]
 
         for channel in channel_to_ip:
             self.target_rs[node_id][channel] = redis_clients[channel_to_ip[channel]]
@@ -177,32 +187,25 @@ class Node:
                 else:
                     payload = partitioned_payload[channel]
 
-                # if the target is on the same machine we are just going to use shared memory, and change the payload to the shared memory name!!
-                if original_channel_to_ip[channel] == self.ip:
-                    #print("LOCAL CHANNEL", channel, self.ip)
-                    if type(payload) == pd.core.frame.DataFrame:
-                        batch = payload
-                        my_format = "pandas"
-                    elif type(payload) == polars.internals.frame.DataFrame:
-                        batch = payload.to_arrow()
-                        my_format = "polars"
-                    else:
-                        batch = payload
-                        my_format = "custom"
-                    
-                    object_id = ray.put(batch)
-                    payload = SharedMemMessage(my_format, ray.cloudpickle.dumps(object_id))
 
-                pipeline = self.target_rs[target][channel].pipeline()
-                pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps(payload))
-
-                pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),pickle.dumps((self.id, self.channel, self.out_seq)))
-                try:    
-                    results = pipeline.execute()
-                    if False in results and VERBOSE:
-                        print("Downstream failure detected")
-                except:
-                    print("Downstream failure detected")
+                client = self.flight_clients[target][channel]
+                
+                if type(payload) == pd.core.frame.DataFrame:
+                    table = pa.Table.from_pandas(payload)
+                    my_format = "pandas"
+                elif type(payload) == polars.internals.frame.DataFrame:
+                    table = payload.to_arrow()
+                    my_format = "polars"
+                else:
+                    table = pa.Table.from_pydict({"object":[pickle.dumps(payload)]})
+                    my_format = "custom"
+                
+                # format (target id, target channel, source id, source channel, tag, format)
+                print("pushing to target",target,"channel",channel,"from source",self.id,"channel",self.channel,"tag",self.out_seq)
+                upload_descriptor = pyarrow.flight.FlightDescriptor.for_command(pickle.dumps((target, channel, self.id, self.channel, self.out_seq, my_format)))
+                writer, _ = client.do_put(upload_descriptor, table.schema)
+                writer.write_table(table)
+                writer.close()
        
         return True
 
@@ -228,15 +231,14 @@ class Node:
             for channel in self.alive_targets[target]:
                 if VERBOSE:
                     print("SAYING IM DONE TO", target, channel, "MY OUT SEQ", self.out_seq)
-                pipeline = self.target_rs[target][channel].pipeline()
-                pipeline.publish("mailbox-"+str(target) + "-" + str(channel),pickle.dumps("done"))
-                pipeline.publish("mailbox-id-"+str(target) + "-" + str(channel),pickle.dumps((self.id, self.channel, self.out_seq)))
-                try:
-                    results = pipeline.execute()
-                    if False in results and VERBOSE:
-                        print("Downstream failure detected")
-                except:
-                    print("Downstream failure detected")
+
+                client = self.flight_clients[target][channel]
+                print("saying done to target",target,"channel",channel,"from source",self.id,"channel",self.channel,"tag",self.out_seq)
+                payload = pickle.dumps((target, channel, self.id, self.channel, self.out_seq, "done"))
+                upload_descriptor = pyarrow.flight.FlightDescriptor.for_command(payload)
+                writer, _ = client.do_put(upload_descriptor, pa.schema([]))
+                writer.close()
+                
         return True
 
 class InputNode(Node):
@@ -591,58 +593,50 @@ class TaskNode(Node):
         return m
 
     def get_batches(self, mailbox, mailbox_id):
-        while True:
-            #print("dead spinning here", len(mailbox), len(mailbox_id))
-            message = self.p.get_message()
-            if message is None:
-                break
-            if message['channel'].decode('utf-8') == "mailbox-" + str(self.id) + "-" + str(self.channel):
-                mailbox.append(message['data'])
-            elif message['channel'].decode('utf-8') ==  "mailbox-id-" + str(self.id)+ "-" + str(self.channel):
-                # this should be a tuple (source_id, source_tag)
-                mailbox_id.append(pickle.loads(message['data']))
-        
+
         batches_returned = 0
-        while len(mailbox) > 0 and len(mailbox_id) > 0:
-            #print("dead spinning here 1", len(mailbox), len(mailbox_id))
-            first = mailbox.popleft()
-            stream_id, channel,  tag = mailbox_id.popleft()
+        for flight in self.flight_client.list_flights():
+            descriptor = flight.descriptor
+            metadata = pickle.loads(flight.descriptor.command)
+            target_id, target_channel, stream_id, channel, tag , my_format = metadata
+            if target_id != self.id or target_channel != self.channel:
+                continue
 
             if stream_id not in self.parents or channel not in self.parents[stream_id]:
+                print(stream_id, channel, self.parents)
                 print("this channel has already received the done signal. stop wasting your breath.")
                 continue
 
             if tag <= self.latest_input_received[(stream_id,channel)]:
+                print("I am ",self.id, self.channel, "got", metadata)
                 print("rejected an input stream's tag smaller than or equal to latest input received. input tag", tag, "current latest input received", self.latest_input_received[(stream_id, channel)])
                 continue
             if tag > self.latest_input_received[(stream_id,channel)] + 1:
                 print("DROPPING INPUT. THIS IS A FUTURE INPUT THAT WILL BE RESENT (hopefully)", tag, stream_id, channel, "current tag", self.latest_input_received[(stream_id,channel)])
                 continue
-
-            batches_returned += 1
+            
+            print("accepting input from" , stream_id, channel, "tag", tag)
             self.latest_input_received[(stream_id,channel)] = tag
-            if len(first) < 20 and pickle.loads(first) == "done":
-                # the responsibility for checking how many executors this input stream has is now resting on the consumer.
+            batches_returned += 1
+
+            if my_format == "done":
                 self.parents[stream_id].pop(channel)
                 #raise Exception
                 if len(self.parents[stream_id]) == 0:
                     self.parents.pop(stream_id)
-                if VERBOSE:
-                    print("done", stream_id)
-            else:
-                # check current size of the buffered inputs deque. This is rather primitive
+                print("I am ", self.id, self.channel, " I got done", stream_id, channel)
 
-                #curr_mem = self.get_buffered_inputs_mem_usage()
-                if False: #curr_mem > INPUT_MAILBOX_SIZE_LIMIT:
-                    f = open("/data/input-mailbox-" + str(self.id) + "-" + str(self.channel) + "-" + str(self.disk_fileno) + ".pkl","wb")
-                    f.write(first)
-                    f.flush()
-                    self.buffered_inputs[(stream_id,channel)].append(FlushedMessage("/data/input-mailbox-" + str(self.id) + "-" + str(self.channel) + "-" + str(self.disk_fileno) + ".pkl"))
-                    self.disk_fileno += 1
-                else:
-                    #print("start", self.id, self.channel, time.time())
-                    self.buffered_inputs[(stream_id,channel)].append(pickle.loads(first))
-                    #print("end", self.id, self.channel, time.time())
+            info = self.flight_client.get_flight_info(descriptor)
+            assert len(info.endpoints) == 1
+            reader = self.flight_client.do_get(info.endpoints[0].ticket)
+            table = reader.read_all()
+            if my_format == "polars":
+                self.buffered_inputs[(stream_id,channel)].append(polars.from_arrow(table))
+            elif my_format == "pandas":
+                self.buffered_inputs[(stream_id,channel)].append(table.to_pandas())
+            elif my_format == "custom":
+                self.buffered_inputs[(stream_id,channel)].append(pickle.loads(table.to_pandas()['object'][0]))
+                table.to_pandas()
             
         return batches_returned
     
@@ -688,24 +682,8 @@ class TaskNode(Node):
                 if daparent != parent:
                     continue
                 for message in self.buffered_inputs[parent, channel]:
-                    if type(message) == FlushedMessage:
-                        batches.append(pickle.load(open(message.loc, "rb")))
-                        os.remove(message.loc)
-                    elif type(message) == SharedMemMessage:
-                        message_format = message.format
-                        object_id = message.name
-                        batch = ray.get(ray.cloudpickle.loads(object_id))
-                        if message_format == "pandas" or message_format == "custom":
-                            batches.append(batch)
-                        elif message_format == "polars":
-                            if len(batch) == 0:
-                                continue
-                            batches.append(polars.from_arrow(batch))
-                        else:
-                            raise Exception
-                        ray.internal.internal_api.free(ray.cloudpickle.loads(object_id))
-                    else:
-                        batches.append(message)
+                    
+                    batches.append(message)
                 self.state_tag[(parent,channel)] += lengths[parent, channel]
                 self.buffered_inputs[parent,channel].clear()
             
@@ -735,22 +713,7 @@ class TaskNode(Node):
                 for parent, channel in to_do:
                     for i in range(diffs[(parent, channel)]):
                         message = self.buffered_inputs[parent,channel].popleft()
-                        if type(message) == FlushedMessage:
-                            batches.append(pickle.load(open(message.loc, "rb")))
-                            os.remove(message.loc)
-                        elif type(message) == SharedMemMessage:
-                            message_format = message.format
-                            object_id = message.name
-                            batch = ray.get(ray.cloudpickle.loads(object_id))
-                            if message_format == "pandas" or message_format == "custom":
-                                batches.append(batch)
-                            elif message_format == "polars":
-                                batches.append(polars.from_arrow(batch))
-                            else:
-                                raise Exception
-                            ray.internal.internal_api.free(ray.cloudpickle.loads(object_id))
-                        else:
-                            batches.append(message)
+                        batches.append(message)
             self.state_tag = expected
             self.expected_path.popleft()
             self.log_state_tag()
