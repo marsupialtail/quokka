@@ -30,13 +30,15 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                                          table.num_rows, 0)
 
     def list_flights(self, context, criteria):
-        self.flights_lock.acquire()
+        # self.flights_lock.acquire()
         for key, table in self.flights.items():
             
             descriptor = \
                 pyarrow.flight.FlightDescriptor.for_command(key[1])
             yield self._make_flight_info(key, descriptor, table)
-        self.flights_lock.release()
+        #self.flights_lock.release()
+        
+        #self.flights_lock.release()
 
     def get_flight_info(self, context, descriptor):
         key = FlightServer.descriptor_to_key(descriptor)
@@ -46,19 +48,19 @@ class FlightServer(pyarrow.flight.FlightServerBase):
         raise KeyError('Flight not found.')
 
     def do_put(self, context, descriptor, reader, writer):
+        self.flights_lock.acquire()
         key = FlightServer.descriptor_to_key(descriptor)
         #print(key)
-        self.flights_lock.acquire()
         self.flights[key] = reader.read_all()
         self.flights_lock.release()
         #print(self.flights[key])
 
     def do_get(self, context, ticket):
+        self.flights_lock.acquire()
         key = ast.literal_eval(ticket.ticket.decode())
         if key not in self.flights:
             return None
         result = self.flights[key]
-        self.flights_lock.acquire()
         del self.flights[key]
         self.flights_lock.release()
         return pyarrow.flight.RecordBatchStream(result)

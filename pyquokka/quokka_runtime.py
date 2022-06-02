@@ -417,7 +417,7 @@ class TaskGraph:
         launches = []
         private_ips = list(self.cluster.private_ips.values())
         for ip in private_ips:
-            server = FlightServerWrapper.options(max_concurrency = 1, num_cpus = 0.001, resources = {"node:" + ip : 0.001}).remote("0.0.0.0", location = "grpc+tcp://0.0.0.0:5005")
+            server = FlightServerWrapper.options(max_concurrency = 2, num_cpus = 0.001, resources = {"node:" + ip : 0.001}).remote("0.0.0.0", location = "grpc+tcp://0.0.0.0:5005")
             server.start_server.remote()
 
         launches = []
@@ -435,7 +435,12 @@ class TaskGraph:
             for channel in node:
                 replica = node[channel]
                 processes.append(replica.execute.remote())
-        ray.get(processes)
+        unfinished = processes
+        while True:
+            finished, unfinished = ray.wait(unfinished, timeout = 1)
+            #print(unfinished)
+            if len(unfinished) == 0:
+                break
 
     def run_with_fault_tolerance(self):
         processes_by_ip = {}

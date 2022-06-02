@@ -201,7 +201,7 @@ class Node:
                     my_format = "custom"
                 
                 # format (target id, target channel, source id, source channel, tag, format)
-                print("pushing to target",target,"channel",channel,"from source",self.id,"channel",self.channel,"tag",self.out_seq)
+                #print("pushing to target",target,"channel",channel,"from source",self.id,"channel",self.channel,"tag",self.out_seq)
                 upload_descriptor = pyarrow.flight.FlightDescriptor.for_command(pickle.dumps((target, channel, self.id, self.channel, self.out_seq, my_format)))
                 writer, _ = client.do_put(upload_descriptor, table.schema)
                 writer.write_table(table)
@@ -233,7 +233,7 @@ class Node:
                     print("SAYING IM DONE TO", target, channel, "MY OUT SEQ", self.out_seq)
 
                 client = self.flight_clients[target][channel]
-                print("saying done to target",target,"channel",channel,"from source",self.id,"channel",self.channel,"tag",self.out_seq)
+                #print("saying done to target",target,"channel",channel,"from source",self.id,"channel",self.channel,"tag",self.out_seq)
                 payload = pickle.dumps((target, channel, self.id, self.channel, self.out_seq, "done"))
                 upload_descriptor = pyarrow.flight.FlightDescriptor.for_command(payload)
                 writer, _ = client.do_put(upload_descriptor, pa.schema([]))
@@ -595,7 +595,15 @@ class TaskNode(Node):
     def get_batches(self, mailbox, mailbox_id):
 
         batches_returned = 0
-        for flight in self.flight_client.list_flights():
+        if self.id == 2 and self.channel == 2:
+            print("trying to list flights", self.id, self.channel)
+        flights = self.flight_client.list_flights()
+        if self.id == 2 and self.channel == 2:
+            print("managed to list flights", self.id, self.channel)
+            #print(next(flights))
+        for flight in flights:
+            if self.id == 2 and self.channel == 2:
+                print("ITERATING!")
             descriptor = flight.descriptor
             metadata = pickle.loads(flight.descriptor.command)
             target_id, target_channel, stream_id, channel, tag , my_format = metadata
@@ -615,7 +623,7 @@ class TaskNode(Node):
                 print("DROPPING INPUT. THIS IS A FUTURE INPUT THAT WILL BE RESENT (hopefully)", tag, stream_id, channel, "current tag", self.latest_input_received[(stream_id,channel)])
                 continue
             
-            print("accepting input from" , stream_id, channel, "tag", tag)
+            #print("accepting input from" , stream_id, channel, "tag", tag)
             self.latest_input_received[(stream_id,channel)] = tag
             batches_returned += 1
 
@@ -729,18 +737,28 @@ class TaskNode(Node):
 class NonBlockingTaskNode(TaskNode):
     def __init__(self, id, channel,  mapping, functionObject, parents, checkpoint_location, checkpoint_interval = 10, ckpt = None) -> None:
         super().__init__(id, channel,  mapping, functionObject, parents, checkpoint_location, checkpoint_interval , ckpt )
+        time.sleep(0.1)
+        print("I'm initialized")
     
     def execute(self):
         
         mailbox = deque()
         mailbox_meta = deque()
+        print("I'm starting working")
+        print(self.parents)
+        print(self.input_buffers_drained())
 
         while not (len(self.parents) == 0 and self.input_buffers_drained()):
 
             # append messages to the mailbox
+            print("I'm working 1")
+
             batches_returned = self.get_batches(mailbox, mailbox_meta)
             # deque messages from the mailbox in a way that makes sense
 
+            time.sleep(0.1)
+            
+            print("I'm working 2")
             stream_id, batches = self.schedule_for_execution()
             if stream_id is None:
                 continue

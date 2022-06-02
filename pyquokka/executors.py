@@ -744,6 +744,7 @@ class AggExecutor(Executor):
         if self.final_func:
             return self.final_func(self.state)
         else:
+            print(self.state)
             return self.state
 
 class LimitExecutor(Executor):
