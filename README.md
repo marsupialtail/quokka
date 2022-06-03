@@ -10,6 +10,8 @@ Quokka stands on the shoulders of giants. It uses Ray for task scheduling, Redis
 
 The core Quokka API allows you to construct a computation DAG with stateful executors. Please refer to the docs and examples in the apps directory. In the future we will support a dataframe API and hopefully SQL.
 
+For any questions/concerns/just want to chat: zihengw@stanford.edu
+
 # Quickstart
 
 **Local**: 
