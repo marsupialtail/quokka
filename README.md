@@ -2,13 +2,15 @@
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/quokka-banner.png?raw=true" alt="Title"/>
 </p>
 
-Docs: https://marsupialtail.github.io/quokka/runtime/
+Docs: https://marsupialtail.github.io/quokka/started/
 
 Quokka is a fast data processing engine whose core consists of ~1000 lines of Python code. However it can be leveraged to obtain near-peak performance on SQL queries on data "lakes" with CSV and Parquet file formats. It is often several times faster than SparkSQL and an order of magnitude faster than Dask.
 
-Quokka stands on the shoulders of giants. It uses Ray for task scheduling, Redis for pub/sub, Polar-rs for relational algebra kernels and Pyarrow for I/O. All of those are backed by efficient C++/Rust implementations. Quokka is merely a high-performance way of piecing them all together. In the long run, we will try to cut our dependency on Ray and Redis.
+Quokka stands on the shoulders of giants. It uses [Ray](https://github.com/ray-project/ray) for task scheduling, Redis for pub/sub, [Polars](https://github.com/pola-rs/polars) for relational algebra kernels and [Apache Arrow](https://github.com/apache/arrow) for I/O. All of those are backed by efficient C++/Rust implementations. Quokka is a high-performance way of piecing them all together.
 
-The core Quokka API allows you to construct a computation DAG with stateful executors. Please refer to the docs and examples in the apps directory. In the future we will support a dataframe API and hopefully SQL.
+The core Quokka runtime API allows you to construct a computation DAG with stateful executors. *Any* data source can be used, CSV/Parquet on Disk/S3 (apps/tpch-), Iceberg/DeltaLake/Hudi, bucket of images (apps/pinecone.py), Ethereum blockchain through web3 APIs, transactional database CDC endpoints etc. If you have some esoteric data source that you want to run analytics on, please send me a challenge as a Github issue. 
+
+Please refer to the docs and examples in the apps directory. In the future we will support a dataframe API and hopefully SQL. The plan is to use this amazing repo: [sqlglot](https://github.com/tobymao/sqlglot).
 
 For any questions/concerns/just want to chat: zihengw@stanford.edu
 
@@ -17,7 +19,7 @@ For any questions/concerns/just want to chat: zihengw@stanford.edu
 **Local**: 
 1) Pull the repo, cd into it and do:
 ```pip3 install .```
-3) start a local redis server instance. you will need to download the redis-server binary to do this: 
+3) start a local redis server instance. You will need the latest redis version (or at least > 6.2)
 ```./redis-server ../redis.conf --port 6800 --protected-mode no& ``` with the redis.conf included in the Quokka repo.
 4) start a ray cluster locally: ```ray start --head --port=6379```
 
@@ -28,6 +30,8 @@ For any questions/concerns/just want to chat: zihengw@stanford.edu
 3) You need to start a redis server instance on each machine. make sure to use the redis.conf in the repo. This is kinda annoying. We are / I am going to phase out Redis within the next few months and this should not be a problem.
 4) start a ray head node locally: ```ray start --head --port=6379```. On each worker node do the command ray start tells you to do in next steps.
 
-Alternatively, you can use the pyquokka.utils
+Alternatively, you can use the pyquokka.utils.
 
 Now check out some of the applications in the apps directory.
+
+Please raise a Github issue if you encounter any issues!
