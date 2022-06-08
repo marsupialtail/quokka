@@ -19,10 +19,7 @@ For any questions/concerns/just want to chat: zihengw@stanford.edu
 **Local**: 
 1) Pull the repo, cd into it and do:
 ```pip3 install .```
-3) start a local redis server instance. You will need the latest redis version (or at least > 6.2)
-```./redis-server ../redis.conf --port 6800 --protected-mode no& ``` with the redis.conf included in the Quokka repo.
-4) start a ray cluster locally: ```ray start --head --port=6379```
-
+2) now try running apps/tutorials/lesson0.py
 
 **Distributed**:
 1) Pick a node to be the head node.
