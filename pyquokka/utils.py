@@ -64,6 +64,13 @@ class QuokkaClusterManager:
         return_codes = [process.wait() for process in processes]
         if sum(return_codes) != 0:
             raise Exception(error)
+    
+    def copy_all(self, file_path, ips, error = "Error"):
+        commands = ["scp -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " " + file_path + " ubuntu@" + str(ip) + ":. " for ip in ips]
+        processes = [subprocess.Popen(command, close_fds=True, shell=True) for command in commands]
+        return_codes = [process.wait() for process in processes]
+        if sum(return_codes) != 0:
+            raise Exception(error)
 
     def check_instance_alive(self, public_ip):
         z = os.system("ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + public_ip)
@@ -103,6 +110,12 @@ class QuokkaClusterManager:
         command ="/home/ubuntu/.local/bin/ray start --address='" + str(leader_private_ip) + ":6380' --redis-password='5241590000000000'"
         self.launch_all(command, public_ips, "ray workers failed to connect to ray head node")
 
+        pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
+        flight_file = pyquokka_loc + "/flight.py"
+        print("attempting to copy flight server file")
+        self.copy_all(flight_file, public_ips, "Failed to copy flight server file.")
+        self.launch_all("python3 flight.py &", public_ips, "Failed to start flight servers on workers.")
+
     def create_cluster(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", requirements = ["ray==1.12.0"]):
 
         start_time = time.time()
@@ -138,6 +151,9 @@ class QuokkaClusterManager:
             self.launch_all("sudo mount /dev/nvme0n1 /data;", public_ips, "failed to mount nvme ssd")
         
         self.launch_all("sudo chmod -R a+rw /data/", public_ips, "failed to give spill dir permissions")
+
+        # I can't think of a better way to do this. This is the way to launch the flight server on each worker:
+        # first find the flight.py locally, copy it to each of the machines, and run all of them. 
 
         print("Launching of Quokka cluster used: ", time.time() - start_time)
 

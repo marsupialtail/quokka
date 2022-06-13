@@ -374,7 +374,8 @@ class BroadcastJoinExecutor(Executor):
     
     def done(self,executor_id):
         #print(len(self.state0),len(self.state1))
-        print("done join ", executor_id)
+        #print("done join ", executor_id)
+        pass
 
 
 class GroupAsOfJoinExecutor():
@@ -666,7 +667,8 @@ class PolarJoinExecutor(Executor):
     
     def done(self,executor_id):
         #print(len(self.state0),len(self.state1))
-        print("done join ", executor_id)
+        #print("done join ", executor_id)
+        pass
 
 
 class OOCJoinExecutor(Executor):
@@ -744,7 +746,7 @@ class AggExecutor(Executor):
         if self.final_func:
             return self.final_func(self.state)
         else:
-            print(self.state)
+            #print(self.state)
             return self.state
 
 class LimitExecutor(Executor):
