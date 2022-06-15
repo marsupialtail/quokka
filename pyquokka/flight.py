@@ -6,6 +6,7 @@ import pyarrow
 import pyarrow.flight
 import ray
 from multiprocessing import Lock
+import os, psutil
 
 class FlightServer(pyarrow.flight.FlightServerBase):
     def __init__(self, host="localhost", location=None):
@@ -13,6 +14,8 @@ class FlightServer(pyarrow.flight.FlightServerBase):
         self.flights = {}
         self.host = host
         self.flights_lock = Lock()
+        self.mem_limit = 1e9
+        self.process = psutil.Process(os.getpid())
 
     @classmethod
     def descriptor_to_key(self, descriptor):
@@ -68,13 +71,22 @@ class FlightServer(pyarrow.flight.FlightServerBase):
     def list_actions(self, context):
         return [
             ("clear", "Clear the stored flights."),
+            ("check_puttable","check if puttable"),
             ("shutdown", "Shut down this server."),
         ]
 
     def do_action(self, context, action):
         if action.type == "clear":
-            raise NotImplementedError(
-                "{} is not implemented.".format(action.type))
+            self.flights.clear()
+            yield pyarrow.flight.Result(pyarrow.py_buffer(b'Cleared!'))
+        elif action.type == "clear_messages": # clears out messages but keeps all the data items.
+            pass
+        elif action.type == "check_puttable":
+            cond = sum(self.flights[i].nbytes for i in self.flights) < self.mem_limit
+            if not cond:
+                print(self.flights)
+            #cond = self.process.memory_info().rss < self.mem_limit
+            yield pyarrow.flight.Result(pyarrow.py_buffer(bytes(str(cond), "utf-8")))
         elif action.type == "healthcheck":
             pass
         elif action.type == "shutdown":

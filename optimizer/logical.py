@@ -66,7 +66,7 @@ class MultiJoinNode(TaskNode):
         pass
 
     # this is part of the physical plan. You do this after you have updated the cardinality
-    def determinte_join_strategy(self):
+    def determine_join_strategy(self):
         pass
 
 class GroupbyNode(TaskNode):

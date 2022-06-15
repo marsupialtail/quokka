@@ -203,6 +203,17 @@ class Node:
                 # format (target id, target channel, source id, source channel, tag, format)
                 #print("pushing to target",target,"channel",channel,"from source",self.id,"channel",self.channel,"tag",self.out_seq)
                 upload_descriptor = pyarrow.flight.FlightDescriptor.for_command(pickle.dumps((target, channel, self.id, self.channel, self.out_seq, my_format)))
+
+                while True:
+                    buf = pyarrow.allocate_buffer(0)
+                    action = pyarrow.flight.Action("check_puttable", buf)
+                    result = next(client.do_action(action))
+                    print(result.body.to_pybytes().decode("utf-8"))
+                    if result.body.to_pybytes().decode("utf-8") != "True":
+                        time.sleep(1)
+                    else:
+                        break
+
                 writer, _ = client.do_put(upload_descriptor, table.schema)
                 writer.write_table(table)
                 writer.close()
@@ -589,6 +600,7 @@ class TaskNode(Node):
 
         batches_returned = 0
         flights = self.flight_client.list_flights()
+        to_remove = []
         for flight in flights:
             descriptor = flight.descriptor
             metadata = pickle.loads(flight.descriptor.command)
@@ -614,18 +626,26 @@ class TaskNode(Node):
             batches_returned += 1
 
             if my_format == "done":
-                self.parents[stream_id].pop(channel)
-                #raise Exception
-                if len(self.parents[stream_id]) == 0:
-                    self.parents.pop(stream_id)
-                #print("I am ", self.id, self.channel, " I got done", stream_id, channel)
+                info = self.flight_client.get_flight_info(descriptor)
+                assert len(info.endpoints) == 1
+                reader = self.flight_client.do_get(info.endpoints[0].ticket)
+                to_remove.append((stream_id,channel))
+                
             else:
                 info = self.flight_client.get_flight_info(descriptor)
                 assert len(info.endpoints) == 1
                 reader = self.flight_client.do_get(info.endpoints[0].ticket)
                 table = reader.read_all()
                 self.buffered_inputs.append((stream_id,channel), table, my_format)
-            
+        
+        # the done message for this parent, channel pair has appeared in flights this round, all of the preceding messages must have already been read.
+        # note that since flights is not sorted by time we can't pop directly in the loop above, we have to pop at the end.
+        for stream_id, channel in to_remove:
+            self.parents[stream_id].pop(channel)
+            #raise Exception
+            if len(self.parents[stream_id]) == 0:
+                self.parents.pop(stream_id)
+            #print("I am ", self.id, self.channel, " I got done", stream_id, channel)
         return batches_returned
     
     def get_expected_path(self):
