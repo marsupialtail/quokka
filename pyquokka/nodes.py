@@ -619,17 +619,12 @@ class TaskNode(Node):
                 if len(self.parents[stream_id]) == 0:
                     self.parents.pop(stream_id)
                 #print("I am ", self.id, self.channel, " I got done", stream_id, channel)
-
-            info = self.flight_client.get_flight_info(descriptor)
-            assert len(info.endpoints) == 1
-            reader = self.flight_client.do_get(info.endpoints[0].ticket)
-            table = reader.read_all()
-            if my_format == "polars":
-                self.buffered_inputs.append((stream_id,channel),polars.from_arrow(table), table.nbytes)
-            elif my_format == "pandas":
-                self.buffered_inputs.append((stream_id,channel),table.to_pandas(), table.nbytes)
-            elif my_format == "custom":
-                self.buffered_inputs.append((stream_id,channel),pickle.loads(table.to_pandas()['object'][0]), table.nbytes)
+            else:
+                info = self.flight_client.get_flight_info(descriptor)
+                assert len(info.endpoints) == 1
+                reader = self.flight_client.do_get(info.endpoints[0].ticket)
+                table = reader.read_all()
+                self.buffered_inputs.append((stream_id,channel), table, my_format)
             
         return batches_returned
     

@@ -435,12 +435,7 @@ class TaskGraph:
             for channel in node:
                 replica = node[channel]
                 processes.append(replica.execute.remote())
-        unfinished = processes
-        while True:
-            finished, unfinished = ray.wait(unfinished, timeout = 1)
-            #print(unfinished)
-            if len(unfinished) == 0:
-                break
+        ray.get(processes)
 
     def run_with_fault_tolerance(self):
         processes_by_ip = {}

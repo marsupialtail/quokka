@@ -4,6 +4,11 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from threading import Lock
 import os
+import polars
+import pandas as pd
+import pickle
+
+
 class DiskFile:
     def __init__(self,filename) -> None:
         self.filename = filename
@@ -20,22 +25,31 @@ class DiskQueue:
         self.disk_location = disk_location
 
     # this is now blocking on disk write. 
-    def append(self, key, table, size):
-        
+    def append(self, key, table, format):
+        size = table.nbytes
         if self.mem_usage +  size > self.mem_limit:
             # flush to disk
             filename = self.disk_location + "/" + self.prefix + str(self.file_no) + ".parquet"
             pq.write_table(table, filename)
             self.file_no += 1
-            self.in_mem_portion[key].append((DiskFile(filename),size))
+            self.in_mem_portion[key].append((DiskFile(filename),format))
         else:
             self.mem_usage += size
-            self.in_mem_portion[key].append((table,size))
+            self.in_mem_portion[key].append((table,format))
 
     def retrieve_from_disk(self, key):
         pass
 
     def get_batches_for_key(self, key, num=None):
+        def convert_to_format(table, format):
+            if format == "polars":
+                return polars.from_arrow(table)
+            elif format == "pandas":
+                return table.to_pandas()
+            elif format == "custom":
+                return pickle.loads(table.to_pandas()['object'][0])
+            else:
+                raise Exception("don't understand this format", format)
         batches = []
         # while len(self.in_mem_portion[key]) > 0 and type(self.in_mem_portion[key][0]) != tuple:
         #     batches.append(self.in_mem_portion[key].popleft())
@@ -43,14 +57,13 @@ class DiskQueue:
         # threading.Thread(target=self.retrieve_from_disk)
         end = len(self.in_mem_portion[key]) if num is None else max(num,len(self.in_mem_portion[key]) )
         for i in range(end):
-            object = self.in_mem_portion[key][i]
-            assert type(object) == tuple
-            if type(object[0]) == DiskFile:
-                batches.append(pq.read_table(object[0]))
-                object[0].delete()
+            object, format = self.in_mem_portion[key][i]
+            if type(object) == DiskFile:
+                batches.append(convert_to_format(pq.read_table(object.filename), format))
+                object.delete()
             else:
-                batches.append(object[0])
-                self.mem_usage -= object[1]
+                batches.append(convert_to_format(object, format))
+                self.mem_usage -= object.nbytes
         for i in range(end):
             self.in_mem_portion[key].popleft()
         return batches

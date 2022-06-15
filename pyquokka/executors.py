@@ -160,7 +160,7 @@ class OutputS3CSVExecutor(Executor):
 
 
 class OutputS3ParquetFastExecutor(Executor):
-    def __init__(self, bucket, prefix, output_line_limit = 1000000) -> None:
+    def __init__(self, bucket, prefix, output_line_limit = 10000000) -> None:
         self.num = 0
         self.num_states = 0
 
