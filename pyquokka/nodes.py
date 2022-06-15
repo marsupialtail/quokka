@@ -17,6 +17,7 @@ import types
 import concurrent.futures
 import pyarrow.flight
 # isolated simplified test bench for different fault tolerance protocols
+from pyquokka.diskqueue import DiskQueue
 
 #FT_I = True
 #FT =  True
@@ -183,7 +184,6 @@ class Node:
             for channel in self.alive_targets[target]:
                 if channel not in partitioned_payload:
                     payload = None
-                #print("PUSHING FROM",str(self.id),str(self.channel)," TO ",str(target),str(channel), " MY TAG ", self.out_seq)
                 else:
                     payload = partitioned_payload[channel]
 
@@ -419,7 +419,8 @@ class TaskNode(Node):
 
         super().__init__(id, channel, checkpoint_location)
 
-        self.buffered_inputs = {(parent, channel): deque() for parent in parents for channel in parents[parent]}
+        self.buffered_inputs = DiskQueue(parents,"spill-" + str(self.id) + "-" + str(self.channel), "/data")
+
         self.id = id 
         self.parents = parents # dict of id -> dict of channel -> actor handles        
         self.functionObject = functionObject
@@ -583,12 +584,6 @@ class TaskNode(Node):
                 handler = self.parents[parent][channel]
                 recover_tasks.append(handler.update_target_ip_and_help_target_recover.remote(self.id, self.channel, total_channels, self.state_tag[(parent,channel)], new_ip))
         ray.get(recover_tasks)
-    
-    def get_buffered_inputs_mem_usage(self):
-        m = 0
-        for key in self.buffered_inputs:
-            m += sum([sys.getsizeof(i) for i in self.buffered_inputs[key]])
-        return m
 
     def get_batches(self):
 
@@ -630,12 +625,11 @@ class TaskNode(Node):
             reader = self.flight_client.do_get(info.endpoints[0].ticket)
             table = reader.read_all()
             if my_format == "polars":
-                self.buffered_inputs[(stream_id,channel)].append(polars.from_arrow(table))
+                self.buffered_inputs.append((stream_id,channel),polars.from_arrow(table), table.nbytes)
             elif my_format == "pandas":
-                self.buffered_inputs[(stream_id,channel)].append(table.to_pandas())
+                self.buffered_inputs.append((stream_id,channel),table.to_pandas(), table.nbytes)
             elif my_format == "custom":
-                self.buffered_inputs[(stream_id,channel)].append(pickle.loads(table.to_pandas()['object'][0]))
-                table.to_pandas()
+                self.buffered_inputs.append((stream_id,channel),pickle.loads(table.to_pandas()['object'][0]), table.nbytes)
             
         return batches_returned
     
@@ -669,7 +663,7 @@ class TaskNode(Node):
     def schedule_for_execution(self):
         if len(self.expected_path) == 0:
             # process the source with the most backlog
-            lengths = {i: len(self.buffered_inputs[i]) for i in self.buffered_inputs}
+            lengths = {i: self.buffered_inputs.len(i) for i in self.buffered_inputs.keys()}
             parent, channel = max(lengths, key=lengths.get)
             length = lengths[(parent,channel)]
             if length == 0:
@@ -677,14 +671,11 @@ class TaskNode(Node):
 
             # now drain that source
             batches = []
-            for daparent, channel in self.buffered_inputs:
+            for daparent, channel in self.buffered_inputs.keys():
                 if daparent != parent:
                     continue
-                for message in self.buffered_inputs[parent, channel]:
-                    
-                    batches.append(message)
+                batches.extend(self.buffered_inputs.get_batches_for_key((parent,channel)))
                 self.state_tag[(parent,channel)] += lengths[parent, channel]
-                self.buffered_inputs[parent,channel].clear()
             
             self.log_state_tag()
             return parent, batches
@@ -703,24 +694,23 @@ class TaskNode(Node):
             
             for parent, channel in to_do:
                 required_batches = diffs[(parent, channel)]
-                if len(self.buffered_inputs[parent,channel]) < required_batches:
+                if self.buffered_inputs.len(parent,channel) < required_batches:
                     # cannot fulfill expectation
                     #print("CANNOT FULFILL EXPECTATION")
                     return None, None
-            else:
-                batches = []
-                for parent, channel in to_do:
-                    for i in range(diffs[(parent, channel)]):
-                        message = self.buffered_inputs[parent,channel].popleft()
-                        batches.append(message)
+
+            batches = []
+            for parent, channel in to_do:
+                batches.extend(self.buffered_inputs.get_batches_for_key((parent,channel),diffs[(parent,channel)]))
+
             self.state_tag = expected
             self.expected_path.popleft()
             self.log_state_tag()
             return parent, batches
 
     def input_buffers_drained(self):
-        for key in self.buffered_inputs:
-            if len(self.buffered_inputs[key]) > 0:
+        for key in self.buffered_inputs.keys():
+            if self.buffered_inputs.len(key) > 0:
                 return False
         return True
     
@@ -742,7 +732,7 @@ class NonBlockingTaskNode(TaskNode):
             if stream_id is None:
                 continue
 
-            #print("BUFFERED INPUT LENGTHS",{i:len(i) for i in self.buffered_inputs})
+            #print("BUFFERED INPUT LENGTHS",{i:self.buffered_inputs.len(i) for i in self.buffered_inputs.keys()})
             #print(self.state_tag)
             #print(self.latest_input_received)
             for key in self.state_tag:
@@ -805,7 +795,6 @@ class BlockingTaskNode(TaskNode):
         while not (len(self.parents) == 0 and self.input_buffers_drained()):
 
             batches_returned = self.get_batches()
-            #print(batches_returned)
             # deque messages from the mailbox in a way that makes sense
             stream_id, batches = self.schedule_for_execution()
             #print(stream_id)

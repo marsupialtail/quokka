@@ -42,10 +42,19 @@ class LocalCluster:
         # we assume you have pyquokka installed, and we are going to spin up a ray cluster locally
         ray.init(ignore_reinit_error=True)
         os.system("redis-server " + pyquokka_loc + "redis.conf --port 6800 --protected-mode no & ")
+        pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
+        flight_file = pyquokka_loc + "/flight.py"
+        os.system("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288")
+        self.flight_process = subprocess.Popen(["python3", flight_file])
         self.leader_public_ip = "localhost"
         self.leader_private_ip = ray.worker._global_node.address.split(":")[0]
         self.public_ips = {0:"localhost"}
         self.private_ips = {0: ray.worker._global_node.address.split(":")[0]}
+    
+    def __del__(self):
+        # we need to join the process that is running the flight server! and we should probably also shut down the redis server too, but that's not necessary
+        self.flight_process.kill()
+
 
 class QuokkaClusterManager:
 
@@ -114,6 +123,7 @@ class QuokkaClusterManager:
         flight_file = pyquokka_loc + "/flight.py"
         print("attempting to copy flight server file")
         self.copy_all(flight_file, public_ips, "Failed to copy flight server file.")
+        self.launch_all("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288", public_ips, "Failed to set malloc limit")
         self.launch_all("python3 flight.py &", public_ips, "Failed to start flight servers on workers.")
 
     def create_cluster(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", requirements = ["ray==1.12.0"]):
