@@ -33,16 +33,14 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                                          table.num_rows, 0)
 
     def list_flights(self, context, criteria):
-        # self.flights_lock.acquire()
+        self.flights_lock.acquire()
         for key, table in self.flights.items():
             
             descriptor = \
                 pyarrow.flight.FlightDescriptor.for_command(key[1])
             yield self._make_flight_info(key, descriptor, table)
-        #self.flights_lock.release()
+        self.flights_lock.release()
         
-        #self.flights_lock.release()
-
     def get_flight_info(self, context, descriptor):
         key = FlightServer.descriptor_to_key(descriptor)
         if key in self.flights:
@@ -83,8 +81,8 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             pass
         elif action.type == "check_puttable":
             cond = sum(self.flights[i].nbytes for i in self.flights) < self.mem_limit
-            if not cond:
-                print(self.flights)
+            #if not cond:
+            #    print(self.flights)
             #cond = self.process.memory_info().rss < self.mem_limit
             yield pyarrow.flight.Result(pyarrow.py_buffer(bytes(str(cond), "utf-8")))
         elif action.type == "healthcheck":

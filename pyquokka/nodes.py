@@ -208,7 +208,7 @@ class Node:
                     buf = pyarrow.allocate_buffer(0)
                     action = pyarrow.flight.Action("check_puttable", buf)
                     result = next(client.do_action(action))
-                    print(result.body.to_pybytes().decode("utf-8"))
+                    #print(result.body.to_pybytes().decode("utf-8"))
                     if result.body.to_pybytes().decode("utf-8") != "True":
                         time.sleep(1)
                     else:
