@@ -6,7 +6,7 @@ Docs: https://marsupialtail.github.io/quokka/started/
 
 Quokka is a fast data processing engine whose core consists of ~1000 lines of Python code. However it can be leveraged to obtain near-peak performance on SQL queries on data "lakes" with CSV and Parquet file formats. It is often several times faster than SparkSQL and an order of magnitude faster than Dask.
 
-Quokka stands on the shoulders of giants. It uses [Ray](https://github.com/ray-project/ray) for task scheduling, Redis for pub/sub, [Polars](https://github.com/pola-rs/polars) for relational algebra kernels and [Apache Arrow](https://github.com/apache/arrow) for I/O. All of those are backed by efficient C++/Rust implementations. Quokka is a high-performance way of piecing them all together.
+Quokka stands on the shoulders of giants. It uses [Ray](https://github.com/ray-project/ray) for task scheduling, Redis for lineage logging, [Polars](https://github.com/pola-rs/polars) for relational algebra kernels and [Apache Arrow](https://github.com/apache/arrow) for I/O. All of those are backed by efficient C++/Rust implementations. Quokka is a high-performance way of piecing them all together.
 
 The core Quokka runtime API allows you to construct a computation DAG with stateful executors. *Any* data source can be used, CSV/Parquet on Disk/S3 (apps/tpch-), Iceberg/DeltaLake/Hudi, bucket of images (apps/pinecone.py), Ethereum blockchain through web3 APIs, transactional database CDC endpoints etc. If you have some esoteric data source that you want to run analytics on, please send me a challenge as a Github issue. 
 
