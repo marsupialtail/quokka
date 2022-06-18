@@ -14,6 +14,8 @@ Please refer to the docs and examples in the apps directory. In the future we wi
 
 For any questions/concerns/just want to chat: zihengw@stanford.edu
 
+**Quokka is under active development and the API might change. Breaking updates could occur and there is no stable release. Targeting stable release date for DAG-level API by end of August 2022**.
+
 # Quickstart
 
 **Local**: 
