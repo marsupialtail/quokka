@@ -2,7 +2,6 @@ from pyquokka.quokka_runtime import TaskGraph
 from pyquokka.utils import LocalCluster
 from pyquokka.executors import Executor
 import time
-import ray
 
 cluster = LocalCluster()
 
@@ -16,23 +15,23 @@ class SimpleDataset:
     def set_num_channels(self, num_channels):
         self.num_channels = num_channels
 
-    def get_next_batch(self, mapper_id, pos=None):
+    def get_next_batch(self, channel, pos=None):
         # let's ignore the keyword pos = None, which is only relevant for fault tolerance capabilities.
         assert self.num_channels is not None
-        curr_number = mapper_id
+        curr_number = channel
         while curr_number < self.limit:
-            yield curr_number, curr_number
+            yield None, curr_number
             curr_number += self.num_channels
 
 class AddExecutor(Executor):
     def __init__(self) -> None:
         self.sum = 0
-    def execute(self,batches,stream_id, executor_id):
+    def execute(self,batches,stream_id, channel):
         for batch in batches:
             assert type(batch) == int
             self.sum += batch
-    def done(self,executor_id):
-        print("I am executor ", executor_id, " my sum is ", self.sum)
+    def done(self,channel):
+        print("I am executor ", channel, " my sum is ", self.sum)
         return self.sum
 
 task_graph = TaskGraph(cluster)

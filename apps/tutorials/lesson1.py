@@ -1,8 +1,7 @@
 import time
 from pyquokka.quokka_runtime import TaskGraph
-from pyquokka.executors import AggExecutor, PolarJoinExecutor, CountExecutor
+from pyquokka.executors import PolarJoinExecutor, CountExecutor
 from pyquokka.dataset import InputDiskCSVDataset
-import ray
 import pandas as pd
 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
