@@ -37,8 +37,22 @@ echo "deb https://packages.redis.io/deb $(lsb_release -cs) main" | tee /etc/apt/
 apt-get update
 apt-get install redis
 ~~~
+
+If you only plan on running Quokka locally, you are done. Try to run the lessons in the apps/tutorial folder and see if they work. If they don't work, please raise an issue! 
+
 If you plan on using Quokka for cloud, there's a bit more setup that needs to be done. Currently Quokka only provides support for AWS. Quokka provides a utility library under `pyquokka.utils` which allows you to manager clusters and connect to them. It assumes that awscli is configured locally and you have a keypair and a security group with the proper configurations. To set these things up, you can follow the [AWS guide](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-quickstart.html). 
 
+Quokka requires a security group that allows inbound and outbound connections to ports 5005 (Flight), 6379 (Ray) and 6800 (Redis) from IP addresses within the cluster. For testing, you can just enable all inbound and outbound connections from all IP addresses. Then you can use the `QuokkaClusterManager` in `pyquokka.utils` to spin up a cluster. The code to do this:
+
+~~~python
+from pyquokka.utils import QuokkaClusterManager
+manager = QuokkaClusterManager(key_name = YOUR_KEY, key_location = LOCATION_OF_KEY, security_group= SECURITY_GROUP_ID)
+cluster = manager.create_cluster(aws_access_key, aws_access_id, num_instances = 4, instance_type = "i3.2xlarge", requirements = ["pandas"])
+~~~
+
+This would spin up four `i3.2xlarge` instances and install pandas on each of them. The `QuokkaClusterManager` also has other utilities such as `terminate_cluster` and `get_cluster_from_json`. Importantly, currently only on-demand instances are supported. This will change in the near future.
+
+Quokka also plans to extend support to Docker/Kubernetes based deployments based on KubeRay. (Contributions welcome!)
 
 <p align = "center">
 Image credits: some icons taken from flaticon.com.

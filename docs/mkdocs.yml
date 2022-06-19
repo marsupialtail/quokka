@@ -3,6 +3,7 @@ site_name: Quokka
 nav:
         - Home: index.md
         - Getting Started: started.md
+        - Tutorials: tutorial.md
         - Quokka Runtime API: runtime.md
 
 theme: readthedocs
