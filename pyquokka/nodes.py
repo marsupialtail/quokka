@@ -18,7 +18,6 @@ import types
 import concurrent.futures
 import pyarrow.flight
 # isolated simplified test bench for different fault tolerance protocols
-from pyquokka.diskqueue import DiskQueue
 
 #FT_I = True
 #FT =  True
