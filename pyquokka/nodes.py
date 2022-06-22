@@ -1,3 +1,4 @@
+from curses import meta
 import numpy as np
 import pandas as pd
 import ray
@@ -27,6 +28,31 @@ VERBOSE = False
 
 # above this limit we are going to start flushing things to disk
 INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
+
+def convert_to_format(batch, format):
+    format = pickle.loads(format.to_pybytes())
+    if format == "polars":
+        return polars.from_arrow(pa.Table.from_batches([batch]))
+    elif format == "pandas":
+        return batch.to_pandas()
+    elif format == "custom":
+        return pickle.loads(batch.to_pandas()['object'][0])
+    else:
+        raise Exception("don't understand this format", format)
+
+def convert_from_format(payload):
+    if type(payload) == pd.core.frame.DataFrame:
+        batch = pa.RecordBatch.from_pandas(payload)
+        my_format = "pandas"
+    elif type(payload) == polars.internals.frame.DataFrame:
+        batches = payload.to_arrow().to_batches()
+        assert len(batches) == 1
+        batch = batches[0]
+        my_format = "polars"
+    else:
+        batch = pa.RecordBatch.from_pydict({"object":[pickle.dumps(payload)]})
+        my_format = "custom"
+    return batch, my_format
 
 # making a new class of things so we can easily type match when we start processing the input batch
 class FlushedMessage:
@@ -64,7 +90,8 @@ class Node:
         self.output_lock = Lock()
 
     def initialize(self):
-        pass
+        raise NotImplementedError
+
     def append_to_targets(self,tup):
         node_id, channel_to_ip, partition_key = tup
 
@@ -190,15 +217,7 @@ class Node:
 
                 client = self.flight_clients[target][channel]
                 
-                if type(payload) == pd.core.frame.DataFrame:
-                    table = pa.Table.from_pandas(payload)
-                    my_format = "pandas"
-                elif type(payload) == polars.internals.frame.DataFrame:
-                    table = payload.to_arrow()
-                    my_format = "polars"
-                else:
-                    table = pa.Table.from_pydict({"object":[pickle.dumps(payload)]})
-                    my_format = "custom"
+                batch, my_format = convert_from_format(payload)
                 
                 # format (target id, target channel, source id, source channel, tag, format)
                 #print("pushing to target",target,"channel",channel,"from source",self.id,"channel",self.channel,"tag",self.out_seq)
@@ -214,8 +233,8 @@ class Node:
                     else:
                         break
 
-                writer, _ = client.do_put(upload_descriptor, table.schema)
-                writer.write_table(table)
+                writer, _ = client.do_put(upload_descriptor, batch.schema)
+                writer.write_batch(batch)
                 writer.close()
        
         return True
@@ -311,6 +330,9 @@ class InputNode(Node):
             self.seq_state_map = {} #recovered_state["seq_state_map"]
             self.state_tag =0# recovered_state["tag"]
             print("INPUT NODE RECOVERED TO STATE", self.latest_stable_state, self.out_seq, self.seq_state_map, self.state_tag)
+
+    def initialize(self):
+        pass
 
     def truncate_logged_outputs(self, target_id, channel, target_ckpt_state):
         if VERBOSE:
@@ -430,8 +452,6 @@ class TaskNode(Node):
 
         super().__init__(id, channel, checkpoint_location)
 
-        self.buffered_inputs = DiskQueue(parents,"spill-" + str(self.id) + "-" + str(self.channel), "/data")
-
         self.id = id 
         self.parents = parents # dict of id -> dict of channel -> actor handles        
         self.functionObject = functionObject
@@ -441,7 +461,6 @@ class TaskNode(Node):
 
         if ckpt is None:
             self.state_tag =  {(parent,channel): 0 for parent in parents for channel in parents[parent]}
-            self.latest_input_received = {(parent,channel): 0 for parent in parents for channel in parents[parent]}
             self.logged_outputs = {}
             self.target_output_state = {}
 
@@ -483,7 +502,8 @@ class TaskNode(Node):
 
             self.state_tag= recovered_state["tag"]
             print("RECOVERED TO STATE TAG", self.state_tag)
-            self.latest_input_received = self.state_tag.copy() #recovered_state["latest_input_received"]
+            # you will have to somehow get this information now to the arrow flight server
+            # self.latest_input_received = self.state_tag.copy() #recovered_state["latest_input_received"]
             self.functionObject.deserialize(object_states)
             self.out_seq = recovered_state["out_seq"]  
             self.logged_outputs = recovered_state["logged_outputs"]
@@ -498,6 +518,12 @@ class TaskNode(Node):
             
         
         self.log_state_tag()        
+
+    def initialize(self):
+        message = pyarrow.py_buffer(pickle.dumps((self.id,self.channel, {i:list(self.parents[i].keys()) for i in self.parents})))
+        action = pyarrow.flight.Action("register_channel",message)
+        self.flight_client.do_action(action)
+
 
     def truncate_logged_outputs(self, target_id, channel, target_ckpt_state):
         
@@ -550,7 +576,7 @@ class TaskNode(Node):
         self.ckpt_number += 1
 
         self.output_lock.acquire()
-        state = {"latest_input_received": self.latest_input_received, "logged_outputs": self.logged_outputs, "out_seq" : self.out_seq,
+        state = { "logged_outputs": self.logged_outputs, "out_seq" : self.out_seq,
         "function_object": self.ckpt_number, "tag":self.state_tag, "target_output_state": self.target_output_state, "ckpt_files": self.ckpt_files,"disk_fileno":self.disk_fileno}
         state_str = pickle.dumps(state)
         self.output_lock.release()
@@ -598,55 +624,14 @@ class TaskNode(Node):
 
     def get_batches(self):
 
-        batches_returned = 0
-        flights = self.flight_client.list_flights()
-        to_remove = []
-        for flight in flights:
-            descriptor = flight.descriptor
-            metadata = pickle.loads(flight.descriptor.command)
-            target_id, target_channel, stream_id, channel, tag , my_format = metadata
-            if target_id != self.id or target_channel != self.channel:
-                continue
+        message = pyarrow.py_buffer(pickle.dumps((self.id, self.channel)))
+        action = pyarrow.flight.Action("get_batches_info", message)
+        result = next(self.flight_client.do_action(action))
+        batch_info, should_terminate = pickle.loads(result.body.to_pybytes())
+        assert type(batch_info) == dict
 
-            if stream_id not in self.parents or channel not in self.parents[stream_id]:
-                print(stream_id, channel, self.parents)
-                print("this channel has already received the done signal. stop wasting your breath.")
-                continue
+        return batch_info, should_terminate
 
-            if tag <= self.latest_input_received[(stream_id,channel)]:
-                print("I am ",self.id, self.channel, "got", metadata)
-                print("rejected an input stream's tag smaller than or equal to latest input received. input tag", tag, "current latest input received", self.latest_input_received[(stream_id, channel)])
-                continue
-            if tag > self.latest_input_received[(stream_id,channel)] + 1:
-                print("DROPPING INPUT. THIS IS A FUTURE INPUT THAT WILL BE RESENT (hopefully)", tag, stream_id, channel, "current tag", self.latest_input_received[(stream_id,channel)])
-                continue
-            
-            #print("accepting input from" , stream_id, channel, "tag", tag)
-            self.latest_input_received[(stream_id,channel)] = tag
-            batches_returned += 1
-
-            if my_format == "done":
-                info = self.flight_client.get_flight_info(descriptor)
-                assert len(info.endpoints) == 1
-                reader = self.flight_client.do_get(info.endpoints[0].ticket)
-                to_remove.append((stream_id,channel))
-                
-            else:
-                info = self.flight_client.get_flight_info(descriptor)
-                assert len(info.endpoints) == 1
-                reader = self.flight_client.do_get(info.endpoints[0].ticket)
-                table = reader.read_all()
-                self.buffered_inputs.append((stream_id,channel), table, my_format)
-        
-        # the done message for this parent, channel pair has appeared in flights this round, all of the preceding messages must have already been read.
-        # note that since flights is not sorted by time we can't pop directly in the loop above, we have to pop at the end.
-        for stream_id, channel in to_remove:
-            self.parents[stream_id].pop(channel)
-            #raise Exception
-            if len(self.parents[stream_id]) == 0:
-                self.parents.pop(stream_id)
-            #print("I am ", self.id, self.channel, " I got done", stream_id, channel)
-        return batches_returned
     
     def get_expected_path(self):
         return deque([pickle.loads(i) for i in self.head_r.lrange("state-tag-" + str(self.id) + "-" + str(self.channel), 0, self.head_r.llen("state-tag-" + str(self.id) + "-" + str(self.channel)))])
@@ -675,25 +660,25 @@ class TaskNode(Node):
             if tag == self.state_tag:
                 return
 
-    def schedule_for_execution(self):
+    def schedule_for_execution(self, batch_info):
+
         if len(self.expected_path) == 0:
             # process the source with the most backlog
-            lengths = {i: self.buffered_inputs.len(i) for i in self.buffered_inputs.keys()}
-            parent, channel = max(lengths, key=lengths.get)
-            length = lengths[(parent,channel)]
+            parent, channel = max(batch_info, key=batch_info.get)
+            length = batch_info[(parent,channel)]
             if length == 0:
                 return None, None
 
             # now drain that source
-            batches = []
-            for daparent, channel in self.buffered_inputs.keys():
+            requests = {}
+            for daparent, channel in batch_info.keys():
                 if daparent != parent:
                     continue
-                batches.extend(self.buffered_inputs.get_batches_for_key((parent,channel)))
-                self.state_tag[(parent,channel)] += lengths[parent, channel]
+                requests[daparent, channel] = batch_info[daparent, channel]
+                self.state_tag[(parent,channel)] += batch_info[parent, channel]
             
             self.log_state_tag()
-            return parent, batches
+            return parent, requests
 
         else:
             expected = self.expected_path[0]
@@ -705,30 +690,23 @@ class TaskNode(Node):
                     to_do.add(key)
             if len(to_do) == 0:
                 raise Exception("there should be some difference..",self.state_tag,expected)
-
             
             for parent, channel in to_do:
                 required_batches = diffs[(parent, channel)]
-                if self.buffered_inputs.len(parent,channel) < required_batches:
+                if batch_info[parent,channel] < required_batches:
                     # cannot fulfill expectation
                     #print("CANNOT FULFILL EXPECTATION")
                     return None, None
 
-            batches = []
+            requests = {}
             for parent, channel in to_do:
-                batches.extend(self.buffered_inputs.get_batches_for_key((parent,channel),diffs[(parent,channel)]))
+                requests[parent,channel] = diffs[(parent,channel)]
 
             self.state_tag = expected
             self.expected_path.popleft()
             self.log_state_tag()
-            return parent, batches
+            return parent, requests
 
-    def input_buffers_drained(self):
-        for key in self.buffered_inputs.keys():
-            if self.buffered_inputs.len(key) > 0:
-                return False
-        return True
-    
 @ray.remote
 class NonBlockingTaskNode(TaskNode):
     def __init__(self, id, channel,  mapping, functionObject, parents, checkpoint_location, checkpoint_interval = 10, ckpt = None) -> None:
@@ -738,20 +716,29 @@ class NonBlockingTaskNode(TaskNode):
     
     def execute(self):
 
-        while not (len(self.parents) == 0 and self.input_buffers_drained()):
+        while True:
 
-            batches_returned = self.get_batches()
+            batch_info, should_terminate = self.get_batches()
+            if should_terminate:
+                break
             # deque messages from the mailbox in a way that makes sense
             
-            stream_id, batches = self.schedule_for_execution()
+            stream_id, requests = self.schedule_for_execution(batch_info)
             if stream_id is None:
                 continue
 
-            #print("BUFFERED INPUT LENGTHS",{i:self.buffered_inputs.len(i) for i in self.buffered_inputs.keys()})
+            request = ((self.id, self.channel), requests)
+            reader = self.flight_client.do_get(pyarrow.flight.Ticket(pickle.dumps(request)))
+
+            batches = []
+            while True:
+                try:
+                    chunk, metadata = reader.read_chunk()
+                    batches.append(convert_to_format(chunk, metadata))
+                except StopIteration:
+                    break
+
             #print(self.state_tag)
-            #print(self.latest_input_received)
-            for key in self.state_tag:
-                assert self.state_tag[key] <= self.latest_input_received[key]
 
             batches = [i for i in batches if i is not None]
             results = self.functionObject.execute( batches, self.physical_to_logical_mapping[stream_id], self.channel)
@@ -807,14 +794,27 @@ class BlockingTaskNode(TaskNode):
 
         add_tasks = []
 
-        while not (len(self.parents) == 0 and self.input_buffers_drained()):
-
-            batches_returned = self.get_batches()
+        while True:
+            batch_info, should_terminate = self.get_batches()
+            #print(batch_info, should_terminate)
+            if should_terminate:
+                break
             # deque messages from the mailbox in a way that makes sense
-            stream_id, batches = self.schedule_for_execution()
-            #print(stream_id)
+            
+            stream_id, requests = self.schedule_for_execution(batch_info)
             if stream_id is None:
                 continue
+            request = ((self.id, self.channel), requests)
+
+            reader = self.flight_client.do_get(pyarrow.flight.Ticket(pickle.dumps(request)))
+
+            batches = []
+            while True:
+                try:
+                    chunk, metadata = reader.read_chunk()
+                    batches.append(convert_to_format(chunk, metadata))
+                except StopIteration:
+                    break
             
             if VERBOSE:
                 print(self.state_tag)

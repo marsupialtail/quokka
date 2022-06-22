@@ -25,31 +25,23 @@ class DiskQueue:
         self.disk_location = disk_location
 
     # this is now blocking on disk write. 
-    def append(self, key, table, format):
-        size = table.nbytes
+    def append(self, key, batch, format):
+        size = batch.nbytes
         if self.mem_usage +  size > self.mem_limit:
             # flush to disk
             filename = self.disk_location + "/" + self.prefix + str(self.file_no) + ".parquet"
-            pq.write_table(table, filename)
+            pq.write_table(pa.Table.from_batches([batch]), filename)
             self.file_no += 1
             self.in_mem_portion[key].append((DiskFile(filename),format))
         else:
             self.mem_usage += size
-            self.in_mem_portion[key].append((table,format))
+            self.in_mem_portion[key].append((batch,format))
 
     def retrieve_from_disk(self, key):
         pass
 
     def get_batches_for_key(self, key, num=None):
-        def convert_to_format(table, format):
-            if format == "polars":
-                return polars.from_arrow(table)
-            elif format == "pandas":
-                return table.to_pandas()
-            elif format == "custom":
-                return pickle.loads(table.to_pandas()['object'][0])
-            else:
-                raise Exception("don't understand this format", format)
+        
         batches = []
         # while len(self.in_mem_portion[key]) > 0 and type(self.in_mem_portion[key][0]) != tuple:
         #     batches.append(self.in_mem_portion[key].popleft())
@@ -59,10 +51,10 @@ class DiskQueue:
         for i in range(end):
             object, format = self.in_mem_portion[key][i]
             if type(object) == DiskFile:
-                batches.append(convert_to_format(pq.read_table(object.filename), format))
+                batches.append((pq.read_table(object.filename).to_batches()[0], pickle.dumps(format)))
                 object.delete()
             else:
-                batches.append(convert_to_format(object, format))
+                batches.append((object, pickle.dumps(format)))
                 self.mem_usage -= object.nbytes
         for i in range(end):
             self.in_mem_portion[key].popleft()
@@ -73,3 +65,6 @@ class DiskQueue:
     
     def len(self, key):
         return len(self.in_mem_portion[key])
+    
+    def get_all_len(self):
+        return {key: len(self.in_mem_portion[key]) for key in self.in_mem_portion}
