@@ -10,7 +10,6 @@ from collections import deque
 import pyarrow.parquet as pq
 import os
 
-
 class DiskFile:
     def __init__(self,filename) -> None:
         self.filename = filename

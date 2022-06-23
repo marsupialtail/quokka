@@ -215,7 +215,6 @@ class Node:
 
 
                 client = self.flight_clients[target][channel]
-                
                 batch, my_format = convert_from_format(payload)
                 
                 # format (target id, target channel, source id, source channel, tag, format)
@@ -710,7 +709,6 @@ class TaskNode(Node):
 class NonBlockingTaskNode(TaskNode):
     def __init__(self, id, channel,  mapping, functionObject, parents, checkpoint_location, checkpoint_interval = 10, ckpt = None) -> None:
         super().__init__(id, channel,  mapping, functionObject, parents, checkpoint_location, checkpoint_interval , ckpt )
-        time.sleep(0.1)
         print("I'm initialized")
     
     def execute(self):
