@@ -23,7 +23,6 @@ import concurrent.futures
 import sys
 from aiobotocore.session import get_session
 
-
 class Executor:
     def __init__(self) -> None:
         raise NotImplementedError
@@ -586,7 +585,7 @@ class GroupAsOfJoinExecutor():
 class PolarJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
-    def __init__(self, on = None, left_on = None, right_on = None, batch_func = None, columns = None, suffix="_right"):
+    def __init__(self, on = None, left_on = None, right_on = None, batch_func = None, columns = None, suffix="_right", how = "inner"):
 
         # how many things you might checkpoint, the number of keys in the dict
         self.num_states = 2
@@ -607,6 +606,7 @@ class PolarJoinExecutor(Executor):
             self.left_on = left_on
             self.right_on = right_on
         self.batch_func = batch_func
+        self.how = how
         # keys that will never be seen again, safe to delete from the state on the other side
 
     def serialize(self):
@@ -638,7 +638,7 @@ class PolarJoinExecutor(Executor):
         if stream_id == 0:
             if self.state1 is not None:
                 try:
-                    result = batch.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how='inner', suffix=self.suffix)
+                    result = batch.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how=self.how, suffix=self.suffix)
                 except:
                     print(batch)
             if self.state0 is None:
@@ -648,7 +648,7 @@ class PolarJoinExecutor(Executor):
              
         elif stream_id == 1:
             if self.state0 is not None:
-                result = self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how='inner', suffix=self.suffix)
+                result = self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how=self.how, suffix=self.suffix)
             if self.state1 is None:
                 self.state1 = batch
             else:
@@ -741,6 +741,52 @@ class AggExecutor(Executor):
                 self.state = batch 
             else:
                 self.state = self.state.add(batch, fill_value = self.fill_value)
+    
+    def done(self,executor_id):
+        if self.final_func:
+            return self.final_func(self.state)
+        else:
+            #print(self.state)
+            return self.state
+
+# WARNING: this is currently extremely inefficient. But it is indeed very general.
+# pyarrow joins do not support list data types 
+class GenericGroupedAggExecutor(Executor):
+    def __init__(self, funcs, final_func = None):
+
+        # how many things you might checkpoint, the number of keys in the dict
+        self.num_states = 1
+
+        self.state = None
+        self.funcs = funcs # this will be a dictionary of col name -> tuple of (merge func, fill_value)
+        self.cols = list(funcs.keys())
+        self.final_func = final_func
+
+    def serialize(self):
+        return {0:self.state}, "all"
+    
+    def deserialize(self, s):
+        # the default is to get a list of dictionaries.
+        assert type(s) == list and len(s) == 1
+        self.state = s[0][0]
+    
+    def execute(self,batches, stream_id, executor_id):
+        batches = [i for i in batches if i is not None]
+        for batch in batches:
+            assert type(batch) == pd.core.frame.DataFrame # polars add has no index, will have wierd behavior
+            if self.state is None:
+                self.state = batch 
+            else:
+                self.state = self.state[self.cols].join(batch[self.cols],lsuffix="_bump",how="outer")
+                for col in self.cols:
+                    func, fill_value = self.funcs[col]
+                    isna = self.state[col].isna()
+                    self.state.loc[isna, [col]] = pd.Series([fill_value] * isna.sum()).values
+                    isna = self.state[col + "_bump"].isna()
+                    self.state.loc[isna, [col + "_bump"]] = pd.Series([fill_value] * isna.sum()).values
+                    self.state[col] = func(self.state[col], self.state[col + "_bump"])
+                    self.state.drop(columns = [col+"_bump"], inplace=True)
+                    
     
     def done(self,executor_id):
         if self.final_func:

@@ -1,6 +1,7 @@
 import pickle
 import pyarrow.csv as csv
 import pyarrow.parquet as pq
+import pyarrow.dataset as ds
 from io import BytesIO, StringIO
 import boto3
 import s3fs
@@ -209,16 +210,26 @@ class InputMultiParquetDataset:
         self.columns = columns
         self.filters = filters
 
+        self.length = 0
+
     def set_num_channels(self, num_channels):
-        self.num_channels = num_channels
+        assert self.num_channels == num_channels
         self.s3 = boto3.client('s3')
-        z = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
+
+    def get_own_state(self, num_channels):
+        self.num_channels = num_channels
+        s3 = boto3.client('s3')
+        z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
         self.files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
+        self.length += sum([i['Size'] for i in z['Contents'] if i['Key'].endswith(".parquet")])
         while 'NextContinuationToken' in z.keys():
             z = self.s3.list_objects_v2(
                 Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
             self.files.extend([i['Key'] for i in z['Contents']
                               if i['Key'].endswith(".parquet")])
+            self.length += sum([i['Size'] for i in z['Contents']
+                              if i['Key'].endswith(".parquet")])
+        
 
     def get_next_batch(self, mapper_id, pos=None):
         assert self.num_channels is not None
@@ -278,64 +289,82 @@ class InputS3FilesDataset:
 
 class InputDiskCSVDataset:
 
-    def __init__(self, filepath , names, sep=",", stride=16 * 1024 * 1024, header = False) -> None:
+    def __init__(self, filepath , names = None , sep=",", stride=16 * 1024 * 1024, header = False, window = 1024) -> None:
        
         self.filepath = filepath
         assert os.path.exists(filepath)
         self.num_channels = None
+
+        assert not (names is None and header is False), "Can't have no schema and no header"
+
         self.names = names
         self.sep = sep
         self.stride = stride
         self.header = header
+        self.window = window
+
+        self.length = 0
+        self.sample = None
 
     def set_num_channels(self, num_channels):
         assert self.num_channels == num_channels
 
-    def get_own_state(self,num_channels, window=1024):
+    def get_own_state(self,num_channels):
 
         self.num_channels = num_channels
         splits = self.num_channels * 2
+        samples = []
 
         length = os.path.getsize(self.filepath)
-        assert length // splits > window * 2
+        assert length // splits > self.window * 2
         potential_splits = [length//splits * i for i in range(splits)]
         # adjust the splits now
         adjusted_splits = []
 
-        # the first value is going to be the start of the second row
-        # -- we assume there's a header and skip it!
-
         f = open(self.filepath,"rb")
 
         if self.header:
-            resp = f.read(window)
+            resp = f.read(self.window)
 
             first_newline = resp.find(bytes('\n', 'utf-8'))
             if first_newline == -1:
-                raise Exception
+                raise Exception("could not detect the first line break. try setting the window argument to a large number")
             else:
                 adjusted_splits.append(first_newline)
+            
+            if self.names is None:
+                self.names = resp[:first_newline].decode("utf-8").split(",")
+            else:
+                detected_names = resp[:first_newline].decode("utf-8").split(",")
+                if self.names != detected_names:
+                    print("Warning, detected column names from header row not the same as supplied column names!")
+                    print("Detected", detected_names)
+                    print("Supplied", self.names)
         else:
             adjusted_splits.append(0)
 
         for i in range(1, len(potential_splits)):
             potential_split = potential_splits[i]
-            start = max(0, potential_split - window)
-            end = min(potential_split + window, length)
+            start = max(0, potential_split - self.window)
+            end = min(potential_split + self.window, length)
 
             f.seek(start)
             resp = f.read(end-start)
 
+            first_newline = resp.find(bytes('\n','utf-8'))
             last_newline = resp.rfind(bytes('\n', 'utf-8'))
             if last_newline == -1:
                 raise Exception
             else:
                 adjusted_splits.append(start + last_newline)
+                samples.append(csv.read_csv(BytesIO(resp[first_newline: last_newline]), read_options=csv.ReadOptions(
+                    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)))
 
         adjusted_splits[-1] = length
 
         print(length, adjusted_splits)
         self.length = length
+        self.sample = pa.concat_tables(samples)
         self.adjusted_splits = adjusted_splits
         f.close()
 
@@ -395,7 +424,7 @@ class InputDiskCSVDataset:
 
 # this should work for 1 CSV up to multiple
 class InputS3CSVDataset:
-    def __init__(self, bucket, names, prefix = None, key = None, sep=",", stride=64 * 1024 * 1024, header = False) -> None:
+    def __init__(self, bucket, names = None, prefix = None, key = None, sep=",", stride=64 * 1024 * 1024, header = False, window = 1024 * 32) -> None:
         self.bucket = bucket
         self.prefix = prefix
         self.key = key
@@ -404,14 +433,21 @@ class InputS3CSVDataset:
         self.sep = sep
         self.stride = stride
         self.header = header
-    
+        
+        self.window = window
+        assert not (names is None and header is False), "if header is False, must supply column names"
+
+        self.length = 0
+        self.sample = None
 
     def set_num_channels(self, num_channels):
         assert self.num_channels == num_channels
         self.s3 = boto3.client('s3')  # needs boto3 client
     
     # we need to rethink this whole setting num channels business. For this operator we don't want each node to do redundant work!
-    def get_own_state(self, num_channels, window = 1024 * 32):
+    def get_own_state(self, num_channels):
+        
+        samples = []
         print("intiializing CSV reading strategy. This is currently done locally, which might take a while.")
         self.num_channels = num_channels
 
@@ -437,6 +473,22 @@ class InputS3CSVDataset:
                     files.extend(z['Contents'])
             sizes = deque([i['Size'] for i in files])
             files = deque([i['Key'] for i in files])
+
+        if self.header == False:
+            resp = s3.get_object(
+                Bucket=self.bucket, Key=files[0], Range='bytes={}-{}'.format(0, self.window))['Body'].read()
+            first_newline = resp.find(bytes('\n', 'utf-8'))
+            if first_newline == -1:
+                raise Exception("could not detect the first line break. try setting the window argument to a large number")
+            if self.names is None:
+                self.names = resp[:first_newline].decode("utf-8").split(",")
+            else:
+                detected_names = resp[:first_newline].decode("utf-8").split(",")
+                if self.names != detected_names:
+                    print("Warning, detected column names from header row not the same as supplied column names!")
+                    print("Detected", detected_names)
+                    print("Supplied", self.names)
+
         total_size = sum(sizes)
         size_per_channel = total_size // num_channels
         channel_infos = {}
@@ -470,16 +522,19 @@ class InputS3CSVDataset:
             my_file.append(files[0])
             candidate = size_per_channel - curr_size
 
-            start = max(0, candidate - window)
-            end = min(candidate + window, sizes[0])
+            start = max(0, candidate - self.window)
+            end = min(candidate + self.window, sizes[0])
 
             resp = s3.get_object(
                 Bucket=self.bucket, Key=files[0], Range='bytes={}-{}'.format(real_off + start,real_off + end))['Body'].read()
+            first_newline = resp.find(bytes('\n', 'utf-8'))
             last_newline = resp.rfind(bytes('\n', 'utf-8'))
             if last_newline == -1:
                 raise Exception
             else:
                 bytes_to_take = start + last_newline
+                samples.append(csv.read_csv(BytesIO(resp[first_newline: last_newline]), read_options=csv.ReadOptions(
+                    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)))
 
             sizes[0] -= bytes_to_take
             end_byte = real_off + bytes_to_take
@@ -487,6 +542,8 @@ class InputS3CSVDataset:
             channel_infos[channel] = (start_byte, my_file.copy(), end_byte)
             start_byte = real_off
         
+        self.length = total_size
+        self.sample = pa.concat_tables(samples)
         self.channel_infos = channel_infos
         print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
 
