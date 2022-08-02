@@ -130,7 +130,7 @@ class QuokkaClusterManager:
 
         start_time = time.time()
         ec2 = boto3.client("ec2")
-        vcpu_per_node = ec2.describe_instance_types(InstanceTypes=['i3.2xlarge'])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
+        vcpu_per_node = ec2.describe_instance_types(InstanceTypes=[instance_type])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
         waiter = ec2.get_waiter('instance_running')
 
         # important 2 things:

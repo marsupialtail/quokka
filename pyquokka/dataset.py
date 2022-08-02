@@ -474,7 +474,7 @@ class InputS3CSVDataset:
             sizes = deque([i['Size'] for i in files])
             files = deque([i['Key'] for i in files])
 
-        if self.header == False:
+        if self.header:
             resp = s3.get_object(
                 Bucket=self.bucket, Key=files[0], Range='bytes={}-{}'.format(0, self.window))['Body'].read()
             first_newline = resp.find(bytes('\n', 'utf-8'))
