@@ -139,12 +139,6 @@ class TaskGraph:
 
         return channel_to_ip
 
-    def return_dependent_map(self, dependents):
-        dependent_map = {}
-        if len(dependents) > 0:
-            for node in dependents:
-                dependent_map[node] = (self.node_ips[node], len(self.node_channel_to_ip[node]))
-        return dependent_map
 
     def epilogue(self,tasknode, channel_to_ip, ips):
         self.nodes[self.current_node] = tasknode
@@ -155,7 +149,6 @@ class TaskGraph:
 
     def new_input_redis(self, dataset, ip_to_num_channel = None, policy = "default", batch_func=None, dependents = []):
         
-        dependent_map = self.return_dependent_map(dependents)
         if ip_to_num_channel is None:
             # automatically come up with some policy
             ip_to_num_channel = {ip: self.cluster.cpu_count for ip in list(self.cluster.private_ips.values())}
@@ -215,12 +208,11 @@ class TaskGraph:
                 ).remote(self.current_node, channel, channel_objects, batch_func=batch_func)
         
         self.node_type[self.current_node] = INPUT_REDIS_DATASET
-        self.node_args[self.current_node] = {"channel_objects":channel_objects, "batch_func": batch_func, "dependent_map":dependent_map}
+        self.node_args[self.current_node] = {"channel_objects":channel_objects, "batch_func": batch_func}
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
     def new_input_reader_node(self, reader, ip_to_num_channel = None, batch_func = None, dependents = [], ckpt_interval = 10):
 
-        dependent_map = self.return_dependent_map(dependents)
 
         if ip_to_num_channel is None:
             # automatically come up with some policy
@@ -240,13 +232,13 @@ class TaskGraph:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
                 tasknode[channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, channel, reader, len(channel_to_ip), batch_func = batch_func,dependent_map = dependent_map)
+                ).remote(self.current_node, channel, reader, len(channel_to_ip), batch_func = batch_func)
             else:
                 tasknode[channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
-                ).remote(self.current_node, channel, reader, len(channel_to_ip), batch_func = batch_func, dependent_map = dependent_map) 
+                ).remote(self.current_node, channel, reader, len(channel_to_ip), batch_func = batch_func) 
         
         self.node_type[self.current_node] = INPUT_READER_DATASET
-        self.node_args[self.current_node] = {"reader": reader, "batch_func":batch_func, "dependent_map" : dependent_map, "ckpt_interval": ckpt_interval}
+        self.node_args[self.current_node] = {"reader": reader, "batch_func":batch_func, "ckpt_interval": ckpt_interval}
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
     
     def flip_channels_ip(self, channel_to_ip):

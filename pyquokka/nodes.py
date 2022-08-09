@@ -79,6 +79,8 @@ class Node:
         self.alive_targets = {}
         self.output_lock = Lock()
 
+        self.out_seq = 0
+
     def initialize(self):
         raise NotImplementedError
 
@@ -109,8 +111,6 @@ class Node:
         # remember the self.strikes stuff? Now we cannot check for that because a downstream target could just die.
         # it's ok if we send stuff to dead people. Fault tolerance is supposed to take care of this.
         
-        self.target_output_state[node_id] = {channel:0 for channel in channel_to_ip}
-
     def update_targets(self):
 
         for target_node in self.target_ps:
@@ -196,10 +196,6 @@ class Node:
         if VERBOSE:
             print("IM DONE", self.id)
 
-        self.output_lock.acquire()
-        self.logged_outputs[self.out_seq] = "done"
-        self.output_lock.release()
-
         try:    
             if not self.update_targets():
                 if VERBOSE:
@@ -223,7 +219,7 @@ class Node:
         return True
 
 class InputNode(Node):
-    def __init__(self, id, channel, batch_func = None, ckpt = None) -> None:
+    def __init__(self, id, channel, batch_func = None) -> None:
 
         super().__init__( id, channel) 
 
@@ -262,7 +258,7 @@ class InputReaderNode(InputNode):
         super().__init__(id, channel, batch_func)
         self.accessor = accessor
         self.accessor.set_num_channels(num_channels)
-        self.input_generator = self.accessor.get_next_batch(channel, self.latest_stable_state)
+        self.input_generator = self.accessor.get_next_batch(channel, 0)
 
 @ray.remote
 class InputRedisDatasetNode(InputNode):
@@ -273,7 +269,7 @@ class InputRedisDatasetNode(InputNode):
             for object in channel_objects[da]:
                 ip_set.add(object[0])
         self.accessor = RedisObjectsDataset(channel_objects, ip_set)
-        self.input_generator = self.accessor.get_next_batch(channel, self.latest_stable_state)
+        self.input_generator = self.accessor.get_next_batch(channel, 0)
 
 
 class TaskNode(Node):
@@ -321,9 +317,7 @@ class TaskNode(Node):
             if daparent != parent:
                 continue
             requests[daparent, channel] = batch_info[daparent, channel]
-            self.state_tag[(parent,channel)] += batch_info[parent, channel]
         
-        self.log_state_tag()
         return parent, requests
 
 @ray.remote
@@ -361,20 +355,27 @@ class NonBlockingTaskNode(TaskNode):
             
             # this is a very subtle point. You will only breakout if length of self.target, i.e. the original length of 
             # target list is bigger than 0. So you had somebody to send to but now you don't
-
-            break_out = False
-            if results is not None and len(self.targets) > 0:
-                if self.push(results) is False:
-                    break_out = True
-                    break
+            if type(results) == types.GeneratorType:
+                for result in results:
+                    break_out = False
+                    if result is not None and len(self.targets) > 0:
+                        if self.push(result) is False:
+                            break_out = True
+                            break
+                    else:
+                        pass
             else:
-                pass
+                break_out = False
+                if results is not None and len(self.targets) > 0:
+                    if self.push(results) is False:
+                        break_out = True
+                        break
+                else:
+                    pass
         
             if break_out:
                 break
-            
-            self.ckpt_counter += 1
-        
+                    
         obj_done =  self.functionObject.done(self.channel) 
 
         if type(obj_done) == types.GeneratorType:
@@ -427,14 +428,10 @@ class BlockingTaskNode(TaskNode):
                 except StopIteration:
                     break
             
-            if VERBOSE:
-                print(self.state_tag)
             
             batches = [i for i in batches if i is not None]
             results = self.functionObject.execute( batches,self.physical_to_logical_mapping[stream_id], self.channel)
             
-            self.ckpt_counter += 1
-
             if results is not None and len(results) > 0:
                 cursor = 0
                 stride = 1000000
