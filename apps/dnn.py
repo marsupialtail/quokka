@@ -243,7 +243,7 @@ class Intermediate(Executor):
                         #the slices have shape 1 * (h * k)
                         assert id in self.kv_state[layer]
                         # length should be 1
-                        q_slice = q_slice.view(self.h, 1, self.k)
+                        q_slice = q_slice.view(self.h, 1, self.k) / np.sqrt(self.k)
                         cached_k, cached_v = self.kv_state[layer][id]
                         new_k = torch.cat(cached_k, k_slice).contiguous()
                         new_v = torch.cat(cached_v, v_slice).contiguous()
