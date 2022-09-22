@@ -165,8 +165,7 @@ class Predicate: # a boolean tree of filter conditions
     def specialize(self, cols): # set all the predicates related to columns in cols to True
         # we are going to give up when we see a disjunction. Therefore the only predicates that will be pushed down are ones that MUST be true for the 
         # parent predicate to be true. This neglects subtrees that can be pushed down as a unit which might contain disjunctions, which is probably quite 
-        # common. But we are going to talk to Jeff Ullman and figure out how to do this in a good way. This function will return a new predicate which 
-        # is the parent's pushed-down predicate, which will be a conjunction.
+        # common. 
         
         pushed_down = Predicate()
         assert type(cols) == set, "cols must be a set"

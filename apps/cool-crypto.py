@@ -4,28 +4,37 @@ from pyquokka.executors import Executor
 import time
 import ray
 from web3 import Web3, HTTPProvider
-
+import pandas as pd
+import redis
+import pickle
 cluster = LocalCluster()
 
-# this dataset will generate a sequence of numbers, from 0 to limit. Channel 
-class SimpleDataset:
-    def __init__(self, lower_limit, upper_limit,step_size = 1) -> None:
-        
-        self.lower_limit = lower_limit
-        self.upper_limit = upper_limit
-        self.step_size = step_size
-        self.num_channels = None
+# sync reserve0 reserve1
+sync_topic = "0x1c411e9a96e071241c2f21f7726b17ae89e3cab4c78be50e062b03a9fffbbad1"
 
+swap_topic = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"
+
+class Web3HTTPSource:
+    def __init__(self, start_block, refresh_period=0.1) -> None:
+        self.latest_block = start_block
+        self.refresh_period = refresh_period
+    
     def set_num_channels(self, num_channels):
-        self.num_channels = num_channels
-
+        assert num_channels == 1
+        self.num_channels = 1
+    
     def get_next_batch(self, mapper_id, pos=None):
-        # let's ignore the keyword pos = None, which is only relevant for fault tolerance capabilities.
-        assert self.num_channels is not None
-        curr_number = self.lower_limit + mapper_id * self.step_size
-        while curr_number < self.upper_limit:
-            yield curr_number, curr_number
-            curr_number += self.num_channels * self.step_size
+        assert self.num_channels == 1
+        w3 = Web3(HTTPProvider('https://eth-mainnet.alchemyapi.io/v2/pY5kxua2ah1CGVFU5p4LIlF9OB5ftbtC'))
+        r = redis.Redis('localhost',6800)
+        while True:
+            time.sleep(self.refresh_period)
+            events = pd.DataFrame(w3.eth.getLogs({'fromBlock': self.latest_block + 1, 'toBlock': "latest", 'topics':[sync_topic]}))
+            events["reserve0"] = events.apply(lambda x: int( x['data'][-128:-64], 16), axis=1)
+            events["reserve1"] = events.apply(lambda x: int( x['data'][-64:], 16), axis=1)
+            events.apply(lambda x: r.set(x['address'], pickle.dumps((x["reserve0"], x["reserve1"]))), axis=1)
+            yield None, None
+
 
 class Web3Executor(Executor):
     def __init__(self) -> None:
@@ -35,7 +44,7 @@ class Web3Executor(Executor):
         for batch in batches:
             assert type(batch) == int
             
-            w3 = Web3(HTTPProvider('https://eth-mainnet.alchemyapi.io/v2/ENDPOINT'))
+            w3 = Web3(HTTPProvider('https://eth-mainnet.alchemyapi.io/v2/pY5kxua2ah1CGVFU5p4LIlF9OB5ftbtC'))
             abi = '[{"constant":true,"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"balanceOf","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"payable":false,"stateMutability":"view","type":"function"}]'
             myContract = w3.eth.contract(address="0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", abi=abi)
             response = myContract.functions.balanceOf("0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640").call(block_identifier=batch)
@@ -48,7 +57,7 @@ class Web3Executor(Executor):
         return self.sum
 
 task_graph = TaskGraph(cluster)
-reader = SimpleDataset(14840000, 14860000, 1000)
+reader = Web3HTTPSource()
 numbers = task_graph.new_input_reader_node(reader)
 
 executor = Web3Executor()
