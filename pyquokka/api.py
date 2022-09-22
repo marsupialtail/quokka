@@ -1,0 +1,623 @@
+import graphviz
+from tokenize import group
+from executors import *
+from dataset import *
+import sql_utils
+import ray
+from logical import *
+import copy
+from functools import partial
+import pyarrow as pa
+import polars
+from target_info import *
+
+class QuokkaContext:
+    def __init__(self) -> None:
+        self.latest_node_id = 0
+        self.nodes = {}
+
+    def read_csv(self, path: str, schema=None, sep=","):
+        if path[:5] == "s3://":
+            self.nodes[self.latest_node_id] = InputS3CSVNode(path, schema, sep)
+        else:
+            self.nodes[self.latest_node_id] = InputDiskCSVNode(
+                path, schema, sep)
+
+        # the reader is fine if you supply no schema, but the DataStream needs it for potential downstream filtering/pushdowns.
+        if schema is None:
+            schema = self.nodes[self.latest_node_id].get_own_state(0)
+
+        self.latest_node_id += 1
+        return DataStream(self, schema, self.latest_node_id - 1)
+
+    def read_parquet(self, path):
+        pass
+
+    # this is expected to be internal API, well internal as much as it can I guess until the syntactic sugar runs out.
+    def new_stream(self, sources: dict, partitioners: dict, node: Node, schema: list, ordering=None):
+        self.nodes[self.latest_node_id] = node
+        for source in sources:
+            source_datastream = sources[source]
+            node.parents[source] = source_datastream.source_node_id
+            parent = self.nodes[source_datastream.source_node_id]
+            parent.targets[self.latest_node_id] = TargetInfo(
+                partitioners[source], sqlglot.exp.TRUE, None, [])
+
+        self.latest_node_id += 1
+
+        return DataStream(self, schema, self.latest_node_id - 1)
+
+    def new_dataset(self, source, schema: list):
+        stream = self.new_stream(sources={0: source}, partitioners={
+                                 0: PassThroughPartitioner()}, node=DataSetNode(schema), schema=schema, ordering=None)
+        return DataSet(self, schema, stream.source_node_id)
+
+    def optimize(self, node_id):
+        self.__push_filter__(node_id)
+        self.__early_projection__(node_id)
+        self.__fold_map__(node_id)
+
+
+    def execute_node(self, node_id):
+        assert issubclass(type(self.nodes[node_id]), SinkNode)
+        self.optimize(node_id)       
+        self.explain(node_id)
+
+    def explain(self, node_id, mode="graph"):
+
+        if mode == "text":
+            print(node_id, self.nodes[node_id])
+            for parent in self.nodes[node_id].parents:
+                self.explain(self.nodes[node_id].parents[parent], mode="text")
+        else:
+            logical_plan_graph = graphviz.Digraph(
+                'logical-plan', node_attr={'shape': 'box'})
+            logical_plan_graph.graph_attr['rankdir'] = 'BT'
+            logical_plan_graph.node(str(node_id), str(self.nodes[node_id]))
+            for parent in self.nodes[node_id].parents:
+                self._walk(self.nodes[node_id].parents[parent], logical_plan_graph)
+                logical_plan_graph.edge(
+                    str(self.nodes[node_id].parents[parent]), str(node_id))
+            logical_plan_graph.view()
+
+    def _walk(self, node_id, graph):
+        graph.node(str(node_id), str(self.nodes[node_id]))
+        for parent in self.nodes[node_id].parents:
+            self._walk(self.nodes[node_id].parents[parent], graph)
+            graph.edge(str(self.nodes[node_id].parents[parent]), str(node_id))
+
+    def __push_filter__(self, node_id):
+
+        node = self.nodes[node_id]
+        targets = node.targets
+        if issubclass(type(node), InputNode):
+            # push down predicates to the Parquet Nodes!, for the CSV nodes give up
+
+        # you are the one that triggered execution, you must be a SinkNode!
+        if len(targets) == 0:
+            for parent in node.parents:
+                self.__push_filter__(node.parents[parent])
+
+        # if this node has more than one target, just give up, we might handle this later by pushing an OR predicate
+        elif len(targets) > 1:
+            for parent in node.parents:
+                self.__push_filter__(node.parents[parent])
+
+        # you have exactly one target
+        else:
+            target_id = list(targets.items())[0][0]
+            predicate = targets[target_id].predicate
+
+            assert predicate == sqlglot.exp.TRUE or optimizer.normalize.normalized(
+                predicate), "predicate must be CNF"
+
+            # if this is a filter node, you will have exactly one parent.
+            # you will rewire your parents targets to your targets, and delete yourself, as well as yourself from parent.targets
+            # and target.parents for each of your targets
+
+            if issubclass(type(node), FilterNode):
+                predicate = optimizer.simplify.simplify(
+                    sqlglot.exp.and_(predicate, node.predicate))
+                parent_id = node.parents[0]
+                if optimizer.simplify.simplify(predicate) == sqlglot.exp.TRUE:
+                    return self.__push_filter__(parent_id)
+                else:
+                    parent = self.nodes[parent_id]
+                    parent.targets[target_id] = copy.deepcopy(
+                        targets[target_id])
+                    parent.targets[target_id].and_predicate(predicate)
+                    success = False
+                    # we need to find which parent in the target is this node, and replace it with this node's parent
+                    for key in self.nodes[target_id].parents:
+                        if self.nodes[target_id].parents[key] == node_id:
+                            self.nodes[target_id].parents[key] = parent_id
+                            success = True
+                            break
+                    assert success
+                    del parent.targets[node_id]
+                    del self.nodes[node_id]
+                    return self.__push_filter__(parent_id)
+
+            # if this is not a filter node, it might have multiple parents. This is okay.
+            # we assume the predicate is in CNF format. We will go through all the conjuncts and determine which parent we can push each conjunct to
+
+            else:
+                if optimizer.simplify.simplify(predicate) == sqlglot.exp.TRUE:
+                    for parent in node.parents:
+                        return self.__push_filter__(node.parents[parent])
+                else:
+                    conjuncts = list(
+                        predicate.flatten()
+                        if isinstance(predicate, sqlglot.exp.And)
+                        else [predicate]
+                    )
+                    new_conjuncts = []
+                    for conjunct in conjuncts:
+                        columns = set(i.name for i in conjunct.find_all(
+                            sqlglot.expressions.Column))
+                        parents = set(
+                            node.schema_mapping[col][0] for col in columns)
+                        # all the columns are from one parent, and not from yourself.
+                        if len(parents) == 1 and -1 not in parents:
+                            parent_id = node.parents[parents.pop()]
+                            parent = self.nodes[parent_id]
+                            parent.targets[node_id].and_predicate(conjunct)
+                        else:
+                            new_conjuncts.append(conjunct)
+                    predicate = sqlglot.exp.TRUE
+                    for conjunct in new_conjuncts:
+                        predicate = sqlglot.exp.and_(predicate, conjunct)
+                    predicate = optimizer.simplify.simplify(predicate)
+                    targets[target_id].predicate = predicate
+
+                    for parent in node.parents:
+                        self.__push_filter__(node.parents[parent])
+
+    def __early_projection__(self, node_id):
+
+        node = self.nodes[node_id]
+        targets = node.targets
+
+        if issubclass(type(node), InputNode):
+            return
+        # you are the one that triggered execution, you must be a SinkNode!
+        elif len(targets) == 0:
+            for parent in node.parents:
+                self.__early_projection__(node.parents[parent])
+        else:
+            # you should have the required_columns attribute
+
+            if issubclass(type(node), ProjectionNode):
+                parent = self.nodes[node.parents[0]]
+                projection = set()
+                predicate_required_columns = set()
+                for target_id in targets:
+                    target = targets[target_id]
+                    # all the predicates should have been pushed past projection nodes in predicate pushdown
+                    assert target.predicate == sqlglot.exp.TRUE
+                    if target.projection is None:
+                        target.projection = node.projection
+                    # your target projections should never contain columns that you don't contain, should be asserted at DataStream level
+                    assert set(target.projection).issubset(
+                        set(node.projection))
+                    # if your parent for some reason had some projection, your projection must be in a subset. This should also be asserted at DataStream level.
+                    if parent.targets[node_id].projection is not None:
+                        assert set(target.projection).issubset(
+                            set(parent.targets[node_id].projection))
+
+                    parent.targets[target_id] = TargetInfo(
+                        target.partitioner, parent.targets[node_id].predicate, target.projection, target.batch_funcs)
+
+                    success = False
+                    # we need to find which parent in the target is this node, and replace it with this node's parent
+                    for key in self.nodes[target_id].parents:
+                        if self.nodes[target_id].parents[key] == node_id:
+                            self.nodes[target_id].parents[key] = node.parents[0]
+                            success = True
+                            break
+                    assert success
+
+                del parent.targets[node_id]
+                del self.nodes[node_id]
+                return self.__early_projection__(node.parents[0])
+            else:
+                projection = set()
+                predicate_required_columns = set()
+                for target_id in targets:
+                    # can no longer push down any projections because one of the targets require all the columns
+                    if targets[target_id].projection is None:
+                        projection = set(node.schema)
+                        break
+                    projection = projection.union(
+                        targets[target_id].projection)
+                    predicate_required_columns = predicate_required_columns.union(
+                        targets[target_id].predicate_required_columns())
+
+                # predicates may change due to predicate pushdown. This doens't change required_column attribute, which is the required columns for an operator
+                # predicate_required_columns is recomputed at this stage. Those are added to the projection columns
+
+                pushable_projections = projection.union(
+                    predicate_required_columns)
+                pushed_projections = {}
+
+                # first make sure you include the operator required columns
+                for parent_idx in self.nodes[node_id].required_columns:
+                    parent_id = node.parents[parent_idx]
+                    pushed_projections[parent_id] = self.nodes[node_id].required_columns[parent_idx]
+
+                # figure out which parent each pushable column came from
+                for col in pushable_projections:
+                    parent_idx, parent_col = node.schema_mapping[col]
+
+                    # this column is generated from this node you can't push this beyond yourself
+                    if parent_idx == -1:
+                        continue
+
+                    parent_id = node.parents[parent_idx]
+                    if parent_id in pushed_projections:
+                        pushed_projections[parent_id].add(parent_col)
+                    else:
+                        pushed_projections[parent_id] = {parent_col}
+
+                for parent_idx in node.parents:
+                    parent_id = node.parents[parent_idx]
+                    parent = self.nodes[parent_id]
+                    if parent_id in pushed_projections:
+                        # if for some reason the parent's projection is not None then it has to contain whatever you are already projecting, or else that specified projection is wrong
+                        if parent.targets[node_id].projection is not None:
+                            assert pushed_projections[parent_id].issubset(
+                                set(parent.targets[node_id].projection))
+
+                        parent.targets[node_id].projection = pushed_projections[parent_id]
+                    self.__early_projection__(parent_id)
+
+    def __fold_map__(self, node_id):
+
+        node = self.nodes[node_id]
+        targets = node.targets
+
+        if issubclass(type(node), InputNode):
+            return
+        # you are the one that triggered execution, you must be a SinkNode!
+        elif len(targets) == 0:
+            for parent in node.parents:
+                self.__fold_map__(node.parents[parent])
+        else:
+            # you should have the required_columns attribute
+            if issubclass(type(node), MapNode):
+
+                if not node.foldable:  # this node should not be folded
+                    return self.__fold_map__(node.parents[0])
+
+                parent = self.nodes[node.parents[0]]
+                for target_id in targets:
+                    target = targets[target_id]
+                    parent.targets[target_id] = TargetInfo(target.partitioner, parent.targets[node_id].predicate,  target.projection, [
+                                                           node.function] + target.batch_funcs)
+
+                    # we need to find which parent in the target is this node, and replace it with this node's parent
+                    success = False
+                    for key in self.nodes[target_id].parents:
+                        if self.nodes[target_id].parents[key] == node_id:
+                            self.nodes[target_id].parents[key] = node.parents[0]
+                            success = True
+                            break
+                    assert success
+
+                del parent.targets[node_id]
+                del self.nodes[node_id]
+                return self.__fold_map__(node.parents[0])
+            else:
+                for parent_idx in node.parents:
+                    parent_id = node.parents[parent_idx]
+                    self.__fold_map__(parent_id)
+                return
+
+
+class Partitioner:
+    def __init__(self, ) -> None:
+        pass
+
+
+class DataStream:
+    def __init__(self, quokka_context: QuokkaContext, schema: list, source_node_id: int) -> None:
+        self.quokka_context = quokka_context
+        self.schema = schema
+        self.source_node_id = source_node_id
+
+    def collect(self):
+        """
+        This will trigger the execution of computational graph, similar to Spark collect
+        The result will be a Dataset, which you can then call to_pandas(), or use to_stream() to initiate another computation.
+        """
+        dataset = self.quokka_context.new_dataset(self, self.schema)
+        self.quokka_context.execute_node(dataset.source_node_id)
+        return dataset
+
+    def write_csv(self, path):
+        pass
+
+    def write_parquet(self, path):
+        pass
+
+    def filter(self, predicate: str):
+
+        predicate = sqlglot.parse_one(predicate)
+        # convert to CNF
+        predicate = optimizer.normalize.normalize(predicate)
+        columns = set(i.name for i in predicate.find_all(
+            sqlglot.expressions.Column))
+        for column in columns:
+            assert column in self.schema, "Tried to filter on a column not in the schema"
+
+        return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=FilterNode(self.schema, predicate),
+                                              schema=self.schema, ordering=None)
+
+    def select(self, columns: list):
+
+        assert type(columns) == set or type(columns) == list
+
+        for column in columns:
+            assert column in self.schema, "Projection column not in schema"
+
+        return self.quokka_context.new_stream(
+            sources={0: self},
+            partitioners={0: PassThroughPartitioner()},
+            node=ProjectionNode(set(columns)),
+            schema=columns,
+            ordering=None)
+
+    '''
+    This is a rather Quokka-specific API that allows arbitrary transformations on a DataStream, similar to Spark RDD.map.
+    Each RecordBatch outputted will be transformed according to a custom UDF, and the resulting RecordBatch is not 
+    guaranteed to have the same length.
+
+    Projections will not be able to be pushed through a MapNode created with transform because the schema mapping will indicate
+    that all the columns are made by this node. However the transform API will first insert a ProjectioNode for the required columns.
+
+    Predicates will not be able to be pushed through a TransformNode. 
+    '''
+
+    def transform(self, f, new_schema: list, required_columns: set, foldable=True):
+
+        assert type(required_columns) == set
+
+        select_stream = self.select(required_columns)
+
+        return self.quokka_context.new_stream(
+            sources={0: select_stream},
+            partitioners={0: PassThroughPartitioner()},
+            node=MapNode(
+                schema=new_schema,
+                schema_mapping={col: (-1, col) for col in new_schema},
+                required_columns={0: required_columns},
+                function=f,
+                foldable=foldable
+            ),
+            schema=new_schema,
+            ordering=None
+        )
+
+    '''
+    This will create new columns from certain columns in the dataframe. 
+    This is similar to pandas df.apply() that makes new columns. 
+    This is a separate API because the semantics allow for projection and predicate pushdown through this node, since 
+    the original columns are all preserved. 
+    This is very similar to Spark df.withColumns, except this returns a new DataStream while Spark's version is inplace
+    '''
+
+    def with_column(self, new_column, f, required_columns = None, foldable=True, engine = "polars"):
+
+        # it is the user's responsibility to specify what are the required columns! If the user doesn't specify anything,
+        # it is assumed all columns are needed and projection pushdown becomes impossible.
+        if required_columns is None:
+            required_columns = set(self.schema)
+
+        assert type(required_columns) == set
+        assert new_column not in self.schema, "For now new columns cannot have same names as existing columns"
+        assert engine == "polars" or engine == "pandas"
+
+        def polars_func(func, batch):
+            polars_batch = polars.from_arrow(batch)
+            return polars_batch.with_column(polars.Series(name=new_column, values = func(batch))).to_arrow()
+
+        def pandas_func(func, batch):
+            pandas_batch = batch.to_pandas()
+            pandas_batch[new_column] = func(pandas_batch)
+            return pa.RecordBatch.from_pandas(pandas_batch)
+
+        return self.quokka_context.new_stream(
+            sources={0: self},
+            partitioners={0: PassThroughPartitioner()},
+            node=MapNode(
+                schema=self.schema+[new_column],
+                schema_mapping={
+                    **{new_column : (-1, new_column)}, **{col: (0, col) for col in self.schema}},
+                required_columns={0: required_columns},
+                function=partial(polars_func, f) if engine == "polars" else partial(pandas_func, f),
+                foldable=foldable),
+            schema=self.schema + [new_column],
+            ordering=None)
+
+    def distinct(self, keys: list):
+
+        if type(keys) == str:
+            keys = [keys]
+
+        for key in keys:
+            assert key in self.schema
+
+        return self.quokka_context.new_stream(
+            sources={0: self},
+            partitioners={0: PassThroughPartitioner()},
+            node=StatefulNode(
+                schema=keys,
+                # this is a stateful node, but predicates and projections can be pushed down.
+                schema_mapping={col: (0, col) for col in keys},
+                required_columns={0: set(keys)},
+                operator=DistinctExecutor(keys)
+            ),
+            schema=keys,
+            ordering=None
+        )
+
+    def join(self, right, on=None, left_on=None, right_on=None, suffix="_2", how="inner"):
+
+        if on is None:
+            assert left_on is not None and right_on is not None
+            assert left_on in self.schema, "join key not found in left table"
+            assert right_on in right.schema, "join key not found in right table"
+        else:
+            assert on in self.schema, "join key not found in left table"
+            assert on in right.schema, "join key not found in right table"
+            left_on = on
+            right_on = on
+            on = None
+
+        # we can't do this check since schema is now a list of names with no type info. This should change in the future.
+        #assert node1.schema[left_on] == node2.schema[right_on], "join column has different schema in tables"
+
+        new_schema = self.schema.copy()
+        schema_mapping = {col: (0, col) for col in self.schema}
+        for col in right.schema:
+            if col == right_on:
+                continue
+            if col in new_schema:
+                assert col + suffix not in new_schema, "the suffix was not enough to guarantee unique col names"
+                new_schema.append(col + suffix)
+                schema_mapping[col+suffix] = (1, col)
+            else:
+                new_schema.append(col)
+                schema_mapping[col] = (1, col)
+
+        return self.quokka_context.new_stream(
+            sources={0: self, 1: right},
+            partitioners={0: HashPartitioner(left_on), 1: HashPartitioner(right_on)},
+            node=StatefulNode(
+                schema=new_schema,
+                schema_mapping=schema_mapping,
+                required_columns={0: {left_on}, 1: {right_on}},
+                operator=PolarJoinExecutor(on, left_on, right_on, suffix=suffix, how=how)),
+            schema=new_schema,
+            ordering=None)
+
+    def groupby(self, groupby: list, orderby=None):
+
+        if type(orderby) == list:
+            orderby = {k: "asc" for k in orderby}
+
+        return GroupedDataStream(self, groupby=groupby, orderby=orderby)
+
+    def _grouped_aggregate(self, groupby: list, aggregations: dict, orderby=None):
+        '''
+        This is a blocking operation. This will return a Dataset
+        Aggregations is expected to take the form of a dictionary like this {'high':['sum'], 'low':['avg']}. The keys of this dict must be in the schema.
+        The groupby argument is a list of keys to groupby. If it is empty, then no grouping is done
+        '''
+
+        # do some checks first
+        for key in aggregations:
+            assert (key == "*" and (aggregations[key] == ['count'] or aggregations[key] == 'count')) or (
+                key in self.schema and key not in groupby)
+        for key in groupby:
+            assert key in self.schema
+
+        if "*" in aggregations:
+            count = True
+            del aggregations["*"]
+            assert "count" not in self.schema, "schema conflict with column name count"
+        else:
+            count = False
+
+        # make all single aggregation specs into a list of one.
+        aggregations = {k: [aggregations[k]]
+                        for k in aggregations if type(aggregations[k]) == str}
+
+        # first insert the select node.
+        required_columns = groupby + list(aggregations.keys())
+        select_stream = self.select(required_columns)
+
+        # todo: write this
+        new_schema = groupby + (["count"] if count else [])
+
+        pyarrow_agg_list = []
+        for key in aggregations:
+            for agg_spec in aggregations[key]:
+                if agg_spec == "avg":
+                    agg_spec = "mean"
+                assert agg_spec in {
+                    "max", "min", "mean", "sum"}, "only support max, min, mean and sum for now"
+                new_col = key + "_" + agg_spec
+                assert new_col not in new_schema, "duplicate column names detected, most likely caused by a groupby column with suffix _max etc."
+                new_schema.append(new_col)
+                pyarrow_agg_list.append((key, agg_spec))
+
+        # now insert the transform node.
+        # this function needs to be fast since it's executed at every batch in the actual runtime.
+        def f(keys, agg_list, batch):
+            return pa.Table.from_batches([batch]).group_by(keys).aggregate(agg_list)
+
+        map_func = partial(f, groupby, pyarrow_agg_list)
+        transformed_stream = select_stream.transform(map_func,
+                                                     new_schema=new_schema,
+                                                     # it shouldn't matter too much for the required columns, since no predicates or projections will ever be pushed through this map node.
+                                                     # even if this map node gets fused with prior map nodes, no predicates should ever be pushed through those map nodes either.
+                                                     required_columns=set(required_columns))
+
+        aggregated_stream = self.quokka_context.new_stream(
+            sources={0: transformed_stream},
+            partitioners={0: BROADCAST_PARTITIONER},
+            node=StatefulNode(
+                schema=new_schema,
+                schema_mapping={col: (-1, col) for col in new_schema},
+                required_columns={0: set(new_schema)},
+                operator=AggExecutor(count)
+            ),
+            schema=new_schema,
+            ordering=None
+        )
+
+        return aggregated_stream.collect()
+
+    def agg(self, aggregations):
+        return self._grouped_aggregate([], aggregations, None)
+
+    def aggregate(self, aggregations):
+        return self.agg(aggregations)
+
+
+class GroupedDataStream:
+    def __init__(self, source_data_stream: DataStream, groupby, orderby) -> None:
+        self.source_data_stream = source_data_stream
+        self.groupby = groupby if type(groupby) == list else [groupby]
+        self.orderby = orderby
+
+    '''
+    Similar semantics to Pandas.groupby().agg(), e.g. agg({"b":["max","min"], "c":["mean"]})
+    '''
+
+    def agg(self, aggregations: dict):
+        return self.source_data_stream._grouped_aggregate(self.groupby, aggregations, self.orderby)
+
+    '''
+    Alias for agg.
+    '''
+
+    def aggregate(self, aggregations: dict):
+        return self.agg(aggregations)
+
+
+class DataSet:
+    def __init__(self, quokka_context: QuokkaContext, schema: dict, source_node_id: int) -> None:
+        self.quokka_context = quokka_context
+        self.schema = schema
+        self.source_node_id = source_node_id
+
+    def to_list(self):
+        return ray.get(self.wrapped_dataset.to_list.remote())
+
+    def to_pandas(self):
+        return ray.get(self.wrapped_dataset.to_pandas.remote())
+
+    def to_dict(self):
+        return ray.get(self.wrapped_dataset.to_dict.remote())

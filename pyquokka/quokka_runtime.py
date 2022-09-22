@@ -9,13 +9,8 @@ import pickle
 from functools import partial
 import random
 from pyquokka.flight import * 
-
-#ray.init("auto", _system_config={"worker_register_timeout_seconds": 60}, ignore_reinit_error=True, runtime_env={"working_dir":"/home/ubuntu/quokka","excludes":["*.csv","*.tbl","*.parquet"]})
-#ray.init("auto", ignore_reinit_error=True, runtime_env={"working_dir":"/home/ziheng/.local/lib/python3.8/site-packages/pyquokka/"})
-
-#ray.init(ignore_reinit_error=True) # do this locally
-#ray.timeline("profile.json")
-
+from target_info import *
+import sql_utils
 
 NONBLOCKING_NODE = 1
 BLOCKING_NODE = 2
@@ -119,8 +114,6 @@ class TaskGraph:
         self.node_channel_to_ip = {}
         self.node_ips = {}
         self.node_type = {}
-        self.node_parents = {}
-        self.node_args = {}
         
         r = redis.Redis(host=str(self.cluster.leader_public_ip), port=6800, db=0)
         state_tags = [i.decode("utf-8") for i in r.keys() if "state-tag" in i.decode("utf-8")] 
@@ -147,7 +140,7 @@ class TaskGraph:
         self.current_node += 1
         return self.current_node - 1
 
-    def new_input_redis(self, dataset, ip_to_num_channel = None, policy = "default", batch_func=None, dependents = []):
+    def new_input_redis(self, dataset, ip_to_num_channel = None, policy = "default", batch_func=None):
         
         if ip_to_num_channel is None:
             # automatically come up with some policy
@@ -208,10 +201,9 @@ class TaskGraph:
                 ).remote(self.current_node, channel, channel_objects, batch_func=batch_func)
         
         self.node_type[self.current_node] = INPUT_REDIS_DATASET
-        self.node_args[self.current_node] = {"channel_objects":channel_objects, "batch_func": batch_func}
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
-    def new_input_reader_node(self, reader, ip_to_num_channel = None, batch_func = None, dependents = [], ckpt_interval = 10):
+    def new_input_reader_node(self, reader, ip_to_num_channel = None, batch_func = None):
 
 
         if ip_to_num_channel is None:
@@ -238,7 +230,6 @@ class TaskGraph:
                 ).remote(self.current_node, channel, reader, len(channel_to_ip), batch_func = batch_func) 
         
         self.node_type[self.current_node] = INPUT_READER_DATASET
-        self.node_args[self.current_node] = {"reader": reader, "batch_func":batch_func, "ckpt_interval": ckpt_interval}
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
     
     def flip_channels_ip(self, channel_to_ip):
@@ -285,8 +276,11 @@ class TaskGraph:
         else:
             return "Something is wrong"
 
-    def prologue(self, streams, ip_to_num_channel, channel_to_ip, partition_key_supplied):
-        partition_key = {}
+    def prologue(self, streams, ip_to_num_channel, channel_to_ip, source_target_info):
+
+        '''
+        Remember, the partition key is a function. It is executed on an output batch after the predicate and projection but before the batch funcs.
+        '''
         def partition_key_str(key, data, source_channel, num_target_channels):
             result = {}
             for channel in range(num_target_channels):
@@ -324,23 +318,28 @@ class TaskGraph:
         
         
         for key in streams:
-            if key not in partition_key_supplied:
+            assert key in source_target_info
+            target_info = source_target_info[key]     
+            target_info.predicate = sql_utils.evaluate(target_info.predicate)
+            target_info.projection = list(target_info.projection)
+
+            # this has been provided
+            if type(target_info.partitioner)== HashPartitioner:
+                print("Inferring hash partitioning strategy for column ", target_info.partitioner.key, "the source node must produce pyarrow, polars or pandas dataframes, and the dataframes must have this column!")
+                target_info.partitioner = FunctionPartitioner(partial(partition_key_str, target_info.partitioner.key))
+            elif type(target_info.partitioner) == BroadcastPartitioner:
+                target_info.partitioner = broadcast
+            elif type(target_info.partitioner) == FunctionPartitioner:
+                from inspect import signature
+                assert len(signature(target_info.partitioner.func).parameters) == 3, "custom partition function must accept three arguments: data object, source channel id, and the number of target channels"
+            elif type(target_info.partitioner) == PassThroughPartitioner:
                 source = streams[key]
                 source_ip_to_num_channel = self.flip_channels_ip(self.node_channel_to_ip[source])
-                partition_key[key] = self.get_default_partition(source_ip_to_num_channel, ip_to_num_channel)
+                target_info.partitioner = self.get_default_partition(source_ip_to_num_channel, ip_to_num_channel)
             else:
-                # this has been provided
-                if type(partition_key_supplied[key]) == str:
-                    print("Inferring hash partitioning strategy for column ", partition_key_supplied[key], "the source node must produce pyarrow, polars or pandas dataframes, and the dataframes must have this column!")
-                    partition_key[key] = partial(partition_key_str, partition_key_supplied[key])
-                elif partition_key_supplied[key] == None:
-                    partition_key[key] = broadcast
-                elif callable(partition_key_supplied[key]):
-                    from inspect import signature
-                    assert len(signature(partition_key_supplied[key]).parameters) == 3, "custom partition function must accept three arguments: data object, source channel id, and the number of target channels"
-                    partition_key[key] = partition_key_supplied[key]
-                else:
-                    raise Exception("Can't understand user defined partition strategy")
+                raise Exception("Partitioner not supported")
+            
+            target_info.lowered = True
 
         # this is the mapping of physical node id to the key the user called in streams. i.e. if you made a node, task graph assigns it an internal id #
         # then if you set this node as the input of this new non blocking task node and do streams = {0: node}, then mapping will be {0: the internal id of that node}
@@ -350,16 +349,15 @@ class TaskGraph:
             source = streams[key]
             if source not in self.nodes:
                 raise Exception("stream source not registered")
-            ray.get([self.nodes[source][i].append_to_targets.remote((self.current_node, channel_to_ip, partition_key[key])) for i in self.nodes[source]])
+            ray.get([self.nodes[source][i].append_to_targets.remote((self.current_node, channel_to_ip, source_target_info[key])) for i in self.nodes[source]])
             mapping[source] = key
             parents[source] = self.nodes[source]
-        self.node_parents[self.current_node] = parents
         
-        return ip_to_num_channel, channel_to_ip, partition_key, mapping, parents
+        return ip_to_num_channel, channel_to_ip, mapping, parents
 
-    def new_non_blocking_node(self, streams, functionObject, ip_to_num_channel = None, channel_to_ip = None, partition_key_supplied = {}, ckpt_interval = 10):
+    def new_non_blocking_node(self, streams, functionObject, ip_to_num_channel = None, channel_to_ip = None, source_target_info = {}):
         
-        ip_to_num_channel, channel_to_ip, partition_key, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip, partition_key_supplied)
+        ip_to_num_channel, channel_to_ip, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip, source_target_info)
         #print("MAPPING", mapping)
         tasknode = {}
         for channel in channel_to_ip:
@@ -372,12 +370,11 @@ class TaskGraph:
                  channel, mapping, functionObject, parents)
         
         self.node_type[self.current_node] = NONBLOCKING_NODE
-        self.node_args[self.current_node] = {"mapping":mapping,  "functionObject":functionObject, "ckpt_interval": ckpt_interval, "partition_key":partition_key}
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
-    def new_blocking_node(self, streams, functionObject,ip_to_num_channel = None, channel_to_ip = None, partition_key_supplied = {},ckpt_interval = 10):
+    def new_blocking_node(self, streams, functionObject,ip_to_num_channel = None, channel_to_ip = None, partition_key_supplied = {}):
         
-        ip_to_num_channel, channel_to_ip, partition_key, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip, partition_key_supplied)
+        ip_to_num_channel, channel_to_ip, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip, partition_key_supplied)
 
         # the datasets will all be managed on the head node. Note that they are not in charge of actually storing the objects, they just 
         # track the ids.
@@ -394,7 +391,6 @@ class TaskGraph:
                 channel, mapping, output_dataset, functionObject, parents)
             
         self.node_type[self.current_node] = BLOCKING_NODE
-        self.node_args[self.current_node] = {"mapping":mapping, "output_dataset": output_dataset, "functionObject":functionObject, "ckpt_interval": ckpt_interval,"partition_key":partition_key}
         self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
         return Dataset(output_dataset)
     

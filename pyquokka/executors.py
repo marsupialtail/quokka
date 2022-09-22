@@ -307,7 +307,7 @@ class OutputS3ParquetExecutor(Executor):
 class BroadcastJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
-    def __init__(self, small_table, on = None, small_on = None, big_on = None, batch_func = None, columns = None):
+    def __init__(self, small_table, on = None, small_on = None, big_on = None):
 
         # how many things you might checkpoint, the number of keys in the dict
         self.num_states = 1
@@ -320,7 +320,6 @@ class BroadcastJoinExecutor(Executor):
         else:
             raise Exception("small table data type not accepted")
 
-        self.columns = columns
         self.checkpointed = False
 
         if on is not None:
@@ -334,8 +333,6 @@ class BroadcastJoinExecutor(Executor):
         
         assert self.small_on in self.state.columns
 
-        self.batch_func = batch_func
-        # keys that will never be seen again, safe to delete from the state on the other side
 
     def serialize(self):
         # if you have already checkpointed the small table, don't checkpoint anything
@@ -360,16 +357,9 @@ class BroadcastJoinExecutor(Executor):
             return
         batch = polars.concat(batches)
         result = batch.join(self.state, left_on = self.big_on, right_on = self.small_on, how = "inner")
-        
-        if self.columns is not None and result is not None and len(result) > 0:
-            result = result[self.columns]
 
         if result is not None and len(result) > 0:
-            if self.batch_func is not None:
-                da =  self.batch_func(result.to_pandas())
-                return da
-            else:
-                return result
+            return result
     
     def done(self,executor_id):
         #print(len(self.state0),len(self.state1))
@@ -380,7 +370,7 @@ class BroadcastJoinExecutor(Executor):
 class GroupAsOfJoinExecutor():
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
-    def __init__(self, group_on= None, group_left_on = None, group_right_on = None, on = None, left_on = None, right_on = None, batch_func = None, columns = None, suffix="_right"):
+    def __init__(self, group_on= None, group_left_on = None, group_right_on = None, on = None, left_on = None, right_on = None, suffix="_right"):
 
         # how many things you might checkpoint, the number of keys in the dict
         self.num_states = 2
@@ -389,7 +379,6 @@ class GroupAsOfJoinExecutor():
         self.quote = {}
         self.ckpt_start0 = 0
         self.ckpt_start1 = 0
-        self.columns = columns
         self.suffix = suffix
 
         if on is not None:
@@ -409,9 +398,6 @@ class GroupAsOfJoinExecutor():
             assert group_left_on is not None and group_right_on is not None
             self.group_left_on = group_left_on
             self.group_right_on = group_right_on
-
-        self.batch_func = batch_func
-        # keys that will never be seen again, safe to delete from the state on the other side
 
     def serialize(self):
         result = {0:self.trade, 1:self.quote}        
@@ -555,18 +541,9 @@ class GroupAsOfJoinExecutor():
             print(len(thing))
             print(thing[thing.symbol=="ZU"])
         result = polars.concat(ret_vals).drop_nulls()
-        
-        if self.columns is not None and result is not None and len(result) > 0:
-            result = result[self.columns]
 
         if result is not None and len(result) > 0:
-            if self.batch_func is not None:
-                da =  self.batch_func(result.to_pandas())
-                return da
-            else:
-                print("RESULT LENGTH",len(result))
-                
-                return result
+            return result
     
     def done(self,executor_id):
         #print(len(self.state0),len(self.state1))
@@ -585,7 +562,7 @@ class GroupAsOfJoinExecutor():
 class PolarJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
-    def __init__(self, on = None, left_on = None, right_on = None, batch_func = None, columns = None, suffix="_right", how = "inner"):
+    def __init__(self, on = None, left_on = None, right_on = None, suffix="_right", how = "inner"):
 
         # how many things you might checkpoint, the number of keys in the dict
         self.num_states = 2
@@ -594,7 +571,6 @@ class PolarJoinExecutor(Executor):
         self.state1 = None
         self.ckpt_start0 = 0
         self.ckpt_start1 = 0
-        self.columns = columns
         self.suffix = suffix
 
         if on is not None:
@@ -605,7 +581,6 @@ class PolarJoinExecutor(Executor):
             assert left_on is not None and right_on is not None
             self.left_on = left_on
             self.right_on = right_on
-        self.batch_func = batch_func
         self.how = how
         # keys that will never be seen again, safe to delete from the state on the other side
 
@@ -653,65 +628,38 @@ class PolarJoinExecutor(Executor):
                 self.state1 = batch
             else:
                 self.state1.vstack(batch, in_place = True)
-        
-        if self.columns is not None and result is not None and len(result) > 0:
-            result = result[self.columns]
 
         if result is not None and len(result) > 0:
-            if self.batch_func is not None:
-                da =  self.batch_func(result.to_pandas())
-                return da
-            else:
-                #print("RESULT LENGTH",len(result))
-                return result
+            return result
     
     def done(self,executor_id):
         #print(len(self.state0),len(self.state1))
         #print("done join ", executor_id)
         pass
 
+class DistinctExecutor(Executor):
+    def __init__(self, keys) -> None:
 
-class OOCJoinExecutor(Executor):
-    # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
-    # batch func must return a list of dfs too
-    def __init__(self, on = None, left_on = None, right_on = None, left_primary = False, right_primary = False, batch_func = None):
-        self.state0 = PersistentStateVariable()
-        self.state1 = PersistentStateVariable()
-        if on is not None:
-            assert left_on is None and right_on is None
-            self.left_on = on
-            self.right_on = on
-        else:
-            assert left_on is not None and right_on is not None
-            self.left_on = left_on
-            self.right_on = right_on
+        # how many things you might checkpoint, the number of keys in the dict
+        self.num_states = 1
 
-        self.batch_func = batch_func
+        self.seen = set()
 
-    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
-    def execute(self,batches, stream_id, executor_id):
-
-        batch = pd.concat(batches)
-        results = []
-
-        if stream_id == 0:
-            if len(self.state1) > 0:
-                results = [batch.merge(i,left_on = self.left_on, right_on = self.right_on ,how='inner',suffixes=('_a','_b')) for i in self.state1]
-            self.state0.append(batch)
-             
-        elif stream_id == 1:
-            if len(self.state0) > 0:
-                results = [i.merge(batch,left_on = self.left_on, right_on = self.right_on ,how='inner',suffixes=('_a','_b')) for i in self.state0]
-            self.state1.append(batch)
+    def execute(self, batches, stream_id, executor_id):
+        pass
         
-        if len(results) > 0:
-            if self.batch_func is not None:
-                return self.batch_func(results)
-            else:
-                return results
+        
     
-    def done(self,executor_id):
-        print("done join ", executor_id)
+    def serialize(self):
+        return {0:self.seen}, "all"
+    
+    def deserialize(self, s):
+        # the default is to get a list of things 
+        assert type(s) == list and len(s) == 1
+        self.seen = s[0][0]
+    
+    def done(self, executor_id):
+        return
 
 # WARNING: aggregation on index match! Not on column match
 class AggExecutor(Executor):

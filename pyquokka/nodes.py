@@ -85,11 +85,11 @@ class Node:
         raise NotImplementedError
 
     def append_to_targets(self,tup):
-        node_id, channel_to_ip, partition_key = tup
+        node_id, channel_to_ip, target_info = tup
 
         unique_ips = set(channel_to_ip.values())
         redis_clients = {i: redis.Redis(host=i, port=6800, db=0) if i != self.ip else redis.Redis(host='localhost', port = 6800, db=0) for i in unique_ips}
-        self.targets[node_id] = (channel_to_ip, partition_key)
+        self.targets[node_id] = (channel_to_ip, target_info)
         self.target_rs[node_id] = {}
         self.target_ps[node_id] = {}
         
@@ -149,15 +149,19 @@ class Node:
                 print("downstream failure detected")
 
         for target in self.alive_targets:
-            original_channel_to_ip, partition_key = self.targets[target]
-            # partition key will be a function that takes in three arguments
-            # the data (arbitrary python object)
-            # self.channel, channel of this node
-            # number of downstream channels
+            original_channel_to_ip, target_info = self.targets[target]
+
+            # target.partitioner will be a FunctionPartitioner with a function that takes in three arguments
+            # the data (arbitrary python object), self.channel, channel of this node and number of downstream channels
             # it must return a dictionary of downstream channel number -> arbitrary python object
             # this partition key could be user specified or be supplied by Quokka from default strategies
 
-            partitioned_payload = partition_key(data, self.channel, len(original_channel_to_ip))
+            assert target_info.lowered
+
+            data = target_info.predicate(data)
+            data = data[target_info.projection]
+
+            partitioned_payload = target_info.partitioner.func(data, self.channel, len(original_channel_to_ip))
             assert type(partitioned_payload) == dict and max(partitioned_payload.keys()) < len(original_channel_to_ip)
             
             for channel in self.alive_targets[target]:
@@ -165,7 +169,11 @@ class Node:
                     payload = None
                 else:
                     payload = partitioned_payload[channel]
-
+                    for func in target_info.batch_funcs:
+                        if len(payload) == 0:
+                            payload = None
+                            break
+                        payload = func(payload)
 
                 client = self.flight_clients[target][channel]
                 batch, my_format = convert_from_format(payload)

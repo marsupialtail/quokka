@@ -83,7 +83,6 @@ def evaluate(node):
         return lambda x: 1
     elif is_cast_to_date(node):
         try:
-            print(node.name)
             d = datetime.strptime(node.name, "%Y-%m-%d")
         except:
             raise Exception("failed to parse date object, currently only accept strs of YY-mm-dd")
@@ -155,5 +154,3 @@ def csv_condition_decomp(condition):
         batch_funcs.append(evaluate(node))
     
     return partial(apply_conditions_to_batch, batch_funcs),  required_columns_from_exp(condition)
-
-def get_cols_from_projection()
