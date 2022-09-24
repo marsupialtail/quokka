@@ -3,7 +3,7 @@ from api import *
 qc = QuokkaContext()
 import pyarrow
 
-lineitem = qc.read_csv("test", list({"l_orderkey": pyarrow.uint64(), 
+lineitem = qc.read_parquet("test", list({"l_orderkey": pyarrow.uint64(), 
     "l_partkey": pyarrow.uint64(),
     "l_suppkey": pyarrow.uint64(),
     "l_linenumber": pyarrow.uint64(),
@@ -20,7 +20,7 @@ lineitem = qc.read_csv("test", list({"l_orderkey": pyarrow.uint64(),
     "l_shipmode":pyarrow.string(),
     "l_comment":pyarrow.string()
 }.keys()))
-orders = qc.read_csv("test2",list({
+orders = qc.read_parquet("test2",list({
     "o_orderkey": pyarrow.uint64(),
     "o_custkey": pyarrow.uint64(),
     "o_orderstatus": pyarrow.string(),
@@ -31,7 +31,7 @@ orders = qc.read_csv("test2",list({
     "o_shippriority": pyarrow.int32(),
     "o_comment": pyarrow.string()
 }.keys()))
-customer = qc.read_csv("test3",list({
+customer = qc.read_parquet("test3",list({
     "c_custkey": pyarrow.uint64(),
     "c_name": pyarrow.string(),
     "c_address": pyarrow.string(),
@@ -171,6 +171,17 @@ def do_12():
     
     f = d.groupby("l_shipmode").aggregate(aggregations={'high':['sum'], 'low':['sum']})
 
+def word_count():
+
+    def udf2(x):
+        da = compute.list_flatten(compute.ascii_split_whitespace(x["text"]))
+        c = da.value_counts().flatten()
+        return pa.Table.from_arrays([c[0], c[1]], names=["word","count"]).to_pandas()
+    
+    words = qc.read_csv("s3://wordcount-input",["text"],sep="|")
+    counted = words.transform( udf2, new_schema = ["word", "count"], required_columns = None, foldable=True)
+    counted.aggregate(aggregations={})
+
 def test1():
     d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
     d = customer.join(d,left_on="c_custkey", right_on="o_custkey")
@@ -201,6 +212,6 @@ def suffix_test():
     sql.__push_filter__(d)
     d.walk()
 
-do_12()
+do_3()
 #do_12()
 #test1()

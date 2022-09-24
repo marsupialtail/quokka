@@ -193,18 +193,19 @@ class InputDiskHDF5Dataset:
             curr_chunk += self.num_channels
             yield curr_chunk, result
 
-class InputMultiParquetDataset:
+class InputS3ParquetDataset:
 
     # filter pushdown could be profitable in the future, especially when you can skip entire Parquet files
     # but when you can't it seems like you still read in the entire thing anyways
     # might as well do the filtering at the Pandas step. Also you need to map filters to the DNF form of tuples, which could be
     # an interesting project in itself. Time for an intern?
 
-    def __init__(self, bucket, prefix, columns=None, filters=None) -> None:
+    def __init__(self, bucket, prefix = None, key = None, columns=None, filters=None) -> None:
         
         self.bucket = bucket
         self.prefix = prefix
-        assert self.prefix is not None
+        self.key = key
+        assert (self.key is None and self.prefix is not None) or (self.prefix is None and self.key is not None)
         
         self.num_channels = None
         self.columns = columns
@@ -221,6 +222,9 @@ class InputMultiParquetDataset:
         s3 = boto3.client('s3')
         z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
         self.files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
+
+        assert len(self.files) > 0
+
         self.length += sum([i['Size'] for i in z['Contents'] if i['Key'].endswith(".parquet")])
         while 'NextContinuationToken' in z.keys():
             z = self.s3.list_objects_v2(
@@ -304,16 +308,15 @@ class InputDiskCSVDataset:
         self.window = window
 
         self.length = 0
-        self.sample = None
+        #self.sample = None
 
     def set_num_channels(self, num_channels):
-        assert self.num_channels == num_channels
-
+        assert self.num_channels == num_channelskey
     def get_own_state(self,num_channels):
 
         self.num_channels = num_channels
         splits = self.num_channels * 2
-        samples = []
+        #samples = []
 
         length = os.path.getsize(self.filepath)
         assert length // splits > self.window * 2
@@ -357,14 +360,14 @@ class InputDiskCSVDataset:
                 raise Exception
             else:
                 adjusted_splits.append(start + last_newline)
-                samples.append(csv.read_csv(BytesIO(resp[first_newline: last_newline]), read_options=csv.ReadOptions(
-                    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)))
+                #samples.append(csv.read_csv(BytesIO(resp[first_newline: last_newline]), read_options=csv.ReadOptions(
+                #    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)))
 
         adjusted_splits[-1] = length
 
         print(length, adjusted_splits)
         self.length = length
-        self.sample = pa.concat_tables(samples)
+        #self.sample = pa.concat_tables(samples)
         self.adjusted_splits = adjusted_splits
         f.close()
 
@@ -389,6 +392,7 @@ class InputDiskCSVDataset:
             end = self.adjusted_splits[chunks * mapper_id + chunks]
 
         f = open(self.filepath,"rb")
+
         while pos < end:
 
             f.seek(pos)
@@ -418,7 +422,7 @@ class InputDiskCSVDataset:
             pos += last_newline + 1
 
             #print("done convert,",time.time())
-            yield pos, bump
+            yield pos, polars.from_arrow(bump)
         f.close()
 
 
@@ -428,6 +432,9 @@ class InputS3CSVDataset:
         self.bucket = bucket
         self.prefix = prefix
         self.key = key
+
+        assert (self.prefix is None and self.key is not None) or (self.prefix is not None and self.key is None)
+
         self.num_channels = None
         self.names = names
         self.sep = sep
@@ -438,7 +445,7 @@ class InputS3CSVDataset:
         assert not (names is None and header is False), "if header is False, must supply column names"
 
         self.length = 0
-        self.sample = None
+        #self.sample = None
 
     def set_num_channels(self, num_channels):
         assert self.num_channels == num_channels
@@ -447,7 +454,7 @@ class InputS3CSVDataset:
     # we need to rethink this whole setting num channels business. For this operator we don't want each node to do redundant work!
     def get_own_state(self, num_channels):
         
-        samples = []
+        #samples = []
         print("intiializing CSV reading strategy. This is currently done locally, which might take a while.")
         self.num_channels = num_channels
 
@@ -533,8 +540,8 @@ class InputS3CSVDataset:
                 raise Exception
             else:
                 bytes_to_take = start + last_newline
-                samples.append(csv.read_csv(BytesIO(resp[first_newline: last_newline]), read_options=csv.ReadOptions(
-                    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)))
+                #samples.append(csv.read_csv(BytesIO(resp[first_newline: last_newline]), read_options=csv.ReadOptions(
+                #    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)))
 
             sizes[0] -= bytes_to_take
             end_byte = real_off + bytes_to_take
@@ -543,7 +550,7 @@ class InputS3CSVDataset:
             start_byte = real_off
         
         self.length = total_size
-        self.sample = pa.concat_tables(samples)
+        #self.sample = pa.concat_tables(samples)
         self.channel_infos = channel_infos
         print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
 
@@ -594,7 +601,7 @@ class InputS3CSVDataset:
                     
                     pos += last_newline
                     
-                    yield (curr_pos, pos) , bump
+                    yield (curr_pos, pos) , polars.from_arrow(bump)
 
             pos = 0
             curr_pos += 1

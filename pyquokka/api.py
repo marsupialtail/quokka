@@ -16,22 +16,66 @@ class QuokkaContext:
         self.latest_node_id = 0
         self.nodes = {}
 
-    def read_csv(self, path: str, schema=None, sep=","):
-        if path[:5] == "s3://":
-            self.nodes[self.latest_node_id] = InputS3CSVNode(path, schema, sep)
-        else:
-            self.nodes[self.latest_node_id] = InputDiskCSVNode(
-                path, schema, sep)
+    def read_csv(self, table_location: str, schema, sep=","):
 
         # the reader is fine if you supply no schema, but the DataStream needs it for potential downstream filtering/pushdowns.
-        if schema is None:
-            schema = self.nodes[self.latest_node_id].get_own_state(0)
+        # that's why we need the schema. TODO: We should be able to infer it, at least if the header is provided. This is future work. 
+
+        if table_location[:5] == "s3://":
+            table_location = table_location[5:]
+            bucket = table_location.split("/")[0]
+            if "*" in table_location:
+                assert table_location[-1] == "*" , "wildcard can only be the last character in address string"
+                prefix = "/".join(table_location[:-1].split("/")[1:])
+                table_location = {"bucket":bucket, "prefix":prefix}
+                self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, prefix, None, schema, sep)
+            else:
+                key = "/".join(table_location.split("/")[1:])
+                self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep)
+        else:
+            if "*" in table_location:
+                raise NotImplementedError("Currently does not support reading a directory of CSVs locally.")
+            else:
+                self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep)
 
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
 
-    def read_parquet(self, path):
-        pass
+    def read_parquet(self, table_location: str, schema = None):
+        if table_location[:5] == "s3://":
+            table_location = table_location[5:]
+            bucket = table_location.split("/")[0]
+            if "*" in table_location:
+                assert table_location[-1] == "*" , "wildcard can only be the last character in address string"
+                if schema is None:
+                    try:
+                        s3 = boto3.client('s3')
+                        z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
+                        files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
+                        s3 = s3fs.S3FileSystem()
+                        f = pq.ParquetFile(s3.open(self.bucket + "/" + files[0], "rb"))
+                        schema = [k.name for k in f.schema_arrow]
+                    except:
+                        raise Exception("schema discovery failed for Parquet dataset at location ", table_location)
+
+                prefix = "/".join(table_location[:-1].split("/")[1:])
+                table_location = {"bucket":bucket, "prefix":prefix}
+                self.nodes[self.latest_node_id] = InputS3ParquetNode(bucket, prefix, key, schema)
+            else:
+                if schema is None:
+                    try:
+                        s3 = s3fs.S3FileSystem()
+                        f = pq.ParquetFile(s3.open(table_location, "rb"))
+                        schema = [k.name for k in f.schema_arrow]
+                    except:
+                        raise Exception("schema discovery failed for Parquet dataset at location ", table_location)
+                key = "/".join(table_location.split("/")[1:])
+                self.nodes[self.latest_node_id] = InputS3ParquetDataset(bucket, prefix, key, schema)
+        else:
+           self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
+
+        self.latest_node_id += 1
+        return DataStream(self, schema, self.latest_node_id - 1)
 
     # this is expected to be internal API, well internal as much as it can I guess until the syntactic sugar runs out.
     def new_stream(self, sources: dict, partitioners: dict, node: Node, schema: list, ordering=None):
@@ -90,8 +134,6 @@ class QuokkaContext:
 
         node = self.nodes[node_id]
         targets = node.targets
-        if issubclass(type(node), InputNode):
-            # push down predicates to the Parquet Nodes!, for the CSV nodes give up
 
         # you are the one that triggered execution, you must be a SinkNode!
         if len(targets) == 0:
@@ -114,6 +156,15 @@ class QuokkaContext:
             # if this is a filter node, you will have exactly one parent.
             # you will rewire your parents targets to your targets, and delete yourself, as well as yourself from parent.targets
             # and target.parents for each of your targets
+
+            if issubclass(type(node), InputNode):
+                # push down predicates to the Parquet Nodes!, for the CSV nodes give up
+                if type(node) == InputDiskParquetNode or type(node) == InputS3ParquetNode:
+                    node.predicate = predicate
+                    node.targets[target_id].predicate = sqlglot.exp.TRUE
+                    return
+                else:
+                    return
 
             if issubclass(type(node), FilterNode):
                 predicate = optimizer.simplify.simplify(
@@ -179,7 +230,17 @@ class QuokkaContext:
         targets = node.targets
 
         if issubclass(type(node), InputNode):
-            return
+            # push down predicates to the Parquet Nodes!, for the CSV nodes give up
+            if type(node) == InputDiskParquetNode or type(node) == InputS3ParquetNode:
+                projection = set()
+                for target_id in targets:
+                    projection = projection.union(targets[target_id].projection)
+                    if len(targets) == 1:
+                        targets[target_id].projection = None
+                node.projection = projection
+                return
+            else:
+                return
         # you are the one that triggered execution, you must be a SinkNode!
         elif len(targets) == 0:
             for parent in node.parents:
@@ -506,6 +567,11 @@ class DataStream:
         if type(orderby) == list:
             orderby = {k: "asc" for k in orderby}
 
+        if type(groupby) == str:
+            groupby = [groupby]
+
+        assert type(groupby) == list and len(groupby) > 0, "must specify at least one group key as a list of group keys, i.e. [key1,key2]"
+
         return GroupedDataStream(self, groupby=groupby, orderby=orderby)
 
     def _grouped_aggregate(self, groupby: list, aggregations: dict, orderby=None):
@@ -566,7 +632,7 @@ class DataStream:
 
         aggregated_stream = self.quokka_context.new_stream(
             sources={0: transformed_stream},
-            partitioners={0: BROADCAST_PARTITIONER},
+            partitioners={0: BroadcastPartitioner()},
             node=StatefulNode(
                 schema=new_schema,
                 schema_mapping={col: (-1, col) for col in new_schema},

@@ -9,8 +9,8 @@ import pickle
 from functools import partial
 import random
 from pyquokka.flight import * 
-from target_info import *
-import sql_utils
+from pyquokka.target_info import *
+import pyquokka.sql_utils as sql_utils
 
 NONBLOCKING_NODE = 1
 BLOCKING_NODE = 2
@@ -321,21 +321,21 @@ class TaskGraph:
             assert key in source_target_info
             target_info = source_target_info[key]     
             target_info.predicate = sql_utils.evaluate(target_info.predicate)
-            target_info.projection = list(target_info.projection)
+            target_info.projection = target_info.projection
 
             # this has been provided
             if type(target_info.partitioner)== HashPartitioner:
                 print("Inferring hash partitioning strategy for column ", target_info.partitioner.key, "the source node must produce pyarrow, polars or pandas dataframes, and the dataframes must have this column!")
                 target_info.partitioner = FunctionPartitioner(partial(partition_key_str, target_info.partitioner.key))
             elif type(target_info.partitioner) == BroadcastPartitioner:
-                target_info.partitioner = broadcast
+                target_info.partitioner = FunctionPartitioner(broadcast)
             elif type(target_info.partitioner) == FunctionPartitioner:
                 from inspect import signature
                 assert len(signature(target_info.partitioner.func).parameters) == 3, "custom partition function must accept three arguments: data object, source channel id, and the number of target channels"
             elif type(target_info.partitioner) == PassThroughPartitioner:
                 source = streams[key]
                 source_ip_to_num_channel = self.flip_channels_ip(self.node_channel_to_ip[source])
-                target_info.partitioner = self.get_default_partition(source_ip_to_num_channel, ip_to_num_channel)
+                target_info.partitioner = FunctionPartitioner(self.get_default_partition(source_ip_to_num_channel, ip_to_num_channel))
             else:
                 raise Exception("Partitioner not supported")
             
@@ -349,7 +349,10 @@ class TaskGraph:
             source = streams[key]
             if source not in self.nodes:
                 raise Exception("stream source not registered")
+            start = time.time()
             ray.get([self.nodes[source][i].append_to_targets.remote((self.current_node, channel_to_ip, source_target_info[key])) for i in self.nodes[source]])
+            if VERBOSE:
+                print("append time", time.time() - start)
             mapping[source] = key
             parents[source] = self.nodes[source]
         
@@ -372,9 +375,9 @@ class TaskGraph:
         self.node_type[self.current_node] = NONBLOCKING_NODE
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
-    def new_blocking_node(self, streams, functionObject,ip_to_num_channel = None, channel_to_ip = None, partition_key_supplied = {}):
+    def new_blocking_node(self, streams, functionObject,ip_to_num_channel = None, channel_to_ip = None,  source_target_info = {}):
         
-        ip_to_num_channel, channel_to_ip, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip, partition_key_supplied)
+        ip_to_num_channel, channel_to_ip, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip,  source_target_info)
 
         # the datasets will all be managed on the head node. Note that they are not in charge of actually storing the objects, they just 
         # track the ids.

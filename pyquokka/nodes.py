@@ -23,27 +23,39 @@ INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your inp
 def convert_to_format(batch, format):
     format = pickle.loads(format.to_pybytes())
     if format == "polars":
-        return polars.from_arrow(pa.Table.from_batches([batch]))
+        # ideally you use zero copy, but this could result in bugs sometimes. https://issues.apache.org/jira/browse/ARROW-17783
+        return polars.from_pandas(pa.Table.from_batches([batch]).to_pandas())
     elif format == "pandas":
         return batch.to_pandas()
     elif format == "custom":
         return pickle.loads(batch.to_pandas()['object'][0])
+    elif format == "arrow-table":
+        return pa.Table.from_batches([batch])
+    elif format == "arrow-batch":
+        return batch
     else:
         raise Exception("don't understand this format", format)
 
 def convert_from_format(payload):
+
     if type(payload) == pd.core.frame.DataFrame:
-        batch = pa.RecordBatch.from_pandas(payload)
+        batches = [pa.RecordBatch.from_pandas(payload)]
         my_format = "pandas"
     elif type(payload) == polars.internals.frame.DataFrame:
         batches = payload.to_arrow().to_batches()
-        assert len(batches) == 1
-        batch = batches[0]
         my_format = "polars"
+    elif type(payload) == pa.lib.RecordBatch:
+        batches = [payload]
+        my_format = "arrow-batch"
+    elif type(payload) == pa.lib.Table:
+        batches = payload.to_batches()
+        my_format = "arrow-table"
     else:
-        batch = pa.RecordBatch.from_pydict({"object":[pickle.dumps(payload)]})
+        batches = [pa.RecordBatch.from_pydict({"object":[pickle.dumps(payload)]})]
         my_format = "custom"
-    return batch, my_format
+    
+    assert len(batches) > 0, payload
+    return batches, my_format
 
 # making a new class of things so we can easily type match when we start processing the input batch
 class FlushedMessage:
@@ -137,8 +149,27 @@ class Node:
             
         self.out_seq += 1
 
-        if type(data) == pa.lib.Table:
+        '''
+        Quokka should have some support for custom data types, similar to DaFt by Eventual.
+        Since we transmit data through Arrow Flight, we need to convert the data into arrow record batches.
+        All Quokka data readers and executors should take a Polars DataFrame as input batch type and output type.
+        The other data types are not going to be used that much.
+        '''
+
+        # your format at this point doesn't matter. we need to write down the format after all the batch funcs.
+
+        if type(data) == pd.core.frame.DataFrame:
+            data = polars.from_pandas(data)
+        elif type(data) == polars.internals.frame.DataFrame:
+            data = data
+        elif type(data) == pa.lib.Table:
             data = polars.from_arrow(data)
+        elif type(data) == pa.lib.RecordBatch:
+            data = polars.from_arrow(pa.Table.from_batches([data]))
+        else:
+            my_format = "custom"
+            print("custom data does not support predicates and projections")
+            raise NotImplementedError
 
         # downstream targets are done. You should be done too then.
         try:    
@@ -158,8 +189,9 @@ class Node:
 
             assert target_info.lowered
 
-            data = target_info.predicate(data)
-            data = data[target_info.projection]
+            data = data[target_info.predicate(data)]
+            if target_info.projection is not None:
+                data = data[list(target_info.projection)]
 
             partitioned_payload = target_info.partitioner.func(data, self.channel, len(original_channel_to_ip))
             assert type(partitioned_payload) == dict and max(partitioned_payload.keys()) < len(original_channel_to_ip)
@@ -169,14 +201,22 @@ class Node:
                     payload = None
                 else:
                     payload = partitioned_payload[channel]
+
+                    # the batch funcs here all expect arrow data fomat.
                     for func in target_info.batch_funcs:
                         if len(payload) == 0:
                             payload = None
                             break
                         payload = func(payload)
 
+                if len(payload) == 0 or payload is None:
+                    payload = None
+                    # out seq number must be sequential
+                    self.out_seq -= 1
+                    return 
+                
                 client = self.flight_clients[target][channel]
-                batch, my_format = convert_from_format(payload)
+                batches, my_format = convert_from_format(payload)
                 
                 # format (target id, target channel, source id, source channel, tag, format)
                 #print("pushing to target",target,"channel",channel,"from source",self.id,"channel",self.channel,"tag",self.out_seq)
@@ -192,8 +232,11 @@ class Node:
                     else:
                         break
 
-                writer, _ = client.do_put(upload_descriptor, batch.schema)
-                writer.write_batch(batch)
+                assert len(batches) > 0, batches
+                writer, _ = client.do_put(upload_descriptor, batches[0].schema)
+                for batch in batches:
+                    #print(batch)
+                    writer.write_batch(batch)
                 writer.close()
        
         return True
@@ -266,7 +309,7 @@ class InputReaderNode(InputNode):
         super().__init__(id, channel, batch_func)
         self.accessor = accessor
         self.accessor.set_num_channels(num_channels)
-        self.input_generator = self.accessor.get_next_batch(channel, 0)
+        self.input_generator = self.accessor.get_next_batch(channel, None)
 
 @ray.remote
 class InputRedisDatasetNode(InputNode):
@@ -277,7 +320,7 @@ class InputRedisDatasetNode(InputNode):
             for object in channel_objects[da]:
                 ip_set.add(object[0])
         self.accessor = RedisObjectsDataset(channel_objects, ip_set)
-        self.input_generator = self.accessor.get_next_batch(channel, 0)
+        self.input_generator = self.accessor.get_next_batch(channel, None)
 
 
 class TaskNode(Node):
@@ -332,17 +375,17 @@ class TaskNode(Node):
 class NonBlockingTaskNode(TaskNode):
     def __init__(self, id, channel,  mapping, functionObject, parents) -> None:
         super().__init__(id, channel,  mapping, functionObject, parents)
-        print("I'm initialized")
     
     def execute(self):
 
         while True:
 
+            # be nice. 
+            time.sleep(0.01)
             batch_info, should_terminate = self.get_batches()
             if should_terminate:
                 break
             # deque messages from the mailbox in a way that makes sense
-            
             stream_id, requests = self.schedule_for_execution(batch_info)
             if stream_id is None:
                 continue

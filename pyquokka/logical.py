@@ -1,6 +1,8 @@
+from fileinput import filename
 import itertools
 import sqlglot
 import sqlglot.optimizer as optimizer
+from pyquokka.dataset import * 
 
 '''
 A node takes in inputs from its parent nodes, process them according to some operator, and sends outputs to targets.
@@ -34,16 +36,25 @@ class Node:
 class InputNode(Node):
     def __init__(self, schema) -> None:
         super().__init__(schema)
+    
+    def __str__(self):
+        result = str(type(self)) + '\nTargets:' 
+        for target in self.targets:
+            result += "\n\t" + str(target) + " " + str(self.targets[target])
+        return result
 
 class InputS3CSVNode(InputNode):
-    def __init__(self, filename, schema, sep) -> None:
+    def __init__(self, bucket, prefix, key, schema, sep) -> None:
         super().__init__(schema)
-        self.filename = filename
+        self.bucket = bucket
+        self.prefix = prefix
+        self.key = key
         self.sep = sep
-    
+
     def lower(self, task_graph):
-        
-        pass
+        lineitem_csv_reader = InputS3CSVDataset(self.bucket, self.schema, prefix = self.prefix, key = self.key, sep=self.sep, stride = 128 * 1024 * 1024)
+        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader)
+        return lineitem
 
 class InputDiskCSVNode(InputNode):
     def __init__(self, filename, schema, sep) -> None:
@@ -51,8 +62,38 @@ class InputDiskCSVNode(InputNode):
         self.filename = filename
         self.sep = sep
 
-    def lower(self):
-        pass
+    def lower(self, task_graph):
+        lineitem_csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, stride = 16 * 1024 * 1024)
+        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader)
+        return lineitem
+
+class InputS3ParquetNode(InputNode):
+    def __init__(self, bucket, prefix, key, schema, predicate = None, projection = None) -> None:
+        super().__init__(schema)
+        self.bucket = bucket
+        self.prefix = prefix
+        self.key = key
+        self.predicate = predicate
+        self.projection = projection
+    
+    def __str__(self):
+        result = str(type(self)) + '\nPredicate: ' + self.predicate.sql() + '\nProjection: ' + str(self.projection) + '\nTargets:' 
+        for target in self.targets:
+            result += "\n\t" + str(target) + " " + str(self.targets[target])
+        return result
+
+class InputDiskParquetNode(InputNode):
+    def __init__(self, filename, schema, predicate = None, projection = None) -> None:
+        super().__init__(schema)
+        self.filename = filename 
+        self.predicate = predicate
+        self.projection = projection
+    
+    def __str__(self):
+        result = str(type(self)) + '\nPredicate: ' + self.predicate.sql() + '\nProjection: ' + str(self.projection) + '\nTargets:' 
+        for target in self.targets:
+            result += "\n\t" + str(target) + " " + str(self.targets[target])
+        return result
 
 class SinkNode(Node):
     def __init__(self, schema) -> None:

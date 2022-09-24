@@ -87,8 +87,14 @@ def evaluate(node):
         except:
             raise Exception("failed to parse date object, currently only accept strs of YY-mm-dd")
         return lambda x: d
+    elif type(node) == sqlglot.exp.Boolean:
+        if node.this:
+            return lambda x: [True] * len(x)
+        else:
+            return lambda x: [False] * len(x)
     else:
         print(node)
+        print(type(node))
         raise Exception("making predicate failed")
 
 def parquet_condition_decomp(condition):
