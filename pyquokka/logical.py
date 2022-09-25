@@ -1,8 +1,31 @@
-from fileinput import filename
-import itertools
 import sqlglot
-import sqlglot.optimizer as optimizer
 from pyquokka.dataset import * 
+
+class PlacementStrategy:
+    def __init__(self) -> None:
+        pass
+
+'''
+Launch a single channel. Useful for aggregator nodes etc.
+'''
+class SingleChannelStrategy(PlacementStrategy):
+    def __init__(self) -> None:
+        super().__init__()
+
+'''
+Launch a custom number of cahnnels per node. Note the default is cpu_count for SourceNodes and 1 for task nodes.
+'''
+class CustomChannelsStrategy(PlacementStrategy):
+    def __init__(self, channels) -> None:
+        super().__init__()
+        self.channels_per_node = channels
+
+'''
+Launch only on GPU instances.
+'''
+class GPUStrategy(PlacementStrategy):
+    def __init__(self) -> None:
+        super().__init__()
 
 '''
 A node takes in inputs from its parent nodes, process them according to some operator, and sends outputs to targets.
@@ -23,9 +46,13 @@ class Node:
         self.parents = {}
 
         self.blocking = False
+        self.placement_strategy = None
     
     def lower(self, task_graph):
         raise NotImplementedError
+    
+    def set_placement_strategy(self, strategy):
+        self.placement_strategy = strategy
     
     def __str__(self):
         result = str(type(self)) + '\nParents:' + str(self.parents) + '\nTargets:' 
@@ -33,7 +60,7 @@ class Node:
             result += "\n\t" + str(target) + " " + str(self.targets[target])
         return result
 
-class InputNode(Node):
+class SourceNode(Node):
     def __init__(self, schema) -> None:
         super().__init__(schema)
     
@@ -43,7 +70,7 @@ class InputNode(Node):
             result += "\n\t" + str(target) + " " + str(self.targets[target])
         return result
 
-class InputS3CSVNode(InputNode):
+class InputS3CSVNode(SourceNode):
     def __init__(self, bucket, prefix, key, schema, sep) -> None:
         super().__init__(schema)
         self.bucket = bucket
@@ -56,7 +83,7 @@ class InputS3CSVNode(InputNode):
         lineitem = task_graph.new_input_reader_node(lineitem_csv_reader)
         return lineitem
 
-class InputDiskCSVNode(InputNode):
+class InputDiskCSVNode(SourceNode):
     def __init__(self, filename, schema, sep) -> None:
         super().__init__(schema)
         self.filename = filename
@@ -67,7 +94,7 @@ class InputDiskCSVNode(InputNode):
         lineitem = task_graph.new_input_reader_node(lineitem_csv_reader)
         return lineitem
 
-class InputS3ParquetNode(InputNode):
+class InputS3ParquetNode(SourceNode):
     def __init__(self, bucket, prefix, key, schema, predicate = None, projection = None) -> None:
         super().__init__(schema)
         self.bucket = bucket
@@ -76,21 +103,30 @@ class InputS3ParquetNode(InputNode):
         self.predicate = predicate
         self.projection = projection
     
+    def lower(self, task_graph):
+
+        lineitem_csv_reader = InputS3ParquetDataset(self.bucket, self.prefix, self.key, list(self.projection), self.predicate)
+        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader)
+        return lineitem
+    
     def __str__(self):
-        result = str(type(self)) + '\nPredicate: ' + self.predicate.sql() + '\nProjection: ' + str(self.projection) + '\nTargets:' 
+        result = str(type(self)) + '\nPredicate: ' + str(self.predicate) + '\nProjection: ' + str(self.projection) + '\nTargets:' 
         for target in self.targets:
             result += "\n\t" + str(target) + " " + str(self.targets[target])
         return result
 
-class InputDiskParquetNode(InputNode):
+class InputDiskParquetNode(SourceNode):
     def __init__(self, filename, schema, predicate = None, projection = None) -> None:
         super().__init__(schema)
         self.filename = filename 
         self.predicate = predicate
         self.projection = projection
     
+    def lower(self, task_graph):
+        raise NotImplementedError
+    
     def __str__(self):
-        result = str(type(self)) + '\nPredicate: ' + self.predicate.sql() + '\nProjection: ' + str(self.projection) + '\nTargets:' 
+        result = str(type(self)) + '\nPredicate: ' + str(self.predicate) + '\nProjection: ' + str(self.projection) + '\nTargets:' 
         for target in self.targets:
             result += "\n\t" + str(target) + " " + str(self.targets[target])
         return result
@@ -128,6 +164,12 @@ class StatefulNode(TaskNode):
     def __init__(self, schema, schema_mapping, required_columns, operator) -> None:
         super().__init__(schema, schema_mapping, required_columns)
         self.operator = operator
+    
+    def lower(self, task_graph, parent_nodes, parent_source_info, ip_to_num_channel=None ):
+        if self.blocking:
+            return task_graph.new_blocking_node(parent_nodes,self.operator, ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info)
+        else:
+            return task_graph.new_non_blocking_node(parent_nodes,self.operator, ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info)
         
 '''
 We need a separate MapNode from StatefulNode since we can compact UDFs

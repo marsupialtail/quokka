@@ -42,7 +42,6 @@ class Executor:
 class UDFExecutor:
     def __init__(self, udf) -> None:
         self.udf = udf
-        self.num_states = 0
 
     def serialize(self):
         return {}, "all"
@@ -63,7 +62,7 @@ class UDFExecutor:
 # this is not fault tolerant. If the storage is lost you just re-read
 class StorageExecutor(Executor):
     def __init__(self) -> None:
-        self.num_states = 0
+        pass
     def serialize(self):
         return {}, "all"
     def deserialize(self, s):
@@ -83,7 +82,6 @@ class StorageExecutor(Executor):
 class OutputS3CSVExecutor(Executor):
     def __init__(self, bucket, prefix, output_line_limit = 1000000) -> None:
         self.num = 0
-        self.num_states = 0
 
         self.bucket = bucket
         self.prefix = prefix
@@ -161,8 +159,6 @@ class OutputS3CSVExecutor(Executor):
 class OutputS3ParquetFastExecutor(Executor):
     def __init__(self, bucket, prefix, output_line_limit = 10000000) -> None:
         self.num = 0
-        self.num_states = 0
-
         self.bucket = bucket
         self.prefix = prefix
         self.output_line_limit = output_line_limit
@@ -241,7 +237,6 @@ class OutputS3ParquetFastExecutor(Executor):
 class OutputS3ParquetExecutor(Executor):
     def __init__(self, bucket, prefix, row_group_size = 10000000) -> None:
         self.num = 0
-        self.num_states = 0
 
         self.bucket = bucket
         self.prefix = prefix
@@ -309,8 +304,6 @@ class BroadcastJoinExecutor(Executor):
     # batch func must return a list of dfs too
     def __init__(self, small_table, on = None, small_on = None, big_on = None):
 
-        # how many things you might checkpoint, the number of keys in the dict
-        self.num_states = 1
         self.state = None
 
         if type(small_table) == pd.core.frame.DataFrame:
@@ -371,9 +364,6 @@ class GroupAsOfJoinExecutor():
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
     def __init__(self, group_on= None, group_left_on = None, group_right_on = None, on = None, left_on = None, right_on = None, suffix="_right"):
-
-        # how many things you might checkpoint, the number of keys in the dict
-        self.num_states = 2
 
         self.trade = {}
         self.quote = {}
@@ -564,9 +554,6 @@ class PolarJoinExecutor(Executor):
     # batch func must return a list of dfs too
     def __init__(self, on = None, left_on = None, right_on = None, suffix="_right", how = "inner"):
 
-        # how many things you might checkpoint, the number of keys in the dict
-        self.num_states = 2
-
         self.state0 = None
         self.state1 = None
         self.ckpt_start0 = 0
@@ -640,9 +627,6 @@ class PolarJoinExecutor(Executor):
 class DistinctExecutor(Executor):
     def __init__(self, keys) -> None:
 
-        # how many things you might checkpoint, the number of keys in the dict
-        self.num_states = 1
-
         self.seen = set()
 
     def execute(self, batches, stream_id, executor_id):
@@ -661,8 +645,89 @@ class DistinctExecutor(Executor):
     def done(self, executor_id):
         return
 
-# WARNING: aggregation on index match! Not on column match
 class AggExecutor(Executor):
+    '''
+    aggregation_dict will define what you are going to do for
+    '''
+    def __init__(self, groupby_keys, orderby_keys, aggregation_dict, count):
+
+
+        self.state = None
+        self.emit_count = count
+        assert type(groupby_keys) == list and len(groupby_keys) > 0
+        self.groupby_keys = groupby_keys
+        self.aggregation_dict = aggregation_dict
+        self.length_limit = 10000
+        # hope and pray there is no column called __&&count__
+        self.pyarrow_agg_list = [("count", "sum")]
+        self.count_col = "count"
+        self.rename_dict = {"count_sum": self.count_col}
+        for key in aggregation_dict:
+            assert aggregation_dict[key] in {
+                    "max", "min", "mean", "sum"}, "only support max, min, mean and sum for now"
+            if aggregation_dict[key] == "mean":
+                self.pyarrow_agg_list.append((key, "sum"))
+                self.rename_dict[key + "_sum"] = key
+            else:
+                self.pyarrow_agg_list.append((key, aggregation_dict[key]))
+                self.rename_dict[key + "_" + aggregation_dict[key]] = key
+        
+        self.order_list = []
+        self.reverse_list = []
+        if orderby_keys is not None:
+            for key, dir in orderby_keys:
+                self.order_list.append(key)
+                self.reverse_list.append(True if dir == "desc" else False)
+
+
+    def serialize(self):
+        return {0:self.state}, "all"
+    
+    def deserialize(self, s):
+        # the default is to get a list of dictionaries.
+        assert type(s) == list and len(s) == 1
+        self.state = s[0][0]
+    
+    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
+    def execute(self,batches, stream_id, executor_id):
+        
+        batches = [i for i in batches if i is not None]
+        for batch in batches:
+            assert type(batch) == polars.internals.frame.DataFrame, batch # polars add has no index, will have wierd behavior
+            if self.state is None:
+                self.state = batch
+            else:
+                try:
+                    self.state = self.state.vstack(batch)
+                except:
+                    print(self.state, batch)
+                    raise Exception
+                if len(self.state) > self.length_limit:
+                    arrow_state = self.state.to_arrow()
+                    arrow_state = arrow_state.group_by(self.groupby_keys).aggregate(self.pyarrow_agg_list)
+                    self.state = polars.from_arrow(arrow_state).rename(self.rename_dict)
+                    self.state = self.state.select(sorted(self.state.columns))
+    
+    def done(self,executor_id):
+
+        arrow_state = self.state.to_arrow()
+        arrow_state = arrow_state.group_by(self.groupby_keys).aggregate(self.pyarrow_agg_list)
+        self.state = polars.from_arrow(arrow_state).rename(self.rename_dict)
+
+        for key in self.aggregation_dict:
+            if self.aggregation_dict[key] == "mean":
+                self.state[key] /= self.state[self.count_col]
+        
+        if not self.emit_count:
+            self.state = self.state.drop(self.count_col)
+        
+        if len(self.order_list) > 0:
+            return self.state.sort(self.order_list, self.reverse_list)
+        else:
+            return self.state
+
+
+class AddExecutor(Executor):
     def __init__(self, fill_value = 0, final_func = None):
 
         # how many things you might checkpoint, the number of keys in the dict
@@ -696,14 +761,12 @@ class AggExecutor(Executor):
         else:
             #print(self.state)
             return self.state
-
 # WARNING: this is currently extremely inefficient. But it is indeed very general.
 # pyarrow joins do not support list data types 
 class GenericGroupedAggExecutor(Executor):
     def __init__(self, funcs, final_func = None):
 
         # how many things you might checkpoint, the number of keys in the dict
-        self.num_states = 1
 
         self.state = None
         self.funcs = funcs # this will be a dictionary of col name -> tuple of (merge func, fill_value)
@@ -762,9 +825,6 @@ class LimitExecutor(Executor):
 class CountExecutor(Executor):
     def __init__(self) -> None:
 
-        # how many things you might checkpoint, the number of keys in the dict
-        self.num_states = 1
-
         self.state = 0
 
     def execute(self, batches, stream_id, executor_id):
@@ -786,7 +846,6 @@ class CountExecutor(Executor):
 
 class MergeSortedExecutor(Executor):
     def __init__(self, key, record_batch_rows = None, length_limit = 5000, file_prefix = "mergesort") -> None:
-        self.num_states = 0
         self.states = []
         self.num = 1
         self.key = key

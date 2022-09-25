@@ -351,7 +351,7 @@ class TaskGraph:
                 raise Exception("stream source not registered")
             start = time.time()
             ray.get([self.nodes[source][i].append_to_targets.remote((self.current_node, channel_to_ip, source_target_info[key])) for i in self.nodes[source]])
-            if VERBOSE:
+            if True:
                 print("append time", time.time() - start)
             mapping[source] = key
             parents[source] = self.nodes[source]

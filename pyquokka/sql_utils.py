@@ -76,7 +76,10 @@ def evaluate(node):
         high = evaluate(node.args['high'])
         return lambda x: (pred(x) >= low(x)) & (pred(x) <= high(x))
     elif type(node) == sqlglot.expressions.Literal:
-        return lambda x: int(node.this)
+        if node.is_string:
+            return lambda x: node.this
+        else:
+            return lambda x: int(node.this)
     elif type(node) == sqlglot.expressions.Column:
         return lambda x: x[node.name]
     elif type(node) == sqlglot.expressions.Star:
@@ -103,11 +106,14 @@ def parquet_condition_decomp(condition):
         mapping = {"eq":"==","neq":"!=","lt":"<","lte":"<=","gt":">","gte":">=","in":"in"}
         return mapping[k]
     
-    conjuncts = list(sqlglot.parse_one(condition).flatten())
+    conjuncts = list(
+                        condition.flatten()
+                        if isinstance(condition, sqlglot.exp.And)
+                        else [condition]
+                    )
 
     filters = []
-    required_columns = set()
-    batch_funcs = []
+    remaining_predicate = sqlglot.exp.TRUE
     for node in conjuncts:
         if type(node) in {exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ, exp.NEQ}:
             if type(node.left) == exp.Column:
@@ -145,11 +151,10 @@ def parquet_condition_decomp(condition):
                     filters.append((node.this.name, "<=", compute.strptime(node.args["high"].name,format="%Y-%m-%d",unit="s")))
                     continue
         
-        print("I cannot become a predicate!", node.sql(pretty=True))
-        batch_funcs.append(evaluate(node))
-        required_columns = required_columns.union(required_columns_from_exp(node))
+        #print("I cannot become a predicate!", node.sql(pretty=True))
+        remaining_predicate = sqlglot.exp.and_(remaining_predicate, node)
     
-    return filters, partial(apply_conditions_to_batch, batch_funcs), required_columns
+    return filters, remaining_predicate
 
 def csv_condition_decomp(condition):
     conjuncts = list(sqlglot.parse_one(condition).flatten())

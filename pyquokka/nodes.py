@@ -190,8 +190,6 @@ class Node:
             assert target_info.lowered
 
             data = data[target_info.predicate(data)]
-            if target_info.projection is not None:
-                data = data[list(target_info.projection)]
 
             partitioned_payload = target_info.partitioner.func(data, self.channel, len(original_channel_to_ip))
             assert type(partitioned_payload) == dict and max(partitioned_payload.keys()) < len(original_channel_to_ip)
@@ -209,11 +207,16 @@ class Node:
                             break
                         payload = func(payload)
 
-                if len(payload) == 0 or payload is None:
+                if payload is None or len(payload) == 0:
                     payload = None
                     # out seq number must be sequential
                     self.out_seq -= 1
                     return 
+                
+                if target_info.projection is not None:
+                    # have to make sure the schema appears in the same order or the arrow lfight reader on the recevier might have problems.
+                    # need to work out the set/list with the projection better.
+                    payload = payload[sorted(list(target_info.projection))]
                 
                 client = self.flight_clients[target][channel]
                 batches, my_format = convert_from_format(payload)
@@ -336,7 +339,6 @@ class TaskNode(Node):
         self.id = id 
         self.parents = parents # dict of id -> dict of channel -> actor handles        
         self.functionObject = functionObject
-        #assert hasattr(functionObject, "num_states") # for recovery
         self.physical_to_logical_mapping = mapping
 
 

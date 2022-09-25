@@ -1,20 +1,25 @@
 import graphviz
-from tokenize import group
-from executors import *
-from dataset import *
-import sql_utils
 import ray
-from logical import *
 import copy
 from functools import partial
 import pyarrow as pa
 import polars
-from target_info import *
+
+from pyquokka.executors import *
+from pyquokka.dataset import *
+from pyquokka.logical import *
+from pyquokka.target_info import *
+from pyquokka.quokka_runtime import * 
+from pyquokka.utils import S3Cluster, LocalCluster
+import pyquokka.sql_utils as sql_utils
+
+
 
 class QuokkaContext:
-    def __init__(self) -> None:
+    def __init__(self, cluster) -> None:
         self.latest_node_id = 0
         self.nodes = {}
+        self.cluster = cluster
 
     def read_csv(self, table_location: str, schema, sep=","):
 
@@ -22,6 +27,10 @@ class QuokkaContext:
         # that's why we need the schema. TODO: We should be able to infer it, at least if the header is provided. This is future work. 
 
         if table_location[:5] == "s3://":
+
+            if type(self.cluster) == LocalCluster:
+                print("Warning: trying to read S3 dataset on local machine. This assumes high network bandwidth.")
+
             table_location = table_location[5:]
             bucket = table_location.split("/")[0]
             if "*" in table_location:
@@ -33,6 +42,10 @@ class QuokkaContext:
                 key = "/".join(table_location.split("/")[1:])
                 self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep)
         else:
+
+            if type(self.cluster) == S3Cluster:
+                raise NotImplementedError("Does not support reading local dataset with S3 cluster. Must use S3 bucket.")
+
             if "*" in table_location:
                 raise NotImplementedError("Currently does not support reading a directory of CSVs locally.")
             else:
@@ -43,25 +56,31 @@ class QuokkaContext:
 
     def read_parquet(self, table_location: str, schema = None):
         if table_location[:5] == "s3://":
+
+            if type(self.cluster) == LocalCluster:
+                print("Warning: trying to read S3 dataset on local machine. This assumes high network bandwidth.")
+
             table_location = table_location[5:]
             bucket = table_location.split("/")[0]
             if "*" in table_location:
                 assert table_location[-1] == "*" , "wildcard can only be the last character in address string"
+                prefix = "/".join(table_location[:-1].split("/")[1:])
                 if schema is None:
                     try:
                         s3 = boto3.client('s3')
-                        z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
+                        z = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
                         files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
                         s3 = s3fs.S3FileSystem()
-                        f = pq.ParquetFile(s3.open(self.bucket + "/" + files[0], "rb"))
+                        f = pq.ParquetFile(s3.open(bucket + "/" + files[0], "rb"))
                         schema = [k.name for k in f.schema_arrow]
                     except:
                         raise Exception("schema discovery failed for Parquet dataset at location ", table_location)
-
-                prefix = "/".join(table_location[:-1].split("/")[1:])
+                
                 table_location = {"bucket":bucket, "prefix":prefix}
-                self.nodes[self.latest_node_id] = InputS3ParquetNode(bucket, prefix, key, schema)
+                print(table_location)
+                self.nodes[self.latest_node_id] = InputS3ParquetNode(bucket, prefix, None, schema)
             else:
+
                 if schema is None:
                     try:
                         s3 = s3fs.S3FileSystem()
@@ -70,9 +89,12 @@ class QuokkaContext:
                     except:
                         raise Exception("schema discovery failed for Parquet dataset at location ", table_location)
                 key = "/".join(table_location.split("/")[1:])
-                self.nodes[self.latest_node_id] = InputS3ParquetDataset(bucket, prefix, key, schema)
+                self.nodes[self.latest_node_id] = InputS3ParquetDataset(bucket, None, key, schema)
         else:
-           self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
+            if type(self.cluster) == S3Cluster:
+                raise NotImplementedError("Does not support reading local dataset with S3 cluster. Must use S3 bucket.")
+
+            self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
 
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
@@ -100,12 +122,63 @@ class QuokkaContext:
         self.__push_filter__(node_id)
         self.__early_projection__(node_id)
         self.__fold_map__(node_id)
+        
+        assert len(self.nodes[node_id].parents) == 1
+        parent_idx, parent_id = self.nodes[node_id].parents.popitem()
+        del self.nodes[node_id]
+        self.nodes[parent_id].blocking = True
+        return parent_id
 
+
+    def lower(self, end_node_id):
+
+        start = time.time()
+        task_graph = TaskGraph(self.cluster)
+        node = self.nodes[end_node_id]
+        nodes = deque([node])
+        reverse_sorted_nodes = [(end_node_id,node)]
+        while len(nodes) > 0:
+            new_node = nodes.popleft()
+            for parent_idx in new_node.parents:
+                parent_id = new_node.parents[parent_idx]
+                reverse_sorted_nodes.append((parent_id,self.nodes[parent_id]))
+                nodes.append(self.nodes[parent_id])
+        reverse_sorted_nodes = reverse_sorted_nodes[::-1]
+        task_graph_nodes = {}
+        for node_id, node in reverse_sorted_nodes:
+            if issubclass(type(node), SourceNode):
+                task_graph_nodes[node_id] = node.lower(task_graph)
+            else:
+                parent_nodes = {parent_idx: task_graph_nodes[node.parents[parent_idx]] for parent_idx in node.parents}
+                target_info = {parent_idx: self.nodes[node.parents[parent_idx]].targets[node_id] for parent_idx in node.parents}
+                placement_strategy = node.placement_strategy
+                if placement_strategy is None:
+                    task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info)
+                elif type(placement_strategy) == SingleChannelStrategy:
+                    task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info, {self.cluster.leader_private_ip: 1})
+                elif type(placement_strategy) == CustomChannelsStrategy:
+                    task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info,  
+                        {ip: placement_strategy.channels_per_node for ip in list(self.cluster.private_ips.values())})
+                elif type(placement_strategy) == GPUStrategy:
+                    raise NotImplementedError
+                else:
+                    raise Exception("could not understand node placement strategy")
+        
+        task_graph.create()
+        print("init time ", time.time() - start)
+        start = time.time()
+        task_graph.run()
+        print("run time ", time.time() - start)
+        return task_graph_nodes[end_node_id].to_pandas()
+                    
 
     def execute_node(self, node_id):
         assert issubclass(type(self.nodes[node_id]), SinkNode)
-        self.optimize(node_id)       
-        self.explain(node_id)
+        #self.explain(node_id)
+        new_node_id = self.optimize(node_id)       
+        #self.explain(new_node_id, "text")
+        
+        return self.lower(new_node_id)
 
     def explain(self, node_id, mode="graph"):
 
@@ -157,16 +230,18 @@ class QuokkaContext:
             # you will rewire your parents targets to your targets, and delete yourself, as well as yourself from parent.targets
             # and target.parents for each of your targets
 
-            if issubclass(type(node), InputNode):
+            if issubclass(type(node), SourceNode):
                 # push down predicates to the Parquet Nodes!, for the CSV nodes give up
                 if type(node) == InputDiskParquetNode or type(node) == InputS3ParquetNode:
-                    node.predicate = predicate
-                    node.targets[target_id].predicate = sqlglot.exp.TRUE
+                    filters, remaining_predicate = sql_utils.parquet_condition_decomp(predicate)
+                    if len(filters) > 0:
+                        node.predicate = filters
+                        node.targets[target_id].predicate = optimizer.simplify.simplify(remaining_predicate)
                     return
                 else:
                     return
 
-            if issubclass(type(node), FilterNode):
+            elif issubclass(type(node), FilterNode):
                 predicate = optimizer.simplify.simplify(
                     sqlglot.exp.and_(predicate, node.predicate))
                 parent_id = node.parents[0]
@@ -229,15 +304,26 @@ class QuokkaContext:
         node = self.nodes[node_id]
         targets = node.targets
 
-        if issubclass(type(node), InputNode):
+        if issubclass(type(node), SourceNode):
             # push down predicates to the Parquet Nodes!, for the CSV nodes give up
             if type(node) == InputDiskParquetNode or type(node) == InputS3ParquetNode:
                 projection = set()
+                predicate_required_columns = set()
                 for target_id in targets:
-                    projection = projection.union(targets[target_id].projection)
-                    if len(targets) == 1:
+                    # can no longer push down any projections because one of the targets require all the columns
+                    if targets[target_id].projection is None:
+                        return
+                    projection = projection.union(
+                        targets[target_id].projection)
+                    predicate_required_columns = predicate_required_columns.union(
+                        targets[target_id].predicate_required_columns())
+                
+                # the node.required_columns for this input node is the union of the required columns of 
+                node.projection = projection.union(predicate_required_columns)
+                for target_id in targets:
+                    if targets[target_id].projection == node.projection:
                         targets[target_id].projection = None
-                node.projection = projection
+
                 return
             else:
                 return
@@ -337,7 +423,7 @@ class QuokkaContext:
         node = self.nodes[node_id]
         targets = node.targets
 
-        if issubclass(type(node), InputNode):
+        if issubclass(type(node), SourceNode):
             return
         # you are the one that triggered execution, you must be a SinkNode!
         elif len(targets) == 0:
@@ -392,8 +478,7 @@ class DataStream:
         The result will be a Dataset, which you can then call to_pandas(), or use to_stream() to initiate another computation.
         """
         dataset = self.quokka_context.new_dataset(self, self.schema)
-        self.quokka_context.execute_node(dataset.source_node_id)
-        return dataset
+        return self.quokka_context.execute_node(dataset.source_node_id)
 
     def write_csv(self, path):
         pass
@@ -479,8 +564,7 @@ class DataStream:
         assert engine == "polars" or engine == "pandas"
 
         def polars_func(func, batch):
-            polars_batch = polars.from_arrow(batch)
-            return polars_batch.with_column(polars.Series(name=new_column, values = func(batch))).to_arrow()
+            return batch.with_column(polars.Series(name=new_column, values = func(batch)))
 
         def pandas_func(func, batch):
             pandas_batch = batch.to_pandas()
@@ -544,7 +628,7 @@ class DataStream:
             if col == right_on:
                 continue
             if col in new_schema:
-                assert col + suffix not in new_schema, "the suffix was not enough to guarantee unique col names"
+                assert col + suffix not in new_schema, ("the suffix was not enough to guarantee unique col names", col + suffix, new_schema)
                 new_schema.append(col + suffix)
                 schema_mapping[col+suffix] = (1, col)
             else:
@@ -564,13 +648,21 @@ class DataStream:
 
     def groupby(self, groupby: list, orderby=None):
 
-        if type(orderby) == list:
-            orderby = {k: "asc" for k in orderby}
-
         if type(groupby) == str:
             groupby = [groupby]
 
         assert type(groupby) == list and len(groupby) > 0, "must specify at least one group key as a list of group keys, i.e. [key1,key2]"
+        if orderby is not None:
+            assert type(orderby) == list 
+            for i in range(len(orderby)):
+                if type(orderby[i]) == tuple:
+                    assert orderby[i][0] in groupby
+                    assert orderby[i][1] == "asc" or orderby[i][1] == "desc"
+                elif type(orderby[i]) == str:
+                    assert orderby[i] in groupby
+                    orderby[i] = (orderby[i],"asc")
+                else:
+                    raise Exception("don't understand orderby format")
 
         return GroupedDataStream(self, groupby=groupby, orderby=orderby)
 
@@ -585,6 +677,8 @@ class DataStream:
         for key in aggregations:
             assert (key == "*" and (aggregations[key] == ['count'] or aggregations[key] == 'count')) or (
                 key in self.schema and key not in groupby)
+            if type(aggregations[key]) == str:
+                aggregations[key] = [aggregations[key]]
         for key in groupby:
             assert key in self.schema
 
@@ -596,17 +690,23 @@ class DataStream:
             count = False
 
         # make all single aggregation specs into a list of one.
-        aggregations = {k: [aggregations[k]]
-                        for k in aggregations if type(aggregations[k]) == str}
 
         # first insert the select node.
         required_columns = groupby + list(aggregations.keys())
-        select_stream = self.select(required_columns)
 
         # todo: write this
-        new_schema = groupby + (["count"] if count else [])
+        new_schema = groupby + ["count"]
 
-        pyarrow_agg_list = []
+        '''
+        We need to do two things here. The groupby-aggregation will be pushed down as a transformation.
+        We need to generate the function for the transformation, as well as the necessary arguments to instantiate the AggExecutor.
+        in the aggregations argument, each column could have multiple aggregations defined. However the transformation will make sure 
+        that each of those aggregations gets its own column in the transformed schema, so the AggExecutor doesn't have to deal with this.
+        '''
+
+        count_col = "count"
+        pyarrow_agg_list = [(count_col, "sum")]
+        agg_executor_dict = {}
         for key in aggregations:
             for agg_spec in aggregations[key]:
                 if agg_spec == "avg":
@@ -617,28 +717,31 @@ class DataStream:
                 assert new_col not in new_schema, "duplicate column names detected, most likely caused by a groupby column with suffix _max etc."
                 new_schema.append(new_col)
                 pyarrow_agg_list.append((key, agg_spec))
+                agg_executor_dict[new_col] = agg_spec
 
         # now insert the transform node.
         # this function needs to be fast since it's executed at every batch in the actual runtime.
         def f(keys, agg_list, batch):
-            return pa.Table.from_batches([batch]).group_by(keys).aggregate(agg_list)
+            enhanced_batch = batch.with_column(polars.lit(1).cast(polars.Int64).alias(count_col))
+            return polars.from_arrow(enhanced_batch.to_arrow().group_by(keys).aggregate(agg_list)).rename({count_col + "_sum" : count_col})
 
         map_func = partial(f, groupby, pyarrow_agg_list)
-        transformed_stream = select_stream.transform(map_func,
+        transformed_stream = self.transform(map_func,
                                                      new_schema=new_schema,
                                                      # it shouldn't matter too much for the required columns, since no predicates or projections will ever be pushed through this map node.
                                                      # even if this map node gets fused with prior map nodes, no predicates should ever be pushed through those map nodes either.
                                                      required_columns=set(required_columns))
-
+        agg_node = StatefulNode(
+                schema=new_schema,
+                schema_mapping={col: (-1, col) for col in new_schema},
+                required_columns={0: set(new_schema) },
+                operator=AggExecutor(groupby, orderby, agg_executor_dict, count)
+            )
+        agg_node.set_placement_strategy(SingleChannelStrategy())
         aggregated_stream = self.quokka_context.new_stream(
             sources={0: transformed_stream},
             partitioners={0: BroadcastPartitioner()},
-            node=StatefulNode(
-                schema=new_schema,
-                schema_mapping={col: (-1, col) for col in new_schema},
-                required_columns={0: set(new_schema)},
-                operator=AggExecutor(count)
-            ),
+            node=agg_node,
             schema=new_schema,
             ordering=None
         )
@@ -657,6 +760,7 @@ class GroupedDataStream:
         self.source_data_stream = source_data_stream
         self.groupby = groupby if type(groupby) == list else [groupby]
         self.orderby = orderby
+        
 
     '''
     Similar semantics to Pandas.groupby().agg(), e.g. agg({"b":["max","min"], "c":["mean"]})

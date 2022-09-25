@@ -311,11 +311,12 @@ class InputDiskCSVDataset:
         #self.sample = None
 
     def set_num_channels(self, num_channels):
-        assert self.num_channels == num_channelskey
+        assert self.num_channels == num_channels
+
     def get_own_state(self,num_channels):
 
         self.num_channels = num_channels
-        splits = self.num_channels * 2
+        splits = self.num_channels# * 2
         #samples = []
 
         length = os.path.getsize(self.filepath)

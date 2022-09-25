@@ -1,103 +1,72 @@
 from itertools import groupby
-from api import * 
-qc = QuokkaContext()
+from pyquokka.api import * 
 import pyarrow
+from pyquokka.utils import LocalCluster, QuokkaClusterManager
+from schema import * 
+mode = "DISK"
+format = "csv"
+disk_path = "/home/ziheng/tpc-h/"
+s3_path_csv = "s3://tpc-h-csv/"
+s3_path_parquet = "s3://tpc-h-parquet/"
 
-lineitem = qc.read_parquet("test", list({"l_orderkey": pyarrow.uint64(), 
-    "l_partkey": pyarrow.uint64(),
-    "l_suppkey": pyarrow.uint64(),
-    "l_linenumber": pyarrow.uint64(),
-    "l_quantity": pyarrow.float64(),
-    "l_extendedprice": pyarrow.float64(),
-    "l_discount": pyarrow.float64(),
-    "l_tax": pyarrow.float64(),
-    "l_returnflag": pyarrow.string(),
-    "l_linestatus": pyarrow.string(),
-    "l_shipdate": pyarrow.date32(),
-    "l_commitdate":pyarrow.date32(),
-    "l_receiptdate":pyarrow.date32(),
-    "l_shipinstruct":pyarrow.string(),
-    "l_shipmode":pyarrow.string(),
-    "l_comment":pyarrow.string()
-}.keys()))
-orders = qc.read_parquet("test2",list({
-    "o_orderkey": pyarrow.uint64(),
-    "o_custkey": pyarrow.uint64(),
-    "o_orderstatus": pyarrow.string(),
-    "o_totalprice": pyarrow.float64(),
-    "o_orderdate": pyarrow.date32(),
-    "o_orderpriority": pyarrow.string(),
-    "o_clerk": pyarrow.string(),
-    "o_shippriority": pyarrow.int32(),
-    "o_comment": pyarrow.string()
-}.keys()))
-customer = qc.read_parquet("test3",list({
-    "c_custkey": pyarrow.uint64(),
-    "c_name": pyarrow.string(),
-    "c_address": pyarrow.string(),
-    "c_nationkey": pyarrow.uint64(),
-    "c_phone": pyarrow.string(),
-    "c_acctbal": pyarrow.float64(),
-    "c_mktsegment": pyarrow.string(),
-    "c_comment": pyarrow.string()
-}.keys()))
+if mode == "DISK":
+    cluster = LocalCluster()
+elif mode == "S3":
+    manager = QuokkaClusterManager()
+    cluster = manager.get_cluster_from_json("config.json")
+else:
+    raise Exception
 
-part = qc.read_csv("part", list({
-    "p_partkey" : pyarrow.uint64(),
-    "p_name": pyarrow.string(),
-    "p_mfgr": pyarrow.string(),
-    "p_brand": pyarrow.string(),
-    "p_type": pyarrow.string(),
-    "p_size": pyarrow.int32(),
-    "p_container": pyarrow.string(),
-    "p_retailprice": pyarrow.float64(),
-    "p_comment": pyarrow.string()
-}.keys()))
+qc = QuokkaContext(cluster)
 
-supplier = qc.read_csv("supplier", list({
-    "s_suppkey": pyarrow.uint64(),
-    "s_name": pyarrow.string(),
-    "s_address": pyarrow.string(),
-    "s_nationkey": pyarrow.uint64(),
-    "s_phone": pyarrow.string(),
-    "s_acctbal": pyarrow.float64(),
-    "s_comment": pyarrow.string()
-}.keys()))
+if mode == "DISK":
+    lineitem = qc.read_csv(disk_path + "lineitem.tbl", lineitem_scheme, sep="|")
+    orders = qc.read_csv(disk_path + "orders.tbl", order_scheme, sep="|")
+    customer = qc.read_csv(disk_path + "customer.tbl",customer_scheme, sep = "|")
+    part = qc.read_csv(disk_path + "part.tbl", part_scheme, sep = "|")
+    supplier = qc.read_csv(disk_path + "supplier.tbl", supplier_scheme, sep = "|")
+    partsupp = qc.read_csv(disk_path + "partsupp.tbl", partsupp_scheme, sep = "|")
+    nation = qc.read_csv(disk_path + "nation.tbl", nation_scheme, sep = "|")
+    region = qc.read_csv(disk_path + "region.tbl", region_scheme, sep = "|")
+elif mode == "S3":
+    if format == "csv":
+        lineitem = qc.read_csv(s3_path_csv + "lineitem/lineitem.tbl.1", lineitem_scheme, sep="|")
+        orders = qc.read_csv(s3_path_csv + "orders/orders.tbl.1", order_scheme, sep="|")
+        customer = qc.read_csv(s3_path_csv + "customer/customer.tbl.1",customer_scheme, sep = "|")
+        part = qc.read_csv(s3_path_csv + "part/part.tbl.1", part_scheme, sep = "|")
+        supplier = qc.read_csv(s3_path_csv + "supplier/supplier.tbl.1", supplier_scheme, sep = "|")
+        partsupp = qc.read_csv(s3_path_csv + "partsupp/partsupp.tbl.1", partsupp_scheme, sep = "|")
+        nation = qc.read_csv(s3_path_csv + "nation/nation.tbl", nation_scheme, sep = "|")
+        region = qc.read_csv(s3_path_csv + "region/region.tbl", region_scheme, sep = "|")
+    elif format == "parquet":
+        lineitem = qc.read_parquet(s3_path_parquet + "lineitem.parquet/*")
+        orders = qc.read_parquet(s3_path_parquet + "orders.parquet/*")
+        customer = qc.read_parquet(s3_path_parquet + "customer.parquet/*")
+        part = qc.read_parquet(s3_path_parquet + "part.parquet/*")
+        supplier = qc.read_parquet(s3_path_parquet + "supplier.parquet/*")
+        partsupp = qc.read_parquet(s3_path_parquet + "partsupp.parquet/*")
+        nation = qc.read_parquet(s3_path_parquet + "nation.parquet/*")
+        region = qc.read_parquet(s3_path_parquet + "region.parquet/*")
 
-partsupp = qc.read_csv("partsupp", list({
-    "ps_partkey": pyarrow.uint64(),
-    "ps_suppkey": pyarrow.uint64(),
-    "ps_availqty": pyarrow.int32(),
-    "ps_supplycost": pyarrow.float64(),
-    "ps_comment": pyarrow.string()
-}.keys()))
+    else:
+        raise Exception
+else:
+    raise Exception
 
-nation = qc.read_csv("nation", list({
-    "n_nationkey": pyarrow.uint64(),
-    "n_name": pyarrow.string(),
-    "n_regionkey": pyarrow.uint64(),
-    "n_comment": pyarrow.string()
-}.keys()))
 
-region = qc.read_csv("region", list({
-    "r_regionkey" : pyarrow.uint64(),
-    "r_name": pyarrow.string(),
-    "r_comment": pyarrow.string()
-}.keys()))
+# testa = qc.read_csv("test",list({
+#     "key" : pyarrow.uint64(),
+#     "val1": pyarrow.uint64(),
+#     "val2": pyarrow.uint64(),
+#     "val3": pyarrow.uint64(),
+# }.keys()))
 
-testa = qc.read_csv("test",list({
-    "key" : pyarrow.uint64(),
-    "val1": pyarrow.uint64(),
-    "val2": pyarrow.uint64(),
-    "val3": pyarrow.uint64(),
-}.keys()))
-
-testb = qc.read_csv("test",list({
-    "key" : pyarrow.uint64(),
-    "val1": pyarrow.uint64(),
-    "val2": pyarrow.uint64(),
-    "val3": pyarrow.uint64()
-}.keys()))
+# testb = qc.read_csv("test",list({
+#     "key" : pyarrow.uint64(),
+#     "val1": pyarrow.uint64(),
+#     "val2": pyarrow.uint64(),
+#     "val3": pyarrow.uint64()
+# }.keys()))
 
 
 def do_1():
@@ -110,8 +79,9 @@ def do_1():
     d = d.with_column("disc_price", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]), required_columns ={"l_extendedprice", "l_discount"})
     d = d.with_column("charge", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]) * (1 + x["l_tax"]), required_columns={"l_extendedprice", "l_discount", "l_tax"})
 
-    f = d.groupby(["l_returnflag", "l_linestatus"], orderby=["l_returnflag", "l_linestatus"]).agg({"l_quantity":["sum","avg"], "l_extendedprice":["sum","avg"], "disc_price":"sum", 
+    f = d.groupby(["l_returnflag", "l_linestatus"], orderby=["l_returnflag","l_linestatus"]).agg({"l_quantity":["sum","avg"], "l_extendedprice":["sum","avg"], "disc_price":"sum", 
         "charge":"sum", "l_discount":"avg","*":"count"})
+    return f
 
 def do_3():
     d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
@@ -119,7 +89,9 @@ def do_3():
     d = d.filter("c_mktsegment = 'BUILDING' and o_orderdate < date '1995-03-15' and l_shipdate > date '1995-03-15'")
     d = d.with_column("revenue", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
 
-    f = d.groupby(["l_orderkey","o_orderdate","o_shippriority"], orderby={'revenue':'desc','o_orderdate':'asc'}).agg({"revenue":["sum"]})
+    #f = d.groupby(["l_orderkey","o_orderdate","o_shippriority"], orderby=[('revenue','desc'),('o_orderdate','asc')]).agg({"revenue":["sum"]})
+    f = d.groupby(["l_orderkey","o_orderdate","o_shippriority"]).agg({"revenue":["sum"]})
+    return f
 
 def do_4():
 
@@ -157,7 +129,7 @@ def do_6():
     f = d.aggregate({"revenue":["sum"]})
 
 def do_12():
-
+    
     d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
     
     d = d.filter("l_shipmode IN ('MAIL','SHIP') and l_commitdate < l_receiptdate and l_shipdate < l_commitdate and \
@@ -166,9 +138,6 @@ def do_12():
     d = d.with_column("high", lambda x: (x["o_orderpriority"] == "1-URGENT") | (x["o_orderpriority"] == "2-HIGH"), required_columns={"o_orderpriority"})
     d = d.with_column("low", lambda x: (x["o_orderpriority"] != "1-URGENT") & (x["o_orderpriority"] != "2-HIGH"), required_columns={"o_orderpriority"})
 
-    # you could also write:
-    # d = d.with_column("high", lambda x: x.apply(lambda x:((x["o_orderpriority"] == "1-URGENT") | (x["o_orderpriority"] == "2-HIGH")).astype(int), axis=1), required_columns={"o_orderpriority"}, engine = "pandas")
-    
     f = d.groupby("l_shipmode").aggregate(aggregations={'high':['sum'], 'low':['sum']})
 
 def word_count():
@@ -212,6 +181,6 @@ def suffix_test():
     sql.__push_filter__(d)
     d.walk()
 
-do_3()
+print(do_5())
 #do_12()
 #test1()

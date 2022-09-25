@@ -8,6 +8,7 @@ import pyarrow.compute as compute
 from pyquokka.target_info import BroadcastPartitioner, HashPartitioner, TargetInfo
 from schema import * 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
+import polars
 
 import sqlglot
 
@@ -18,18 +19,18 @@ cluster = manager.get_cluster_from_json("config.json")
 task_graph = TaskGraph(cluster)
 
 def batch_func(df):
-    df = df.to_pandas()
-    df["high"] = ((df["o_orderpriority"] == "1-URGENT") | (df["o_orderpriority"] == "2-HIGH")).astype(int)
-    df["low"] = ((df["o_orderpriority"] != "1-URGENT") & (df["o_orderpriority"] != "2-HIGH")).astype(int)
-    result = df.groupby("l_shipmode").agg({'high':['sum'],'low':['sum']})
-    return result
+    df["high"] = ((df["o_orderpriority"] == "1-URGENT") | (df["o_orderpriority"] == "2-HIGH"))
+    df["low"] = ((df["o_orderpriority"] != "1-URGENT") & (df["o_orderpriority"] != "2-HIGH"))
+    result = df.to_arrow().group_by("l_shipmode").aggregate([("high","sum"), ("low","sum")])
+    return polars.from_arrow(result)
+
 
 if sys.argv[1] == "csv":
 
-    #lineitem_csv_reader = InputDiskCSVDataset("/home/ziheng/tpc-h/lineitem.tbl", lineitem_scheme, sep = "|", stride=16 * 1024 * 1024)
-    #orders_csv_reader = InputDiskCSVDataset("/home/ziheng/tpc-h/orders.tbl", order_scheme, sep = "|", stride=16 * 1024 * 1024)
-    lineitem_csv_reader = InputS3CSVDataset("tpc-h-csv", lineitem_scheme , key = "lineitem/lineitem.tbl.1", sep="|", stride = 128 * 1024 * 1024)
-    orders_csv_reader = InputS3CSVDataset("tpc-h-csv",  order_scheme , key ="orders/orders.tbl.1",sep="|", stride = 128 * 1024 * 1024)
+    lineitem_csv_reader = InputDiskCSVDataset("/home/ziheng/tpc-h/lineitem.tbl", lineitem_scheme, sep = "|", stride=16 * 1024 * 1024)
+    orders_csv_reader = InputDiskCSVDataset("/home/ziheng/tpc-h/orders.tbl", order_scheme, sep = "|", stride=16 * 1024 * 1024)
+    # lineitem_csv_reader = InputS3CSVDataset("tpc-h-csv", lineitem_scheme , key = "lineitem/lineitem.tbl.1", sep="|", stride = 128 * 1024 * 1024)
+    # orders_csv_reader = InputS3CSVDataset("tpc-h-csv",  order_scheme , key ="orders/orders.tbl.1",sep="|", stride = 128 * 1024 * 1024)
     lineitem = task_graph.new_input_reader_node(lineitem_csv_reader)
     orders = task_graph.new_input_reader_node(orders_csv_reader)
 
@@ -63,7 +64,9 @@ else:
                                         predicate = sqlglot.parse_one("l_commitdate < l_receiptdate and l_shipdate < l_commitdate "),
                                         projection = ["l_orderkey","l_shipmode"],
                                         batch_funcs = [])})
-agg_executor = AggExecutor()
+
+agg_executor = AggExecutor(["l_shipmode"], {"high_sum": "sum", "low_sum":"sum"}, False)
+
 agged = task_graph.new_blocking_node({0:output_stream},  agg_executor, ip_to_num_channel={cluster.leader_private_ip: 1}, 
     source_target_info={0:TargetInfo(
         partitioner = BroadcastPartitioner(),
