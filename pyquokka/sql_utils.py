@@ -41,6 +41,20 @@ def evaluate(node):
             return lambda x: lf(x) < rf(x)
         elif type(node) == sqlglot.expressions.LTE:
             return lambda x: lf(x) <= rf(x)
+        elif type(node) == sqlglot.expressions.Like:
+            assert node.expression.is_string
+            filter = node.expression.this
+            if filter[0] == '%' and filter[-1] == '%':
+                filter = filter[1:-1]
+                return lambda x: lf(x).str.contains(filter)
+            elif filter[0] != '%' and filter[-1] == '%':
+                filter = filter[:-1]
+                return lambda x: lf(x).str.starts_with(filter)
+            elif filter[0] == '%' and filter[-1] != '%':
+                filter = filter[1:]
+                return lambda x: lf(x).str.ends_with(filter)
+            elif filter[0] != '%' and filter[-1] != '%':
+                return lambda x: lf(x) == filter
         else:
             print(type(node))
             raise Exception("making predicate failed")

@@ -283,11 +283,15 @@ class InputNode(Node):
         self.batch_func = batch_func
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
+    def ping(self):
+        return True
+
     def initialize(self):
         pass
         
     def execute(self):
 
+        self.input_generator = self.accessor.get_next_batch(self.channel, None)
         futs = deque()
         futs.append(self.executor.submit(next, self.input_generator))
         while True:
@@ -312,7 +316,7 @@ class InputReaderNode(InputNode):
         super().__init__(id, channel, batch_func)
         self.accessor = accessor
         self.accessor.set_num_channels(num_channels)
-        self.input_generator = self.accessor.get_next_batch(channel, None)
+        
 
 @ray.remote
 class InputRedisDatasetNode(InputNode):

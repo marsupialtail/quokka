@@ -25,8 +25,8 @@ class Dataset:
     def to_list(self):
         return ray.get(self.wrapped_dataset.to_list.remote())
     
-    def to_pandas(self):
-        return ray.get(self.wrapped_dataset.to_pandas.remote())
+    def to_df(self):
+        return ray.get(self.wrapped_dataset.to_df.remote())
     
     def to_dict(self):
         return ray.get(self.wrapped_dataset.to_dict.remote())
@@ -71,7 +71,7 @@ class WrappedDataset:
         assert self.is_complete()
         return self.objects
 
-    def to_pandas(self):
+    def to_df(self):
         assert self.is_complete()
         dfs = []
         for channel in self.objects:
@@ -230,6 +230,10 @@ class TaskGraph:
                 tasknode[channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
                 ).remote(self.current_node, channel, reader, len(channel_to_ip), batch_func = batch_func) 
         
+        start = time.time()
+        ray.get([tasknode[channel].ping.remote() for channel in channel_to_ip])
+        print("actor spin up took ", time.time() -start)
+
         self.node_type[self.current_node] = INPUT_READER_DATASET
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
     
@@ -350,10 +354,7 @@ class TaskGraph:
             source = streams[key]
             if source not in self.nodes:
                 raise Exception("stream source not registered")
-            start = time.time()
             ray.get([self.nodes[source][i].append_to_targets.remote((self.current_node, channel_to_ip, source_target_info[key])) for i in self.nodes[source]])
-            if True:
-                print("append time", time.time() - start)
             mapping[source] = key
             parents[source] = self.nodes[source]
         

@@ -20,14 +20,26 @@ else:
 qc = QuokkaContext(cluster)
 
 if mode == "DISK":
-    lineitem = qc.read_csv(disk_path + "lineitem.tbl", lineitem_scheme, sep="|")
-    orders = qc.read_csv(disk_path + "orders.tbl", order_scheme, sep="|")
-    customer = qc.read_csv(disk_path + "customer.tbl",customer_scheme, sep = "|")
-    part = qc.read_csv(disk_path + "part.tbl", part_scheme, sep = "|")
-    supplier = qc.read_csv(disk_path + "supplier.tbl", supplier_scheme, sep = "|")
-    partsupp = qc.read_csv(disk_path + "partsupp.tbl", partsupp_scheme, sep = "|")
-    nation = qc.read_csv(disk_path + "nation.tbl", nation_scheme, sep = "|")
-    region = qc.read_csv(disk_path + "region.tbl", region_scheme, sep = "|")
+    if format == "csv":
+        lineitem = qc.read_csv(disk_path + "lineitem.tbl", lineitem_scheme, sep="|")
+        orders = qc.read_csv(disk_path + "orders.tbl", order_scheme, sep="|")
+        customer = qc.read_csv(disk_path + "customer.tbl",customer_scheme, sep = "|")
+        part = qc.read_csv(disk_path + "part.tbl", part_scheme, sep = "|")
+        supplier = qc.read_csv(disk_path + "supplier.tbl", supplier_scheme, sep = "|")
+        partsupp = qc.read_csv(disk_path + "partsupp.tbl", partsupp_scheme, sep = "|")
+        nation = qc.read_csv(disk_path + "nation.tbl", nation_scheme, sep = "|")
+        region = qc.read_csv(disk_path + "region.tbl", region_scheme, sep = "|")
+    elif format == "parquet":
+        lineitem = qc.read_parquet(disk_path + "lineitem.parquet")
+        orders = qc.read_parquet(disk_path + "orders.parquet")
+        customer = qc.read_parquet(disk_path + "customer.parquet")
+        part = qc.read_parquet(disk_path + "part.parquet")
+        supplier = qc.read_parquet(disk_path + "supplier.parquet")
+        partsupp = qc.read_parquet(disk_path + "partsupp.parquet")
+        nation = qc.read_parquet(disk_path + "nation.parquet")
+        region = qc.read_parquet(disk_path + "region.parquet")
+    else:
+        raise Exception
 elif mode == "S3":
     if format == "csv":
         lineitem = qc.read_csv(s3_path_csv + "lineitem/lineitem.tbl.1", lineitem_scheme, sep="|")
@@ -72,7 +84,7 @@ else:
 def do_1():
 
     '''
-    Filters can be specified in SQL syntax. The columns in the SQL expression must exist in the schema
+    Filters can be specified in SQL syntax. The columns in the SQL expression must exist in the schema of the DataStream.
     '''
 
     d = lineitem.filter("l_shipdate <= date '1998-12-01' - interval '90' day")
@@ -82,6 +94,26 @@ def do_1():
     f = d.groupby(["l_returnflag", "l_linestatus"], orderby=["l_returnflag","l_linestatus"]).agg({"l_quantity":["sum","avg"], "l_extendedprice":["sum","avg"], "disc_price":"sum", 
         "charge":"sum", "l_discount":"avg","*":"count"})
     return f
+
+def do_2():
+    '''
+    Quokka does not do query unnesting.
+    '''
+    europe = region[region.r_name == "EUROPE"]
+    european_nations = nation.join(europe, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
+    d = supplier.join(european_nations, left_on="s_nationkey", right_on="n_nationkey")
+    d = partsupp.join(d, left_on="ps_suppkey", right_on="s_suppkey")
+    f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"})
+    f = f.rename({"ps_supplycost_min":"min_cost","ps_partkey":"europe_key"})
+
+    d = d.join(f, left_on="ps_supplycost", right_on="min_cost", suffix="_2")
+    d = d.join(part, left_on="europe_key", right_on="p_partkey", suffix="_3")
+    d = d.filter("""europe_key = ps_partkey and p_size = 15 and p_type like '%BRASS' """)
+    d = d.select(["s_acctbal", "s_name", "n_name", "europe_key", "p_mfgr", "s_address", "s_phone", "s_comment"])
+    f = d.collect()
+    f = f.sort(["s_acctbal","n_name","s_name","europe_key"],reverse=[True,False,False,False])[:100]
+    return f
+
 
 def do_3():
     d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
@@ -105,6 +137,7 @@ def do_4():
     d = d.join(orders, left_on="l_orderkey", right_on="o_orderkey")
     d = d.filter("o_orderdate >= date '1993-07-01' and o_orderdate < date '1993-10-01'")
     f = d.groupby("o_orderpriority").agg({'*':['count']})
+    return f
 
 
 def do_5():
@@ -115,11 +148,13 @@ def do_5():
     As a general rule of thumb you want to join small tables first and then bigger ones.
     '''
 
-    d = customer.join(nation, left_on="c_nationkey", right_on="n_nationkey")
+    asia = region[region.r_name == "ASIA"]
+    asian_nations = nation.join(asia, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
+    d = customer.join(asian_nations, left_on="c_nationkey", right_on="n_nationkey")
     d = d.join(orders, left_on="c_custkey", right_on="o_custkey", suffix="_3")
     d = d.join(lineitem, left_on="o_orderkey", right_on="l_orderkey", suffix="_4")
     d = d.join(supplier, left_on="l_suppkey", right_on="s_suppkey", suffix="_5")
-    d = d.filter("s_nationkey = c_nationkey and n_regionkey = 2 and o_orderdate >= date '1994-01-01' and o_orderdate < date '1994-01-01' + interval '1' year")
+    d = d.filter("s_nationkey = c_nationkey and o_orderdate >= date '1994-01-01' and o_orderdate < date '1994-01-01' + interval '1' year")
     d = d.with_column("revenue", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
     #f = d.groupby("n_name", orderby=[("revenue",'desc')]).agg({"revenue":["sum"]})
     f = d.groupby("n_name").agg({"revenue":["sum"]})
@@ -137,8 +172,7 @@ def do_7():
     d1 = d1.join(orders, left_on = "c_custkey", right_on = "o_custkey", suffix = "_3")
     d2 = supplier.join(nation, left_on="s_nationkey", right_on = "n_nationkey")
     d2 = lineitem.join(d2, left_on = "l_suppkey", right_on = "s_suppkey", suffix = "_3")
-    print(d1.schema)
-    print(d2.schema)
+    
     d = d1.join(d2, left_on = "o_orderkey", right_on = "l_orderkey",suffix="_4")
     d = d.filter("""(
                                 (n_name = 'FRANCE' and n_name_4 = 'GERMANY')
@@ -205,11 +239,13 @@ def suffix_test():
     sql.__push_filter__(d)
     d.walk()
 
-# print(do_1())
+print(do_1())
+print(do_4())
+#print(do_2())
 # print(do_3())
 # print(do_5())
 # print(do_6())
 # print(do_12())
-print(do_7())
+# print(do_7())
 #do_12()
 #test1()

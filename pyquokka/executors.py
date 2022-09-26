@@ -628,12 +628,24 @@ class PolarJoinExecutor(Executor):
 class DistinctExecutor(Executor):
     def __init__(self, keys) -> None:
 
-        self.seen = set()
+        self.keys = keys
+        self.state = None
 
     def execute(self, batches, stream_id, executor_id):
-        pass
         
-        
+        batches = [i for i in batches if i is not None and len(i) > 0]
+        if len(batches) == 0:
+            return
+        batch = polars.concat(batches)
+        batch = batch.unique()
+
+        if self.state is None:
+            self.state = batch
+            return batch
+        else:
+            contribution = batch.join(self.state, on = self.keys, how="anti")
+            self.state.vstack(contribution)
+            return contribution
     
     def serialize(self):
         return {0:self.seen}, "all"

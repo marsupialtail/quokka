@@ -95,35 +95,6 @@ class RedisObjectsDataset:
             pos += 1
             yield pos, pickle.loads(bump)
 
-
-class InputSingleParquetDataset:
-
-    def __init__(self, bucket, filename, columns=None) -> None:
-        
-        self.bucket = bucket
-        self.filename = filename
-        self.num_channels = None
-        self.columns = columns
-
-    def set_num_channels(self, num_channels):
-
-        s3 = s3fs.S3FileSystem()
-        self.parquet_file = pq.ParquetFile(s3.open(self.bucket + self.filename, "rb"))
-        self.num_row_groups = self.parquet_file.num_row_groups
-        self.num_channels = num_channels
-
-    def get_next_batch(self, mapper_id, pos=None):
-        assert self.num_channels is not None
-        if pos is None:
-            curr_row_group = mapper_id
-        else:
-            curr_row_group = pos
-        while curr_row_group < len(self.num_row_groups):
-            a = self.parquet_file.read_row_group(
-                curr_row_group, columns=self.columns)
-            curr_row_group += self.num_channels
-            yield curr_row_group, a
-
 # use this if you have a lot of small parquet files
 
 # I love this
@@ -193,12 +164,35 @@ class InputDiskHDF5Dataset:
             curr_chunk += self.num_channels
             yield curr_chunk, result
 
-class InputS3ParquetDataset:
+class InputSingleParquetDataset:
 
-    # filter pushdown could be profitable in the future, especially when you can skip entire Parquet files
-    # but when you can't it seems like you still read in the entire thing anyways
-    # might as well do the filtering at the Pandas step. Also you need to map filters to the DNF form of tuples, which could be
-    # an interesting project in itself. Time for an intern?
+    def __init__(self, filename, columns=None, filters = None) -> None:
+        
+        self.filename = filename
+        self.num_channels = None
+        self.columns = columns
+        self.filters = filters
+
+    def set_num_channels(self, num_channels):
+
+        self.parquet_file = pq.ParquetFile(self.filename)
+        self.num_row_groups = self.parquet_file.num_row_groups
+        self.num_channels = num_channels
+
+    def get_next_batch(self, mapper_id, pos=None):
+        assert self.num_channels is not None
+        if pos is None:
+            curr_row_group = mapper_id
+        else:
+            curr_row_group = pos
+        while curr_row_group < len(self.num_row_groups):
+            a = self.parquet_file.read_row_group(
+                curr_row_group, columns=self.columns)
+            curr_row_group += self.num_channels
+            yield curr_row_group, a
+
+
+class InputS3ParquetDataset:
 
     def __init__(self, bucket, prefix = None, key = None, columns=None, filters=None) -> None:
         

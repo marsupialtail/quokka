@@ -89,7 +89,7 @@ class QuokkaContext:
                 files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
                 sizes = [i['Size'] for i in z['Contents'] if i['Key'].endswith('.parquet')]
                 assert len(files) > 0
-                if len(files) == 1 and size < 10 * 1048576:
+                if len(files) == 1 and sizes[0] < 10 * 1048576:
                     return polars.read_parquet("s3://" + bucket + "/" + files[0])
                 
                 if schema is None:
@@ -124,8 +124,15 @@ class QuokkaContext:
         else:
             if type(self.cluster) == S3Cluster:
                 raise NotImplementedError("Does not support reading local dataset with S3 cluster. Must use S3 bucket.")
-
-            self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
+            
+            if "*" in table_location:
+                raise NotImplementedError("Currently does not support reading a directory of Parquets locally.")
+            else:
+                size = os.path.getsize(table_location)
+                if size < 10 * 1048576:
+                    return polars.read_parquet(table_location)
+                else:
+                    self.nodes[self.latest_node_id] = self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
 
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
@@ -200,7 +207,7 @@ class QuokkaContext:
         start = time.time()
         task_graph.run()
         print("run time ", time.time() - start)
-        result = task_graph_nodes[end_node_id].to_pandas()
+        result = task_graph_nodes[end_node_id].to_df()
         # wipe the execution state
         self.execution_nodes = {}
         return result
@@ -541,7 +548,7 @@ class DataStream:
     def collect(self):
         """
         This will trigger the execution of computational graph, similar to Spark collect
-        The result will be a Dataset, which you can then call to_pandas(), or use to_stream() to initiate another computation.
+        The result will be a Dataset, which you can then call to_df(), or use to_stream() to initiate another computation.
         """
         dataset = self.quokka_context.new_dataset(self, self.schema)
         return self.quokka_context.execute_node(dataset.source_node_id)
@@ -652,6 +659,10 @@ class DataStream:
             schema=self.schema + [new_column],
             ordering=None)
 
+    '''
+    This is an optimization where we allow a groupby to be done in a nonblocking fashion if all we want is the keys
+    If you want actual aggregations, then it's no longer possible to do it nonblockiing
+    '''
     def distinct(self, keys: list):
 
         if type(keys) == str:
@@ -660,8 +671,10 @@ class DataStream:
         for key in keys:
             assert key in self.schema
 
+        select_stream = self.select(keys)
+
         return self.quokka_context.new_stream(
-            sources={0: self},
+            sources={0: select_stream},
             partitioners={0: PassThroughPartitioner()},
             node=StatefulNode(
                 schema=keys,
@@ -878,12 +891,3 @@ class DataSet:
         self.quokka_context = quokka_context
         self.schema = schema
         self.source_node_id = source_node_id
-
-    def to_list(self):
-        return ray.get(self.wrapped_dataset.to_list.remote())
-
-    def to_pandas(self):
-        return ray.get(self.wrapped_dataset.to_pandas.remote())
-
-    def to_dict(self):
-        return ray.get(self.wrapped_dataset.to_dict.remote())
