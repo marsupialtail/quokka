@@ -116,17 +116,40 @@ def do_5():
     '''
 
     d = customer.join(nation, left_on="c_nationkey", right_on="n_nationkey")
-    d = d.join(orders, left_on="c_custkey", right_on="o_custkey")
-    d = d.join(lineitem, left_on="o_orderkey", right_on="l_orderkey")
-    d = d.join(supplier, left_on="l_suppkey", right_on="s_suppkey")
+    d = d.join(orders, left_on="c_custkey", right_on="o_custkey", suffix="_3")
+    d = d.join(lineitem, left_on="o_orderkey", right_on="l_orderkey", suffix="_4")
+    d = d.join(supplier, left_on="l_suppkey", right_on="s_suppkey", suffix="_5")
     d = d.filter("s_nationkey = c_nationkey and n_regionkey = 2 and o_orderdate >= date '1994-01-01' and o_orderdate < date '1994-01-01' + interval '1' year")
     d = d.with_column("revenue", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
-    f = d.groupby("n_name", orderby={"revenue":'desc'}).agg({"revenue":["sum"]})
+    #f = d.groupby("n_name", orderby=[("revenue",'desc')]).agg({"revenue":["sum"]})
+    f = d.groupby("n_name").agg({"revenue":["sum"]})
+
+    return f
 
 def do_6():
     d = lineitem.filter("l_shipdate >= date '1994-01-01' and l_shipdate < date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01 and l_quantity < 24")
-    d = d.with_column("revenue", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]), required_columns={"l_extendedprice", "l_discount"})
+    d = d.with_column("revenue", lambda x: x["l_extendedprice"] * x["l_discount"], required_columns={"l_extendedprice", "l_discount"})
     f = d.aggregate({"revenue":["sum"]})
+    return f
+
+def do_7():
+    d1 = customer.join(nation, left_on = "c_nationkey", right_on = "n_nationkey")
+    d1 = d1.join(orders, left_on = "c_custkey", right_on = "o_custkey", suffix = "_3")
+    d2 = supplier.join(nation, left_on="s_nationkey", right_on = "n_nationkey")
+    d2 = lineitem.join(d2, left_on = "l_suppkey", right_on = "s_suppkey", suffix = "_3")
+    print(d1.schema)
+    print(d2.schema)
+    d = d1.join(d2, left_on = "o_orderkey", right_on = "l_orderkey",suffix="_4")
+    d = d.filter("""(
+                                (n_name = 'FRANCE' and n_name_4 = 'GERMANY')
+                                or (n_name = 'GERMANY' and n_name_4 = 'FRANCE')
+                        )
+                        and l_shipdate between date '1995-01-01' and date '1996-12-31'""")
+    d = d.with_column("l_year", lambda x: x["l_shipdate"].dt.year(), required_columns = {"l_shipdate"})
+    d = d.with_column("volume", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
+    f = d.groupby(["n_name","n_name_4","l_year"], orderby=["n_name","n_name_4","l_year"]).aggregate({"volume":"sum"})
+    return f
+    # d = d.filter("")
 
 def do_12():
     
@@ -139,6 +162,7 @@ def do_12():
     d = d.with_column("low", lambda x: (x["o_orderpriority"] != "1-URGENT") & (x["o_orderpriority"] != "2-HIGH"), required_columns={"o_orderpriority"})
 
     f = d.groupby("l_shipmode").aggregate(aggregations={'high':['sum'], 'low':['sum']})
+    return f
 
 def word_count():
 
@@ -181,6 +205,11 @@ def suffix_test():
     sql.__push_filter__(d)
     d.walk()
 
-print(do_5())
+# print(do_1())
+# print(do_3())
+# print(do_5())
+# print(do_6())
+# print(do_12())
+print(do_7())
 #do_12()
 #test1()

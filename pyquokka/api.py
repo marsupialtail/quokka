@@ -21,7 +21,7 @@ class QuokkaContext:
         self.nodes = {}
         self.cluster = cluster
 
-    def read_csv(self, table_location: str, schema, sep=","):
+    def read_csv(self, table_location: str, schema, has_header = False, sep=","):
 
         # the reader is fine if you supply no schema, but the DataStream needs it for potential downstream filtering/pushdowns.
         # that's why we need the schema. TODO: We should be able to infer it, at least if the header is provided. This is future work. 
@@ -36,11 +36,26 @@ class QuokkaContext:
             if "*" in table_location:
                 assert table_location[-1] == "*" , "wildcard can only be the last character in address string"
                 prefix = "/".join(table_location[:-1].split("/")[1:])
+
+                s3 = boto3.client('s3')
+                z = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+                files = [i['Key'] for i in z['Contents']]
+                sizes = [i['Size'] for i in z['Contents']]
+                assert len(files) > 0
+                if len(files) == 1 and sizes[0] < 10 * 1048576:
+                    return polars.read_csv("s3://" + bucket + "/" + files[0])
+
                 table_location = {"bucket":bucket, "prefix":prefix}
                 self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, prefix, None, schema, sep)
             else:
                 key = "/".join(table_location.split("/")[1:])
-                self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep)
+                s3 = boto3.client('s3')
+                response = s3.head_object(Bucket= bucket, Key=key)
+                size = response['ContentLength']
+                if size < 10 * 1048576:
+                    return polars.read_csv(table_location, new_columns = schema, has_header = has_header,sep = sep)
+                else:
+                    self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep)
         else:
 
             if type(self.cluster) == S3Cluster:
@@ -49,7 +64,11 @@ class QuokkaContext:
             if "*" in table_location:
                 raise NotImplementedError("Currently does not support reading a directory of CSVs locally.")
             else:
-                self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep)
+                size = os.path.getsize(table_location)
+                if size < 10 * 1048576:
+                    return polars.read_csv(table_location, new_columns = schema, has_header = has_header,sep = sep)
+                else:
+                    self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep)
 
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
@@ -65,11 +84,16 @@ class QuokkaContext:
             if "*" in table_location:
                 assert table_location[-1] == "*" , "wildcard can only be the last character in address string"
                 prefix = "/".join(table_location[:-1].split("/")[1:])
+                s3 = boto3.client('s3')
+                z = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+                files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
+                sizes = [i['Size'] for i in z['Contents'] if i['Key'].endswith('.parquet')]
+                assert len(files) > 0
+                if len(files) == 1 and size < 10 * 1048576:
+                    return polars.read_parquet("s3://" + bucket + "/" + files[0])
+                
                 if schema is None:
                     try:
-                        s3 = boto3.client('s3')
-                        z = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
-                        files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
                         s3 = s3fs.S3FileSystem()
                         f = pq.ParquetFile(s3.open(bucket + "/" + files[0], "rb"))
                         schema = [k.name for k in f.schema_arrow]
@@ -89,7 +113,14 @@ class QuokkaContext:
                     except:
                         raise Exception("schema discovery failed for Parquet dataset at location ", table_location)
                 key = "/".join(table_location.split("/")[1:])
-                self.nodes[self.latest_node_id] = InputS3ParquetDataset(bucket, None, key, schema)
+                s3 = boto3.client('s3')
+                response = s3.head_object(Bucket= bucket, Key=key)
+                size = response['ContentLength']
+                if size < 10 * 1048576:
+                    return polars.read_parquet(table_location)
+                else:
+                    self.nodes[self.latest_node_id] = InputS3ParquetDataset(bucket, None, key, schema)
+
         else:
             if type(self.cluster) == S3Cluster:
                 raise NotImplementedError("Does not support reading local dataset with S3 cluster. Must use S3 bucket.")
@@ -123,10 +154,10 @@ class QuokkaContext:
         self.__early_projection__(node_id)
         self.__fold_map__(node_id)
         
-        assert len(self.nodes[node_id].parents) == 1
-        parent_idx, parent_id = self.nodes[node_id].parents.popitem()
-        del self.nodes[node_id]
-        self.nodes[parent_id].blocking = True
+        assert len(self.execution_nodes[node_id].parents) == 1
+        parent_idx, parent_id = self.execution_nodes[node_id].parents.popitem()
+        del self.execution_nodes[node_id]
+        self.execution_nodes[parent_id].blocking = True
         return parent_id
 
 
@@ -134,15 +165,15 @@ class QuokkaContext:
 
         start = time.time()
         task_graph = TaskGraph(self.cluster)
-        node = self.nodes[end_node_id]
+        node = self.execution_nodes[end_node_id]
         nodes = deque([node])
         reverse_sorted_nodes = [(end_node_id,node)]
         while len(nodes) > 0:
             new_node = nodes.popleft()
             for parent_idx in new_node.parents:
                 parent_id = new_node.parents[parent_idx]
-                reverse_sorted_nodes.append((parent_id,self.nodes[parent_id]))
-                nodes.append(self.nodes[parent_id])
+                reverse_sorted_nodes.append((parent_id,self.execution_nodes[parent_id]))
+                nodes.append(self.execution_nodes[parent_id])
         reverse_sorted_nodes = reverse_sorted_nodes[::-1]
         task_graph_nodes = {}
         for node_id, node in reverse_sorted_nodes:
@@ -150,7 +181,7 @@ class QuokkaContext:
                 task_graph_nodes[node_id] = node.lower(task_graph)
             else:
                 parent_nodes = {parent_idx: task_graph_nodes[node.parents[parent_idx]] for parent_idx in node.parents}
-                target_info = {parent_idx: self.nodes[node.parents[parent_idx]].targets[node_id] for parent_idx in node.parents}
+                target_info = {parent_idx: self.execution_nodes[node.parents[parent_idx]].targets[node_id] for parent_idx in node.parents}
                 placement_strategy = node.placement_strategy
                 if placement_strategy is None:
                     task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info)
@@ -169,43 +200,73 @@ class QuokkaContext:
         start = time.time()
         task_graph.run()
         print("run time ", time.time() - start)
-        return task_graph_nodes[end_node_id].to_pandas()
+        result = task_graph_nodes[end_node_id].to_pandas()
+        # wipe the execution state
+        self.execution_nodes = {}
+        return result
                     
 
     def execute_node(self, node_id):
         assert issubclass(type(self.nodes[node_id]), SinkNode)
-        #self.explain(node_id)
+
+        # we will now make a copy of the nodes involved in the computation. 
+        
+        node = self.nodes[node_id]
+        nodes = deque([node])
+        self.execution_nodes = {node_id: copy.deepcopy(node)}
+
+        while len(nodes) > 0:
+            new_node = nodes.popleft()
+            for parent_idx in new_node.parents:
+                parent_id = new_node.parents[parent_idx]
+                self.execution_nodes[parent_id] = copy.deepcopy(self.nodes[parent_id])
+                nodes.append(self.nodes[parent_id])
+        
+        # prune targets from execution nodes that are not related to this execution
+        execution_node_set = set(self.execution_nodes.keys())
+        for execute_node_id in self.execution_nodes:
+            node = self.execution_nodes[execute_node_id]
+            new_targets = {}
+            for target_id in node.targets:
+                # this target is related to some other execution plan, don't have to be included here.
+                if target_id in execution_node_set:
+                    # only deleting the target in the node in execution_nodes, not in nodes!
+                    new_targets[target_id] = node.targets[target_id]
+            node.targets = new_targets
+        
+        #self.explain(node_id,"text")
+
         new_node_id = self.optimize(node_id)       
-        #self.explain(new_node_id, "text")
+        #self.explain(new_node_id)
         
         return self.lower(new_node_id)
 
     def explain(self, node_id, mode="graph"):
 
         if mode == "text":
-            print(node_id, self.nodes[node_id])
-            for parent in self.nodes[node_id].parents:
-                self.explain(self.nodes[node_id].parents[parent], mode="text")
+            print(node_id, self.execution_nodes[node_id])
+            for parent in self.execution_nodes[node_id].parents:
+                self.explain(self.execution_nodes[node_id].parents[parent], mode="text")
         else:
             logical_plan_graph = graphviz.Digraph(
                 'logical-plan', node_attr={'shape': 'box'})
             logical_plan_graph.graph_attr['rankdir'] = 'BT'
-            logical_plan_graph.node(str(node_id), str(self.nodes[node_id]))
-            for parent in self.nodes[node_id].parents:
-                self._walk(self.nodes[node_id].parents[parent], logical_plan_graph)
+            logical_plan_graph.node(str(node_id), str(node_id) + str(self.execution_nodes[node_id]))
+            for parent in self.execution_nodes[node_id].parents:
+                self._walk(self.execution_nodes[node_id].parents[parent], logical_plan_graph)
                 logical_plan_graph.edge(
-                    str(self.nodes[node_id].parents[parent]), str(node_id))
+                    str(self.execution_nodes[node_id].parents[parent]), str(node_id))
             logical_plan_graph.view()
 
     def _walk(self, node_id, graph):
-        graph.node(str(node_id), str(self.nodes[node_id]))
-        for parent in self.nodes[node_id].parents:
-            self._walk(self.nodes[node_id].parents[parent], graph)
-            graph.edge(str(self.nodes[node_id].parents[parent]), str(node_id))
+        graph.node(str(node_id), str(self.execution_nodes[node_id]))
+        for parent in self.execution_nodes[node_id].parents:
+            self._walk(self.execution_nodes[node_id].parents[parent], graph)
+            graph.edge(str(self.execution_nodes[node_id].parents[parent]), str(node_id))
 
     def __push_filter__(self, node_id):
 
-        node = self.nodes[node_id]
+        node = self.execution_nodes[node_id]
         targets = node.targets
 
         # you are the one that triggered execution, you must be a SinkNode!
@@ -248,20 +309,20 @@ class QuokkaContext:
                 if optimizer.simplify.simplify(predicate) == sqlglot.exp.TRUE:
                     return self.__push_filter__(parent_id)
                 else:
-                    parent = self.nodes[parent_id]
+                    parent = self.execution_nodes[parent_id]
                     parent.targets[target_id] = copy.deepcopy(
                         targets[target_id])
                     parent.targets[target_id].and_predicate(predicate)
                     success = False
                     # we need to find which parent in the target is this node, and replace it with this node's parent
-                    for key in self.nodes[target_id].parents:
-                        if self.nodes[target_id].parents[key] == node_id:
-                            self.nodes[target_id].parents[key] = parent_id
+                    for key in self.execution_nodes[target_id].parents:
+                        if self.execution_nodes[target_id].parents[key] == node_id:
+                            self.execution_nodes[target_id].parents[key] = parent_id
                             success = True
                             break
                     assert success
                     del parent.targets[node_id]
-                    del self.nodes[node_id]
+                    del self.execution_nodes[node_id]
                     return self.__push_filter__(parent_id)
 
             # if this is not a filter node, it might have multiple parents. This is okay.
@@ -283,10 +344,15 @@ class QuokkaContext:
                             sqlglot.expressions.Column))
                         parents = set(
                             node.schema_mapping[col][0] for col in columns)
+                        # the schema mapping also tells you what this column is called in the parent
+                        rename_dict = {col: node.schema_mapping[col][1] for col in columns if col != node.schema_mapping[col][1]}
                         # all the columns are from one parent, and not from yourself.
                         if len(parents) == 1 and -1 not in parents:
+                            for identifier in conjunct.find_all(sqlglot.exp.Identifier):
+                                if identifier.name in rename_dict:
+                                    identifier.replace(sqlglot.exp.to_identifier(rename_dict[identifier.name]))
                             parent_id = node.parents[parents.pop()]
-                            parent = self.nodes[parent_id]
+                            parent = self.execution_nodes[parent_id]
                             parent.targets[node_id].and_predicate(conjunct)
                         else:
                             new_conjuncts.append(conjunct)
@@ -301,7 +367,7 @@ class QuokkaContext:
 
     def __early_projection__(self, node_id):
 
-        node = self.nodes[node_id]
+        node = self.execution_nodes[node_id]
         targets = node.targets
 
         if issubclass(type(node), SourceNode):
@@ -335,7 +401,7 @@ class QuokkaContext:
             # you should have the required_columns attribute
 
             if issubclass(type(node), ProjectionNode):
-                parent = self.nodes[node.parents[0]]
+                parent = self.execution_nodes[node.parents[0]]
                 projection = set()
                 predicate_required_columns = set()
                 for target_id in targets:
@@ -357,15 +423,15 @@ class QuokkaContext:
 
                     success = False
                     # we need to find which parent in the target is this node, and replace it with this node's parent
-                    for key in self.nodes[target_id].parents:
-                        if self.nodes[target_id].parents[key] == node_id:
-                            self.nodes[target_id].parents[key] = node.parents[0]
+                    for key in self.execution_nodes[target_id].parents:
+                        if self.execution_nodes[target_id].parents[key] == node_id:
+                            self.execution_nodes[target_id].parents[key] = node.parents[0]
                             success = True
                             break
                     assert success
 
                 del parent.targets[node_id]
-                del self.nodes[node_id]
+                del self.execution_nodes[node_id]
                 return self.__early_projection__(node.parents[0])
             else:
                 projection = set()
@@ -388,9 +454,9 @@ class QuokkaContext:
                 pushed_projections = {}
 
                 # first make sure you include the operator required columns
-                for parent_idx in self.nodes[node_id].required_columns:
+                for parent_idx in self.execution_nodes[node_id].required_columns:
                     parent_id = node.parents[parent_idx]
-                    pushed_projections[parent_id] = self.nodes[node_id].required_columns[parent_idx]
+                    pushed_projections[parent_id] = self.execution_nodes[node_id].required_columns[parent_idx]
 
                 # figure out which parent each pushable column came from
                 for col in pushable_projections:
@@ -408,7 +474,7 @@ class QuokkaContext:
 
                 for parent_idx in node.parents:
                     parent_id = node.parents[parent_idx]
-                    parent = self.nodes[parent_id]
+                    parent = self.execution_nodes[parent_id]
                     if parent_id in pushed_projections:
                         # if for some reason the parent's projection is not None then it has to contain whatever you are already projecting, or else that specified projection is wrong
                         if parent.targets[node_id].projection is not None:
@@ -420,7 +486,7 @@ class QuokkaContext:
 
     def __fold_map__(self, node_id):
 
-        node = self.nodes[node_id]
+        node = self.execution_nodes[node_id]
         targets = node.targets
 
         if issubclass(type(node), SourceNode):
@@ -436,7 +502,7 @@ class QuokkaContext:
                 if not node.foldable:  # this node should not be folded
                     return self.__fold_map__(node.parents[0])
 
-                parent = self.nodes[node.parents[0]]
+                parent = self.execution_nodes[node.parents[0]]
                 for target_id in targets:
                     target = targets[target_id]
                     parent.targets[target_id] = TargetInfo(target.partitioner, parent.targets[node_id].predicate,  target.projection, [
@@ -444,15 +510,15 @@ class QuokkaContext:
 
                     # we need to find which parent in the target is this node, and replace it with this node's parent
                     success = False
-                    for key in self.nodes[target_id].parents:
-                        if self.nodes[target_id].parents[key] == node_id:
-                            self.nodes[target_id].parents[key] = node.parents[0]
+                    for key in self.execution_nodes[target_id].parents:
+                        if self.execution_nodes[target_id].parents[key] == node_id:
+                            self.execution_nodes[target_id].parents[key] = node.parents[0]
                             success = True
                             break
                     assert success
 
                 del parent.targets[node_id]
-                del self.nodes[node_id]
+                del self.execution_nodes[node_id]
                 return self.__fold_map__(node.parents[0])
             else:
                 for parent_idx in node.parents:
@@ -479,6 +545,8 @@ class DataStream:
         """
         dataset = self.quokka_context.new_dataset(self, self.schema)
         return self.quokka_context.execute_node(dataset.source_node_id)
+    
+    #def explain(self):
 
     def write_csv(self, path):
         pass
@@ -608,6 +676,8 @@ class DataStream:
 
     def join(self, right, on=None, left_on=None, right_on=None, suffix="_2", how="inner"):
 
+        assert type(right) == polars.internals.frame.DataFrame or issubclass(type(right), DataStream)
+
         if on is None:
             assert left_on is not None and right_on is not None
             assert left_on in self.schema, "join key not found in left table"
@@ -624,27 +694,49 @@ class DataStream:
 
         new_schema = self.schema.copy()
         schema_mapping = {col: (0, col) for col in self.schema}
+
+        # if the right table is already materialized, the schema mapping should forget about it since we can't push anything down anyways.
+        # an optimization could be to push down the predicate directly to the materialized polars table in the BroadcastJoinExecutor
+        # leave this as a TODO. this could be greatly benenficial if it significantly reduces the size of the small table.
+        if type(right) == polars.internals.frame.DataFrame:
+            right_table_id = -1
+        else:
+            right_table_id = 1
+
         for col in right.schema:
             if col == right_on:
                 continue
             if col in new_schema:
                 assert col + suffix not in new_schema, ("the suffix was not enough to guarantee unique col names", col + suffix, new_schema)
                 new_schema.append(col + suffix)
-                schema_mapping[col+suffix] = (1, col)
+                schema_mapping[col+suffix] = (right_table_id, col)
             else:
                 new_schema.append(col)
-                schema_mapping[col] = (1, col)
+                schema_mapping[col] = (right_table_id, col)
 
-        return self.quokka_context.new_stream(
-            sources={0: self, 1: right},
-            partitioners={0: HashPartitioner(left_on), 1: HashPartitioner(right_on)},
-            node=StatefulNode(
+        if issubclass(type(right), DataStream):
+            return self.quokka_context.new_stream(
+                sources={0: self, 1: right},
+                partitioners={0: HashPartitioner(left_on), 1: HashPartitioner(right_on)},
+                node=StatefulNode(
+                    schema=new_schema,
+                    schema_mapping=schema_mapping,
+                    required_columns={0: {left_on}, 1: {right_on}},
+                    operator=PolarJoinExecutor(on, left_on, right_on, suffix=suffix, how=how)),
                 schema=new_schema,
-                schema_mapping=schema_mapping,
-                required_columns={0: {left_on}, 1: {right_on}},
-                operator=PolarJoinExecutor(on, left_on, right_on, suffix=suffix, how=how)),
-            schema=new_schema,
-            ordering=None)
+                ordering=None)
+        elif type(right) == polars.internals.frame.DataFrame:
+            return self.quokka_context.new_stream(
+                sources = {0:self},
+                partitioners={0: PassThroughPartitioner()},
+                node = StatefulNode(
+                    schema = new_schema,
+                    schema_mapping=schema_mapping,
+                    required_columns={0: {left_on}},
+                    operator=BroadcastJoinExecutor(right, small_on=right_on, big_on = left_on, suffix=suffix, how = how)
+                ),
+                schema=new_schema,
+                ordering=None)
 
     def groupby(self, groupby: list, orderby=None):
 
@@ -682,20 +774,21 @@ class DataStream:
         for key in groupby:
             assert key in self.schema
 
+        count_col = "count"
+
         if "*" in aggregations:
-            count = True
+            emit_count = True
             del aggregations["*"]
-            assert "count" not in self.schema, "schema conflict with column name count"
+            assert count_col not in self.schema, "schema conflict with column name count"
         else:
-            count = False
+            emit_count = False
 
         # make all single aggregation specs into a list of one.
 
         # first insert the select node.
         required_columns = groupby + list(aggregations.keys())
 
-        # todo: write this
-        new_schema = groupby + ["count"]
+        new_schema = groupby + [count_col + "_sum"] if len(groupby) > 0 else [count_col,count_col + "_sum"]
 
         '''
         We need to do two things here. The groupby-aggregation will be pushed down as a transformation.
@@ -703,8 +796,7 @@ class DataStream:
         in the aggregations argument, each column could have multiple aggregations defined. However the transformation will make sure 
         that each of those aggregations gets its own column in the transformed schema, so the AggExecutor doesn't have to deal with this.
         '''
-
-        count_col = "count"
+        
         pyarrow_agg_list = [(count_col, "sum")]
         agg_executor_dict = {}
         for key in aggregations:
@@ -723,9 +815,13 @@ class DataStream:
         # this function needs to be fast since it's executed at every batch in the actual runtime.
         def f(keys, agg_list, batch):
             enhanced_batch = batch.with_column(polars.lit(1).cast(polars.Int64).alias(count_col))
-            return polars.from_arrow(enhanced_batch.to_arrow().group_by(keys).aggregate(agg_list)).rename({count_col + "_sum" : count_col})
+            return polars.from_arrow(enhanced_batch.to_arrow().group_by(keys).aggregate(agg_list))
 
-        map_func = partial(f, groupby, pyarrow_agg_list)
+        if len(groupby) > 0:
+            map_func = partial(f, groupby, pyarrow_agg_list)
+        else:
+            map_func = partial(f, [count_col], pyarrow_agg_list)
+
         transformed_stream = self.transform(map_func,
                                                      new_schema=new_schema,
                                                      # it shouldn't matter too much for the required columns, since no predicates or projections will ever be pushed through this map node.
@@ -735,7 +831,7 @@ class DataStream:
                 schema=new_schema,
                 schema_mapping={col: (-1, col) for col in new_schema},
                 required_columns={0: set(new_schema) },
-                operator=AggExecutor(groupby, orderby, agg_executor_dict, count)
+                operator=AggExecutor(groupby if len(groupby) > 0 else [count_col], orderby, agg_executor_dict, emit_count)
             )
         agg_node.set_placement_strategy(SingleChannelStrategy())
         aggregated_stream = self.quokka_context.new_stream(

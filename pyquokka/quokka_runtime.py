@@ -208,7 +208,8 @@ class TaskGraph:
 
         if ip_to_num_channel is None:
             # automatically come up with some policy
-            ip_to_num_channel = {ip: self.cluster.cpu_count for ip in list(self.cluster.private_ips.values())}
+            #ip_to_num_channel = {ip: self.cluster.cpu_count for ip in list(self.cluster.private_ips.values())}
+            ip_to_num_channel = {ip: 4 for ip in list(self.cluster.private_ips.values())}
 
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
 

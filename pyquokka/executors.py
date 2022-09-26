@@ -302,9 +302,10 @@ class OutputS3ParquetExecutor(Executor):
 class BroadcastJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
-    def __init__(self, small_table, on = None, small_on = None, big_on = None):
+    def __init__(self, small_table, on = None, small_on = None, big_on = None, suffix = "_small", how = "inner"):
 
-        self.state = None
+        self.suffix = suffix
+        self.how = how
 
         if type(small_table) == pd.core.frame.DataFrame:
             self.state = polars.from_pandas(small_table)
@@ -349,7 +350,7 @@ class BroadcastJoinExecutor(Executor):
         if len(batches) == 0:
             return
         batch = polars.concat(batches)
-        result = batch.join(self.state, left_on = self.big_on, right_on = self.small_on, how = "inner")
+        result = batch.join(self.state, left_on = self.big_on, right_on = self.small_on, how = self.how, suffix = self.suffix)
 
         if result is not None and len(result) > 0:
             return result
@@ -659,9 +660,9 @@ class AggExecutor(Executor):
         self.aggregation_dict = aggregation_dict
         self.length_limit = 10000
         # hope and pray there is no column called __&&count__
-        self.pyarrow_agg_list = [("count", "sum")]
-        self.count_col = "count"
-        self.rename_dict = {"count_sum": self.count_col}
+        self.pyarrow_agg_list = [("count_sum", "sum")]
+        self.count_col = "count_sum"
+        self.rename_dict = {"count_sum_sum": self.count_col}
         for key in aggregation_dict:
             assert aggregation_dict[key] in {
                     "max", "min", "mean", "sum"}, "only support max, min, mean and sum for now"
@@ -697,11 +698,7 @@ class AggExecutor(Executor):
             if self.state is None:
                 self.state = batch
             else:
-                try:
-                    self.state = self.state.vstack(batch)
-                except:
-                    print(self.state, batch)
-                    raise Exception
+                self.state = self.state.vstack(batch)
                 if len(self.state) > self.length_limit:
                     arrow_state = self.state.to_arrow()
                     arrow_state = arrow_state.group_by(self.groupby_keys).aggregate(self.pyarrow_agg_list)

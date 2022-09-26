@@ -79,7 +79,10 @@ def evaluate(node):
         if node.is_string:
             return lambda x: node.this
         else:
-            return lambda x: int(node.this)
+            if "." in node.this:
+                return lambda x: float(node.this)
+            else:
+                return lambda x: int(node.this)
     elif type(node) == sqlglot.expressions.Column:
         return lambda x: x[node.name]
     elif type(node) == sqlglot.expressions.Star:
