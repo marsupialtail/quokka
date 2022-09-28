@@ -95,19 +95,19 @@ class InputDiskCSVNode(SourceNode):
         return lineitem
 
 class InputS3ParquetNode(SourceNode):
-    def __init__(self, bucket, prefix, key, schema, predicate = None, projection = None) -> None:
+    def __init__(self, filepath, schema, predicate = None, projection = None) -> None:
         super().__init__(schema)
-        self.bucket = bucket
-        self.prefix = prefix
-        self.key = key
+        if filepath[:5] == "s3://":
+            filepath = filepath[5:]
+        self.filepath = filepath
         self.predicate = predicate
         self.projection = projection
     
     def lower(self, task_graph):
 
-        lineitem_csv_reader = InputS3ParquetDataset(self.bucket, self.prefix, self.key, list(self.projection), self.predicate)
-        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader)
-        return lineitem
+        parquet_reader = InputEC2ParquetDataset(self.filepath, mode = "s3", columns = list(self.projection), filters = self.predicate)
+        node = task_graph.new_input_reader_node(parquet_reader)
+        return node
     
     def __str__(self):
         result = str(type(self)) + '\nPredicate: ' + str(self.predicate) + '\nProjection: ' + str(self.projection) + '\nTargets:' 
@@ -116,14 +116,17 @@ class InputS3ParquetNode(SourceNode):
         return result
 
 class InputDiskParquetNode(SourceNode):
-    def __init__(self, filename, schema, predicate = None, projection = None) -> None:
+    def __init__(self, filepath, schema, predicate = None, projection = None) -> None:
         super().__init__(schema)
-        self.filename = filename 
+        self.filepath = filepath
         self.predicate = predicate
         self.projection = projection
     
     def lower(self, task_graph):
-        raise NotImplementedError
+
+        parquet_reader = InputParquetDataset(self.filepath, mode = "local", columns = list(self.projection), filters = self.predicate)
+        node = task_graph.new_input_reader_node(parquet_reader)
+        return node
     
     def __str__(self):
         result = str(type(self)) + '\nPredicate: ' + str(self.predicate) + '\nProjection: ' + str(self.projection) + '\nTargets:' 
@@ -193,6 +196,9 @@ class MapNode(TaskNode):
         super().__init__(schema, schema_mapping, required_columns)
         self.function = function
         self.foldable = foldable
+
+    def lower(self):
+        raise NotImplementedError
 
 class FilterNode(TaskNode):
 

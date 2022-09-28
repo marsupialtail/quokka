@@ -3,7 +3,9 @@ import sqlglot.expressions as exp
 import pyarrow.compute as compute
 from datetime import datetime
 from pyarrow import compute
-from functools import partial
+from functools import partial, reduce
+import operator
+
 
 def is_cast_to_date(x):
     return type(x) == exp.Cast and type(x.args['to']) == exp.DataType
@@ -15,6 +17,48 @@ def apply_conditions_to_batch(funcs, batch):
     for func in funcs:
         batch = batch[func]
     return batch
+
+def filters_to_expression(filters):
+    """
+    Check if filters are well-formed.
+
+    See _DNF_filter_doc above for more details.
+    """
+    import pyarrow.dataset as ds
+
+    if isinstance(filters, ds.Expression):
+        return filters
+
+    #filters = _check_filters(filters, check_null_strings=False)
+
+    def convert_single_predicate(col, op, val):
+        field = ds.field(col)
+
+        if op == "=" or op == "==":
+            return field == val
+        elif op == "!=":
+            return field != val
+        elif op == '<':
+            return field < val
+        elif op == '>':
+            return field > val
+        elif op == '<=':
+            return field <= val
+        elif op == '>=':
+            return field >= val
+        elif op == 'in':
+            return field.isin(val)
+        elif op == 'not in':
+            return ~field.isin(val)
+        else:
+            raise ValueError(
+                '"{0}" is not a valid operator in predicates.'.format(
+                    (col, op, val)))
+
+    conjunction_members = [convert_single_predicate(col, op, val) for col, op, val in filters]
+
+    return reduce(operator.and_, conjunction_members)
+
 
 def evaluate(node):
     node = node.unnest()
@@ -123,6 +167,15 @@ def parquet_condition_decomp(condition):
         mapping = {"eq":"==","neq":"!=","lt":"<","lte":"<=","gt":">","gte":">=","in":"in"}
         return mapping[k]
     
+    def handle_literal(node):
+        if node.is_string:
+            return node.this
+        else:
+            if "." in node.this:
+                return float(node.this)
+            else:
+                return int(node.this)
+    
     conjuncts = list(
                         condition.flatten()
                         if isinstance(condition, sqlglot.exp.And)
@@ -135,7 +188,7 @@ def parquet_condition_decomp(condition):
         if type(node) in {exp.GT, exp.GTE, exp.LT, exp.LTE, exp.EQ, exp.NEQ}:
             if type(node.left) == exp.Column:
                 if type(node.right) == exp.Literal:
-                    filters.append((node.left.name, key_to_symbol(node.key), node.right.name))
+                    filters.append((node.left.name, key_to_symbol(node.key), handle_literal(node.right)))
                     continue
                 # don't handle other types of casts
                 elif is_cast_to_date(node.right):
@@ -143,7 +196,7 @@ def parquet_condition_decomp(condition):
                     continue
             elif type(node.right) == exp.Column: 
                 if type(node.left) == exp.Literal:
-                    filters.append((node.left.name, key_to_symbol(node.key), node.right.name))
+                    filters.append((handle_literal(node.left), key_to_symbol(node.key), node.right.name))
                     continue
                 # don't handle other types of casts
                 elif is_cast_to_date(node.left):
@@ -152,21 +205,28 @@ def parquet_condition_decomp(condition):
         elif type(node) == exp.In:
             if type(node.this) == exp.Column:
                 if all([type(i) == exp.Literal for i in node.args["expressions"]]):
-                    filters.append((node.this.name, "in", [i.name for i in node.args["expressions"]]))
+                    filters.append((node.this.name, "in", [handle_literal(i) for i in node.args["expressions"]]))
                     continue
                 elif all([is_cast_to_date(i) for i in node.args["expressions"]]):
                     filters.append((node.this.name, "in", [compute.strptime(i.name,format="%Y-%m-%d",unit="s") for i in node.args["expressions"]]))
                     continue
+                else:
+                    raise Exception("Incongrent types in IN clause")
+            else:
+                raise Exception("left operand of IN clause must be column")
         elif type(node) == exp.Between:
             if type(node.this) == exp.Column:
                 if type(node.args["low"]) == exp.Literal and type(node.args["high"]) == exp.Literal:
-                    filters.append((node.this.name, ">=", node.args["low"].name))
-                    filters.append((node.this.name, "<=", node.args["high"].name))
+                    filters.append((node.this.name, ">=", handle_literal(node.args["low"])))
+                    filters.append((node.this.name, "<=", handle_literal(node.args["high"])))
                     continue
                 elif is_cast_to_date(node.args["low"]) and is_cast_to_date(node.args["high"]):
                     filters.append((node.this.name, ">=", compute.strptime(node.args["low"].name,format="%Y-%m-%d",unit="s")))
                     filters.append((node.this.name, "<=", compute.strptime(node.args["high"].name,format="%Y-%m-%d",unit="s")))
                     continue
+                else:
+                    raise Exception("Incogruent types for Between clause")
+            raise Exception("left operand of Between clause must be column")
         
         #print("I cannot become a predicate!", node.sql(pretty=True))
         remaining_predicate = sqlglot.exp.and_(remaining_predicate, node)

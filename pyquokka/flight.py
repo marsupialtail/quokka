@@ -21,7 +21,7 @@ class DiskQueue:
         self.in_mem_portion =  {(parent, channel): deque() for parent in parents for channel in parents[parent]}
         self.prefix = prefix
         self.file_no = 0
-        self.mem_limit = 1e9 # very small limit to test disk flushing. you want to set it to total_mem / channels / 2 or something.
+        self.mem_limit = 10e9 # very small limit to test disk flushing. you want to set it to total_mem / channels / 2 or something.
         self.mem_usage = 0
         self.disk_location = disk_location
 
@@ -134,26 +134,34 @@ class FlightServer(pyarrow.flight.FlightServerBase):
         if self.latest_input_received[target_id, target_channel][source_id, source_channel] == "done":
             print(source_id, source_channel , self.parents)
             print("this channel has already received the done signal. stop wasting your breath.")
-            raise Exception
+            raise Exception("this channel has already received the done signal. stop wasting your breath.")
 
         if out_seq <= self.latest_input_received[target_id, target_channel][source_id, source_channel]:
             print("rejected an input stream's tag smaller than or equal to latest input received. input tag", out_seq, "current latest input received", self.latest_input_received[target_id, target_channel][source_id, source_channel])
-            raise Exception
+            raise Exception("rejected an input stream's tag smaller than or equal to latest input received. input tag", out_seq, "current latest input received", self.latest_input_received[target_id, target_channel][source_id, source_channel])
 
         # this won't be required anymore in quokka 2.0
         # if out_seq > self.latest_input_received[target_id, target_channel][source_id, source_channel] + 1:
         #     print("DROPPING INPUT. THIS IS A FUTURE INPUT THAT WILL BE RESENT (hopefully)", tag, stream_id, channel, "current tag", self.latest_input_received[(stream_id,channel)])
         #     raise Exception
-            
-        if my_format == "done":
-            self.latest_input_received[target_id, target_channel][source_id, source_channel] = "done"
-            return
-        else:
-            self.latest_input_received[target_id, target_channel][source_id, source_channel] = out_seq
+        
+        try:
+            if my_format == "done":
+                self.latest_input_received[target_id, target_channel][source_id, source_channel] = "done"
+                return
+            else:
+                self.latest_input_received[target_id, target_channel][source_id, source_channel] = out_seq
+        except:
+            print("failure to update latest input received")
+            raise Exception("failure to update latest input received")
 
         #print(key)
         self.flights_lock.acquire()
-        self.flights[target_id, target_channel].append((source_id, source_channel) ,reader.read_chunk().data, my_format)
+        try:
+            self.flights[target_id, target_channel].append((source_id, source_channel) ,reader.read_chunk().data, my_format)
+        except:
+            print("failure to append to diskqueue")
+            raise Exception("failure to append to diskqueue")
         self.flights_lock.release()
         #print(self.flights[key])
 

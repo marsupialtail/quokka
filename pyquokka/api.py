@@ -1,3 +1,4 @@
+from tempfile import TemporaryFile
 import graphviz
 import ray
 import copy
@@ -53,7 +54,7 @@ class QuokkaContext:
                 response = s3.head_object(Bucket= bucket, Key=key)
                 size = response['ContentLength']
                 if size < 10 * 1048576:
-                    return polars.read_csv(table_location, new_columns = schema, has_header = has_header,sep = sep)
+                    return polars.read_csv("s3://" + table_location, new_columns = schema, has_header = has_header,sep = sep)
                 else:
                     self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep)
         else:
@@ -83,12 +84,14 @@ class QuokkaContext:
             bucket = table_location.split("/")[0]
             if "*" in table_location:
                 assert table_location[-1] == "*" , "wildcard can only be the last character in address string"
+                table_location = table_location[:-1]
+                assert "*" not in table_location, "wildcard can only be the last character in address string"
                 prefix = "/".join(table_location[:-1].split("/")[1:])
                 s3 = boto3.client('s3')
                 z = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
                 files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
                 sizes = [i['Size'] for i in z['Contents'] if i['Key'].endswith('.parquet')]
-                assert len(files) > 0
+                assert len(files) > 0, "could not find any parquet files. make sure they end with .parquet"
                 if len(files) == 1 and sizes[0] < 10 * 1048576:
                     return polars.read_parquet("s3://" + bucket + "/" + files[0])
                 
@@ -100,11 +103,8 @@ class QuokkaContext:
                     except:
                         raise Exception("schema discovery failed for Parquet dataset at location ", table_location)
                 
-                table_location = {"bucket":bucket, "prefix":prefix}
-                print(table_location)
-                self.nodes[self.latest_node_id] = InputS3ParquetNode(bucket, prefix, None, schema)
+                self.nodes[self.latest_node_id] = InputS3ParquetNode(table_location, schema, None, None)
             else:
-
                 if schema is None:
                     try:
                         s3 = s3fs.S3FileSystem()
@@ -119,19 +119,41 @@ class QuokkaContext:
                 if size < 10 * 1048576:
                     return polars.read_parquet(table_location)
                 else:
-                    self.nodes[self.latest_node_id] = InputS3ParquetDataset(bucket, None, key, schema)
+                    self.nodes[self.latest_node_id] = InputS3ParquetNode(table_location, schema, None, None)
 
         else:
             if type(self.cluster) == S3Cluster:
                 raise NotImplementedError("Does not support reading local dataset with S3 cluster. Must use S3 bucket.")
             
             if "*" in table_location:
-                raise NotImplementedError("Currently does not support reading a directory of Parquets locally.")
+                table_location = table_location[:-1]
+                assert table_location[-1] == "/", "must specify * with entire directory, doesn't support prefixes yet"
+                try:
+                    files = [i for i in os.listdir(table_location) if i.endswith(".parquet")]
+                except:
+                    raise Exception("Tried to get list of parquet files at ", table_location, " failed. Make sure specify absolute path and filenames end with .parquet")
+                assert len(files) > 0
+                if schema is None:
+                    f = pq.ParquetFile(table_location + files[0])
+                    schema = [k.name for k in f.schema_arrow]
+                if len(files) == 1:
+                    size = os.path.getsize(table_location + files[0])
+                    if size < 10 * 1048576:
+                        return polars.read_parquet(table_location + files[0])
+                self.nodes[self.latest_node_id] = InputS3ParquetNode(table_location, schema, None, None)
+
             else:
-                size = os.path.getsize(table_location)
-                if size < 10 * 1048576:
+                try:
+                    size = os.path.getsize(table_location)
+                except:
+                    raise Exception("could not find the parquet file at ", table_location)
+                
+                if size < 9 * 1048576:
                     return polars.read_parquet(table_location)
                 else:
+                    if schema is None:
+                        f = pq.ParquetFile(table_location)
+                        schema = [k.name for k in f.schema_arrow]
                     self.nodes[self.latest_node_id] = self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
 
         self.latest_node_id += 1
@@ -241,7 +263,7 @@ class QuokkaContext:
                     new_targets[target_id] = node.targets[target_id]
             node.targets = new_targets
         
-        #self.explain(node_id,"text")
+        #self.explain(node_id)
 
         new_node_id = self.optimize(node_id)       
         #self.explain(new_node_id)
@@ -555,8 +577,44 @@ class DataStream:
     
     #def explain(self):
 
-    def write_csv(self, path):
-        pass
+    def write_csv(self, table_location , output_line_limit):
+
+        if table_location[:5] == "s3://":
+
+            if type(self.cluster) == LocalCluster:
+                print("Warning: trying to write S3 dataset on local machine. This assumes high network bandwidth.")
+
+            table_location = table_location[5:]
+            bucket = table_location.split("/")[0]
+            prefix = "/".join(table_location[:-1].split("/")[1:])
+
+            executor = OutputS3CSVExecutor(bucket, prefix, output_line_limit)
+
+        else:
+
+            if type(self.cluster) == S3Cluster:
+                raise NotImplementedError("Does not support writing local dataset with S3 cluster. Must use S3 bucket.")
+
+            assert table_location[0] == "/", "You must supply absolute path to directory."
+            assert os.path.isdir(table_location), "Must supply an existing directory"
+        
+            executor = OutputDiskCSVExecutor(table_Location, output_line_limit)
+
+        name_stream = self.quokka_context.new_stream(
+            sources={0: self},
+            partitioners={0: PassThroughPartitioner()},
+            node=StatefulNode(
+                schema=["filename"],
+                # this is a stateful node, but predicates and projections can be pushed down.
+                schema_mapping={"filename":(-1, "filename")},
+                required_columns={0: set(self.schema)},
+                operator=executor
+            ),
+            schema=["filename"],
+            ordering=None
+        )
+
+        return name_stream.collect()
 
     def write_parquet(self, path):
         pass

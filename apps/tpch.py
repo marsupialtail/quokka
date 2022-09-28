@@ -1,10 +1,9 @@
 from itertools import groupby
 from pyquokka.api import * 
-import pyarrow
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
-mode = "DISK"
-format = "csv"
+mode = "S3"
+format = "parquet"
 disk_path = "/home/ziheng/tpc-h/"
 s3_path_csv = "s3://tpc-h-csv/"
 s3_path_parquet = "s3://tpc-h-parquet/"
@@ -105,6 +104,7 @@ def do_2():
     d = partsupp.join(d, left_on="ps_suppkey", right_on="s_suppkey")
     f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"})
     f = f.rename({"ps_supplycost_min":"min_cost","ps_partkey":"europe_key"})
+    print(f)
 
     d = d.join(f, left_on="ps_supplycost", right_on="min_cost", suffix="_2")
     d = d.join(part, left_on="europe_key", right_on="p_partkey", suffix="_3")
@@ -183,7 +183,6 @@ def do_7():
     d = d.with_column("volume", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
     f = d.groupby(["n_name","n_name_4","l_year"], orderby=["n_name","n_name_4","l_year"]).aggregate({"volume":"sum"})
     return f
-    # d = d.filter("")
 
 def do_12():
     
@@ -240,12 +239,12 @@ def suffix_test():
     d.walk()
 
 print(do_1())
+print(do_3())
+
 print(do_4())
-#print(do_2())
-# print(do_3())
-# print(do_5())
-# print(do_6())
-# print(do_12())
-# print(do_7())
-#do_12()
+print(do_2())
+print(do_5())
+print(do_6())
+print(do_12())
+print(do_7())
 #test1()

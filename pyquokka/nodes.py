@@ -91,13 +91,15 @@ class Node:
         self.alive_targets = {}
         self.output_lock = Lock()
 
-        self.out_seq = 0
+        self.out_seq = {}
 
     def initialize(self):
         raise NotImplementedError
 
     def append_to_targets(self,tup):
         node_id, channel_to_ip, target_info = tup
+
+        self.out_seq[node_id] = {channel: 0 for channel in channel_to_ip}
 
         unique_ips = set(channel_to_ip.values())
         redis_clients = {i: redis.Redis(host=i, port=6800, db=0) if i != self.ip else redis.Redis(host='localhost', port = 6800, db=0) for i in unique_ips}
@@ -147,7 +149,7 @@ class Node:
 
     def push(self, data):
             
-        self.out_seq += 1
+        
 
         '''
         Quokka should have some support for custom data types, similar to DaFt by Eventual.
@@ -195,6 +197,8 @@ class Node:
             assert type(partitioned_payload) == dict and max(partitioned_payload.keys()) < len(original_channel_to_ip)
             
             for channel in self.alive_targets[target]:
+
+                self.out_seq[target][channel] += 1
                 if channel not in partitioned_payload:
                     payload = None
                 else:
@@ -210,8 +214,8 @@ class Node:
                 if payload is None or len(payload) == 0:
                     payload = None
                     # out seq number must be sequential
-                    self.out_seq -= 1
-                    return 
+                    self.out_seq[target][channel] -= 1
+                    continue
                 
                 if target_info.projection is not None:
                     # have to make sure the schema appears in the same order or the arrow lfight reader on the recevier might have problems.
@@ -223,7 +227,7 @@ class Node:
                 
                 # format (target id, target channel, source id, source channel, tag, format)
                 #print("pushing to target",target,"channel",channel,"from source",self.id,"channel",self.channel,"tag",self.out_seq)
-                upload_descriptor = pyarrow.flight.FlightDescriptor.for_command(pickle.dumps((target, channel, self.id, self.channel, self.out_seq, my_format)))
+                upload_descriptor = pyarrow.flight.FlightDescriptor.for_command(pickle.dumps((target, channel, self.id, self.channel, self.out_seq[target][channel], my_format)))
 
                 while True:
                     buf = pyarrow.allocate_buffer(0)
@@ -238,7 +242,6 @@ class Node:
                 assert len(batches) > 0, batches
                 writer, _ = client.do_put(upload_descriptor, batches[0].schema)
                 for batch in batches:
-                    #print(batch)
                     writer.write_batch(batch)
                 writer.close()
        
@@ -246,7 +249,6 @@ class Node:
 
     def done(self):
 
-        self.out_seq += 1
         if VERBOSE:
             print("IM DONE", self.id)
 
@@ -260,12 +262,13 @@ class Node:
 
         for target in self.alive_targets:
             for channel in self.alive_targets[target]:
+                self.out_seq[target][channel] += 1
                 if VERBOSE:
-                    print("SAYING IM DONE TO", target, channel, "MY OUT SEQ", self.out_seq)
+                    print("SAYING IM DONE TO", target, channel, "MY OUT SEQ", self.out_seq[target][channel])
 
                 client = self.flight_clients[target][channel]
                 #print("saying done to target",target,"channel",channel,"from source",self.id,"channel",self.channel,"tag",self.out_seq)
-                payload = pickle.dumps((target, channel, self.id, self.channel, self.out_seq, "done"))
+                payload = pickle.dumps((target, channel, self.id, self.channel, self.out_seq[target][channel], "done"))
                 upload_descriptor = pyarrow.flight.FlightDescriptor.for_command(payload)
                 writer, _ = client.do_put(upload_descriptor, pa.schema([]))
                 writer.close()
@@ -273,14 +276,13 @@ class Node:
         return True
 
 class InputNode(Node):
-    def __init__(self, id, channel, batch_func = None) -> None:
+    def __init__(self, id, channel) -> None:
 
         super().__init__( id, channel) 
 
         if VERBOSE:
             print("INPUT ACTOR LAUNCH", self.id)
-
-        self.batch_func = batch_func
+        
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
     def ping(self):
@@ -300,11 +302,8 @@ class InputNode(Node):
             except StopIteration:
                 break
             futs.append(self.executor.submit(next, self.input_generator))
-            if self.batch_func is not None:
-                result = self.batch_func(batch)
-                self.push(result)
-            else:
-                self.push(batch)
+            
+            self.push(batch)
         
         if VERBOSE:
             print("INPUT DONE", self.id, self.channel)
@@ -312,16 +311,16 @@ class InputNode(Node):
 
 @ray.remote
 class InputReaderNode(InputNode):
-    def __init__(self, id, channel, accessor, num_channels, batch_func=None) -> None:
-        super().__init__(id, channel, batch_func)
+    def __init__(self, id, channel, accessor, num_channels) -> None:
+        super().__init__(id, channel)
         self.accessor = accessor
         self.accessor.set_num_channels(num_channels)
         
 
 @ray.remote
 class InputRedisDatasetNode(InputNode):
-    def __init__(self, id, channel,channel_objects, batch_func=None):
-        super().__init__(id, channel, batch_func = batch_func)
+    def __init__(self, id, channel,channel_objects):
+        super().__init__(id, channel)
         ip_set = set()
         for da in channel_objects:
             for object in channel_objects[da]:
@@ -349,7 +348,8 @@ class TaskNode(Node):
     def initialize(self):
         message = pyarrow.py_buffer(pickle.dumps((self.id,self.channel, {i:list(self.parents[i].keys()) for i in self.parents})))
         action = pyarrow.flight.Action("register_channel",message)
-        self.flight_client.do_action(action)
+        result = next(self.flight_client.do_action(action))
+        assert result.body.to_pybytes() == b'Channel registered'
 
     def get_batches(self):
 

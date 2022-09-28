@@ -140,7 +140,7 @@ class TaskGraph:
         self.current_node += 1
         return self.current_node - 1
 
-    def new_input_redis(self, dataset, ip_to_num_channel = None, policy = "default", batch_func=None):
+    def new_input_redis(self, dataset, ip_to_num_channel = None, policy = "default"):
         
         if ip_to_num_channel is None:
             # automatically come up with some policy
@@ -195,21 +195,21 @@ class TaskGraph:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
                 tasknode[channel] = InputRedisDatasetNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, channel, channel_objects, batch_func=batch_func)
+                ).remote(self.current_node, channel, channel_objects)
             else:
                 tasknode[channel] = InputRedisDatasetNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
-                ).remote(self.current_node, channel, channel_objects, batch_func=batch_func)
+                ).remote(self.current_node, channel, channel_objects)
         
         self.node_type[self.current_node] = INPUT_REDIS_DATASET
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
-    def new_input_reader_node(self, reader, ip_to_num_channel = None, batch_func = None):
+    def new_input_reader_node(self, reader, ip_to_num_channel = None):
 
 
         if ip_to_num_channel is None:
             # automatically come up with some policy
             #ip_to_num_channel = {ip: self.cluster.cpu_count for ip in list(self.cluster.private_ips.values())}
-            ip_to_num_channel = {ip: 4 for ip in list(self.cluster.private_ips.values())}
+            ip_to_num_channel = {ip: 8 for ip in list(self.cluster.private_ips.values())}
 
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
 
@@ -225,10 +225,10 @@ class TaskGraph:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
                 tasknode[channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, channel, reader, len(channel_to_ip), batch_func = batch_func)
+                ).remote(self.current_node, channel, reader, len(channel_to_ip))
             else:
                 tasknode[channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
-                ).remote(self.current_node, channel, reader, len(channel_to_ip), batch_func = batch_func) 
+                ).remote(self.current_node, channel, reader, len(channel_to_ip)) 
         
         start = time.time()
         ray.get([tasknode[channel].ping.remote() for channel in channel_to_ip])
@@ -273,7 +273,7 @@ class TaskGraph:
                 elif direction == 1:
                     assert source_ip_to_num_channel[ip] * ratio == target_ip_to_num_channel[ip], "ratio of number of channels between source and target must be same for every ip right now"
         
-        print("RATIO", ratio)
+        #print("RATIO", ratio)
         if direction == 0:
             return partial(partition_key_0, ratio)
         elif direction == 1:
@@ -330,7 +330,7 @@ class TaskGraph:
 
             # this has been provided
             if type(target_info.partitioner)== HashPartitioner:
-                print("Inferring hash partitioning strategy for column ", target_info.partitioner.key, "the source node must produce pyarrow, polars or pandas dataframes, and the dataframes must have this column!")
+                #print("Inferring hash partitioning strategy for column ", target_info.partitioner.key, "the source node must produce pyarrow, polars or pandas dataframes, and the dataframes must have this column!")
                 target_info.partitioner = FunctionPartitioner(partial(partition_key_str, target_info.partitioner.key))
             elif type(target_info.partitioner) == BroadcastPartitioner:
                 target_info.partitioner = FunctionPartitioner(broadcast)
@@ -417,3 +417,8 @@ class TaskGraph:
                 replica = node[channel]
                 processes.append(replica.execute.remote())
         ray.get(processes)
+        for key in self.nodes:
+            node = self.nodes[key]
+            for channel in node:
+                replica = node[channel]
+                ray.kill(replica)

@@ -124,6 +124,8 @@ class QuokkaClusterManager:
         print("attempting to copy flight server file")
         self.copy_all(flight_file, public_ips, "Failed to copy flight server file.")
         self.launch_all("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288", public_ips, "Failed to set malloc limit")
+        #self.launch_all("touch /home/ubuntu/flight-log", public_ips, "Failed to create flight log file.")
+        #self.launch_all("python3 flight.py >> /home/ubuntu/flight-log  &", public_ips, "Failed to start flight servers on workers.")
         self.launch_all("python3 flight.py &", public_ips, "Failed to start flight servers on workers.")
 
     def create_cluster(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", requirements = ["ray==1.12.0"]):
