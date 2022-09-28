@@ -1,9 +1,8 @@
-from itertools import groupby
 from pyquokka.api import * 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
-mode = "S3"
-format = "parquet"
+mode = "DISK"
+format = "csv"
 disk_path = "/home/ziheng/tpc-h/"
 s3_path_csv = "s3://tpc-h-csv/"
 s3_path_parquet = "s3://tpc-h-parquet/"
@@ -92,17 +91,18 @@ def do_1():
 
     f = d.groupby(["l_returnflag", "l_linestatus"], orderby=["l_returnflag","l_linestatus"]).agg({"l_quantity":["sum","avg"], "l_extendedprice":["sum","avg"], "disc_price":"sum", 
         "charge":"sum", "l_discount":"avg","*":"count"})
-    return f
+        
+    return f.collect()
 
 def do_2():
     '''
     Quokka does not do query unnesting.
     '''
-    europe = region[region.r_name == "EUROPE"]
+    europe = region.filter(region["r_name"] == "EUROPE")
     european_nations = nation.join(europe, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
     d = supplier.join(european_nations, left_on="s_nationkey", right_on="n_nationkey")
     d = partsupp.join(d, left_on="ps_suppkey", right_on="s_suppkey")
-    f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"})
+    f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"}).collect()
     f = f.rename({"ps_supplycost_min":"min_cost","ps_partkey":"europe_key"})
     print(f)
 
@@ -123,7 +123,7 @@ def do_3():
 
     #f = d.groupby(["l_orderkey","o_orderdate","o_shippriority"], orderby=[('revenue','desc'),('o_orderdate','asc')]).agg({"revenue":["sum"]})
     f = d.groupby(["l_orderkey","o_orderdate","o_shippriority"]).agg({"revenue":["sum"]})
-    return f
+    return f.collect()
 
 def do_4():
 
@@ -137,7 +137,7 @@ def do_4():
     d = d.join(orders, left_on="l_orderkey", right_on="o_orderkey")
     d = d.filter("o_orderdate >= date '1993-07-01' and o_orderdate < date '1993-10-01'")
     f = d.groupby("o_orderpriority").agg({'*':['count']})
-    return f
+    return f.collect()
 
 
 def do_5():
@@ -148,7 +148,7 @@ def do_5():
     As a general rule of thumb you want to join small tables first and then bigger ones.
     '''
 
-    asia = region[region.r_name == "ASIA"]
+    asia = region.filter(region["r_name"] == "ASIA")
     asian_nations = nation.join(asia, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
     d = customer.join(asian_nations, left_on="c_nationkey", right_on="n_nationkey")
     d = d.join(orders, left_on="c_custkey", right_on="o_custkey", suffix="_3")
@@ -159,13 +159,13 @@ def do_5():
     #f = d.groupby("n_name", orderby=[("revenue",'desc')]).agg({"revenue":["sum"]})
     f = d.groupby("n_name").agg({"revenue":["sum"]})
 
-    return f
+    return f.collect()
 
 def do_6():
     d = lineitem.filter("l_shipdate >= date '1994-01-01' and l_shipdate < date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01 and l_quantity < 24")
     d = d.with_column("revenue", lambda x: x["l_extendedprice"] * x["l_discount"], required_columns={"l_extendedprice", "l_discount"})
     f = d.aggregate({"revenue":["sum"]})
-    return f
+    return f.collect()
 
 def do_7():
     d1 = customer.join(nation, left_on = "c_nationkey", right_on = "n_nationkey")
@@ -182,7 +182,7 @@ def do_7():
     d = d.with_column("l_year", lambda x: x["l_shipdate"].dt.year(), required_columns = {"l_shipdate"})
     d = d.with_column("volume", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
     f = d.groupby(["n_name","n_name_4","l_year"], orderby=["n_name","n_name_4","l_year"]).aggregate({"volume":"sum"})
-    return f
+    return f.collect()
 
 def do_12():
     
@@ -195,48 +195,18 @@ def do_12():
     d = d.with_column("low", lambda x: (x["o_orderpriority"] != "1-URGENT") & (x["o_orderpriority"] != "2-HIGH"), required_columns={"o_orderpriority"})
 
     f = d.groupby("l_shipmode").aggregate(aggregations={'high':['sum'], 'low':['sum']})
-    return f
+    return f.collect()
 
-def word_count():
+# def word_count():
 
-    def udf2(x):
-        da = compute.list_flatten(compute.ascii_split_whitespace(x["text"]))
-        c = da.value_counts().flatten()
-        return pa.Table.from_arrays([c[0], c[1]], names=["word","count"]).to_pandas()
+#     def udf2(x):
+#         da = compute.list_flatten(compute.ascii_split_whitespace(x["text"]))
+#         c = da.value_counts().flatten()
+#         return pa.Table.from_arrays([c[0], c[1]], names=["word","count"]).to_pandas()
     
-    words = qc.read_csv("s3://wordcount-input",["text"],sep="|")
-    counted = words.transform( udf2, new_schema = ["word", "count"], required_columns = None, foldable=True)
-    counted.aggregate(aggregations={})
-
-def test1():
-    d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
-    d = customer.join(d,left_on="c_custkey", right_on="o_custkey")
-
-    d = d.filter("l_commitdate < l_receiptdate")
-    d = d.filter("l_commitdate > l_shipdate")
-    d = d.filter("o_clerk > o_comment")
-    d = d.filter("l_tax >o_totalprice")
-
-    d = d.select(["l_commitdate", "o_clerk", "c_name"])
-    d.collect()
-
-def self_join_test():
-    
-    f = lineitem.join(lineitem,on="l_orderkey",suffix="_2")
-    d = f.filter("l_commitdate < l_receiptdate")
-
-    d.collect()
-
-
-def suffix_test():
-    d = join(testa,testb, on="key")
-    d = d.filter(d.val1 > d.val1_2)
-    d = d.filter(d.val2_2 > d.val3_2)
-    d = d.filter(d.val1_2 == d.val3_2)
-    d = d.filter(d.val1 > d.val2)
-    d = d.compute()
-    sql.__push_filter__(d)
-    d.walk()
+#     words = qc.read_csv("s3://wordcount-input",["text"],sep="|")
+#     counted = words.transform( udf2, new_schema = ["word", "count"], required_columns = None, foldable=True)
+#     counted.aggregate(aggregations={})
 
 print(do_1())
 print(do_3())
@@ -247,4 +217,3 @@ print(do_5())
 print(do_6())
 print(do_12())
 print(do_7())
-#test1()

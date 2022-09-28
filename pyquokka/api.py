@@ -63,13 +63,27 @@ class QuokkaContext:
                 raise NotImplementedError("Does not support reading local dataset with S3 cluster. Must use S3 bucket.")
 
             if "*" in table_location:
-                raise NotImplementedError("Currently does not support reading a directory of CSVs locally.")
+                table_location = table_location[:-1]
+                assert table_location[-1] == "/", "must specify * with entire directory, doesn't support prefixes yet"
+                try:
+                    files = [i for i in os.listdir(table_location)]
+                except:
+                    raise Exception("Tried to get list of files at ", table_location, " failed. Make sure specify absolute path")
+                assert len(files) > 0
+                if len(files) == 1:
+                    size = os.path.getsize(table_location + files[0])
+                    if size < 10 * 1048576:
+                        return polars.read_csv(table_location + files[0], new_columns=schema, has_header=has_header, sep = sep)
+                self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep)
             else:
                 size = os.path.getsize(table_location)
                 if size < 10 * 1048576:
                     return polars.read_csv(table_location, new_columns = schema, has_header = has_header,sep = sep)
                 else:
                     self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep)
+            
+            # if local, you should not launch too many actors since not that many needed to saturate disk
+            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
 
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
@@ -156,6 +170,9 @@ class QuokkaContext:
                         schema = [k.name for k in f.schema_arrow]
                     self.nodes[self.latest_node_id] = self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
 
+            # if local, you should not launch too many actors since not that many needed to saturate disk
+            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
+
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
 
@@ -190,7 +207,7 @@ class QuokkaContext:
         return parent_id
 
 
-    def lower(self, end_node_id):
+    def lower(self, end_node_id, collect = True):
 
         start = time.time()
         task_graph = TaskGraph(self.cluster)
@@ -207,7 +224,19 @@ class QuokkaContext:
         task_graph_nodes = {}
         for node_id, node in reverse_sorted_nodes:
             if issubclass(type(node), SourceNode):
-                task_graph_nodes[node_id] = node.lower(task_graph)
+                placement_strategy = node.placement_strategy
+                if placement_strategy is None:
+                    task_graph_nodes[node_id] = node.lower(task_graph)
+                elif type(placement_strategy) == SingleChannelStrategy:
+                    task_graph_nodes[node_id] = node.lower(task_graph, {self.cluster.leader_private_ip: 1})
+                elif type(placement_strategy) == CustomChannelsStrategy:
+                    task_graph_nodes[node_id] = node.lower(task_graph,  
+                        {ip: placement_strategy.channels_per_node for ip in list(self.cluster.private_ips.values())})
+                elif type(placement_strategy) == GPUStrategy:
+                    raise NotImplementedError
+                else:
+                    raise Exception("could not understand node placement strategy")
+
             else:
                 parent_nodes = {parent_idx: task_graph_nodes[node.parents[parent_idx]] for parent_idx in node.parents}
                 target_info = {parent_idx: self.execution_nodes[node.parents[parent_idx]].targets[node_id] for parent_idx in node.parents}
@@ -229,13 +258,16 @@ class QuokkaContext:
         start = time.time()
         task_graph.run()
         print("run time ", time.time() - start)
-        result = task_graph_nodes[end_node_id].to_df()
+        result = task_graph_nodes[end_node_id]
         # wipe the execution state
         self.execution_nodes = {}
-        return result
+        if collect:
+            return result.to_df()
+        else:
+            return result
                     
 
-    def execute_node(self, node_id):
+    def execute_node(self, node_id, explain = False, mode = None, collect = True):
         assert issubclass(type(self.nodes[node_id]), SinkNode)
 
         # we will now make a copy of the nodes involved in the computation. 
@@ -267,8 +299,12 @@ class QuokkaContext:
 
         new_node_id = self.optimize(node_id)       
         #self.explain(new_node_id)
-        
-        return self.lower(new_node_id)
+    
+        if explain:
+            self.explain(new_node_id, mode = mode)
+            return None
+        else:
+            return self.lower(new_node_id, collect = collect)
 
     def explain(self, node_id, mode="graph"):
 
@@ -570,12 +606,25 @@ class DataStream:
     def collect(self):
         """
         This will trigger the execution of computational graph, similar to Spark collect
-        The result will be a Dataset, which you can then call to_df(), or use to_stream() to initiate another computation.
+        The result will be a Polars DataFrame on the master
         """
         dataset = self.quokka_context.new_dataset(self, self.schema)
         return self.quokka_context.execute_node(dataset.source_node_id)
+
+    def compute(self):
+        """
+        This will trigger the execution of computational graph, similar to Spark collect
+        The result will be a Dataset, which you can then call to_df() or call to_stream() to initiate another computation.
+        """
+        dataset = self.quokka_context.new_dataset(self, self.schema)
+        return self.quokka_context.execute_node(dataset.source_node_id, collect=False)
     
-    #def explain(self):
+    def explain(self, mode="graph"):
+        '''
+        This will not trigger the execution of your computation graph but will produce a graph of the execution plan.
+        '''
+        dataset = self.quokka_context.new_dataset(self, self.schema)
+        return self.quokka_context.execute_node(dataset.source_node_id, explain = True, mode= mode)
 
     def write_csv(self, table_location , output_line_limit):
 
@@ -747,7 +796,7 @@ class DataStream:
 
     def join(self, right, on=None, left_on=None, right_on=None, suffix="_2", how="inner"):
 
-        assert type(right) == polars.internals.frame.DataFrame or issubclass(type(right), DataStream)
+        assert type(right) == polars.internals.DataFrame or issubclass(type(right), DataStream)
 
         if on is None:
             assert left_on is not None and right_on is not None
@@ -769,7 +818,7 @@ class DataStream:
         # if the right table is already materialized, the schema mapping should forget about it since we can't push anything down anyways.
         # an optimization could be to push down the predicate directly to the materialized polars table in the BroadcastJoinExecutor
         # leave this as a TODO. this could be greatly benenficial if it significantly reduces the size of the small table.
-        if type(right) == polars.internals.frame.DataFrame:
+        if type(right) == polars.internals.DataFrame:
             right_table_id = -1
         else:
             right_table_id = 1
@@ -796,7 +845,7 @@ class DataStream:
                     operator=PolarJoinExecutor(on, left_on, right_on, suffix=suffix, how=how)),
                 schema=new_schema,
                 ordering=None)
-        elif type(right) == polars.internals.frame.DataFrame:
+        elif type(right) == polars.internals.DataFrame:
             return self.quokka_context.new_stream(
                 sources = {0:self},
                 partitioners={0: PassThroughPartitioner()},
@@ -842,6 +891,11 @@ class DataStream:
                 key in self.schema and key not in groupby)
             if type(aggregations[key]) == str:
                 aggregations[key] = [aggregations[key]]
+            for i in range(len(aggregations[key])):
+                if aggregations[key][i] == "avg":
+                    aggregations[key][i] = "mean"
+                    assert aggregations[key][i] in {
+                        "max", "min", "mean", "sum"}, "only support max, min, mean and sum for now"
         for key in groupby:
             assert key in self.schema
 
@@ -870,17 +924,30 @@ class DataStream:
         
         pyarrow_agg_list = [(count_col, "sum")]
         agg_executor_dict = {}
+        # key is column name, value is Boolean to indicate if you should keep around the sum column.
+        mean_cols = {}
         for key in aggregations:
             for agg_spec in aggregations[key]:
-                if agg_spec == "avg":
-                    agg_spec = "mean"
-                assert agg_spec in {
-                    "max", "min", "mean", "sum"}, "only support max, min, mean and sum for now"
-                new_col = key + "_" + agg_spec
-                assert new_col not in new_schema, "duplicate column names detected, most likely caused by a groupby column with suffix _max etc."
-                new_schema.append(new_col)
-                pyarrow_agg_list.append((key, agg_spec))
-                agg_executor_dict[new_col] = agg_spec
+                if agg_spec == "mean":
+
+                    if "sum" in aggregations[key]:
+                        mean_cols[key] = True
+                    
+                    else:
+                        new_col = key + "_sum"
+                        assert new_col not in new_schema, "duplicate column names detected, most likely caused by a groupby column with suffix _max etc."
+                        new_schema.append(new_col)
+                        pyarrow_agg_list.append((key, "sum"))
+                        agg_executor_dict[new_col] = "sum"
+                        mean_cols[key] = False
+                
+                else:
+                    new_col = key + "_" + agg_spec
+                    assert new_col not in new_schema, "duplicate column names detected, most likely caused by a groupby column with suffix _max etc."
+                    new_schema.append(new_col)
+                    pyarrow_agg_list.append((key, agg_spec))
+                    agg_executor_dict[new_col] = agg_spec
+
 
         # now insert the transform node.
         # this function needs to be fast since it's executed at every batch in the actual runtime.
@@ -902,7 +969,7 @@ class DataStream:
                 schema=new_schema,
                 schema_mapping={col: (-1, col) for col in new_schema},
                 required_columns={0: set(new_schema) },
-                operator=AggExecutor(groupby if len(groupby) > 0 else [count_col], orderby, agg_executor_dict, emit_count)
+                operator=AggExecutor(groupby if len(groupby) > 0 else [count_col], orderby, agg_executor_dict, mean_cols, emit_count)
             )
         agg_node.set_placement_strategy(SingleChannelStrategy())
         aggregated_stream = self.quokka_context.new_stream(
@@ -913,7 +980,7 @@ class DataStream:
             ordering=None
         )
 
-        return aggregated_stream.collect()
+        return aggregated_stream
 
     def agg(self, aggregations):
         return self._grouped_aggregate([], aggregations, None)

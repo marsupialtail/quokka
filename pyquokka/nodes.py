@@ -41,7 +41,7 @@ def convert_from_format(payload):
     if type(payload) == pd.core.frame.DataFrame:
         batches = [pa.RecordBatch.from_pandas(payload)]
         my_format = "pandas"
-    elif type(payload) == polars.internals.frame.DataFrame:
+    elif type(payload) == polars.internals.DataFrame:
         batches = payload.to_arrow().to_batches()
         my_format = "polars"
     elif type(payload) == pa.lib.RecordBatch:
@@ -162,7 +162,7 @@ class Node:
 
         if type(data) == pd.core.frame.DataFrame:
             data = polars.from_pandas(data)
-        elif type(data) == polars.internals.frame.DataFrame:
+        elif type(data) == polars.internals.DataFrame:
             data = data
         elif type(data) == pa.lib.Table:
             data = polars.from_arrow(data)
@@ -191,7 +191,7 @@ class Node:
 
             assert target_info.lowered
 
-            data = data[target_info.predicate(data)]
+            data = data.filter(target_info.predicate(data))
 
             partitioned_payload = target_info.partitioner.func(data, self.channel, len(original_channel_to_ip))
             assert type(partitioned_payload) == dict and max(partitioned_payload.keys()) < len(original_channel_to_ip)

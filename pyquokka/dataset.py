@@ -309,140 +309,174 @@ class InputS3FilesDataset:
             curr_pos += self.num_channels
             yield curr_pos, a
 
-class InputDiskCSVDataset:
 
-    def __init__(self, filepath , names = None , sep=",", stride=16 * 1024 * 1024, header = False, window = 1024) -> None:
        
+# this should work for 1 CSV up to multiple
+class InputDiskCSVDataset:
+    def __init__(self, filepath , names = None , sep=",", stride=16 * 1024 * 1024, header = False, window = 1024 * 4) -> None:
         self.filepath = filepath
-        assert os.path.exists(filepath)
+
         self.num_channels = None
-
-        assert not (names is None and header is False), "Can't have no schema and no header"
-
         self.names = names
         self.sep = sep
         self.stride = stride
         self.header = header
+        
         self.window = window
+        assert not (names is None and header is False), "if header is False, must supply column names"
 
         self.length = 0
         #self.sample = None
 
     def set_num_channels(self, num_channels):
         assert self.num_channels == num_channels
-
-    def get_own_state(self,num_channels):
-
-        self.num_channels = num_channels
-        splits = self.num_channels# * 2
+        self.s3 = boto3.client('s3')  # needs boto3 client
+    
+    # we need to rethink this whole setting num channels business. For this operator we don't want each node to do redundant work!
+    def get_own_state(self, num_channels):
+        
         #samples = []
+        print("Initializing Disk CSV dataset. This is currently done locally and serially, which might take a while.")
+        self.num_channels = num_channels
 
-        length = os.path.getsize(self.filepath)
-        assert length // splits > self.window * 2
-        potential_splits = [length//splits * i for i in range(splits)]
-        # adjust the splits now
-        adjusted_splits = []
+        '''
+        Filepath can be either a single file or a directory. We need to figure out what is the case, and get our files and sizes list.
+        '''
 
-        f = open(self.filepath,"rb")
+        if os.path.isfile(self.filepath):
+            files = deque([self.filepath])
+            sizes = deque([os.path.getsize(self.filepath)])
+        else:
+            assert os.path.isdir(self.filepath), "Does not support prefix, must give absolute directory path for a list of files, will read everything in there!"
+            files = deque([os.listdir(self.filepath)])
+            sizes = deque([os.path.getsize(self.filepath + "/" + file) for file in files])
 
         if self.header:
-            resp = f.read(self.window)
-
-            first_newline = resp.find(bytes('\n', 'utf-8'))
+            resp = open(files[0],"r").read(self.window)
+            first_newline = resp.find("\n")
             if first_newline == -1:
                 raise Exception("could not detect the first line break. try setting the window argument to a large number")
-            else:
-                adjusted_splits.append(first_newline)
-            
             if self.names is None:
-                self.names = resp[:first_newline].decode("utf-8").split(",")
+                self.names = resp[:first_newline].split(",")
             else:
-                detected_names = resp[:first_newline].decode("utf-8").split(",")
+                detected_names = resp[:first_newline].split(",")
                 if self.names != detected_names:
                     print("Warning, detected column names from header row not the same as supplied column names!")
                     print("Detected", detected_names)
                     print("Supplied", self.names)
-        else:
-            adjusted_splits.append(0)
 
-        for i in range(1, len(potential_splits)):
-            potential_split = potential_splits[i]
-            start = max(0, potential_split - self.window)
-            end = min(potential_split + self.window, length)
+        total_size = sum(sizes)
+        size_per_channel = total_size // num_channels
+        channel_infos = {}
 
-            f.seek(start)
-            resp = f.read(end-start)
+        start_byte = 0
+        real_off = 0
 
-            first_newline = resp.find(bytes('\n','utf-8'))
+        for channel in range(num_channels):
+            my_file = []
+            curr_size = 0
+            done = False
+            while curr_size + sizes[0] <= size_per_channel:
+                my_file.append(files.popleft())
+                end_byte = sizes.popleft()
+                if len(sizes) == 0:
+                    done = True
+                    break # we are taking off a bit more work each time so the last channel might leave before filling up size per channel
+                curr_size += end_byte
+                real_off = 0
+        
+            if done:
+                channel_infos[channel] = (start_byte, my_file.copy(), real_off + end_byte)
+                break
+
+            #curr_size + size[0] > size_per_channel, the leftmost file has enough bytes to satisfy the channel
+            # this never gonna happen in real life
+            if curr_size == size_per_channel:
+                channel_infos[channel] = (start_byte, my_file.copy(), real_off + end_byte)
+                continue
+
+            my_file.append(files[0])
+            candidate = size_per_channel - curr_size
+
+            start = max(0, candidate - self.window)
+            end = min(candidate + self.window, sizes[0])
+
+            f = open(files[0],"rb")
+            f.seek(real_off + start)
+            resp = f.read(end - start)
+            
+            first_newline = resp.find(bytes('\n', 'utf-8'))
             last_newline = resp.rfind(bytes('\n', 'utf-8'))
             if last_newline == -1:
                 raise Exception
             else:
-                adjusted_splits.append(start + last_newline)
+                bytes_to_take = start + last_newline + 1
                 #samples.append(csv.read_csv(BytesIO(resp[first_newline: last_newline]), read_options=csv.ReadOptions(
                 #    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)))
 
-        adjusted_splits[-1] = length
-
-        print(length, adjusted_splits)
-        self.length = length
+            sizes[0] -= bytes_to_take
+            end_byte = real_off + bytes_to_take
+            real_off += bytes_to_take
+            channel_infos[channel] = (start_byte, my_file.copy(), end_byte)
+            start_byte = real_off
+        
+        self.length = total_size
         #self.sample = pa.concat_tables(samples)
-        self.adjusted_splits = adjusted_splits
-        f.close()
+        self.channel_infos = channel_infos
+        print(self.channel_infos)
+        print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
 
-    # default is to get 16 KB batches at a time.
-    def get_next_batch(self, mapper_id, pos=None):
 
-        if self.num_channels is None:
-            raise Exception(
-                "I need to know the total number of channels you are planning on using.")
-
-        splits = len(self.adjusted_splits)
-        assert self.num_channels < splits + 1
-        assert mapper_id < self.num_channels + 1
-        chunks = splits // self.num_channels
-        if pos is None:
-            start = self.adjusted_splits[chunks * mapper_id]
-            pos = start
-
-        if mapper_id == self.num_channels - 1:
-            end = self.adjusted_splits[splits - 1]
+    def get_next_batch(self, mapper_id, state = None):
+        assert self.num_channels is not None
+        files = self.channel_infos[mapper_id][1]
+        
+        if state is None:
+            curr_pos = 0
+            pos = self.channel_infos[mapper_id][0]
         else:
-            end = self.adjusted_splits[chunks * mapper_id + chunks]
-
-        f = open(self.filepath,"rb")
-
-        while pos < end:
-
-            f.seek(pos)
-            bytes_to_read = min(pos+self.stride, end) - pos
-            resp = f.read(bytes_to_read)
-            last_newline = resp.rfind(bytes('\n', 'utf-8'))
-
-            if last_newline == -1:
-                last_newline = len(resp)
+            curr_pos, pos = state
             
-            resp = resp[:last_newline]
+        while curr_pos < len(files):
+            
+            file = files[curr_pos]
+            if curr_pos != len(files) - 1:
+                end = os.path.getsize(file)
+            else:
+                end = self.channel_infos[mapper_id][2]
 
-            #print(resp, last_newline)
+            f = open(file, "rb")   
+            f.seek(pos)         
+            while pos < end:
+                f.seek(pos)
 
-            if self.header and pos == 0:
-                first_newline = resp.find(bytes('\n','utf-8'))
-                if first_newline == -1:
+                bytes_to_read = min(pos+self.stride, end) - pos
+                resp = f.read(bytes_to_read)
+                
+                #print(pos, bytes_to_read)
+                
+                last_newline = resp.rfind(bytes('\n', 'utf-8'))
+
+                if last_newline == -1:
                     raise Exception
-                resp = resp[first_newline + 1:]
-            #print("start convert,",time.time())
-            #bump = pd.read_csv(BytesIO(resp), names =self.names, sep = self.sep, index_col = False)
+                else:
+                    resp = resp[:last_newline]
 
-            
-            bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
-                column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-            
-            pos += last_newline + 1
+                    if self.header and pos == 0:
+                        first_newline = resp.find(bytes('\n','utf-8'))
+                        if first_newline == -1:
+                            raise Exception
+                        resp = resp[first_newline + 1:]
 
-            #print("done convert,",time.time())
-            yield pos, polars.from_arrow(bump)
-        f.close()
+                    bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
+                        column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+                    
+                    pos += last_newline + 1
+                    
+                    yield (curr_pos, pos) , polars.from_arrow(bump)
+
+            pos = 0
+            curr_pos += 1
 
 
 # this should work for 1 CSV up to multiple
@@ -474,7 +508,7 @@ class InputS3CSVDataset:
     def get_own_state(self, num_channels):
         
         #samples = []
-        print("Initializing CSV dataset. This is currently done locally and serially, which might take a while.")
+        print("Initializing S3 CSV dataset. This is currently done locally and serially, which might take a while.")
         self.num_channels = num_channels
 
         s3 = boto3.client('s3')  # needs boto3 client, however it is transient and is not part of own state, so Ray can send this thing! 

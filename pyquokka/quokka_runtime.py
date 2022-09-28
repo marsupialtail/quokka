@@ -208,8 +208,8 @@ class TaskGraph:
 
         if ip_to_num_channel is None:
             # automatically come up with some policy
-            #ip_to_num_channel = {ip: self.cluster.cpu_count for ip in list(self.cluster.private_ips.values())}
-            ip_to_num_channel = {ip: 8 for ip in list(self.cluster.private_ips.values())}
+            ip_to_num_channel = {ip: self.cluster.cpu_count for ip in list(self.cluster.private_ips.values())}
+            #ip_to_num_channel = {ip: 2 for ip in list(self.cluster.private_ips.values())}
 
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
 
@@ -297,11 +297,11 @@ class TaskGraph:
                         payload = data[pd.util.hash_array(data[key].to_numpy()) % num_target_channels == channel]
                     else:
                         raise Exception("invalid partition column type, supports ints, floats and strs")
-                elif type(data) == polars.internals.frame.DataFrame:
+                elif type(data) == polars.internals.DataFrame:
                     if "int" in str(data[key].dtype).lower() or "float" in str(data[key].dtype).lower():
-                        payload = data[data[key] % num_target_channels == channel]
+                        payload = data.filter(data[key] % num_target_channels == channel)
                     elif data[key].dtype == polars.datatypes.Utf8:
-                        payload = data[data[key].hash() % num_target_channels == channel]
+                        payload = data.filter(data[key].hash() % num_target_channels == channel)
                     else:
                         raise Exception("invalid partition column type, supports ints, floats and strs")
                 result[channel] = payload

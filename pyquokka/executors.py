@@ -71,7 +71,7 @@ class StorageExecutor(Executor):
     def execute(self,batches,stream_id, executor_id):
         batches = [batch for batch in batches if batch is not None and len(batch) > 0]
         if len(batches) > 0:
-            if type(batches[0]) == polars.internals.frame.DataFrame:
+            if type(batches[0]) == polars.internals.DataFrame:
                 return polars.concat(batches)
             else:
                 return pd.vstack(batches)
@@ -309,7 +309,7 @@ class BroadcastJoinExecutor(Executor):
 
         if type(small_table) == pd.core.frame.DataFrame:
             self.state = polars.from_pandas(small_table)
-        elif type(small_table) == polars.internals.frame.DataFrame:
+        elif type(small_table) == polars.internals.DataFrame:
             self.state = small_table
         else:
             raise Exception("small table data type not accepted")
@@ -662,7 +662,7 @@ class AggExecutor(Executor):
     '''
     aggregation_dict will define what you are going to do for
     '''
-    def __init__(self, groupby_keys, orderby_keys, aggregation_dict, count):
+    def __init__(self, groupby_keys, orderby_keys, aggregation_dict, mean_cols, count):
 
 
         self.state = None
@@ -670,6 +670,7 @@ class AggExecutor(Executor):
         assert type(groupby_keys) == list and len(groupby_keys) > 0
         self.groupby_keys = groupby_keys
         self.aggregation_dict = aggregation_dict
+        self.mean_cols = mean_cols
         self.length_limit = 10000
         # hope and pray there is no column called __&&count__
         self.pyarrow_agg_list = [("count_sum", "sum")]
@@ -706,7 +707,7 @@ class AggExecutor(Executor):
         
         batches = [i for i in batches if i is not None]
         for batch in batches:
-            assert type(batch) == polars.internals.frame.DataFrame, batch # polars add has no index, will have wierd behavior
+            assert type(batch) == polars.internals.DataFrame, batch # polars add has no index, will have wierd behavior
             if self.state is None:
                 self.state = batch
             else:
@@ -719,13 +720,20 @@ class AggExecutor(Executor):
     
     def done(self,executor_id):
 
+
         arrow_state = self.state.to_arrow()
         arrow_state = arrow_state.group_by(self.groupby_keys).aggregate(self.pyarrow_agg_list)
         self.state = polars.from_arrow(arrow_state).rename(self.rename_dict)
 
         for key in self.aggregation_dict:
             if self.aggregation_dict[key] == "mean":
-                self.state[key] /= self.state[self.count_col]
+                self.state = self.state.with_column(polars.Series(key, self.state[key]/ self.state[self.count_col]))
+        
+        for key in self.mean_cols:
+            keep_sum = self.mean_cols[key]
+            self.state = self.state.with_column(polars.Series(key + "_mean", self.state[key + "_sum"]/ self.state[self.count_col]))
+            if not keep_sum:
+                self.state = self.state.drop(key + "_sum")
         
         if not self.emit_count:
             self.state = self.state.drop(self.count_col)
@@ -735,85 +743,6 @@ class AggExecutor(Executor):
         else:
             return self.state
 
-
-class AddExecutor(Executor):
-    def __init__(self, fill_value = 0, final_func = None):
-
-        # how many things you might checkpoint, the number of keys in the dict
-        self.num_states = 1
-
-        self.state = None
-        self.fill_value = fill_value
-        self.final_func = final_func
-
-    def serialize(self):
-        return {0:self.state}, "all"
-    
-    def deserialize(self, s):
-        # the default is to get a list of dictionaries.
-        assert type(s) == list and len(s) == 1
-        self.state = s[0][0]
-    
-    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
-    def execute(self,batches, stream_id, executor_id):
-        batches = [i for i in batches if i is not None]
-        for batch in batches:
-            assert type(batch) == pd.core.frame.DataFrame # polars add has no index, will have wierd behavior
-            if self.state is None:
-                self.state = batch 
-            else:
-                self.state = self.state.add(batch, fill_value = self.fill_value)
-    
-    def done(self,executor_id):
-        if self.final_func:
-            return self.final_func(self.state)
-        else:
-            #print(self.state)
-            return self.state
-# WARNING: this is currently extremely inefficient. But it is indeed very general.
-# pyarrow joins do not support list data types 
-class GenericGroupedAggExecutor(Executor):
-    def __init__(self, funcs, final_func = None):
-
-        # how many things you might checkpoint, the number of keys in the dict
-
-        self.state = None
-        self.funcs = funcs # this will be a dictionary of col name -> tuple of (merge func, fill_value)
-        self.cols = list(funcs.keys())
-        self.final_func = final_func
-
-    def serialize(self):
-        return {0:self.state}, "all"
-    
-    def deserialize(self, s):
-        # the default is to get a list of dictionaries.
-        assert type(s) == list and len(s) == 1
-        self.state = s[0][0]
-    
-    def execute(self,batches, stream_id, executor_id):
-        batches = [i for i in batches if i is not None]
-        for batch in batches:
-            assert type(batch) == pd.core.frame.DataFrame # polars add has no index, will have wierd behavior
-            if self.state is None:
-                self.state = batch 
-            else:
-                self.state = self.state[self.cols].join(batch[self.cols],lsuffix="_bump",how="outer")
-                for col in self.cols:
-                    func, fill_value = self.funcs[col]
-                    isna = self.state[col].isna()
-                    self.state.loc[isna, [col]] = pd.Series([fill_value] * isna.sum()).values
-                    isna = self.state[col + "_bump"].isna()
-                    self.state.loc[isna, [col + "_bump"]] = pd.Series([fill_value] * isna.sum()).values
-                    self.state[col] = func(self.state[col], self.state[col + "_bump"])
-                    self.state.drop(columns = [col+"_bump"], inplace=True)
-                    
-    
-    def done(self,executor_id):
-        if self.final_func:
-            return self.final_func(self.state)
-        else:
-            #print(self.state)
-            return self.state
 
 class LimitExecutor(Executor):
     def __init__(self, limit) -> None:
@@ -972,7 +901,7 @@ class MergeSortedExecutor(Executor):
     # this is some crazy wierd algo that I came up with, might be there before.
     def execute(self, batches, stream_id, executor_id):
         print("NUMBER OF INCOMING BATCHES", len(batches))
-        #print("MY SORT STATE", [(type(i), len(i)) for i in self.states if type(i) == polars.internals.frame.DataFrame])
+        #print("MY SORT STATE", [(type(i), len(i)) for i in self.states if type(i) == polars.internals.DataFrame])
         import os, psutil
         process = psutil.Process(os.getpid())
         print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
@@ -992,8 +921,8 @@ class MergeSortedExecutor(Executor):
                 self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", batch)
                 self.filename_to_size[self.fileno] = len(batch)
                 self.fileno += 1
-            elif sum([len(i) for i in self.states if type(i) == polars.internals.frame.DataFrame]) + len(batch) > self.length_limit:
-                mega_batch = polars.concat([i for i in self.states if type(i) == polars.internals.frame.DataFrame] + [batch]).sort(self.key)
+            elif sum([len(i) for i in self.states if type(i) == polars.internals.DataFrame]) + len(batch) > self.length_limit:
+                mega_batch = polars.concat([i for i in self.states if type(i) == polars.internals.DataFrame] + [batch]).sort(self.key)
                 self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", mega_batch)
                 self.filename_to_size[self.fileno] = len(mega_batch)
                 del mega_batch

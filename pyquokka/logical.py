@@ -79,9 +79,9 @@ class InputS3CSVNode(SourceNode):
         self.key = key
         self.sep = sep
 
-    def lower(self, task_graph):
+    def lower(self, task_graph, ip_to_num_channel =None):
         lineitem_csv_reader = InputS3CSVDataset(self.bucket, self.schema, prefix = self.prefix, key = self.key, sep=self.sep, stride = 128 * 1024 * 1024)
-        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader)
+        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, ip_to_num_channel = ip_to_num_channel)
         return lineitem
 
 class InputDiskCSVNode(SourceNode):
@@ -90,9 +90,9 @@ class InputDiskCSVNode(SourceNode):
         self.filename = filename
         self.sep = sep
 
-    def lower(self, task_graph):
+    def lower(self, task_graph, ip_to_num_channel =None):
         lineitem_csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, stride = 16 * 1024 * 1024)
-        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader)
+        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, ip_to_num_channel = ip_to_num_channel)
         return lineitem
 
 class InputS3ParquetNode(SourceNode):
@@ -104,15 +104,15 @@ class InputS3ParquetNode(SourceNode):
         self.predicate = predicate
         self.projection = projection
     
-    def lower(self, task_graph):
+    def lower(self, task_graph, ip_to_num_channel =None):
 
         if type(task_graph.cluster) ==  EC2Cluster:
             parquet_reader = InputEC2ParquetDataset(self.filepath, mode = "s3", columns = list(self.projection), filters = self.predicate)
-            node = task_graph.new_input_reader_node(parquet_reader)
+            node = task_graph.new_input_reader_node(parquet_reader, ip_to_num_channel = ip_to_num_channel)
             return node
         elif type(task_graph.cluster) == LocalCluster:
             parquet_reader = InputParquetDataset(self.filepath, mode = "s3", columns = list(self.projection), filters = self.predicate)
-            node = task_graph.new_input_reader_node(parquet_reader)
+            node = task_graph.new_input_reader_node(parquet_reader, ip_to_num_channel = ip_to_num_channel)
             return node
 
     
@@ -129,13 +129,13 @@ class InputDiskParquetNode(SourceNode):
         self.predicate = predicate
         self.projection = projection
     
-    def lower(self, task_graph):
+    def lower(self, task_graph, ip_to_num_channel =None):
 
         if type(task_graph.cluster) ==  EC2Cluster:
             raise Exception
         elif type(task_graph.cluster) == LocalCluster:
             parquet_reader = InputParquetDataset(self.filepath, mode = "local", columns = list(self.projection), filters = self.predicate)
-            node = task_graph.new_input_reader_node(parquet_reader)
+            node = task_graph.new_input_reader_node(parquet_reader, ip_to_num_channel = ip_to_num_channel)
             return node
     
     def __str__(self):

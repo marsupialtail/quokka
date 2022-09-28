@@ -20,11 +20,14 @@ setup(
             'boto3',
             'pandas',
             'numpy',
+            'protobuf==3.20.*', # or Ray will not work
             'ray==1.12.0',
             'aiobotocore',
             'h5py',
-            'polars', # latest version,
+            'polars==0.14.*', # latest version,0.13 has some breaking APIs
             's3fs',
+            'sqlglot',
+            'graphviz'
             ], # add any additional packages that 
         license='http://www.apache.org/licenses/LICENSE-2.0',
         keywords=['python'],
