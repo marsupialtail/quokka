@@ -197,6 +197,26 @@ def do_12():
     f = d.groupby("l_shipmode").aggregate(aggregations={'high':['sum'], 'low':['sum']})
     return f.collect()
 
+def count():
+
+    return lineitem.aggregate({"*":"count"}).collect()
+
+def csv_to_parquet_disk():
+
+    if not (mode == "DISK" and format == "csv"):
+        return
+    else:
+        parquet = lineitem.write_parquet("/home/ziheng/tpc-h-out/", output_line_limit = 100000)
+        return parquet
+
+def csv_to_csv_disk():
+
+    if not (mode == "DISK" and format == "csv"):
+        return
+    else:
+        csvfiles = lineitem.write_csv("/home/ziheng/tpc-h-out/", output_line_limit = 1000000)
+        return csvfiles
+
 # def word_count():
 
 #     def udf2(x):
@@ -208,12 +228,16 @@ def do_12():
 #     counted = words.transform( udf2, new_schema = ["word", "count"], required_columns = None, foldable=True)
 #     counted.aggregate(aggregations={})
 
-print(do_1())
-print(do_3())
+#print(count())
+#print(csv_to_parquet_disk())
+print(csv_to_csv_disk())
 
-print(do_4())
-print(do_2())
-print(do_5())
-print(do_6())
-print(do_12())
-print(do_7())
+# print(do_1())
+# print(do_3())
+
+# print(do_4())
+# print(do_2())
+# print(do_5())
+# print(do_6())
+# print(do_12())
+# print(do_7())

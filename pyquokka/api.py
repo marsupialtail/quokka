@@ -1,6 +1,4 @@
-from tempfile import TemporaryFile
 import graphviz
-import ray
 import copy
 from functools import partial
 import pyarrow as pa
@@ -22,10 +20,13 @@ class QuokkaContext:
         self.nodes = {}
         self.cluster = cluster
 
-    def read_csv(self, table_location: str, schema, has_header = False, sep=","):
+    def read_csv(self, table_location: str, schema = None, has_header = False, sep=","):
 
         # the reader is fine if you supply no schema, but the DataStream needs it for potential downstream filtering/pushdowns.
         # that's why we need the schema. TODO: We should be able to infer it, at least if the header is provided. This is future work. 
+
+        if schema is None:
+            assert has_header, "if not provide schema, must have header."
 
         if table_location[:5] == "s3://":
 
@@ -47,7 +48,16 @@ class QuokkaContext:
                     return polars.read_csv("s3://" + bucket + "/" + files[0])
 
                 table_location = {"bucket":bucket, "prefix":prefix}
-                self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, prefix, None, schema, sep)
+
+                if schema is None:
+                    resp = s3.get_object(
+                        Bucket=bucket, Key=files[0], Range='bytes={}-{}'.format(0, 4096))['Body'].read()
+                    first_newline = resp.find(bytes('\n', 'utf-8'))
+                    if first_newline == -1:
+                        raise Exception("could not detect the first line break with first 4 kb")
+                    schema = resp[:first_newline].decode("utf-8").split(",")
+
+                self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, prefix, None, schema, sep, has_header)
             else:
                 key = "/".join(table_location.split("/")[1:])
                 s3 = boto3.client('s3')
@@ -56,7 +66,16 @@ class QuokkaContext:
                 if size < 10 * 1048576:
                     return polars.read_csv("s3://" + table_location, new_columns = schema, has_header = has_header,sep = sep)
                 else:
-                    self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep)
+
+                    if schema is None:
+                        resp = s3.get_object(
+                            Bucket=bucket, Key=key, Range='bytes={}-{}'.format(0, 4096))['Body'].read()
+                        first_newline = resp.find(bytes('\n', 'utf-8'))
+                        if first_newline == -1:
+                            raise Exception("could not detect the first line break with first 4 kb")
+                        schema = resp[:first_newline].decode("utf-8").split(",")
+
+                    self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep, has_header)
         else:
 
             if type(self.cluster) == EC2Cluster:
@@ -74,12 +93,28 @@ class QuokkaContext:
                     size = os.path.getsize(table_location + files[0])
                     if size < 10 * 1048576:
                         return polars.read_csv(table_location + files[0], new_columns=schema, has_header=has_header, sep = sep)
-                self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep)
+                
+                if schema is None:
+                    resp = open(files[0],"r").read(1024 * 4)
+                    first_newline = resp.find("\n")
+                    if first_newline == -1:
+                        raise Exception("could not detect the first line break within the first 4 kb")
+                    schema = resp[:first_newline].split(",")
+
+                self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep, has_header)
             else:
                 size = os.path.getsize(table_location)
                 if size < 10 * 1048576:
                     return polars.read_csv(table_location, new_columns = schema, has_header = has_header,sep = sep)
                 else:
+                    
+                    if schema is None:
+                        resp = open(table_location,"r").read(1024 * 4)
+                        first_newline = resp.find("\n")
+                        if first_newline == -1:
+                            raise Exception("could not detect the first line break within the first 4 kb")
+                        schema = resp[:first_newline].split(",")
+
                     self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep)
             
             # if local, you should not launch too many actors since not that many needed to saturate disk
@@ -626,28 +661,25 @@ class DataStream:
         dataset = self.quokka_context.new_dataset(self, self.schema)
         return self.quokka_context.execute_node(dataset.source_node_id, explain = True, mode= mode)
 
-    def write_csv(self, table_location , output_line_limit):
+    def write_csv(self, table_location , output_line_limit = 1000000):
 
         if table_location[:5] == "s3://":
 
-            if type(self.cluster) == LocalCluster:
+            if type(self.quokka_context.cluster) == LocalCluster:
                 print("Warning: trying to write S3 dataset on local machine. This assumes high network bandwidth.")
 
             table_location = table_location[5:]
-            bucket = table_location.split("/")[0]
-            prefix = "/".join(table_location[:-1].split("/")[1:])
-
-            executor = OutputS3CSVExecutor(bucket, prefix, output_line_limit)
+            executor = OutputExecutor(table_location, "csv", mode="s3", row_group_size=output_line_limit)
 
         else:
 
-            if type(self.cluster) == EC2Cluster:
+            if type(self.quokka_context.cluster) == EC2Cluster:
                 raise NotImplementedError("Does not support writing local dataset with S3 cluster. Must use S3 bucket.")
 
             assert table_location[0] == "/", "You must supply absolute path to directory."
             assert os.path.isdir(table_location), "Must supply an existing directory"
         
-            executor = OutputDiskCSVExecutor(table_Location, output_line_limit)
+            executor = OutputExecutor(table_location, "csv", mode = "local", row_group_size= output_line_limit)
 
         name_stream = self.quokka_context.new_stream(
             sources={0: self},
@@ -665,8 +697,39 @@ class DataStream:
 
         return name_stream.collect()
 
-    def write_parquet(self, path):
-        pass
+    def write_parquet(self, table_location, output_line_limit= 10000000):
+        if table_location[:5] == "s3://":
+
+            if type(self.quokka_context.cluster) == LocalCluster:
+                print("Warning: trying to write S3 dataset on local machine. This assumes high network bandwidth.")
+
+            table_location = table_location[5:]
+            executor = OutputExecutor(table_location, "parquet", mode="s3", row_group_size=output_line_limit)
+
+        else:
+
+            if type(self.quokka_context.cluster) == EC2Cluster:
+                raise NotImplementedError("Does not support writing local dataset with S3 cluster. Must use S3 bucket.")
+
+            assert table_location[0] == "/", "You must supply absolute path to directory."
+        
+            executor = OutputExecutor(table_location, "parquet", mode = "local", row_group_size= output_line_limit)
+
+        name_stream = self.quokka_context.new_stream(
+            sources={0: self},
+            partitioners={0: PassThroughPartitioner()},
+            node=StatefulNode(
+                schema=["filename"],
+                # this is a stateful node, but predicates and projections can be pushed down.
+                schema_mapping={"filename":(-1, "filename")},
+                required_columns={0: set(self.schema)},
+                operator=executor
+            ),
+            schema=["filename"],
+            ordering=None
+        )
+
+        return name_stream.collect()
 
     def filter(self, predicate: str):
 

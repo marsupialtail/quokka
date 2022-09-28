@@ -1,6 +1,4 @@
-import pickle
 import os
-os.environ["POLAR_MAX_THREADS"] = "1"
 import polars
 import pandas as pd
 os.environ['ARROW_DEFAULT_MEMORY_POOL'] = 'system'
@@ -9,19 +7,13 @@ import pyarrow as pa
 import time
 import numpy as np
 import os, psutil
-import boto3
-import gc
-import pyarrow.csv as csv
-from io import StringIO, BytesIO
-from pyquokka.state import PersistentStateVariable
 import pyarrow.parquet as pq
 from collections import deque
 import pyarrow.compute as compute
 import random
-import asyncio
-import concurrent.futures
 import sys
-from aiobotocore.session import get_session
+from pyarrow.fs import S3FileSystem, LocalFileSystem
+import pyarrow.dataset as ds
 
 class Executor:
     def __init__(self) -> None:
@@ -79,172 +71,18 @@ class StorageExecutor(Executor):
     def done(self,executor_id):
         return
 
-class OutputS3CSVExecutor(Executor):
-    def __init__(self, bucket, prefix, output_line_limit = 1000000) -> None:
+
+class OutputExecutor(Executor):
+    def __init__(self, filepath, format, prefix = "part", mode = "local", row_group_size = 5000000) -> None:
         self.num = 0
-
-        self.bucket = bucket
-        self.prefix = prefix
-        self.output_line_limit = output_line_limit
-        self.name = 0
-        self.my_batches = deque()
-        self.exe = None
-        self.executor_id = None
-        self.session = get_session()
-
-    def serialize(self):
-        return {}, "all"
-    
-    def deserialize(self, s):
-        pass
-
-    def create_csv_file(self, data):
-        da = BytesIO()
-        csv.write_csv(data.to_arrow(), da,  write_options = csv.WriteOptions(include_header=False))
-        return da
-
-    async def do(self, client, data, name):
-        da = await asyncio.get_running_loop().run_in_executor(self.exe, self.create_csv_file, data)
-        resp = await client.put_object(Bucket=self.bucket,Key=self.prefix + "-" + str(self.executor_id) + "-" + str(name) + ".csv",Body=da.getvalue())
-        #print(resp)
-
-    async def go(self, datas):
-        # this is expansion of async with, so you don't have to remake the client
-        
-        async with self.session.create_client("s3", region_name="us-west-2") as client:
-            todos = []
-            for i in range(len(datas)):
-                todos.append(self.do(client,datas[i], self.name))
-                self.name += 1
-        
-            await asyncio.gather(*todos)
-        
-    def execute(self,batches,stream_id, executor_id):
-
-        if self.exe is None:
-            self.exe = concurrent.futures.ThreadPoolExecutor(max_workers = 2)
-        if self.executor_id is None:
-            self.executor_id = executor_id
-        else:
-            assert self.executor_id == executor_id
-
-        self.my_batches.extend([i for i in batches if i is not None])
-        #print("MY OUTPUT CSV STATE", [len(i) for i in self.my_batches] )
-
-        curr_len = 0
-        i = 0
-        datas = []
-        process = psutil.Process(os.getpid())
-        print("mem usage output", process.memory_info().rss, pa.total_allocated_bytes())
-        while i < len(self.my_batches):
-            curr_len += len(self.my_batches[i])
-            #print(curr_len)
-            i += 1
-            if curr_len > self.output_line_limit:
-                #print("writing")
-                datas.append(polars.concat([self.my_batches.popleft() for k in range(i)], rechunk = True))
-                i = 0
-                curr_len = 0
-        #print("writing ", len(datas), " files")
-        asyncio.run(self.go(datas))
-        #print("mem usage after", process.memory_info().rss, pa.total_allocated_bytes())
-
-    def done(self,executor_id):
-        if len(self.my_batches) > 0:
-            datas = [polars.concat(list(self.my_batches), rechunk=True)]
-            asyncio.run(self.go(datas))
-        print("done")
-
-
-class OutputS3ParquetFastExecutor(Executor):
-    def __init__(self, bucket, prefix, output_line_limit = 10000000) -> None:
-        self.num = 0
-        self.bucket = bucket
-        self.prefix = prefix
-        self.output_line_limit = output_line_limit
-        self.name = 0
-        self.my_batches = deque()
-        self.exe = None
-        self.executor_id = None
-        self.client = None
-
-    def serialize(self):
-        return {}, "all"
-    
-    def deserialize(self, s):
-        pass
-
-    def create_parquet_file(self, data, name):
-        writer = pa.BufferOutputStream()
-        pq.write_table(data.to_arrow(), writer)
-        resp = self.client.put_object(Bucket=self.bucket,Key=self.prefix + "-" + str(self.executor_id) + "-" + str(name) + ".parquet",Body=bytes(writer.getvalue()))
-        return resp
-
-    async def do(self, data,  name):
-        da = await asyncio.get_running_loop().run_in_executor(self.exe, self.create_parquet_file, data, name)
-        print(da)
-
-    async def go(self, datas):
-        # this is expansion of async with, so you don't have to remake the client
-        todos = []
-        for i in range(len(datas)):
-            todos.append(self.do(datas[i], self.name))
-            self.name += 1
-    
-        await asyncio.gather(*todos)
-        
-    def execute(self,batches,stream_id, executor_id):
-
-        if self.exe is None:
-            self.exe = concurrent.futures.ThreadPoolExecutor(max_workers = 8)
-        if self.executor_id is None:
-            self.executor_id = executor_id
-        else:
-            assert self.executor_id == executor_id
-        
-        if self.client is None:
-            self.client = boto3.client("s3")
-
-        print("LEN BATCHES", len(batches))
-        self.my_batches.extend([i for i in batches if i is not None])
-        #print("MY OUTPUT CSV STATE", [len(i) for i in self.my_batches] )
-
-        curr_len = 0
-        i = 0
-        datas = []
-        process = psutil.Process(os.getpid())
-        #print("mem usage output", process.memory_info().rss, pa.total_allocated_bytes())
-        while i < len(self.my_batches):
-            curr_len += len(self.my_batches[i])
-            #print(curr_len)
-            i += 1
-            if curr_len > self.output_line_limit:
-                #print("writing")
-                datas.append(polars.concat([self.my_batches.popleft() for k in range(i)], rechunk = True))
-                i = 0
-                curr_len = 0
-        #print("writing ", len(datas), " files")
-        asyncio.run(self.go(datas))
-        #print("mem usage after", process.memory_info().rss, pa.total_allocated_bytes())
-
-    def done(self,executor_id):
-        if len(self.my_batches) > 0:
-            datas = [polars.concat(list(self.my_batches), rechunk=True)]
-            asyncio.run(self.go(datas))
-        print("done")
-
-
-class OutputS3ParquetExecutor(Executor):
-    def __init__(self, bucket, prefix, row_group_size = 10000000) -> None:
-        self.num = 0
-
-        self.bucket = bucket
+        assert format == "csv" or format == "parquet"
+        self.format = format
+        self.filepath = filepath
         self.prefix = prefix
         self.row_group_size = row_group_size
-        self.executor_id = None
         self.my_batches = []
         self.name = 0
-        self.client = None
+        self.mode = mode
 
     def serialize(self):
         return {}, "all"
@@ -254,50 +92,70 @@ class OutputS3ParquetExecutor(Executor):
 
     def execute(self,batches,stream_id, executor_id):
 
-        if self.client is None:
-            self.client = boto3.client('s3')
-
+        fs = LocalFileSystem() if self.mode == "local" else S3FileSystem()
         self.my_batches.extend([i for i in batches if i is not None])
-        #print("MY OUTPUT CSV STATE", [len(i) for i in self.my_batches] )
 
-        counter = 0
-        mark = 0
-        while mark < len(self.my_batches):
-            counter += len(self.my_batches[mark])
-            print(counter)
-            if counter > self.row_group_size:
-                rows_remaining = counter - self.row_group_size
-                rows_to_take = len(self.my_batches[mark]) - rows_remaining
-                df = polars.concat(self.my_batches[:mark] + [self.my_batches[mark][:rows_to_take]])
-                self.my_batches = self.my_batches[mark:]
-                self.my_batches[0] = self.my_batches[0][rows_to_take:]
-                if len(self.my_batches[0]) == 0:
-                    self.my_batches = self.my_batches[1:]
-                counter = 0
-                mark = 0
-                table = df.to_arrow()
-                writer = pa.BufferOutputStream()
-                start = time.time()
-                pq.write_table(table, writer)
-                body = bytes(writer.getvalue())
-                print("convert time", time.time() - start)
-                start = time.time()
-                self.client.put_object(Body=body, Bucket=self.bucket, Key=self.prefix + "-" + str(executor_id) + "-" + str(self.name) + ".parquet")
-                print("upload time", time.time() - start)
-                self.name += 1
-            else:
-                mark += 1
+        '''
+        You want to use Payrrow's write table API to flush everything at once. to get the parallelism.
+        Being able to write multiple row groups at once really speeds things up. It's okay if you are slow at first
+        because you are uploading/writing things one at a time
+        '''
+
+        lengths = [len(batch) for batch in self.my_batches]
+        total_len = np.sum(lengths)
+        write_len = total_len // self.row_group_size * self.row_group_size
+        cum_sum = np.cumsum(lengths)
+        if len(np.where(cum_sum > write_len)[0]) == 0:
+            batches_to_take, rows_remaining, rows_to_take = len(lengths), 0,0
+        batches_to_take = np.where(cum_sum > write_len)[0][0]
+
+        if batches_to_take == 0:
+            return None
+
+        rows_remaining = cum_sum[batches_to_take] - write_len
+        rows_to_take = lengths[batches_to_take] - rows_remaining
+
+        write_batch = polars.concat(self.my_batches[:batches_to_take])
+
+        self.my_batches = self.my_batches[batches_to_take:]
+        if rows_to_take > 0:
+            write_batch.vstack(self.my_batches[0][:rows_to_take], in_place=True)
+            self.my_batches[0] = self.my_batches[0][rows_to_take:]
+
+        write_batch = write_batch.to_arrow()
+        if self.format == "csv":
+            for i, (col_name, type_) in enumerate(zip(write_batch.schema.names, write_batch.schema.types)):
+                if pa.types.is_decimal(type_):
+                    write_batch = write_batch.set_column(i, col_name, compute.cast(write_batch.column(col_name), pa.float64()))
+
+
+        assert len(write_batch) % self.row_group_size == 0
+        ds.write_dataset(write_batch,base_dir = self.filepath, 
+            basename_template = self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-{i}." + self.format, format=self.format, filesystem = fs,
+            existing_data_behavior='overwrite_or_ignore',
+            max_rows_per_file=self.row_group_size,max_rows_per_group=self.row_group_size)
+        
+        return_df = polars.from_dict({"filename":[(self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-" + str(i) + "." + self.format) for i in range(len(write_batch) // self.row_group_size) ]})
+        self.name += 1
+        return return_df
 
     def done(self,executor_id):
         df = polars.concat(self.my_batches)
-        table = df.to_arrow()
-        writer = pa.BufferOutputStream()
-        pq.write_table(table, writer)
-        body = bytes(writer.getvalue())
+        #print(df)
+        fs = LocalFileSystem() if self.mode == "local" else S3FileSystem()
+        write_batch = df.to_arrow()
+        if self.format == "csv":
+            for i, (col_name, type_) in enumerate(zip(write_batch.schema.names, write_batch.schema.types)):
+                if pa.types.is_decimal(type_):
+                    write_batch = write_batch.set_column(i, col_name, compute.cast(write_batch.column(col_name), pa.float64()))
 
-        if self.client is None:
-            self.client = boto3.client('s3')
-        self.client.put_object(Body=body, Bucket=self.bucket, Key=self.prefix + "-" + str(executor_id) + "-" + str(self.name) + ".parquet")
+        ds.write_dataset(write_batch,base_dir = self.filepath, 
+            basename_template = self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-{i}." + self.format, format=self.format, filesystem = fs,
+            existing_data_behavior='overwrite_or_ignore',
+            max_rows_per_file=self.row_group_size,max_rows_per_group=self.row_group_size)
+        
+        return_df = polars.from_dict({"filename":[(self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-" + str(i) + "." + self.format) for i in range((len(write_batch) -1) // self.row_group_size + 1) ]})
+        return return_df
 
 class BroadcastJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
