@@ -11,7 +11,7 @@ from pyquokka.dataset import *
 from pyquokka.logical import *
 from pyquokka.target_info import *
 from pyquokka.quokka_runtime import * 
-from pyquokka.utils import S3Cluster, LocalCluster
+from pyquokka.utils import EC2Cluster, LocalCluster
 import pyquokka.sql_utils as sql_utils
 
 
@@ -59,7 +59,7 @@ class QuokkaContext:
                     self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep)
         else:
 
-            if type(self.cluster) == S3Cluster:
+            if type(self.cluster) == EC2Cluster:
                 raise NotImplementedError("Does not support reading local dataset with S3 cluster. Must use S3 bucket.")
 
             if "*" in table_location:
@@ -122,7 +122,7 @@ class QuokkaContext:
                     self.nodes[self.latest_node_id] = InputS3ParquetNode(table_location, schema, None, None)
 
         else:
-            if type(self.cluster) == S3Cluster:
+            if type(self.cluster) == EC2Cluster:
                 raise NotImplementedError("Does not support reading local dataset with S3 cluster. Must use S3 bucket.")
             
             if "*" in table_location:
@@ -592,7 +592,7 @@ class DataStream:
 
         else:
 
-            if type(self.cluster) == S3Cluster:
+            if type(self.cluster) == EC2Cluster:
                 raise NotImplementedError("Does not support writing local dataset with S3 cluster. Must use S3 bucket.")
 
             assert table_location[0] == "/", "You must supply absolute path to directory."

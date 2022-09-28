@@ -19,7 +19,6 @@ import time
 from pyarrow.fs import S3FileSystem, LocalFileSystem
 from pyarrow.dataset import FileSystemDataset, ParquetFileFormat
 from pyquokka.sql_utils import filters_to_expression
-from multiprocessing.dummy import Pool
 
 class SortPhase2Dataset:
 
@@ -167,6 +166,7 @@ class InputEC2ParquetDataset:
             dataset = ds.dataset(self.filepath, filesystem = s3)
         else:
             dataset = ds.dataset(self.filepath)
+
 
         self.schema = dataset.schema
         total_rows = dataset.count_rows()

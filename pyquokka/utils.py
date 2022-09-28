@@ -7,7 +7,7 @@ import pyquokka
 import ray
 import json
 
-class S3Cluster:
+class EC2Cluster:
     def __init__(self, public_ips, private_ips, instance_ids, cpu_count_per_instance) -> None:
         
         self.num_node = len(public_ips)
@@ -169,7 +169,7 @@ class QuokkaClusterManager:
 
         print("Launching of Quokka cluster used: ", time.time() - start_time)
 
-        return S3Cluster(public_ips, private_ips, instance_ids, vcpu_per_node)  
+        return EC2Cluster(public_ips, private_ips, instance_ids, vcpu_per_node)  
         
 
     def stop_cluster(self, quokka_cluster):
@@ -218,11 +218,11 @@ class QuokkaClusterManager:
             a = ec2.describe_instances(InstanceIds = instance_ids)
             public_ips = [a['Reservations'][0]['Instances'][i]['PublicIpAddress'] for i in range(len(instance_ids))]
             private_ips = [a['Reservations'][0]['Instances'][i]['PrivateIpAddress'] for i in range(len(instance_ids))]
-            return S3Cluster(public_ips, private_ips, instance_ids, cpu_count)
+            return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count)
         if sum([i=="running" for i in states]) == len(states):
             public_ips = [a['Reservations'][0]['Instances'][i]['PublicIpAddress'] for i in range(len(instance_ids))]
             private_ips = [a['Reservations'][0]['Instances'][i]['PrivateIpAddress'] for i in range(len(instance_ids))]
-            return S3Cluster(public_ips, private_ips, instance_ids, cpu_count)
+            return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count)
         else:
             print("Cluster in an inconsistent state. Either only some machines are running or some machines have been terminated.")
             return False

@@ -1,5 +1,6 @@
 import sqlglot
 from pyquokka.dataset import * 
+from pyquokka.utils import EC2Cluster, LocalCluster
 
 class PlacementStrategy:
     def __init__(self) -> None:
@@ -105,9 +106,15 @@ class InputS3ParquetNode(SourceNode):
     
     def lower(self, task_graph):
 
-        parquet_reader = InputEC2ParquetDataset(self.filepath, mode = "s3", columns = list(self.projection), filters = self.predicate)
-        node = task_graph.new_input_reader_node(parquet_reader)
-        return node
+        if type(task_graph.cluster) ==  EC2Cluster:
+            parquet_reader = InputEC2ParquetDataset(self.filepath, mode = "s3", columns = list(self.projection), filters = self.predicate)
+            node = task_graph.new_input_reader_node(parquet_reader)
+            return node
+        elif type(task_graph.cluster) == LocalCluster:
+            parquet_reader = InputParquetDataset(self.filepath, mode = "s3", columns = list(self.projection), filters = self.predicate)
+            node = task_graph.new_input_reader_node(parquet_reader)
+            return node
+
     
     def __str__(self):
         result = str(type(self)) + '\nPredicate: ' + str(self.predicate) + '\nProjection: ' + str(self.projection) + '\nTargets:' 
@@ -124,9 +131,12 @@ class InputDiskParquetNode(SourceNode):
     
     def lower(self, task_graph):
 
-        parquet_reader = InputParquetDataset(self.filepath, mode = "local", columns = list(self.projection), filters = self.predicate)
-        node = task_graph.new_input_reader_node(parquet_reader)
-        return node
+        if type(task_graph.cluster) ==  EC2Cluster:
+            raise Exception
+        elif type(task_graph.cluster) == LocalCluster:
+            parquet_reader = InputParquetDataset(self.filepath, mode = "local", columns = list(self.projection), filters = self.predicate)
+            node = task_graph.new_input_reader_node(parquet_reader)
+            return node
     
     def __str__(self):
         result = str(type(self)) + '\nPredicate: ' + str(self.predicate) + '\nProjection: ' + str(self.projection) + '\nTargets:' 
