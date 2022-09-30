@@ -1,5 +1,7 @@
+from platform import node
 import sqlglot
-from pyquokka.dataset import * 
+from pyquokka.dataset import *
+from pyquokka.executors import StorageExecutor 
 from pyquokka.utils import EC2Cluster, LocalCluster
 
 class PlacementStrategy:
@@ -71,6 +73,27 @@ class SourceNode(Node):
             result += "\n\t" + str(target) + " " + str(self.targets[target])
         return result
 
+class InputS3FilesNode(SourceNode):
+    def __init__(self, bucket, prefix, schema) -> None:
+        super().__init__(schema)
+        self.bucket = bucket
+        self.prefix = prefix
+    
+    def lower(self, task_graph, ip_to_num_channel = None):
+        file_reader = InputS3FilesDataset(self.bucket,self.prefix)
+        node = task_graph.new_input_reader_node(file_reader, ip_to_num_channel = ip_to_num_channel)
+        return node
+
+class InputDiskFilesNode(SourceNode):
+    def __init__(self, directory, schema) -> None:
+        super().__init__(schema)
+        self.directory = directory
+    
+    def lower(self, task_graph, ip_to_num_channel = None):
+        file_reader = InputDiskFilesDataset(self.directory)
+        node = task_graph.new_input_reader_node(file_reader, ip_to_num_channel = ip_to_num_channel)
+        return node
+
 class InputS3CSVNode(SourceNode):
     def __init__(self, bucket, prefix, key, schema, sep, has_header) -> None:
         super().__init__(schema)
@@ -81,9 +104,9 @@ class InputS3CSVNode(SourceNode):
         self.has_header = has_header
 
     def lower(self, task_graph, ip_to_num_channel =None):
-        lineitem_csv_reader = InputS3CSVDataset(self.bucket, self.schema, prefix = self.prefix, key = self.key, sep=self.sep, header = self.has_header, stride = 128 * 1024 * 1024)
-        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, ip_to_num_channel = ip_to_num_channel)
-        return lineitem
+        csv_reader = InputS3CSVDataset(self.bucket, self.schema, prefix = self.prefix, key = self.key, sep=self.sep, header = self.has_header, stride = 128 * 1024 * 1024)
+        node = task_graph.new_input_reader_node(csv_reader, ip_to_num_channel = ip_to_num_channel)
+        return node
 
 class InputDiskCSVNode(SourceNode):
     def __init__(self, filename, schema, sep, has_header) -> None:
@@ -93,9 +116,9 @@ class InputDiskCSVNode(SourceNode):
         self.has_header = has_header
 
     def lower(self, task_graph, ip_to_num_channel =None):
-        lineitem_csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, header = self.has_header, stride = 16 * 1024 * 1024)
-        lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, ip_to_num_channel = ip_to_num_channel)
-        return lineitem
+        csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, header = self.has_header, stride = 128 * 1024 * 1024)
+        node = task_graph.new_input_reader_node(csv_reader, ip_to_num_channel = ip_to_num_channel)
+        return node
 
 class InputS3ParquetNode(SourceNode):
     def __init__(self, filepath, schema, predicate = None, projection = None) -> None:
@@ -153,7 +176,11 @@ class SinkNode(Node):
 class DataSetNode(SinkNode):
     def __init__(self, schema) -> None:
         super().__init__(schema)
-
+    
+    def lower(self, task_graph, parent_nodes, parent_source_info, ip_to_num_channel=None ):
+        assert self.blocking
+        return task_graph.new_blocking_node(parent_nodes,StorageExecutor(), ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info)
+        
 '''
 We need to keep a schema mapping to map the node's schema, aka the schema after the operator, to the schema of its parents to conduct
 predicate pushdown. The schema_mapping will be a dict from column name to a tuple (i, name), where i is the index in self.parents of the parent

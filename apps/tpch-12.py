@@ -2,7 +2,7 @@ import sys
 import time
 from pyquokka.quokka_runtime import TaskGraph
 from pyquokka.executors import AggExecutor, PolarJoinExecutor
-from pyquokka.dataset import InputDiskCSVDataset, InputS3CSVDataset, InputS3ParquetDataset
+from pyquokka.dataset import InputDiskCSVDataset, InputS3CSVDataset, InputParquetDataset
 
 import pyarrow.compute as compute
 from pyquokka.target_info import BroadcastPartitioner, HashPartitioner, TargetInfo
@@ -35,8 +35,8 @@ if sys.argv[1] == "csv":
     orders = task_graph.new_input_reader_node(orders_csv_reader)
 
 elif sys.argv[1] == "parquet":
-    lineitem_parquet_reader = InputS3ParquetDataset("tpc-h-parquet","lineitem.parquet",columns=['l_shipdate','l_commitdate','l_shipmode','l_receiptdate','l_orderkey'], filters= [('l_shipmode', 'in', ['SHIP','MAIL']),('l_receiptdate','<',compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")), ('l_receiptdate','>=',compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s"))])
-    orders_parquet_reader = InputS3ParquetDataset("tpc-h-parquet","orders.parquet",columns = ['o_orderkey','o_orderpriority'])
+    lineitem_parquet_reader = InputParquetDataset("tpc-h-parquet","lineitem.parquet",columns=['l_shipdate','l_commitdate','l_shipmode','l_receiptdate','l_orderkey'], filters= [('l_shipmode', 'in', ['SHIP','MAIL']),('l_receiptdate','<',compute.strptime("1995-01-01",format="%Y-%m-%d",unit="s")), ('l_receiptdate','>=',compute.strptime("1994-01-01",format="%Y-%m-%d",unit="s"))])
+    orders_parquet_reader = InputParquetDataset("tpc-h-parquet","orders.parquet",columns = ['o_orderkey','o_orderpriority'])
     lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader)
     orders = task_graph.new_input_reader_node(orders_parquet_reader)
       

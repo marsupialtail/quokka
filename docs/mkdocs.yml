@@ -3,8 +3,10 @@ site_name: Quokka
 nav:
         - Home: index.md
         - Getting Started: started.md
-        - Tutorials: tutorial.md
-        - Quokka Runtime API: runtime.md
+        - Setting Up Cloud Cluster: cloud.md
+        - Tutorials: simple.md
+        - Advanced Tutorials: tutorial.md
+        - Dataframe API reference: api.md
 
 theme: readthedocs
 

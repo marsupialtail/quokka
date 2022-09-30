@@ -9,12 +9,9 @@ import cv2
 import os
 from img2vec_pytorch import Img2Vec
 from PIL import Image
-from pyquokka.executors import Executor
-from pyquokka.quokka_runtime import TaskGraph
-from pyquokka.dataset import InputS3FilesDataset
-from pyquokka.utils import QuokkaCluster, QuokkaClusterManager
+from pyquokka.df import * 
+from pyquokka.utils import LocalCluster, QuokkaClusterManager
 import torch
-import ray
 
 # in Quokka, downstream operators always receive a list of outputs from the upstream. So if the upstream produces some arbitrary type A, downstream will receive a list of A.
 # Type preservation happens if all operators take a list of numpys say, and return a single numpy. Then all the operators in the graph will operate on similar data types
@@ -93,17 +90,10 @@ class StageTwo(Executor):
     def done(self, executor_id):
         pass
 
-task_graph = TaskGraph(cluster)
-
-reader = InputS3FilesDataset("fddb")
-images = task_graph.new_input_reader_node(reader)
+qc = QuokkaContext(cluster)
+files = qc.read_files("s3://fddb/*")
 stage_one = StageOne("quokka-examples","res10_300x300_ssd_iter_140000.caffemodel","quokka-examples","deploy.prototxt.txt")
-faces = task_graph.new_non_blocking_node({0:images}, stage_one)
+faces = files.stateful_transform(stage_one)
 stage_two = StageTwo()
-vecs = task_graph.new_non_blocking_node({0:faces}, stage_two)
-
-import time
-task_graph.create()
-start = time.time()
-task_graph.run()
-print(time.time() - start)
+vecs = files.stateful_transform(stage_two)
+vecs.collect()

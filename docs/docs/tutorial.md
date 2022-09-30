@@ -1,4 +1,6 @@
-#Tutorials
+#Advanced Tutorials
+
+This section is for learning how to use Quokka's graph level API. This is expected for use cases where the dataframe API cannot satisfy your needs. Most users are not expected to program at this level. You should contact me: zihengw@stanford.edu if you want to do this.
 
 The code for the tutorials can be found under `apps/tutorials`. They might perform meaningless tasks or perform tasks which you shoudn't necessarily use Quokka for, but they will showcase how Quokka works. Importantly they will showcase the Quokka DAG runtime API. Quokka doesn't currently support a dataframe API or SQL (on the roadmap).
 

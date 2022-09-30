@@ -304,12 +304,36 @@ class InputS3FilesDataset:
         while curr_pos < len(self.files):
             #print("input batch", (curr_pos - mapper_id) / self.num_channels)
             # since these are arbitrary byte files (most likely some image format), it is probably useful to keep the filename around or you can't tell these things apart
-            a = (self.files[curr_pos], self.s3.get_object(Bucket=self.bucket, Key=self.files[curr_pos])['Body'].read())
+            a = polars.from_dict({"filename" : [self.files[curr_pos]], "object": [self.s3.get_object(Bucket=self.bucket, Key=self.files[curr_pos])['Body'].read()]})
             #print("ending reading ",time.time())
             curr_pos += self.num_channels
             yield curr_pos, a
 
+# this works for a directoy of objects on disk.
+# Could have combined this with the S3FilesDataset but the code is so different might as well
+class InputDiskFilesDataset:
 
+    def __init__(self, directory) -> None:
+        
+        self.directory = directory
+        assert os.path.isdir(directory), "must supply directory, try absolute path"
+        
+        self.num_channels = None
+
+    def set_num_channels(self, num_channels):
+        self.num_channels = num_channels
+        self.files = os.listdir(self.directory)
+
+    def get_next_batch(self, mapper_id, pos=None):
+        assert self.num_channels is not None
+        if pos is None:
+            curr_pos = mapper_id
+        else:
+            curr_pos = pos
+        while curr_pos < len(self.files):
+            a = polars.from_dict({"filename" : [self.files[curr_pos]], "object": [open(self.directory + "/" + self.files[curr_pos],"rb").read()]})
+            curr_pos += self.num_channels
+            yield curr_pos, a
        
 # this should work for 1 CSV up to multiple
 class InputDiskCSVDataset:
@@ -330,7 +354,6 @@ class InputDiskCSVDataset:
 
     def set_num_channels(self, num_channels):
         assert self.num_channels == num_channels
-        self.s3 = boto3.client('s3')  # needs boto3 client
     
     # we need to rethink this whole setting num channels business. For this operator we don't want each node to do redundant work!
     def get_own_state(self, num_channels):
@@ -423,7 +446,6 @@ class InputDiskCSVDataset:
         self.length = total_size
         #self.sample = pa.concat_tables(samples)
         self.channel_infos = channel_infos
-        print(self.channel_infos)
         print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
 
 

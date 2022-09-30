@@ -18,14 +18,6 @@ import pyarrow.dataset as ds
 class Executor:
     def __init__(self) -> None:
         raise NotImplementedError
-    def initialize(datasets):
-        pass
-    def serialize(self):
-        return {}, "all"
-    def deserialize(self, s):
-        pass
-    def set_early_termination(self):
-        self.early_termination = True
     def execute(self,batches,stream_id, executor_id):
         raise NotImplementedError
     def done(self,executor_id):
@@ -62,6 +54,7 @@ class StorageExecutor(Executor):
     
     def execute(self,batches,stream_id, executor_id):
         batches = [batch for batch in batches if batch is not None and len(batch) > 0]
+        #print(batches)
         if len(batches) > 0:
             if type(batches[0]) == polars.internals.DataFrame:
                 return polars.concat(batches)
@@ -529,11 +522,11 @@ class AggExecutor(Executor):
         self.groupby_keys = groupby_keys
         self.aggregation_dict = aggregation_dict
         self.mean_cols = mean_cols
-        self.length_limit = 10000
+        self.length_limit = 1000000
         # hope and pray there is no column called __&&count__
-        self.pyarrow_agg_list = [("count_sum", "sum")]
-        self.count_col = "count_sum"
-        self.rename_dict = {"count_sum_sum": self.count_col}
+        self.pyarrow_agg_list = [("__count_sum", "sum")]
+        self.count_col = "__count_sum"
+        self.rename_dict = {"__count_sum_sum": self.count_col}
         for key in aggregation_dict:
             assert aggregation_dict[key] in {
                     "max", "min", "mean", "sum"}, "only support max, min, mean and sum for now"
@@ -578,6 +571,8 @@ class AggExecutor(Executor):
     
     def done(self,executor_id):
 
+        if self.state is None:
+            return None
 
         arrow_state = self.state.to_arrow()
         arrow_state = arrow_state.group_by(self.groupby_keys).aggregate(self.pyarrow_agg_list)

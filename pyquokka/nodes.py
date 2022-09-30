@@ -191,9 +191,13 @@ class Node:
 
             assert target_info.lowered
 
+            #print("pre-filer",data)
             data = data.filter(target_info.predicate(data))
+            #print("post-filer", data)
 
             partitioned_payload = target_info.partitioner.func(data, self.channel, len(original_channel_to_ip))
+            #print("post-partition", partitioned_payload)
+
             assert type(partitioned_payload) == dict and max(partitioned_payload.keys()) < len(original_channel_to_ip)
             
             for channel in self.alive_targets[target]:

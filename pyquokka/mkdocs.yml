@@ -1,0 +1,42 @@
+site_name: Example site
+
+
+# Repository
+repo_name: Example
+repo_url: https://github.com/
+edit_uri: ""
+# Copyright
+copyright: Jeremy DiBattista
+
+docs_dir: "docs/sources"
+
+plugins:
+  - search
+
+theme:
+  name: 'readthedocs'
+  custom_dir: 'docs'
+  palette:
+    primary: 'white'
+  logo: 'assets/images/logo_full.svg'
+  favicon: 'assets/images/favicon.svg'
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - instant
+nav:
+  - Home: index.md
+  - modules:
+    - automate_mkdocs: modules/automate_mkdocs.md
+    - dataset: modules/dataset.md
+    - datastream: modules/datastream.md
+    - df: modules/df.md
+    - executors: modules/executors.md
+    - flight: modules/flight.md
+    - logical: modules/logical.md
+    - nodes: modules/nodes.md
+    - quokka_runtime: modules/quokka_runtime.md
+    - sql_utils: modules/sql_utils.md
+    - state: modules/state.md
+    - target_info: modules/target_info.md
+    - utils: modules/utils.md

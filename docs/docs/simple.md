@@ -1,88 +1,14 @@
-from pyquokka.df import * 
-from pyquokka.utils import LocalCluster, QuokkaClusterManager
-from schema import * 
-mode = "DISK"
-format = "csv"
-disk_path = "/home/ziheng/tpc-h/"
-s3_path_csv = "s3://tpc-h-csv/"
-s3_path_parquet = "s3://tpc-h-parquet/"
+#Tutorials
 
-import pyarrow as pa
-import pyarrow.compute as compute
-import polars
+This section is for learning how to use Quokka's dataframe API. Quokka's dataframe takes heavy inspiration from SparkSQL and Polars, and adopts a lazy execution model. This means that in contrast to Pandas, your operations are not executed immediately after you define them. Instead, Quokka builds a logical plan under the hood and executes it only when the user wants to "collect" the result, just like Spark. 
 
-if mode == "DISK":
-    cluster = LocalCluster()
-elif mode == "S3":
-    manager = QuokkaClusterManager()
-    cluster = manager.get_cluster_from_json("config.json")
-else:
-    raise Exception
+For the first part of our tutorial, we are going to go through implementing a few SQL queries in the TPC-H benchmark suite. You can download the data [here](https://drive.google.com/file/d/1a4yhPoknXgMhznJ9OQO3BwHz2RMeZr8e/view?usp=sharing). It is about 1GB unzipped.
 
-qc = QuokkaContext(cluster)
+## Lesson 0: Addition
 
-if mode == "DISK":
-    if format == "csv":
-        lineitem = qc.read_csv(disk_path + "lineitem.tbl", lineitem_scheme, sep="|")
-        orders = qc.read_csv(disk_path + "orders.tbl", order_scheme, sep="|")
-        customer = qc.read_csv(disk_path + "customer.tbl",customer_scheme, sep = "|")
-        part = qc.read_csv(disk_path + "part.tbl", part_scheme, sep = "|")
-        supplier = qc.read_csv(disk_path + "supplier.tbl", supplier_scheme, sep = "|")
-        partsupp = qc.read_csv(disk_path + "partsupp.tbl", partsupp_scheme, sep = "|")
-        nation = qc.read_csv(disk_path + "nation.tbl", nation_scheme, sep = "|")
-        region = qc.read_csv(disk_path + "region.tbl", region_scheme, sep = "|")
-    elif format == "parquet":
-        lineitem = qc.read_parquet(disk_path + "lineitem.parquet")
-        orders = qc.read_parquet(disk_path + "orders.parquet")
-        customer = qc.read_parquet(disk_path + "customer.parquet")
-        part = qc.read_parquet(disk_path + "part.parquet")
-        supplier = qc.read_parquet(disk_path + "supplier.parquet")
-        partsupp = qc.read_parquet(disk_path + "partsupp.parquet")
-        nation = qc.read_parquet(disk_path + "nation.parquet")
-        region = qc.read_parquet(disk_path + "region.parquet")
-    else:
-        raise Exception
-elif mode == "S3":
-    if format == "csv":
-        lineitem = qc.read_csv(s3_path_csv + "lineitem/lineitem.tbl.1", lineitem_scheme, sep="|")
-        orders = qc.read_csv(s3_path_csv + "orders/orders.tbl.1", order_scheme, sep="|")
-        customer = qc.read_csv(s3_path_csv + "customer/customer.tbl.1",customer_scheme, sep = "|")
-        part = qc.read_csv(s3_path_csv + "part/part.tbl.1", part_scheme, sep = "|")
-        supplier = qc.read_csv(s3_path_csv + "supplier/supplier.tbl.1", supplier_scheme, sep = "|")
-        partsupp = qc.read_csv(s3_path_csv + "partsupp/partsupp.tbl.1", partsupp_scheme, sep = "|")
-        nation = qc.read_csv(s3_path_csv + "nation/nation.tbl", nation_scheme, sep = "|")
-        region = qc.read_csv(s3_path_csv + "region/region.tbl", region_scheme, sep = "|")
-    elif format == "parquet":
-        lineitem = qc.read_parquet(s3_path_parquet + "lineitem.parquet/*")
-        orders = qc.read_parquet(s3_path_parquet + "orders.parquet/*")
-        customer = qc.read_parquet(s3_path_parquet + "customer.parquet/*")
-        part = qc.read_parquet(s3_path_parquet + "part.parquet/*")
-        supplier = qc.read_parquet(s3_path_parquet + "supplier.parquet/*")
-        partsupp = qc.read_parquet(s3_path_parquet + "partsupp.parquet/*")
-        nation = qc.read_parquet(s3_path_parquet + "nation.parquet/*")
-        region = qc.read_parquet(s3_path_parquet + "region.parquet/*")
+Let's jump right in 
 
-    else:
-        raise Exception
-else:
-    raise Exception
-
-
-# testa = qc.read_csv("test",list({
-#     "key" : pyarrow.uint64(),
-#     "val1": pyarrow.uint64(),
-#     "val2": pyarrow.uint64(),
-#     "val3": pyarrow.uint64(),
-# }.keys()))
-
-# testb = qc.read_csv("test",list({
-#     "key" : pyarrow.uint64(),
-#     "val1": pyarrow.uint64(),
-#     "val2": pyarrow.uint64(),
-#     "val3": pyarrow.uint64()
-# }.keys()))
-
-
+~~~python
 def do_1():
 
     '''
@@ -97,7 +23,7 @@ def do_1():
         "charge":"sum", "l_discount":"avg","*":"count"})
         
     return f.collect()
-
+~~~
 def do_2():
     '''
     Quokka does not do query unnesting.
@@ -201,62 +127,3 @@ def do_12():
 
     f = d.groupby("l_shipmode").aggregate(aggregations={'high':['sum'], 'low':['sum']})
     return f.collect()
-
-def count():
-
-    return lineitem.aggregate({"*":"count"}).collect()
-
-def csv_to_parquet_disk():
-
-    if not (mode == "DISK" and format == "csv"):
-        return
-    else:
-        parquet = lineitem.write_parquet("/home/ziheng/tpc-h-out/", output_line_limit = 100000)
-        return parquet
-
-def csv_to_csv_disk():
-
-    if not (mode == "DISK" and format == "csv"):
-        return
-    else:
-        csvfiles = lineitem.write_csv("/home/ziheng/tpc-h-out/", output_line_limit = 1000000)
-        return csvfiles
-
-def csv_to_parquet_s3():
-
-    if not (mode == "S3" and format == "csv"):
-        return
-    else:
-        parquet = lineitem.write_parquet("s3://yugan/tpc-h-out/", output_line_limit = 5000000)
-        return parquet
-        
-
-def word_count():
-
-    def udf2(x):
-        x = x.to_arrow()
-        da = compute.list_flatten(compute.ascii_split_whitespace(x["text"]))
-        c = da.value_counts().flatten()
-        return polars.from_arrow(pa.Table.from_arrays([c[0], c[1]], names=["word","count"]))
-    
-    words = qc.read_csv(disk_path + "random-words.txt",["text"],sep="|")
-    counted = words.transform( udf2, new_schema = ["word", "count"], required_columns = {"text"}, foldable=True)
-    f = counted.groupby("word").agg({"count":"sum"})
-    return f.collect()
-
-# print(count)
-# print(csv_to_parquet_disk())
-# print(csv_to_csv_disk())
-# print(csv_to_parquet_s3())
-
-print(do_1())
-print(do_3())
-
-print(do_4())
-print(do_2())
-print(do_5())
-print(do_6())
-print(do_12())
-print(do_7())
-
-print(word_count())

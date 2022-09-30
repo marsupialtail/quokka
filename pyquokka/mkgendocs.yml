@@ -1,0 +1,142 @@
+site_name: Example Site
+
+
+# Repository
+repo_name: Example
+repo: https://github.com/
+# Copyright
+copyright: Jeremy DiBattista
+
+#This specifies the autogeneration portion
+pages:
+  - page: "modules/dataset.md"
+    source: "dataset.py"
+    classes:
+      - SortPhase2Dataset
+      - RedisObjectsDataset
+      - InputDiskHDF5Dataset
+      - InputEC2ParquetDataset
+      - InputParquetDataset
+      - InputS3FilesDataset
+      - InputDiskFilesDataset
+      - InputDiskCSVDataset
+      - InputS3CSVDataset
+
+  - page: "modules/target_info.md"
+    source: "target_info.py"
+    classes:
+      - TargetInfo
+      - Partitioner
+      - PassThroughPartitioner
+      - BroadcastPartitioner
+      - HashPartitioner
+      - FunctionPartitioner
+
+  - page: "modules/executors.md"
+    source: "executors.py"
+    classes:
+      - Executor
+      - UDFExecutor
+      - StorageExecutor
+      - OutputExecutor
+      - BroadcastJoinExecutor
+      - GroupAsOfJoinExecutor
+      - PolarJoinExecutor
+      - DistinctExecutor
+      - AggExecutor
+      - LimitExecutor
+      - CountExecutor
+      - MergeSortedExecutor
+
+  - page: "modules/quokka_runtime.md"
+    source: "quokka_runtime.py"
+    classes:
+      - Dataset
+      - TaskGraph
+
+  - page: "modules/flight.md"
+    source: "flight.py"
+    classes:
+      - DiskFile
+      - DiskQueue
+      - FlightServer
+
+  - page: "modules/sql_utils.md"
+    source: "sql_utils.py"
+    functions:
+      - is_cast_to_date
+      - required_columns_from_exp
+      - apply_conditions_to_batch
+      - filters_to_expression
+      - evaluate
+      - parquet_condition_decomp
+      - csv_condition_decomp
+
+  - page: "modules/nodes.md"
+    source: "nodes.py"
+    classes:
+      - FlushedMessage
+      - SharedMemMessage
+      - Node
+      - InputNode
+      - TaskNode
+    functions:
+      - convert_to_format
+      - convert_from_format
+
+  - page: "modules/utils.md"
+    source: "utils.py"
+    classes:
+      - EC2Cluster
+      - LocalCluster
+      - QuokkaClusterManager
+
+  - page: "modules/datastream.md"
+    source: "datastream.py"
+    classes:
+      - DataStream
+      - GroupedDataStream
+
+  - page: "modules/state.md"
+    source: "state.py"
+    classes:
+      - PersistentStateVariable
+
+  - page: "modules/df.md"
+    source: "df.py"
+    classes:
+      - QuokkaContext
+      - DataSet
+
+  - page: "modules/automate_mkdocs.md"
+    source: "automate_mkdocs.py"
+    functions:
+      - add_val
+      - automate_mkdocs_from_docstring
+      - automate_nav_structure
+      - fix
+      - indent
+
+  - page: "modules/logical.md"
+    source: "logical.py"
+    classes:
+      - PlacementStrategy
+      - SingleChannelStrategy
+      - CustomChannelsStrategy
+      - GPUStrategy
+      - Node
+      - SourceNode
+      - InputS3FilesNode
+      - InputDiskFilesNode
+      - InputS3CSVNode
+      - InputDiskCSVNode
+      - InputS3ParquetNode
+      - InputDiskParquetNode
+      - SinkNode
+      - DataSetNode
+      - TaskNode
+      - StatefulNode
+      - MapNode
+      - FilterNode
+      - ProjectionNode
+
