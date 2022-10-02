@@ -208,7 +208,7 @@ class TaskGraph:
 
         if ip_to_num_channel is None:
             # automatically come up with some policy
-            ip_to_num_channel = {ip: self.cluster.cpu_count for ip in list(self.cluster.private_ips.values())}
+            ip_to_num_channel = {ip: self.cluster.cpu_count   for ip in list(self.cluster.private_ips.values())}
             #ip_to_num_channel = {ip: 2 for ip in list(self.cluster.private_ips.values())}
 
         channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
@@ -216,8 +216,7 @@ class TaskGraph:
         # this is some state that is associated with the number of channels. typically for reading csvs or text files where you have to decide the split points.
         
         if hasattr(reader, "get_own_state"):
-            reader.get_own_state(len(channel_to_ip))
-        
+            reader.get_own_state(len(channel_to_ip))        
         # set num channels is still needed later to initialize the self.s3 object, which can't be pickled!
 
         tasknode = {}
@@ -417,8 +416,9 @@ class TaskGraph:
                 replica = node[channel]
                 processes.append(replica.execute.remote())
         ray.get(processes)
-        for key in self.nodes:
-            node = self.nodes[key]
-            for channel in node:
-                replica = node[channel]
-                ray.kill(replica)
+        # for key in self.nodes:
+        #     node = self.nodes[key]
+        #     for channel in node:
+        #         replica = node[channel]
+        #         ray.kill(replica)
+        # self.nodes = {}

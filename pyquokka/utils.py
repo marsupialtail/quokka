@@ -79,6 +79,13 @@ class QuokkaClusterManager:
         if sum(return_codes) != 0:
             raise Exception(error)
     
+    def launch_all_t(self, command, ips, error = "Error"):
+        commands = ["ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + str(ip) + " -t '" + command + "'" for ip in ips]
+        processes = [subprocess.Popen(command, close_fds=True, shell=True) for command in commands]
+        return_codes = [process.wait() for process in processes]
+        if sum(return_codes) != 0:
+            raise Exception(error)
+    
     def copy_all(self, file_path, ips, error = "Error"):
         commands = ["scp -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " " + file_path + " ubuntu@" + str(ip) + ":. " for ip in ips]
         processes = [subprocess.Popen(command, close_fds=True, shell=True) for command in commands]
@@ -116,6 +123,7 @@ class QuokkaClusterManager:
         self.launch_all("redis-6.2.6/src/redis-server redis-6.2.6/redis.conf --port 6800 --protected-mode no&", public_ips, "Failed to start Redis server on new worker")
         leader_public_ip = public_ips[0]
         leader_private_ip = private_ips[0]
+        z = os.system("""ssh -oStrictHostKeyChecking=no -i """ + self.key_location + """ ubuntu@""" + leader_public_ip + """ -t "echo '* hard nofile 65536\n* soft nofile 65536' | sudo tee /etc/security/limits.conf" """)
         z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + 
         " /home/ubuntu/.local/bin/ray start --head --port=6380")
         if z != 0:
@@ -131,7 +139,8 @@ class QuokkaClusterManager:
         self.launch_all("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288", public_ips, "Failed to set malloc limit")
         #self.launch_all("touch /home/ubuntu/flight-log", public_ips, "Failed to create flight log file.")
         #self.launch_all("python3 flight.py >> /home/ubuntu/flight-log  &", public_ips, "Failed to start flight servers on workers.")
-        self.launch_all("python3 flight.py &", public_ips, "Failed to start flight servers on workers.")
+        #self.launch_all_t("nohup python3 -u flight.py >> /home/ubuntu/flight-log &", public_ips, "Failed to start flight servers on workers.")
+        self.launch_all("python3 -u flight.py &", public_ips, "Failed to start flight servers on workers.")
 
     def create_cluster(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", requirements = ["ray==1.12.0"]):
 

@@ -1,7 +1,7 @@
 from pyquokka.df import * 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
-mode = "DISK"
+mode = "S3"
 format = "csv"
 disk_path = "/home/ziheng/tpc-h/"
 s3_path_csv = "s3://tpc-h-csv/"
@@ -23,14 +23,14 @@ qc = QuokkaContext(cluster)
 
 if mode == "DISK":
     if format == "csv":
-        lineitem = qc.read_csv(disk_path + "lineitem.tbl", lineitem_scheme, sep="|")
-        orders = qc.read_csv(disk_path + "orders.tbl", order_scheme, sep="|")
-        customer = qc.read_csv(disk_path + "customer.tbl",customer_scheme, sep = "|")
-        part = qc.read_csv(disk_path + "part.tbl", part_scheme, sep = "|")
-        supplier = qc.read_csv(disk_path + "supplier.tbl", supplier_scheme, sep = "|")
-        partsupp = qc.read_csv(disk_path + "partsupp.tbl", partsupp_scheme, sep = "|")
-        nation = qc.read_csv(disk_path + "nation.tbl", nation_scheme, sep = "|")
-        region = qc.read_csv(disk_path + "region.tbl", region_scheme, sep = "|")
+        lineitem = qc.read_csv(disk_path + "lineitem.tbl", sep="|", has_header=True)
+        orders = qc.read_csv(disk_path + "orders.tbl", sep="|", has_header=True)
+        customer = qc.read_csv(disk_path + "customer.tbl",sep = "|", has_header=True)
+        part = qc.read_csv(disk_path + "part.tbl", sep = "|", has_header=True)
+        supplier = qc.read_csv(disk_path + "supplier.tbl", sep = "|", has_header=True)
+        partsupp = qc.read_csv(disk_path + "partsupp.tbl", sep = "|", has_header=True)
+        nation = qc.read_csv(disk_path + "nation.tbl", sep = "|", has_header=True)
+        region = qc.read_csv(disk_path + "region.tbl", sep = "|", has_header=True)
     elif format == "parquet":
         lineitem = qc.read_parquet(disk_path + "lineitem.parquet")
         orders = qc.read_parquet(disk_path + "orders.parquet")
@@ -54,6 +54,7 @@ elif mode == "S3":
         region = qc.read_csv(s3_path_csv + "region/region.tbl", region_scheme, sep = "|")
     elif format == "parquet":
         lineitem = qc.read_parquet(s3_path_parquet + "lineitem.parquet/*")
+        #lineitem = qc.read_parquet("s3://yugan/tpc-h-out/*")
         orders = qc.read_parquet(s3_path_parquet + "orders.parquet/*")
         customer = qc.read_parquet(s3_path_parquet + "customer.parquet/*")
         part = qc.read_parquet(s3_path_parquet + "part.parquet/*")
@@ -187,6 +188,7 @@ def do_7():
     d = d.with_column("l_year", lambda x: x["l_shipdate"].dt.year(), required_columns = {"l_shipdate"})
     d = d.with_column("volume", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
     f = d.groupby(["supp_nation","cust_nation","l_year"], orderby=["supp_nation","cust_nation","l_year"]).aggregate({"volume":"sum"})
+    f.explain()
     return f.collect()
 
 def do_12():
@@ -244,7 +246,7 @@ def word_count():
     f = counted.groupby("word").agg({"count":"sum"})
     return f.collect()
 
-# print(count)
+# print(count())
 # print(csv_to_parquet_disk())
 # print(csv_to_csv_disk())
 # print(csv_to_parquet_s3())
@@ -259,4 +261,4 @@ print(do_6())
 print(do_12())
 print(do_7())
 
-print(word_count())
+#print(word_count())

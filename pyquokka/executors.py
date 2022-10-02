@@ -555,24 +555,25 @@ class AggExecutor(Executor):
     
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
-        
         batches = [i for i in batches if i is not None]
-        for batch in batches:
-            assert type(batch) == polars.internals.DataFrame, batch # polars add has no index, will have wierd behavior
-            if self.state is None:
-                self.state = batch
-            else:
-                self.state = self.state.vstack(batch)
-                if len(self.state) > self.length_limit:
-                    arrow_state = self.state.to_arrow()
-                    arrow_state = arrow_state.group_by(self.groupby_keys).aggregate(self.pyarrow_agg_list)
-                    self.state = polars.from_arrow(arrow_state).rename(self.rename_dict)
-                    self.state = self.state.select(sorted(self.state.columns))
-    
+        batch = polars.concat(batches)
+        assert type(batch) == polars.internals.DataFrame, batch # polars add has no index, will have wierd behavior
+        if self.state is None:
+            self.state = batch
+        else:
+            self.state = self.state.vstack(batch)
+        if len(self.state) > self.length_limit:
+            arrow_state = self.state.to_arrow()
+            arrow_state = arrow_state.group_by(self.groupby_keys).aggregate(self.pyarrow_agg_list)
+            self.state = polars.from_arrow(arrow_state).rename(self.rename_dict)
+            self.state = self.state.select(sorted(self.state.columns))
+
+
     def done(self,executor_id):
 
         if self.state is None:
             return None
+        
 
         arrow_state = self.state.to_arrow()
         arrow_state = arrow_state.group_by(self.groupby_keys).aggregate(self.pyarrow_agg_list)

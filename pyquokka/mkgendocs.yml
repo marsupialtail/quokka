@@ -12,9 +12,7 @@ pages:
   - page: "modules/dataset.md"
     source: "dataset.py"
     classes:
-      - SortPhase2Dataset
       - RedisObjectsDataset
-      - InputDiskHDF5Dataset
       - InputEC2ParquetDataset
       - InputParquetDataset
       - InputS3FilesDataset

@@ -90,7 +90,7 @@ class QuokkaContext:
                     first_newline = resp.find(bytes('\n', 'utf-8'))
                     if first_newline == -1:
                         raise Exception("could not detect the first line break with first 4 kb")
-                    schema = resp[:first_newline].decode("utf-8").split(",")
+                    schema = resp[:first_newline].decode("utf-8").split(sep)
 
                 if len(files) == 1 and sizes[0] < 10 * 1048576:
                     return polars.read_csv("s3://" + bucket + "/" + files[0], new_columns = schema, has_header = has_header,sep = sep)
@@ -111,7 +111,7 @@ class QuokkaContext:
                         first_newline = resp.find(bytes('\n', 'utf-8'))
                         if first_newline == -1:
                             raise Exception("could not detect the first line break with first 4 kb")
-                        schema = resp[:first_newline].decode("utf-8").split(",")
+                        schema = resp[:first_newline].decode("utf-8").split(sep)
 
                     self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep, has_header)
         else:
@@ -133,11 +133,11 @@ class QuokkaContext:
                         return polars.read_csv(table_location + files[0], new_columns=schema, has_header=has_header, sep = sep)
                 
                 if schema is None:
-                    resp = open(files[0],"r").read(1024 * 4)
+                    resp = open(table_location + files[0],"r").read(1024 * 4)
                     first_newline = resp.find("\n")
                     if first_newline == -1:
                         raise Exception("could not detect the first line break within the first 4 kb")
-                    schema = resp[:first_newline].split(",")
+                    schema = resp[:first_newline].split(sep)
 
                 self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep, has_header)
             else:
@@ -151,7 +151,7 @@ class QuokkaContext:
                         first_newline = resp.find("\n")
                         if first_newline == -1:
                             raise Exception("could not detect the first line break within the first 4 kb")
-                        schema = resp[:first_newline].split(",")
+                        schema = resp[:first_newline].split(sep)
 
                     self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep, has_header)
             

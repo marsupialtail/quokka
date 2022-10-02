@@ -192,6 +192,7 @@ class Node:
             assert target_info.lowered
 
             #print("pre-filer",data)
+            
             data = data.filter(target_info.predicate(data))
             #print("post-filer", data)
 
@@ -254,7 +255,7 @@ class Node:
     def done(self):
 
         if VERBOSE:
-            print("IM DONE", self.id)
+            print("IM DONE", self.id, self.channel, time.time())
 
         try:    
             if not self.update_targets():
@@ -267,11 +268,10 @@ class Node:
         for target in self.alive_targets:
             for channel in self.alive_targets[target]:
                 self.out_seq[target][channel] += 1
-                if VERBOSE:
-                    print("SAYING IM DONE TO", target, channel, "MY OUT SEQ", self.out_seq[target][channel])
+                #if VERBOSE:
+                    #print("SAYING IM DONE TO", target, channel, "MY OUT SEQ", self.out_seq[target][channel])
 
                 client = self.flight_clients[target][channel]
-                #print("saying done to target",target,"channel",channel,"from source",self.id,"channel",self.channel,"tag",self.out_seq)
                 payload = pickle.dumps((target, channel, self.id, self.channel, self.out_seq[target][channel], "done"))
                 upload_descriptor = pyarrow.flight.FlightDescriptor.for_command(payload)
                 writer, _ = client.do_put(upload_descriptor, pa.schema([]))
@@ -287,8 +287,6 @@ class InputNode(Node):
         if VERBOSE:
             print("INPUT ACTOR LAUNCH", self.id)
         
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-
     def ping(self):
         return True
 
@@ -298,19 +296,12 @@ class InputNode(Node):
     def execute(self):
 
         self.input_generator = self.accessor.get_next_batch(self.channel, None)
-        futs = deque()
-        futs.append(self.executor.submit(next, self.input_generator))
-        while True:
-            try:
-                pos, batch = futs.popleft().result()
-            except StopIteration:
-                break
-            futs.append(self.executor.submit(next, self.input_generator))
-            
-            self.push(batch)
-        
+        for pos, batch in self.input_generator:
+            if batch is not None and len(batch) > 0:
+                self.push(batch)
+
         if VERBOSE:
-            print("INPUT DONE", self.id, self.channel)
+            print("INPUT DONE", self.id, self.channel, time.time())
         self.done()
 
 @ray.remote
@@ -318,7 +309,6 @@ class InputReaderNode(InputNode):
     def __init__(self, id, channel, accessor, num_channels) -> None:
         super().__init__(id, channel)
         self.accessor = accessor
-        self.accessor.set_num_channels(num_channels)
         
 
 @ray.remote
@@ -450,7 +440,7 @@ class NonBlockingTaskNode(TaskNode):
             if obj_done is not None:
                 self.push(obj_done)
         if VERBOSE:
-            print("TASK NODE DONE", self.id, self.channel)
+            print("TASK NODE DONE", self.id, self.channel, time.time())
         self.done()
     
 @ray.remote
@@ -469,7 +459,6 @@ class BlockingTaskNode(TaskNode):
 
         while True:
             batch_info, should_terminate = self.get_batches()
-            #print(batch_info, should_terminate)
             if should_terminate:
                 break
             # deque messages from the mailbox in a way that makes sense

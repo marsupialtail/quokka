@@ -442,7 +442,7 @@ aggregation_dict will define what you are going to do for
 
 
 ### .done
-[source](https://github.com/blob/master/executors.py/#L572)
+[source](https://github.com/blob/master/executors.py/#L571)
 ```python
 .done(
    executor_id
@@ -454,7 +454,7 @@ aggregation_dict will define what you are going to do for
 
 
 ## LimitExecutor
-[source](https://github.com/blob/master/executors.py/#L600)
+[source](https://github.com/blob/master/executors.py/#L599)
 ```python 
 LimitExecutor(
    limit
@@ -468,7 +468,7 @@ LimitExecutor(
 
 
 ### .execute
-[source](https://github.com/blob/master/executors.py/#L605)
+[source](https://github.com/blob/master/executors.py/#L604)
 ```python
 .execute(
    batches, stream_id, executor_id
@@ -477,7 +477,7 @@ LimitExecutor(
 
 
 ### .done
-[source](https://github.com/blob/master/executors.py/#L613)
+[source](https://github.com/blob/master/executors.py/#L612)
 ```python
 .done()
 ```
@@ -487,7 +487,7 @@ LimitExecutor(
 
 
 ## CountExecutor
-[source](https://github.com/blob/master/executors.py/#L616)
+[source](https://github.com/blob/master/executors.py/#L615)
 ```python 
 
 ```
@@ -499,7 +499,7 @@ LimitExecutor(
 
 
 ### .execute
-[source](https://github.com/blob/master/executors.py/#L621)
+[source](https://github.com/blob/master/executors.py/#L620)
 ```python
 .execute(
    batches, stream_id, executor_id
@@ -508,14 +508,14 @@ LimitExecutor(
 
 
 ### .serialize
-[source](https://github.com/blob/master/executors.py/#L625)
+[source](https://github.com/blob/master/executors.py/#L624)
 ```python
 .serialize()
 ```
 
 
 ### .deserialize
-[source](https://github.com/blob/master/executors.py/#L628)
+[source](https://github.com/blob/master/executors.py/#L627)
 ```python
 .deserialize(
    s
@@ -524,7 +524,7 @@ LimitExecutor(
 
 
 ### .done
-[source](https://github.com/blob/master/executors.py/#L633)
+[source](https://github.com/blob/master/executors.py/#L632)
 ```python
 .done(
    executor_id
@@ -536,7 +536,7 @@ LimitExecutor(
 
 
 ## MergeSortedExecutor
-[source](https://github.com/blob/master/executors.py/#L638)
+[source](https://github.com/blob/master/executors.py/#L637)
 ```python 
 MergeSortedExecutor(
    key, record_batch_rows = None, length_limit = 5000, file_prefix = 'mergesort'
@@ -550,14 +550,14 @@ MergeSortedExecutor(
 
 
 ### .serialize
-[source](https://github.com/blob/master/executors.py/#L651)
+[source](https://github.com/blob/master/executors.py/#L650)
 ```python
 .serialize()
 ```
 
 
 ### .deserialize
-[source](https://github.com/blob/master/executors.py/#L654)
+[source](https://github.com/blob/master/executors.py/#L653)
 ```python
 .deserialize(
    s
@@ -566,7 +566,7 @@ MergeSortedExecutor(
 
 
 ### .write_out_df_to_disk
-[source](https://github.com/blob/master/executors.py/#L657)
+[source](https://github.com/blob/master/executors.py/#L656)
 ```python
 .write_out_df_to_disk(
    target_filepath, input_mem_table
@@ -575,7 +575,7 @@ MergeSortedExecutor(
 
 
 ### .produce_sorted_file_from_two_sorted_files
-[source](https://github.com/blob/master/executors.py/#L666)
+[source](https://github.com/blob/master/executors.py/#L665)
 ```python
 .produce_sorted_file_from_two_sorted_files(
    target_filepath, input_filepath1, input_filepath2
@@ -584,7 +584,7 @@ MergeSortedExecutor(
 
 
 ### .done
-[source](https://github.com/blob/master/executors.py/#L737)
+[source](https://github.com/blob/master/executors.py/#L736)
 ```python
 .done(
    executor_id
@@ -593,7 +593,7 @@ MergeSortedExecutor(
 
 
 ### .execute
-[source](https://github.com/blob/master/executors.py/#L755)
+[source](https://github.com/blob/master/executors.py/#L754)
 ```python
 .execute(
    batches, stream_id, executor_id

@@ -1,9 +1,8 @@
-from platform import node
 import sqlglot
 from pyquokka.dataset import *
-from pyquokka.executors import StorageExecutor 
+from pyquokka.executors import StorageExecutor, UDFExecutor 
 from pyquokka.utils import EC2Cluster, LocalCluster
-
+import textwrap
 class PlacementStrategy:
     def __init__(self) -> None:
         pass
@@ -60,7 +59,7 @@ class Node:
     def __str__(self):
         result = str(type(self)) + '\nParents:' + str(self.parents) + '\nTargets:' 
         for target in self.targets:
-            result += "\n\t" + str(target) + " " + str(self.targets[target])
+            result += "\n\t" + str(target) + " " + textwrap.fill(str(self.targets[target]))
         return result
 
 class SourceNode(Node):
@@ -132,7 +131,7 @@ class InputS3ParquetNode(SourceNode):
     def lower(self, task_graph, ip_to_num_channel =None):
 
         if type(task_graph.cluster) ==  EC2Cluster:
-            parquet_reader = InputEC2ParquetDataset(self.filepath, mode = "s3", columns = list(self.projection), filters = self.predicate)
+            parquet_reader = InputEC2ParquetDataset(self.filepath, columns = list(self.projection), filters = self.predicate)
             node = task_graph.new_input_reader_node(parquet_reader, ip_to_num_channel = ip_to_num_channel)
             return node
         elif type(task_graph.cluster) == LocalCluster:
@@ -236,8 +235,11 @@ class MapNode(TaskNode):
         self.function = function
         self.foldable = foldable
 
-    def lower(self):
-        raise NotImplementedError
+    def lower(self, task_graph, parent_nodes, parent_source_info, ip_to_num_channel=None ):
+        if self.blocking:
+            return task_graph.new_blocking_node(parent_nodes,UDFExecutor(self.function), ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info)
+        else:
+            return task_graph.new_non_blocking_node(parent_nodes,UDFExecutor(self.function), ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info)
 
 class FilterNode(TaskNode):
 
@@ -248,6 +250,10 @@ class FilterNode(TaskNode):
             schema_mapping = {column: (0, column) for column in schema}, 
             required_columns = {0:set(i.name for i in predicate.find_all(sqlglot.expressions.Column))})
         self.predicate = predicate
+    
+    def lower(self, task_graph, parent_nodes, parent_source_info, ip_to_num_channel=None ):
+        print("Tried to lower a filter node. This means the optimization probably failed and something bad is happening.")
+        raise NotImplementedError
 
 class ProjectionNode(TaskNode):
 

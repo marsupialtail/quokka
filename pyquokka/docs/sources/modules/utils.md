@@ -91,7 +91,7 @@ QuokkaClusterManager(
 
 
 ### .create_cluster
-[source](https://github.com/blob/master/utils.py/#L136)
+[source](https://github.com/blob/master/utils.py/#L137)
 ```python
 .create_cluster(
    aws_access_key, aws_access_id, num_instances = 1, instance_type = 'i3.2xlarge',
@@ -101,7 +101,7 @@ QuokkaClusterManager(
 
 
 ### .stop_cluster
-[source](https://github.com/blob/master/utils.py/#L180)
+[source](https://github.com/blob/master/utils.py/#L181)
 ```python
 .stop_cluster(
    quokka_cluster
@@ -110,7 +110,7 @@ QuokkaClusterManager(
 
 
 ### .terminate_cluster
-[source](https://github.com/blob/master/utils.py/#L195)
+[source](https://github.com/blob/master/utils.py/#L196)
 ```python
 .terminate_cluster(
    quokka_cluster
@@ -119,7 +119,7 @@ QuokkaClusterManager(
 
 
 ### .get_cluster_from_json
-[source](https://github.com/blob/master/utils.py/#L210)
+[source](https://github.com/blob/master/utils.py/#L211)
 ```python
 .get_cluster_from_json(
    json_file
