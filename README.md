@@ -12,7 +12,7 @@ The core Quokka runtime API allows you to construct a computation DAG with state
 
 Please refer to the docs and examples in the apps directory. In the future we will support a dataframe API and hopefully SQL. The plan is to use this amazing repo: [sqlglot](https://github.com/tobymao/sqlglot).
 
-For any questions/concerns/just want to chat: zihengw@stanford.edu, or join the [Discord](https://discord.gg/yGcsSZdT) channel.
+For any questions/concerns/just want to chat: zihengw@stanford.edu, or join the [Discord](https://discord.gg/YKbK2TVk) channel.
 
 **Quokka is under active development and the API might change. Breaking updates could occur and there is no stable release. Targeting stable release date for DAG-level API by end of August 2022**.
 
