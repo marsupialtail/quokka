@@ -98,8 +98,7 @@
 <h2 id="introduction">Introduction</h2>
 <p>Quokka is a lightweight distributed dataflow engine written completely in Python targeting modern data science use cases involving 100GBs to TBs of data. At its core, Quokka manipulates streams of data with stateful actors. <strong>Quokka offers a stream-centric, Python-native perspective to tasks commonly done today by Spark.</strong> Please see the <a href="started/">Getting Started</a> for further details.</p>
 <p>This streaming paradigm inspired by high performance databases such as DuckDB and Snowflake allows Quokka to greatly outperform Apache Spark performance on SQL type workloads reading from cloud blob storage like S3 for formats like CSV and Parquet.</p>
-<p style="text-align:center;"><img src="../tpch-parquet.svg" width=800></p>
-
+<p><img alt="Quokka Stream" src="tpch-parquet.svg" /></p>
 <p><sub>Fineprint: benchmark done using four c5.4xlarge instances for Quokka and EMR 6.5.0 with five c5.4xlarge instances for Spark where one instance is used as a coordinator. Ignores initialization costs which are generally comparable between Quokka and Spark.</sub></p>
 <p>What's even better than being cheap and fast is the fact that since Quokka is Python native, you can easily use your favorite machine learning libraries like Scikit-Learn and Pytorch with Quokka inside of arbitrary Python functions to transform your DataStreams.</p>
 <p>Another great advantage is that a streaming data paradigm is more in line with how data arrives in the real world, making it easy to bridge your data application to production, or conduct time-series backfilling on your historical data.</p>
@@ -173,5 +172,5 @@
 
 <!--
 MkDocs version : 1.4.0
-Build Date UTC : 2022-10-03 01:48:13.470447+00:00
+Build Date UTC : 2022-10-03 01:58:01.117473+00:00
 -->

@@ -8,7 +8,7 @@ Quokka is a lightweight distributed dataflow engine written completely in Python
 
 This streaming paradigm inspired by high performance databases such as DuckDB and Snowflake allows Quokka to greatly outperform Apache Spark performance on SQL type workloads reading from cloud blob storage like S3 for formats like CSV and Parquet.
 
-<p style="text-align:center;"><img src="../tpch-parquet.svg" width=800></p>
+![Quokka Stream](tpch-parquet.svg)
 
 <sub>Fineprint: benchmark done using four c5.4xlarge instances for Quokka and EMR 6.5.0 with five c5.4xlarge instances for Spark where one instance is used as a coordinator. Ignores initialization costs which are generally comparable between Quokka and Spark.</sub>
 
