@@ -6,8 +6,6 @@ Docs: https://marsupialtail.github.io/quokka/
 
 Quokka is a pure-Python fast data processing engine. It can be leveraged to obtain near-peak performance on SQL queries on data "lakes" with CSV and Parquet file formats. It is often several times faster than SparkSQL and an order of magnitude faster than Dask. 
 
-Quokka stands on the shoulders of giants. It uses [Ray](https://github.com/ray-project/ray) for task scheduling, Redis for lineage logging, [Polars](https://github.com/pola-rs/polars) for relational algebra kernels and [Apache Arrow](https://github.com/apache/arrow) for I/O. All of those are backed by efficient C++/Rust implementations. Quokka is a high-performance way of piecing them all together.
-
 Quokka offers a DataStream API that resembles Spark's DataFrame API:
 
 ~~~python
@@ -25,8 +23,10 @@ Currently Quokka supports reading data from CSV/Parquet on disk/S3, though theor
 
 Quokka should not be used as a replacement for SparkSQL (it doesn't parse SQL directly yet, though it is on the roadmap). Instead you can play with it to see if it can give you better performance for your use cases. Another strength of Quokka is that it's Python-native, so you will never have to worry about JVM errors when you start using hairy UDFs with custom Python packages.
 
+Quokka stands on the shoulders of giants. It uses [Ray](https://github.com/ray-project/ray) for task scheduling, Redis for lineage logging, [Polars](https://github.com/pola-rs/polars) for relational algebra kernels and [Apache Arrow](https://github.com/apache/arrow) for I/O. All of those are backed by efficient C++/Rust implementations. Quokka is a high-performance way of piecing them all together.
+
 Please refer to the [docs](https://marsupialtail.github.io/quokka/) and examples in the apps directory. 
 
-For any questions/concerns/just want to chat: zihengw@stanford.edu, or join the [Discord](https://discord.gg/YKbK2TVk) channel.
+For any questions/concerns/just want to chat: zihengw@stanford.edu, or join the [Discord](https://discord.gg/YKbK2TVk) channel. Please do reach out before you use Quokka for anything real -- the code is currently written by a single underpaid PhD student, who is nevertheless happy to make Quokka work for your very specific use case.
 
-Please raise a Github issue if you encounter any issues!
+Please raise a Github issue if you encounter any issues.
