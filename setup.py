@@ -1,8 +1,12 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.0.2' 
+VERSION = '0.0.4' 
 DESCRIPTION = 'Quokka'
-LONG_DESCRIPTION = 'Dope way to do cloud analytics'
+LONG_DESCRIPTION = """
+Dope way to do cloud analytics
+Check out https://github.com/marsupialtail/quokka
+or https://marsupialtail.github.io/quokka/
+"""
 
 # Setting up
 setup(

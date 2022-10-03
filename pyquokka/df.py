@@ -12,16 +12,11 @@ class QuokkaContext:
         self.nodes = {}
         self.cluster = LocalCluster() if cluster is None else cluster
 
-    '''
-    The API layer for read_csv mainly do four things in sequence:
-    - Detect if it's a S3 location or a disk location
-    - Detect if it's a list of files or a single file
-    - Detect if the data is small enough (< 10MB and single file) to be immediately materialized into a Polars dataframe.
-    - Detect the schema if not supplied. This is not needed by the reader but is needed by the logical plan optimizer.
-    After it has done these things, if the dataset is not materialized, we will instantiate a logical plan node and return a DataStream
-    '''
-
     def read_files(self, table_location: str):
+
+        """
+        This doesn't work yet due to difficulty handling Object types in Polars
+        """
 
         if table_location[:5] == "s3://":
 
@@ -59,8 +54,48 @@ class QuokkaContext:
         self.latest_node_id += 1
         return DataStream(self, ["filename","object"], self.latest_node_id - 1)
 
+    '''
+    The API layer for read_csv mainly do four things in sequence:
+    - Detect if it's a S3 location or a disk location
+    - Detect if it's a list of files or a single file
+    - Detect if the data is small enough (< 10MB and single file) to be immediately materialized into a Polars dataframe.
+    - Detect the schema if not supplied. This is not needed by the reader but is needed by the logical plan optimizer.
+    After it has done these things, if the dataset is not materialized, we will instantiate a logical plan node and return a DataStream
+    '''
 
     def read_csv(self, table_location: str, schema = None, has_header = False, sep=","):
+
+        """
+        Read in a CSV file from a table location. It can be a single CSV or a list of CSVs. It can be CSV(s) on disk
+        or CSV(s) on S3. Currently other cloud sare not supported. The CSVs can have a predefined schema using a list of 
+        column names in the schema argument, or you can specify the CSV has a header row and Quokka will read the schema 
+        from it. You should also specify the CSV's separator. 
+
+        Args:
+            table_location (str): where the CSV(s) are. This mostly mimics Spark behavior. Look at the examples.
+            on (str): You could either specify this, if the join column has the same name in this DataStream and `right`, or `left_on` and `right_on` 
+                if the join columns don't have the same name.
+            left_on (str): the name of the join column in this DataStream.
+            right_on (str): the name of the join column in `right`.
+            suffix (str): if `right` has columns with the same names as columns in this DataStream, their names will be appended with the suffix in the result.
+            how (str): only supports "inner" for now. 
+
+        Return:
+            A new DataStream that's the joined result of this DataStream and "right". By default, columns from both side will be retained, 
+            except for `right_on` from the right side. 
+        
+        Examples:
+            ~~~python
+            >>> lineitem = qc.read_csv("lineitem.csv")
+
+            >>> orders = qc.read_csv("orders.csv")
+
+            >>> result = lineitem.join(orders, left_on = "l_orderkey", right_on = "o_orderkey")
+
+            # this will now fail, since o_orderkey is not in the joined DataStream.
+            >>> result = result.select(["o_orderkey"])
+            ~~~
+        """
 
         if schema is None:
             assert has_header, "if not provide schema, must have header."

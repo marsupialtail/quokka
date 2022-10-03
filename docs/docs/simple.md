@@ -2,7 +2,7 @@
 
 This section is for learning how to use Quokka's DataStream API. **Quokka's DataStream API is basically a dataframe API.** It takes heavy inspiration from SparkSQL and Polars, and adopts a lazy execution model. This means that in contrast to Pandas, your operations are not executed immediately after you define them. Instead, Quokka builds a logical plan under the hood and executes it only when the user wants to "collect" the result, just like Spark. 
 
-For the first part of our tutorial, we are going to go through implementing a few SQL queries in the TPC-H benchmark suite. You can download the data [here](https://drive.google.com/file/d/1a4yhPoknXgMhznJ9OQO3BwHz2RMeZr8e/view?usp=sharing). It is about 1GB unzipped. Please download the data (should take 2 minutes) and extract it to some directory locally. The SQL queries themselves can be found on this awesome [interface](https://umbra-db.com/interface/).
+For the first part of our tutorial, we are going to go through implementing a few SQL queries in the TPC-H benchmark suite. You can download the data [here](https://drive.google.com/file/d/19hgYxZ4u28Cxe0s616Q3yAfkuRdQlmvO/view?usp=sharing). It is about 1GB unzipped. Please download the data (should take 2 minutes) and extract it to some directory locally. The SQL queries themselves can be found on this awesome [interface](https://umbra-db.com/interface/).
 
 These tutorials will use your local machine. They shouldn't take too long to run. It would be great if you can follow along, not just for fun -- **if you find a bug in this tutorial I will buy you a cup of coffee!**
 
