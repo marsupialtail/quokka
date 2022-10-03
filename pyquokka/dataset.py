@@ -56,11 +56,10 @@ class InputEC2ParquetDataset:
     The original plan was to split this up by row group and different channels might share a single file. This is too complicated and leads to high init cost.
     Generally parquet files in a directory created by tools like Spark or Quokka have similar sizes anyway.
     """
-    def __init__(self, filepath, columns = None, filters = None) -> None:
+    def __init__(self, bucket, prefix, columns = None, filters = None) -> None:
         
-        self.filepath = filepath
-        self.bucket = filepath.split("/")[0]
-        self.prefix = filepath.split("/")[1]
+        self.bucket = bucket
+        self.prefix = prefix
         self.columns = columns
         if filters is not None:
             assert type(filters) == list and len(filters) > 0
@@ -94,13 +93,16 @@ class InputEC2ParquetDataset:
             start_pos = mapper_id
         else:
             start_pos = pos
-        for curr_pos in range(start_pos, len(self.files), self.num_channels):
-            
-            a = pq.read_table("s3://" + self.bucket + "/" +
-                              self.files[curr_pos], columns=self.columns, filters=self.filters)
-            
-            curr_pos += self.num_channels
-            yield curr_pos, polars.from_arrow(a)
+        if start_pos >= len(self.files):
+            yield None, None 
+        else:
+            for curr_pos in range(start_pos, len(self.files), self.num_channels):
+                
+                a = pq.read_table("s3://" + self.bucket + "/" +
+                                self.files[curr_pos], columns=self.columns, filters=self.filters)
+                
+                curr_pos += self.num_channels
+                yield curr_pos, polars.from_arrow(a)
 
 class InputParquetDataset:
     def __init__(self, filepath, mode = "local", columns = None, filters = None) -> None:
@@ -152,13 +154,25 @@ class InputParquetDataset:
         assert self.num_channels is not None
         if pos is None:
             pos = 0
+
         format = ParquetFileFormat()
         filesystem = S3FileSystem() if self.mode == "s3" else LocalFileSystem()
+        # fragments = [
+        #     format.make_fragment(
+        #         file,
+        #         filesystem=filesystem,
+        #         partition_expression=part_expression,
+        #     )
+        #     for file, part_expression in self.channel_assigments[mapper_id]
+        # ]
 
-        self.dataset = FileSystemDataset(self.channel_assigments[mapper_id][pos:], self.schema, format , filesystem)
-        for batch in self.dataset.to_batches(filter= self.filters,columns=self.columns ):
-            pos += 1
-            yield pos, batch
+        if mapper_id not in self.channel_assigments:
+            yield None, None
+        else:
+            self.dataset = FileSystemDataset(self.channel_assigments[mapper_id][pos:], self.schema, format , filesystem)
+            for batch in self.dataset.to_batches(filter= self.filters,columns=self.columns ):
+                pos += 1
+                yield pos, batch
 
 # this works for a directoy of objects.
 class InputS3FilesDataset:

@@ -10,7 +10,7 @@ For an extensive API reference, please refer to [here](datastream.md).
 
 ## Lesson -1: Things
 
-Please read the [Getting Started](started.md) section 
+Please read the [Getting Started](started.md) section. I spent way too much time making the cartoons on that page.
 
 ## Lesson 0: Reading Things
 
@@ -71,6 +71,8 @@ To read in a Parquet file, you don't have to worry about headers or schema, just
 lineitem = qc.read_parquet(disk_path + "lineitem.parquet")
 ~~~
 
+Currently, `qc.read_csv` and `qc.read_parquet` will either return a DataStream or just a Polars DataFrame directly if the data size is small (set at 10 MB).
+
 ## Lesson 1: Doing Things
 
 Now that we have read the data, let's do things with it. First, why don't we count how many rows there are in the `lineitem` table.
@@ -97,9 +99,9 @@ def do_1():
     return f.collect()
 ~~~
 
-Quokka supports filtering DataStreams by `DataStream.filter()`. Filters can be specified in SQL syntax. The columns in the SQL expression must exist in the schema of the DataStream. A more Pythonic way of doing this like `b = b[b.a < 5]` isn't supported yet, mainly due to the finickiness surrounding date types etc.
+Quokka supports filtering DataStreams by `DataStream.filter()`. Filters can be specified in SQL syntax. The columns in the SQL expression must exist in the schema of the DataStream. A more Pythonic way of doing this like `b = b[b.a < 5]` isn't supported yet, mainly due to the finickiness surrounding date types etc. The result of a `filter()` is another DataStream whose Polars DataFrames will only contain rows that respect the predicate.
 
-On the plus side, Quokka uses the amazing [SQLGlot](https://github.com/tobymao/sqlglot) library to support most ANSI-SQL compliant predicates, including dates, between, IN, even arithmetic in conditions. Try out some different [predicates](datastream.md#filter)! Please give SQLGlot a star when you're at it. For example, you can specify this super complicated predicate for TPC-H query 6:
+On the plus side, Quokka uses the amazing [SQLGlot](https://github.com/tobymao/sqlglot) library to support most ANSI-SQL compliant predicates, including dates, between, IN, even arithmetic in conditions. Try out some different [predicates](datastream.md#filter)! Please give SQLGlot a star when you're at it. For example, you can specify this super complicated predicate for [TPC-H query 6](https://github.com/dragansah/tpch-dbgen/blob/master/tpch-queries/6.sql):
 
 ~~~python
 def do_6():
@@ -109,10 +111,15 @@ def do_6():
     return f.collect()
 ~~~
 
-Quokka supports creating new columns in DataStreams with `with_column`. Read more about how this works [here](datastream.md#with_column). This is in principle similar to Spark `df.with_column` and Polars [`with_column`](https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.with_columns.html). 
+Quokka supports creating new columns in DataStreams with `with_column`. Read more about how this works [here](datastream.md#with_column). This is in principle similar to Spark `df.with_column` and Pandas UDFs. The main thing to keep in mind is that the function you supply will be applied to each batch in the DataStream, instead of row by row. As a result, you can make use of fast vectorized execution with Polars. The mental model here is that we have a DataStream `d` of Polars DataFrames, each of which have rows from the lineitem table satisfying the filter predicate. Then, each Polars DataFrame is transformed by our functions to add the columns `disk_price` and `charge`. 
 
-Here is another example of 
+Like most Quokka operations, `with_column` will produce a new DataStream with an added column and is not inplace. This means that the command is lazy, and won't trigger the runtime to produce the actual data. It simply builds a logical plan of what to do in the background, which can be optimized when the user specifically ask for the result.
 
+Finally, we can group the DataStream and aggregate it to get the result. Read more about aggregation syntax [here](datastream.md#agg). The aggregation will produce another DataStream, which we call `collect()` on, to convert it to a Polars DataFrame in your Python terminal.
+
+When you call `.collect()`, the logical plan you have built is actually optimized and executed. This is exactly how Spark works. To view the optimized logical plan and learn more about what Quokka is doing, you can do `f.explain()` which will produce a graph, or `f.explain(mode="text")` which will produce a textual explanation.
+
+Joins work very intuitively. For example, this is how to do [TPC-H query 12](https://github.com/dragansah/tpch-dbgen/blob/master/tpch-queries/12.sql).
 ~~~python
 def do_12():
     
@@ -128,7 +135,7 @@ def do_12():
     return f.collect()
 ~~~
 
-So far we have just played with the lineitem table. Let's do some joins!
+Note it does not matter if you filter after the join or before the join, Quokka will automatically push them down during the logical plan optimization. The `join` operator on a DataStream takes in either another DataStream or a Polars DataFrame in your Python session. In the latter case, this Polars DataFrame will be broadcasted to different workers similar to Spark's broadcast join. Here is another example, [TPC-H query 3](https://github.com/dragansah/tpch-dbgen/blob/master/tpch-queries/3.sql).
 
 ~~~python
 def do_3():
@@ -141,52 +148,17 @@ def do_3():
     return f.collect()
 ~~~
 
-And here is a much more complicated join query, TPC-H query 5.
+Note unlike some SQL engines, Quokka currently will not try to figure out the optimal join ordering between the specified three-way join between lineitem, orders and customer tables. You are responsible for figuring that out at the moment -- try to join smaller tables first and then join them against larger tables, or try to minimize the intermeidate result size from those joins.
 
-~~~python
-def do_5():
+An important thing to note is that Quokka currently only support inner joins. Other kinds of joins are coming soon.
 
-    '''
-    Quokka currently does not pick the best join order, or the best join strategy. This is upcoming improvement for a future release.
-    You will have to pick the best join order. One way to do this is to do sparksql.explain and "borrow" Spark Catalyst CBO's plan.
-    As a general rule of thumb you want to join small tables first and then bigger ones.
-    '''
+Feel free to look at some other queries in the Quokka [github](https://github.com/marsupialtail/quokka/tree/master/apps), or browse the [API reference](datastream.md). While you are there, please give Quokka a star!
 
-    asia = region.filter(region["r_name"] == "ASIA")
-    asian_nations = nation.join(asia, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
-    d = customer.join(asian_nations, left_on="c_nationkey", right_on="n_nationkey")
-    d = d.join(orders, left_on="c_custkey", right_on="o_custkey", suffix="_3")
-    d = d.join(lineitem, left_on="o_orderkey", right_on="l_orderkey", suffix="_4")
-    d = d.join(supplier, left_on="l_suppkey", right_on="s_suppkey", suffix="_5")
-    d = d.filter("s_nationkey = c_nationkey and o_orderdate >= date '1994-01-01' and o_orderdate < date '1994-01-01' + interval '1' year")
-    d = d.with_column("revenue", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
-    f = d.groupby("n_name").agg({"revenue":["sum"]})
+##Lesson 2: Writing Things
+So far, we have just learned about 
 
-    return f.collect()
-~~~
+##Lesson 3: Things you can't do.
 
+Here is a brief discussion of what Quokka is not great for. Quokka's main advantage stems from the fact it can pipeline the execution of DataStreams. Once a partition (typically a Polars DataFrame) in a DataStream has been generated, it can be immediately consumed by a downstream user. This means downstream processing of this partition and upstream generation of the next partition can be overlapped. 
 
-
-
-
-~~~python
-def do_7():
-    d1 = customer.join(nation, left_on = "c_nationkey", right_on = "n_nationkey")
-    d1 = d1.join(orders, left_on = "c_custkey", right_on = "o_custkey", suffix = "_3")
-    d2 = supplier.join(nation, left_on="s_nationkey", right_on = "n_nationkey")
-    d2 = lineitem.join(d2, left_on = "l_suppkey", right_on = "s_suppkey", suffix = "_3")
-    
-    d = d1.join(d2, left_on = "o_orderkey", right_on = "l_orderkey",suffix="_4")
-    d = d.rename({"n_name_4": "supp_nation", "n_name": "cust_nation"})
-    d = d.filter("""(
-                                (supp_nation = 'FRANCE' and cust_nation = 'GERMANY')
-                                or (supp_nation = 'GERMANY' and cust_nation = 'FRANCE')
-                        )
-                        and l_shipdate between date '1995-01-01' and date '1996-12-31'""")
-    d = d.with_column("l_year", lambda x: x["l_shipdate"].dt.year(), required_columns = {"l_shipdate"})
-    d = d.with_column("volume", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
-    f = d.groupby(["supp_nation","cust_nation","l_year"], orderby=["supp_nation","cust_nation","l_year"]).aggregate({"volume":"sum"})
-    return f.collect()
-~~~
-
-
+Now, if an operator processing a DataStream cannot emit any partitions downstream until it has seen all of the partitions in its input DataStreams, the pipeline breaks. An example of this is an aggregation.

@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>DataStream - Quokka</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "DataStream";
+        var mkdocs_page_input_path = "datastream.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <script src="../js/jquery-3.6.0.min.js" defer></script>
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+      <script>hljs.initHighlightingOnLoad();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> Quokka
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../cloud/">Setting Up Cloud Cluster</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Tutorials</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../simple/">DataStream API</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../tutorial/">TaskGraph API</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Dataframe API reference</span></p>
+              <ul class="current">
+                  <li class="toctree-l1"><a class="reference internal" href="../quokka_context/">QuokkaContext</a>
+                  </li>
+                  <li class="toctree-l1 current"><a class="reference internal current" href="./">DataStream</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#datastream">DataStream</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#collect">.collect</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#compute">.compute</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#explain">.explain</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#write_csv">.write_csv</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#write_parquet">.write_parquet</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#filter">.filter</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#select">.select</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#drop">.drop</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#rename">.rename</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#transform">.transform</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#with_column">.with_column</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#stateful_transform">.stateful_transform</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#distinct">.distinct</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#join">.join</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#groupby">.groupby</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#agg">.agg</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#aggregate">.aggregate</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#count">.count</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#sum">.sum</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#max">.max</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#min">.min</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#mean">.mean</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#groupeddatastream">GroupedDataStream</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#agg_1">.agg</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#aggregate_1">.aggregate</a>
+    </li>
+        </ul>
+    </li>
+    </ul>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">Quokka</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" alt="Docs"></a> &raquo;</li>
+          <li>Dataframe API reference &raquo;</li>
+      <li>DataStream</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/marsupialtail/quokka/edit/master/docs/datastream.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="_1"></h1>
+<h2 id="datastream">DataStream</h2>
+<p><a href="https://github.com/blob/master/datastream.py/#L12">source</a></p>
+<pre><code class="language-python">DataStream(
+   quokka_context, schema: list, source_node_id: int
+)
+</code></pre>
+<hr />
+<p>Quokka DataStream class is how most users are expected to interact with Quokka.
+However users are not expected to create a DataStream directly by calling its constructor.
+Note that constructor takes an argument called <code>source_node_id</code>, which would confuse 
+most data scientists -- even me!</p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>quokka_context</strong> (pyquokka.df.QuokkaContext) : Similar to Spark SQLContext.</li>
+<li><strong>schema</strong> (list) : The schema of this DataStream, i.e. a list of column names. We might change it to be 
+    a dictionary with type information in the future to do better static code checking.</li>
+<li><strong>source_node_id</strong> (int) : the node in the logical plan that produces this DataStream.</li>
+</ul>
+<p><strong>Attributes</strong></p>
+<ul>
+<li><strong>quokka_context</strong> (pyquokka.df.QuokkaContext) : Similar to Spark SQLContext.</li>
+<li><strong>schema</strong> (list) : The schema of this DataStream, i.e. a list of column names. We might change it to be 
+    a dictionary with type information in the future to do better static code checking.</li>
+<li><strong>source_node_id</strong> (int) : the node in the logical plan that produces this DataStream.</li>
+</ul>
+<p><strong>Methods:</strong></p>
+<h3 id="collect">.collect</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L45">source</a></p>
+<pre><code class="language-python">.collect()
+</code></pre>
+<hr />
+<p>This will trigger the execution of computational graph, similar to Spark collect(). 
+The result will be a Polars DataFrame on the master</p>
+<p>Return:
+Polars DataFrame. </p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python">&gt;&gt;&gt; f = qc.read_csv(&quot;my_csv.csv&quot;)
+
+&gt;&gt;&gt; result = f.collect() # result will be a Polars dataframe, as if you did polars.read_csv(&quot;my_csv.csv&quot;)
+</code></pre>
+<h3 id="compute">.compute</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L63">source</a></p>
+<pre><code class="language-python">.compute()
+</code></pre>
+<hr />
+<p>This will trigger the execution of computational graph, similar to Spark collect
+The result will be a Quokka DataSet, which you can then call to_df() or call to_stream() to initiate another computation.</p>
+<p>Return:
+Quokka Quokka DataSet. Currently this is going to be just a list of objects distributed across the Redis servers on the workers.</p>
+<h3 id="explain">.explain</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L74">source</a></p>
+<pre><code class="language-python">.explain(
+   mode = 'graph'
+)
+</code></pre>
+<hr />
+<p>This will not trigger the execution of your computation graph but will produce a graph of the execution plan. </p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>mode</strong> (str) : 'graph' will show a graph, 'text' will print a textual description.</li>
+</ul>
+<hr />
+<p>Return:
+    None.</p>
+<h3 id="write_csv">.write_csv</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L85">source</a></p>
+<pre><code class="language-python">.write_csv(
+   table_location, output_line_limit = 1000000
+)
+</code></pre>
+<hr />
+<p>This will write out the entire contents of the DataStream to a list of CSVs. This is a blocking operation, and will
+call <code>collect()</code> under the hood.</p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>table_lcation</strong> (str) : the root directory to write the output CSVs to. Similar to Spark, Quokka by default
+    writes out a directory of CSVs instead of dumping all the results to a single CSV so the output can be
+    done in parallel. If your dataset is small and you want a single file, you can adjust the output_line_limit
+    parameter. Example table_locations: s3://bucket/prefix for cloud, absolute path /home/user/files for disk.</li>
+<li><strong>output_line_limit</strong> (int) : how many rows each CSV in the output should have. The current implementation simply buffers
+    this many rows in memory instead of using file appends, so you should have enough memory!</li>
+</ul>
+<hr />
+<p>Return:
+    Polars DataFrame containing the filenames of the CSVs that were produced. </p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python">&gt;&gt;&gt; f = qc.read_csv(&quot;lineitem.csv&quot;)
+
+&gt;&gt;&gt; f = f.filter(&quot;l_orderkey &lt; 10 and l_partkey &gt; 5&quot;)
+
+&gt;&gt;&gt; f.write_csv(&quot;/home/user/test-out&quot;) # you should create the directory before hand.
+</code></pre>
+<h3 id="write_parquet">.write_parquet</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L152">source</a></p>
+<pre><code class="language-python">.write_parquet(
+   table_location, output_line_limit = 10000000
+)
+</code></pre>
+<hr />
+<p>This will write out the entire contents of the DataStream to a list of Parquets. This is a blocking operation, and will
+call <code>collect()</code> under the hood. By default, each output Parquet file will contain one row group.</p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>table_lcation</strong> (str) : the root directory to write the output Parquets to. Similar to Spark, Quokka by default
+    writes out a directory of Parquets instead of dumping all the results to a single Parquet so the output can be
+    done in parallel. If your dataset is small and you want a single file, you can adjust the output_line_limit
+    parameter. Example table_locations: s3://bucket/prefix for cloud, absolute path /home/user/files for disk.</li>
+<li><strong>output_line_limit</strong> (int) : the row group size in each output file.</li>
+</ul>
+<hr />
+<p>Return:
+    Polars DataFrame containing the filenames of the Parquets that were produced. </p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python">&gt;&gt;&gt; f = qc.read_csv(&quot;lineitem.csv&quot;)
+
+&gt;&gt;&gt; f = f.filter(&quot;l_orderkey &lt; 10 and l_partkey &gt; 5&quot;)
+
+&gt;&gt;&gt; f.write_parquet(&quot;/home/user/test-out&quot;) # you should create the directory before hand.
+</code></pre>
+<h3 id="filter">.filter</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L215">source</a></p>
+<pre><code class="language-python">.filter(
+   predicate: str
+)
+</code></pre>
+<hr />
+<p>This will filter the DataStream to contain only rows that match a certain predicate. Currently this predicate must be specified
+in SQL syntax. You can write any SQL clause you would generally put in a WHERE statement containing arbitrary conjunctions and 
+disjunctions. The identifiers however, must be in the schema of this DataStream! We aim to soon support a more Pythonic interface
+that better resembles Pandas which allows you to do things like d = d[d.a &gt; 10]. Please look at the examples below. </p>
+<p>Since a DataStream is implemented as a stream of batches, you might be tempted to think of a filtered DataStream as a stream of batches where each
+batch directly results from a filter being applied to a batch in the source DataStream. While this certainly may be the case, filters
+are aggressively optimized by Quokka and is most likely pushed all the way down to the input readers. As a result, you typically should
+not see a filter node in a Quokka execution plan shown by <code>explain()</code>. </p>
+<p>It is much better to think of a DataStream simply as a stream of rows that meet certain criteria, and who may be non-deterministically 
+batched together by the Quokka runtime. Indeed, Quokka makes no guarantees on the sizes of these batches, which is determined at runtime. 
+This flexibility is an important reason for Quokka's superior performance.</p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>predicate</strong> (str) : a SQL WHERE clause, look at the examples.</li>
+</ul>
+<hr />
+<p>Return:
+    A DataStream consisting of rows from the source DataStream that match the predicate.</p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python">&gt;&gt;&gt; f = qc.read_csv(&quot;lineitem.csv&quot;)
+
+# filter for all the rows where l_orderkey smaller than 10 and l_partkey greater than 5
+&gt;&gt;&gt; f = f.filter(&quot;l_orderkey &lt; 10 and l_partkey &gt; 5&quot;) 
+
+# nested conditions are supported
+&gt;&gt;&gt; f = f.filter(&quot;l_orderkey &lt; 10 and (l_partkey &gt; 5 or l_partkey &lt; 1)&quot;) 
+
+# most SQL features such as IN and date are supported.
+&gt;&gt;&gt; f = f.filter(&quot;l_shipmode IN ('MAIL','SHIP') and l_receiptdate &lt; date '1995-01-01'&quot;)
+
+# you can do arithmetic in the predicate just like in SQL. 
+&gt;&gt;&gt; f = f.filter(&quot;l_shipdate &lt; date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01&quot;)
+
+# this will fail! Assuming c_custkey is not in f.schema
+&gt;&gt;&gt; f = f.filter(&quot;c_custkey &gt; 10&quot;)
+</code></pre>
+<h3 id="select">.select</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L270">source</a></p>
+<pre><code class="language-python">.select(
+   columns: list
+)
+</code></pre>
+<hr />
+<p>This will create a new DataStream that contains only selected columns from the source DataStream.</p>
+<p>Since a DataStream is implemented as a stream of batches, you might be tempted to think of a filtered DataStream as a stream of batches where each
+batch directly results from selecting columns from a batch in the source DataStream. While this certainly may be the case, <code>select()</code> is aggressively 
+optimized by Quokka and is most likely pushed all the way down to the input readers. As a result, you typically should
+not see a select node in a Quokka execution plan shown by <code>explain()</code>. </p>
+<p>It is much better to think of a DataStream simply as a stream of rows that meet certain criteria, and who may be non-deterministically 
+batched together by the Quokka runtime. Indeed, Quokka makes no guarantees on the sizes of these batches, which is determined at runtime. 
+This flexibility is an important reason for Quokka's superior performance.</p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>columns</strong> (list) : a list of columns to select from the source DataStream</li>
+</ul>
+<hr />
+<p>Return:
+    A DataStream consisting of only the columns selected.</p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python">&gt;&gt;&gt; f = qc.read_csv(&quot;lineitem.csv&quot;)
+
+# select only the l_orderdate and l_orderkey columns
+&gt;&gt;&gt; f = f.select([&quot;l_orderdate&quot;, &quot;l_orderkey&quot;])
+
+# this will now fail, since f's schema now consists of only two columns.
+&gt;&gt;&gt; f = f.select([&quot;l_linenumber&quot;])
+</code></pre>
+<h3 id="drop">.drop</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L314">source</a></p>
+<pre><code class="language-python">.drop(
+   cols_to_drop: list
+)
+</code></pre>
+<hr />
+<p>Think of this as the anti-opereator to select. Instead of selecting columns, this will drop columns. 
+This is implemented in Quokka as selecting the columns in the DataStream's schema that are not dropped.</p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>cols_to_drop</strong> (list) : a list of columns to drop from the source DataStream</li>
+</ul>
+<hr />
+<p>Return:
+    A DataStream consisting of all columns in the source DataStream that are not in <code>cols_to_drop</code>.</p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python">&gt;&gt;&gt; f = qc.read_csv(&quot;lineitem.csv&quot;)
+
+# select only the l_orderdate and l_orderkey columns
+&gt;&gt;&gt; f = f.drop([&quot;l_orderdate&quot;, &quot;l_orderkey&quot;])
+
+# this will now fail, since you dropped l_orderdate
+&gt;&gt;&gt; f = f.select([&quot;l_orderdate&quot;])
+</code></pre>
+<h3 id="rename">.rename</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L342">source</a></p>
+<pre><code class="language-python">.rename(
+   rename_dict
+)
+</code></pre>
+<hr />
+<p>Renames columns in the DataStream according to rename_dict. This is similar to 
+<a href="https://pola-rs.github.io/polars/py-polars/html/reference/api/polars.DataFrame.rename.html"><code>polars.rename</code></a>.
+The keys you supply in rename_dict must be present in the schema, and the rename operation
+must not lead to duplicate column names.</p>
+<p>Note this will lead to a physical operation at runtime. </p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>rename_dict</strong> (dict) : key is old column name, value is new column name.</li>
+</ul>
+<hr />
+<p>Return:
+    A DataStream with new schema according to rename. </p>
+<h3 id="transform">.transform</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L391">source</a></p>
+<pre><code class="language-python">.transform(
+   f, new_schema: list, required_columns: set, foldable = True
+)
+</code></pre>
+<hr />
+<p>This is a rather Quokka-specific API that allows arbitrary transformations on a DataStream, similar to Spark RDD.map.
+Each batch in the DataStream is going to be transformed according to a user defined function, which can produce a new batch.
+The new batch can have completely different schema or even length as the original batch, and the original data is considered lost,
+or consumed by this transformation function. This could be used to implement user-defined-aggregation-functions (UDAFs). Note in
+cases where you are simply generating a new column from other columns for each row, i.e. UDF, you probably want to use the 
+<code>with_column</code> method instead. </p>
+<p>A DataStream is implemented as a stream of batches. In the runtime, your transformation function will be applied to each of those batches.
+However, there are no guarantees whatsoever on the sizes of these batches! You should probably make sure your logic is correct
+regardless of the sizes of the batches. For example, if your DataStream consists of a column of numbers, and you wish to compute the sum
+of those numbers, you could first transform the DataStream to return just the sum of each batch, and then hook this DataStream up to 
+a stateful operator that adds up all the sums. </p>
+<p>You can use whatever libraries you have installed in your Python environment in this transformation function. If you are using this on a
+cloud cluster, you have to make sure the necessary libraries are installed on each machine. You can use the <code>utils</code> package in pyquokka to help
+you do this.</p>
+<p>This is very similar to Spark's seldom used <code>combineByKey</code> feature. </p>
+<p>Note a transformation in the logical plan basically precludes any predicate pushdown or early projection past it, since the original columns 
+are assumed to be lost, and we cannot directly establish correspendences between the input columns to a transformation and its output 
+columns for the purposes of predicate pushdown or early projection. The user is required to supply a set or list of required columns,
+and we will select for those columns (which can be pushed down) before we apply the transformation. </p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>f</strong> (function) : The transformation function. This transformation function must take as input a Polars DataFrame and output a Polars DataFrame. 
+    The transformation function must not have expectations on the length of its input. Similarly, the transformation function does not 
+    have to emit outputs of a specific size. The transformation function must produce the same output columns for every possible input.</li>
+<li><strong>new_schema</strong> (list) : The names of the columns of the Polars DataFrame that the transformation function produces. </li>
+<li><strong>required_columns</strong> (list or set) : The names of the columns that are required for this transformation. This argument is made mandatory
+    because it's often trivial to supply and can often greatly speed things up.</li>
+<li><strong>foldable</strong> (bool) : Whether or not the transformation can be executed as part of the batch post-processing of the previous operation in the 
+    execution graph. This is set to True by default. Correctly setting this flag requires some insight into how Quokka works. Lightweight
+    functions generally benefit from being folded. Heavyweight functions or those whose efficiency improve with large input sizes 
+    might benefit from not being folded. </li>
+</ul>
+<hr />
+<p>Return:
+    A new transformed DataStream with the supplied schema.</p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python">
+# a user defined function that takes in a Polars DataFrame with a single column &quot;text&quot;, converts it to a Pyarrow table,
+# and uses nice Pyarrow compute functions to perform the word count on this Polars DataFrame. Note 1) we have to convert it 
+# back to a Polars DataFrame afterwards, 2) the function works regardless of input length and 3) the output columns are the 
+# same regardless of the input.
+def udf2(x):
+    x = x.to_arrow()
+    da = compute.list_flatten(compute.ascii_split_whitespace(x[&quot;text&quot;]))
+    c = da.value_counts().flatten()
+    return polars.from_arrow(pa.Table.from_arrays([c[0], c[1]], names=[&quot;word&quot;,&quot;count&quot;]))
+
+# this is a trick to read in text files, just use read_csv with a separator you know won't appear.
+# the result will just be DataStream with one column. 
+&gt;&gt;&gt; words = qc.read_csv(&quot;random_words.txt&quot;, [&quot;text&quot;], sep = &quot;|&quot;)
+
+# transform words to counts
+&gt;&gt;&gt; counted = words.transform( udf2, new_schema = [&quot;word&quot;, &quot;count&quot;], required_columns = {&quot;text&quot;}, foldable=True)
+</code></pre>
+<h3 id="with_column">.with_column</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L474">source</a></p>
+<pre><code class="language-python">.with_column(
+   new_column, f, required_columns = None, foldable = True
+)
+</code></pre>
+<hr />
+<p>This will create new columns from certain columns in the dataframe. This is similar to pandas <code>df.apply()</code> that makes new columns. 
+This is similar to Spark UDF or Pandas UDF, Polars <code>with_column</code>, Spark <code>with_column</code>, etc. Note that this function, like most Quokka DataStream
+functions, are not in-place, and will return a new DataStream, with the new column.</p>
+<p>This is a separate API from <code>transform</code> because the semantics allow for projection and predicate pushdown through this node, 
+since the original columns are all preserved. Use this instead of <code>transform</code> if possible.</p>
+<p>A DataStream is implemented as a stream of batches. In the runtime, your function will be applied to each of those batches. The function must
+take as input a Polars DataFrame and produce a Polars DataFrame. This is a different mental model from say Pandas <code>df.apply</code>, where the function is written
+for each row. There are two restrictions. First, your result must only have one column, and it should have 
+the same name as your <code>new_column</code> argument. Second, your result must have the same length as the input Polars DataFrame. </p>
+<p>You can use whatever libraries you have installed in your Python environment in this function. If you are using this on a
+cloud cluster, you have to make sure the necessary libraries are installed on each machine. You can use the <code>utils</code> package in pyquokka to help
+you do this.</p>
+<p>Importantly, your function can take full advantage of Polars' columnar APIs to make use of SIMD and other forms of speedy goodness. 
+You can even use Polars LazyFrame abstractions inside of this function. Of course, for ultimate flexbility, you are more than welcome to convert 
+the Polars DataFrame to a Pandas DataFrame and use <code>df.apply</code>. Just remember to convert it back to a Polars DataFrame with only the result column in the end!</p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>new_column</strong> (str) : The name of the new column.</li>
+<li><strong>f</strong> (function) : The apply function. This apply function must take as input a Polars DataFrame and output a Polars DataFrame. 
+    The apply function must not have expectations on the length of its input. The output must have the same length as the input.
+    The apply function must produce the same output columns for every possible input.</li>
+<li><strong>required_columns</strong> (list or set) : The names of the columns that are required for your function. If this is not specified then Quokka assumes 
+    all the columns are required for your function. Early projection past this function becomes impossible. Long story short, if you can 
+    specify this argument, do it.</li>
+<li><strong>foldable</strong> (bool) : Whether or not the function can be executed as part of the batch post-processing of the previous operation in the 
+    execution graph. This is set to True by default. Correctly setting this flag requires some insight into how Quokka works. Lightweight
+    functions generally benefit from being folded. Heavyweight functions or those whose efficiency improve with large input sizes 
+    might benefit from not being folded. </li>
+</ul>
+<hr />
+<p>Return:
+    A new DataStream with a new column made by the user defined function.</p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python">
+&gt;&gt;&gt; f = qc.read_csv(&quot;lineitem.csv&quot;)
+
+# people who care about speed of execution make full use of Polars columnar APIs.
+
+&gt;&gt;&gt; d = d.with_column(&quot;high&quot;, lambda x:(x[&quot;o_orderpriority&quot;] == &quot;1-URGENT&quot;) | (x[&quot;o_orderpriority&quot;] == &quot;2-HIGH&quot;), required_columns = {&quot;o_orderpriority&quot;})
+
+# people who care about speed of development can do something that hurts my eyes.
+
+def f(x):
+    y = x.to_pandas()
+    y[&quot;high&quot;] = y.apply(lambda x:(x[&quot;o_orderpriority&quot;] == &quot;1-URGENT&quot;) | (x[&quot;o_orderpriority&quot;] == &quot;2-HIGH&quot;), axis = 1)
+    return polars.from_pandas(y[&quot;high&quot;])
+
+&gt;&gt;&gt; d = d.with_column(&quot;high&quot;, f, required_columns={&quot;o_orderpriority&quot;})
+</code></pre>
+<h3 id="stateful_transform">.stateful_transform</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L557">source</a></p>
+<pre><code class="language-python">.stateful_transform(
+   executor: Executor, new_schema: list, required_columns: set,
+   partitioner = PassThroughPartitioner(), placement = 'cpu'
+)
+</code></pre>
+<hr />
+<p><strong>EXPERIMENTAL API</strong> </p>
+<p>This is like <code>transform</code>, except you can use a stateful object as your transformation function. This is useful for example, if you want to run
+a heavy Pytorch model on each batch coming in, and you don't want to reload this model for each function call. Remember the <code>transform</code> API only
+supports stateless transformations. You could also implement much more complicated stateful transformations, like implementing your own aggregation
+function if you are not satisfied with Quokka's default operator's performance.</p>
+<p>This API is still being finalized. A version of it that takes multiple input streams is also going to be added. This is the part of the DataStream level 
+api that is closest to the underlying execution engine. Quokka's underlying execution engine basically executes a series of stateful transformations
+on batches of data. The difficulty here is how much of that underlying API to expose here so it's still useful without the user having to understand 
+how the Quokka runtime works. To that end, we have to come up with suitable partitioner and placement strategy abstraction classes and interfaces.</p>
+<p>If you are interested in helping us hammer out this API, please talke to me: zihengw@stanford.edu.</p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>executor</strong> (pyquokka.executors.Executor) : The stateful executor. It must be a subclass of <code>pyquokka.executors.Executor</code>, and expose the <code>execute</code> 
+    and <code>done</code> functions. More details forthcoming.</li>
+<li><strong>new_schema</strong> (list) : The names of the columns of the Polars DataFrame that the transformation function produces. </li>
+<li><strong>required_columns</strong> (list or set) : The names of the columns that are required for this transformation. This argument is made mandatory
+    because it's often trivial to supply and can often greatly speed things up.</li>
+</ul>
+<hr />
+<p>Return:
+    A transformed DataStream.</p>
+<p><strong>Examples</strong></p>
+<p>Forthcoming.</p>
+<h3 id="distinct">.distinct</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L617">source</a></p>
+<pre><code class="language-python">.distinct(
+   keys: list
+)
+</code></pre>
+<hr />
+<p>Return a new DataStream with specified columns and unique rows. This is like <code>SELECT DISTINCT(KEYS) FROM ...</code> in SQL.</p>
+<p>Note all the other columns will be dropped, since their behavior is unspecified. If you want to do deduplication, you can use
+this operator with keys set to all the columns.</p>
+<p>This could be accomplished by using <code>groupby().agg()</code> but using <code>distinct</code> is generally faster because it is nonblocking, 
+compared to a groupby. Quokka really likes nonblocking operations because it can then pipeline it with other operators.</p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>keys</strong> (list) : a list of columns to select distinct on.</li>
+</ul>
+<hr />
+<p>Return:
+    A transformed DataStream whose columns are in keys and whose rows are unique.</p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python">&gt;&gt;&gt; f = qc.read_csv(&quot;lineitem.csv&quot;)
+
+# select only the l_orderdate and l_orderkey columns, return only unique rows.
+&gt;&gt;&gt; f = f.distinct([&quot;l_orderdate&quot;, &quot;l_orderkey&quot;])
+
+# this will now fail, since l_comment is no longer in f's schema.
+&gt;&gt;&gt; f = f.select([&quot;l_comment&quot;])
+</code></pre>
+<h3 id="join">.join</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L668">source</a></p>
+<pre><code class="language-python">.join(
+   right, on = None, left_on = None, right_on = None, suffix = '_2', how = 'inner'
+)
+</code></pre>
+<hr />
+<p>Join a DataStream with another DataStream or a <strong>small</strong> Polars DataFrame (&lt;10MB). If you have a Polars DataFrame bigger
+than this, the best solution right now is to write it out to a file and have Quokka read it back in as a DataStream. I 
+realize this is perhaps suboptimal, and this will be improved.</p>
+<p>A streaming two-sided distributed join will be executed for two DataStream joins and a streaming broadcast join
+will be executed for DataStream joined with Polars DataFrame. Joins are obviously very important, and we are constantly improving
+how we do joins. Eventually we will support out of core joins, when @savebuffer merges his PR into Arrow 10.0.</p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>right</strong> (DataStream or Polars DataFrame) : the DataStream or Polars DataFrame to join to.</li>
+<li><strong>on</strong> (str) : You could either specify this, if the join column has the same name in this DataStream and <code>right</code>, or <code>left_on</code> and <code>right_on</code> 
+    if the join columns don't have the same name.</li>
+<li><strong>left_on</strong> (str) : the name of the join column in this DataStream.</li>
+<li><strong>right_on</strong> (str) : the name of the join column in <code>right</code>.</li>
+<li><strong>suffix</strong> (str) : if <code>right</code> has columns with the same names as columns in this DataStream, their names will be appended with the suffix in the result.</li>
+<li><strong>how</strong> (str) : only supports "inner" for now. </li>
+</ul>
+<hr />
+<p>Return:
+    A new DataStream that's the joined result of this DataStream and "right". By default, columns from both side will be retained, 
+    except for <code>right_on</code> from the right side. </p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python">&gt;&gt;&gt; lineitem = qc.read_csv(&quot;lineitem.csv&quot;)
+
+&gt;&gt;&gt; orders = qc.read_csv(&quot;orders.csv&quot;)
+
+&gt;&gt;&gt; result = lineitem.join(orders, left_on = &quot;l_orderkey&quot;, right_on = &quot;o_orderkey&quot;)
+
+# this will now fail, since o_orderkey is not in the joined DataStream.
+&gt;&gt;&gt; result = result.select([&quot;o_orderkey&quot;])
+</code></pre>
+<h3 id="groupby">.groupby</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L775">source</a></p>
+<pre><code class="language-python">.groupby(
+   groupby: list, orderby = None
+)
+</code></pre>
+<hr />
+<p>Group a DataStream on a list of columns, optionally specifying an ordering requirement.</p>
+<p>This returns a GroupedDataStream object, which currently only expose the <code>aggregate</code> method. This is similar to Pandas <code>df.groupby().agg()</code> syntax.
+Eventually the GroupedDataStream object will also support different kinds of window functions. </p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>groupby</strong> (list or str) : a column or a list of columns to group on.</li>
+<li><strong>orderby</strong> (list) : a list of ordering requirements of the groupby columns, specified in a list like this:
+    [(col1, "asc"), (col2, "desc")]. </li>
+</ul>
+<hr />
+<p>Return:
+    A GroupedDataStream object with the specified grouping and the current DataStream.</p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python">&gt;&gt;&gt; lineitem = qc.read_csv(&quot;lineitem.csv&quot;)
+
+&gt;&gt;&gt; result = lineitem.groupby([&quot;l_orderkey&quot;,&quot;l_orderdate&quot;], orderby = [(&quot;l_orderkey&quot;, &quot;asc&quot;), (&quot;l_orderdate&quot;, &quot;desc&quot;)])
+</code></pre>
+<h3 id="agg">.agg</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L932">source</a></p>
+<pre><code class="language-python">.agg(
+   aggregations
+)
+</code></pre>
+<hr />
+<p>Aggregate this DataStream according to the defined aggregations without any pre-grouping. This is similar to Pandas <code>df.agg()</code>.
+The result will be one row.</p>
+<p>The result is a DataStream that will return a batch when the entire aggregation is done, since it's impossible to return any aggregation
+results without seeing the entire dataset. As a result, you should call <code>.compute()</code> or <code>.collect()</code> on this DataStream instead of doing 
+additional operations on it like <code>.filter()</code> since those won't be pipelined anyways. The only reason Quokka by default returns a DataStream
+instead of just returning a Polars DataFrame or a Quokka DataSet is so you can do <code>.explain()</code> on it.</p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>aggregations</strong> (dict) : similar to a dictionary argument to Pandas <code>df.agg()</code>. The key is the column name, where the value
+    is a str that is "min", "max", "mean", "sum", "avg" or a list of such strings. If you desire to have the count column
+    in your result, add a key "*" with value "count". Look at the examples.</li>
+</ul>
+<hr />
+<p>Return:
+    A DataStream object that holds the aggregation result. It will only emit one batch, which is the result when it's done. 
+    You should call <code>.collect()</code> or <code>.compute()</code> on it as it is impossible to pipeline past an 
+    aggregation, so might as well as materialize it right now.</p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python">&gt;&gt;&gt; lineitem = qc.read_csv(&quot;lineitem.csv&quot;)
+
+&gt;&gt;&gt; d = lineitem.filter(&quot;l_shipdate &lt;= date '1998-12-01' - interval '90' day&quot;)
+
+&gt;&gt;&gt; d = d.with_column(&quot;disc_price&quot;, lambda x:x[&quot;l_extendedprice&quot;] * (1 - x[&quot;l_discount&quot;]), required_columns ={&quot;l_extendedprice&quot;, &quot;l_discount&quot;})
+
+# I want the sum and average of the l_quantity column and the l_extendedprice colum, the sum of the disc_price column, the minimum of the l_discount
+# column, and oh give me the total row count as well.
+&gt;&gt;&gt; f = d.agg({&quot;l_quantity&quot;:[&quot;sum&quot;,&quot;avg&quot;], &quot;l_extendedprice&quot;:[&quot;sum&quot;,&quot;avg&quot;], &quot;disc_price&quot;:&quot;sum&quot;, &quot;l_discount&quot;:&quot;min&quot;,&quot;*&quot;:&quot;count&quot;})
+</code></pre>
+<h3 id="aggregate">.aggregate</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L969">source</a></p>
+<pre><code class="language-python">.aggregate(
+   aggregations
+)
+</code></pre>
+<hr />
+<p>Alias of <code>agg</code>.</p>
+<h3 id="count">.count</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L977">source</a></p>
+<pre><code class="language-python">.count()
+</code></pre>
+<hr />
+<p>Return total row count.</p>
+<h3 id="sum">.sum</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L985">source</a></p>
+<pre><code class="language-python">.sum(
+   columns
+)
+</code></pre>
+<hr />
+<p>Return the sums of the specified columns.</p>
+<h3 id="max">.max</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L998">source</a></p>
+<pre><code class="language-python">.max(
+   columns
+)
+</code></pre>
+<hr />
+<p>Return the maximum values of the specified columns.</p>
+<h3 id="min">.min</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L1011">source</a></p>
+<pre><code class="language-python">.min(
+   columns
+)
+</code></pre>
+<hr />
+<p>Return the minimum values of the specified columns.</p>
+<h3 id="mean">.mean</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L1024">source</a></p>
+<pre><code class="language-python">.mean(
+   columns
+)
+</code></pre>
+<hr />
+<p>Return the mean values of the specified columns.</p>
+<hr />
+<h2 id="groupeddatastream">GroupedDataStream</h2>
+<p><a href="https://github.com/blob/master/datastream.py/#L1038">source</a></p>
+<pre><code class="language-python">GroupedDataStream(
+   source_data_stream: DataStream, groupby, orderby
+)
+</code></pre>
+<p><strong>Methods:</strong></p>
+<h3 id="agg_1">.agg</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L1045">source</a></p>
+<pre><code class="language-python">.agg(
+   aggregations: dict
+)
+</code></pre>
+<hr />
+<p>Aggregate this GroupedDataStream according to the defined aggregations. This is similar to Pandas <code>df.groupby().agg()</code>.
+The result's length will be however number of rows as there are unique group keys combinations.</p>
+<p>The result is a DataStream that will return a batch when the entire aggregation is done, since it's impossible to return any aggregation
+results without seeing the entire dataset. As a result, you should call <code>.compute()</code> or <code>.collect()</code> on this DataStream instead of doing 
+additional operations on it like <code>.filter()</code> since those won't be pipelined anyways. The only reason Quokka by default returns a DataStream
+instead of just returning a Polars DataFrame or a Quokka DataSet is so you can do <code>.explain()</code> on it.</p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>aggregations</strong> (dict) : similar to a dictionary argument to Pandas <code>df.agg()</code>. The key is the column name, where the value
+    is a str that is "min", "max", "mean", "sum", "avg" or a list of such strings. If you desire to have the count column
+    in your result, add a key "*" with value "count". Look at the examples.</li>
+</ul>
+<hr />
+<p>Return:
+    A DataStream object that holds the aggregation result. It will only emit one batch, which is the result when it's done. 
+    You should call <code>.collect()</code> or <code>.compute()</code> on it as it is impossible to pipeline past an 
+    aggregation, so might as well as materialize it right now.</p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python">&gt;&gt;&gt; lineitem = qc.read_csv(&quot;lineitem.csv&quot;)
+
+&gt;&gt;&gt; d = lineitem.filter(&quot;l_shipdate &lt;= date '1998-12-01' - interval '90' day&quot;)
+
+&gt;&gt;&gt; d = d.with_column(&quot;disc_price&quot;, lambda x:x[&quot;l_extendedprice&quot;] * (1 - x[&quot;l_discount&quot;]), required_columns ={&quot;l_extendedprice&quot;, &quot;l_discount&quot;})
+
+# I want the sum and average of the l_quantity column and the l_extendedprice colum, the sum of the disc_price column, the minimum of the l_discount
+# column, and oh give me the total row count as well, of each unique combination of l_returnflag and l_linestatus
+&gt;&gt;&gt; f = d.groupby([&quot;l_returnflag&quot;, &quot;l_linestatus&quot;]).agg({&quot;l_quantity&quot;:[&quot;sum&quot;,&quot;avg&quot;], &quot;l_extendedprice&quot;:[&quot;sum&quot;,&quot;avg&quot;], &quot;disc_price&quot;:&quot;sum&quot;, &quot;l_discount&quot;:&quot;min&quot;,&quot;*&quot;:&quot;count&quot;})
+</code></pre>
+<h3 id="aggregate_1">.aggregate</h3>
+<p><a href="https://github.com/blob/master/datastream.py/#L1082">source</a></p>
+<pre><code class="language-python">.aggregate(
+   aggregations: dict
+)
+</code></pre>
+<hr />
+<p>Alias for agg.</p>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../quokka_context/" class="btn btn-neutral float-left" title="QuokkaContext"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/marsupialtail/quokka" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href="../quokka_context/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+  </span>
+</div>
+    <script>var base_url = '..';</script>
+    <script src="../js/theme_extra.js" defer></script>
+    <script src="../js/theme.js" defer></script>
+      <script src="../search/main.js" defer></script>
+    <script defer>
+        window.onload = function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        };
+    </script>
+
+</body>
+</html>

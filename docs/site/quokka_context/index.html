@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <link rel="shortcut icon" href="../img/favicon.ico" />
+    <title>QuokkaContext - Quokka</title>
+    <link rel="stylesheet" href="../css/theme.css" />
+    <link rel="stylesheet" href="../css/theme_extra.css" />
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/styles/github.min.css" />
+    
+      <script>
+        // Current page data
+        var mkdocs_page_name = "QuokkaContext";
+        var mkdocs_page_input_path = "quokka_context.md";
+        var mkdocs_page_url = null;
+      </script>
+    
+    <script src="../js/jquery-3.6.0.min.js" defer></script>
+    <!--[if lt IE 9]>
+      <script src="../js/html5shiv.min.js"></script>
+    <![endif]-->
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/10.5.0/highlight.min.js"></script>
+      <script>hljs.initHighlightingOnLoad();</script> 
+</head>
+
+<body class="wy-body-for-nav" role="document">
+
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side stickynav">
+    <div class="wy-side-scroll">
+      <div class="wy-side-nav-search">
+          <a href=".." class="icon icon-home"> Quokka
+        </a><div role="search">
+  <form id ="rtd-search-form" class="wy-form" action="../search.html" method="get">
+      <input type="text" name="q" placeholder="Search docs" title="Type search term here" />
+  </form>
+</div>
+      </div>
+
+      <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="..">Home</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../started/">Getting Started</a>
+                </li>
+              </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../cloud/">Setting Up Cloud Cluster</a>
+                </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Tutorials</span></p>
+              <ul>
+                  <li class="toctree-l1"><a class="reference internal" href="../simple/">DataStream API</a>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../tutorial/">TaskGraph API</a>
+                  </li>
+              </ul>
+              <p class="caption"><span class="caption-text">Dataframe API reference</span></p>
+              <ul class="current">
+                  <li class="toctree-l1 current"><a class="reference internal current" href="./">QuokkaContext</a>
+    <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#quokkacontext">QuokkaContext</a>
+        <ul>
+    <li class="toctree-l3"><a class="reference internal" href="#read_files">.read_files</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#read_csv">.read_csv</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#read_parquet">.read_parquet</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#new_stream">.new_stream</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#new_dataset">.new_dataset</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#optimize">.optimize</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#lower">.lower</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#execute_node">.execute_node</a>
+    </li>
+    <li class="toctree-l3"><a class="reference internal" href="#explain">.explain</a>
+    </li>
+        </ul>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#dataset">DataSet</a>
+    </li>
+    </ul>
+                  </li>
+                  <li class="toctree-l1"><a class="reference internal" href="../datastream/">DataStream</a>
+                  </li>
+              </ul>
+      </div>
+    </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+      <nav class="wy-nav-top" role="navigation" aria-label="Mobile navigation menu">
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="..">Quokka</a>
+        
+      </nav>
+      <div class="wy-nav-content">
+        <div class="rst-content"><div role="navigation" aria-label="breadcrumbs navigation">
+  <ul class="wy-breadcrumbs">
+    <li><a href=".." class="icon icon-home" alt="Docs"></a> &raquo;</li>
+          <li>Dataframe API reference &raquo;</li>
+      <li>QuokkaContext</li>
+    <li class="wy-breadcrumbs-aside">
+          <a href="https://github.com/marsupialtail/quokka/edit/master/docs/quokka_context.md" class="icon icon-github"> Edit on GitHub</a>
+    </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+            <div class="section" itemprop="articleBody">
+              
+                <h1 id="_1"></h1>
+<h2 id="quokkacontext">QuokkaContext</h2>
+<p><a href="https://github.com/blob/master/df.py/#L9">source</a></p>
+<pre><code class="language-python">QuokkaContext(
+   cluster = None
+)
+</code></pre>
+<p><strong>Methods:</strong></p>
+<h3 id="read_files">.read_files</h3>
+<p><a href="https://github.com/blob/master/df.py/#L24">source</a></p>
+<pre><code class="language-python">.read_files(
+   table_location: str
+)
+</code></pre>
+<h3 id="read_csv">.read_csv</h3>
+<p><a href="https://github.com/blob/master/df.py/#L63">source</a></p>
+<pre><code class="language-python">.read_csv(
+   table_location: str, schema = None, has_header = False, sep = ', '
+)
+</code></pre>
+<h3 id="read_parquet">.read_parquet</h3>
+<p><a href="https://github.com/blob/master/df.py/#L173">source</a></p>
+<pre><code class="language-python">.read_parquet(
+   table_location: str, schema = None
+)
+</code></pre>
+<h3 id="new_stream">.new_stream</h3>
+<p><a href="https://github.com/blob/master/df.py/#L275">source</a></p>
+<pre><code class="language-python">.new_stream(
+   sources: dict, partitioners: dict, node: Node, schema: list, ordering = None
+)
+</code></pre>
+<h3 id="new_dataset">.new_dataset</h3>
+<p><a href="https://github.com/blob/master/df.py/#L291">source</a></p>
+<pre><code class="language-python">.new_dataset(
+   source, schema: list
+)
+</code></pre>
+<h3 id="optimize">.optimize</h3>
+<p><a href="https://github.com/blob/master/df.py/#L296">source</a></p>
+<pre><code class="language-python">.optimize(
+   node_id
+)
+</code></pre>
+<h3 id="lower">.lower</h3>
+<p><a href="https://github.com/blob/master/df.py/#L314">source</a></p>
+<pre><code class="language-python">.lower(
+   end_node_id, collect = True
+)
+</code></pre>
+<h3 id="execute_node">.execute_node</h3>
+<p><a href="https://github.com/blob/master/df.py/#L374">source</a></p>
+<pre><code class="language-python">.execute_node(
+   node_id, explain = False, mode = None, collect = True
+)
+</code></pre>
+<h3 id="explain">.explain</h3>
+<p><a href="https://github.com/blob/master/df.py/#L413">source</a></p>
+<pre><code class="language-python">.explain(
+   node_id, mode = 'graph'
+)
+</code></pre>
+<hr />
+<h2 id="dataset">DataSet</h2>
+<p><a href="https://github.com/blob/master/df.py/#L699">source</a></p>
+<pre><code class="language-python">DataSet(
+   quokka_context: QuokkaContext, schema: dict, source_node_id: int
+)
+</code></pre>
+              
+            </div>
+          </div><footer>
+    <div class="rst-footer-buttons" role="navigation" aria-label="Footer Navigation">
+        <a href="../tutorial/" class="btn btn-neutral float-left" title="TaskGraph API"><span class="icon icon-circle-arrow-left"></span> Previous</a>
+        <a href="../datastream/" class="btn btn-neutral float-right" title="DataStream">Next <span class="icon icon-circle-arrow-right"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <!-- Copyright etc -->
+  </div>
+
+  Built with <a href="https://www.mkdocs.org/">MkDocs</a> using a <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>.
+</footer>
+          
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+
+  <div class="rst-versions" role="note" aria-label="Versions">
+  <span class="rst-current-version" data-toggle="rst-current-version">
+    
+        <span>
+          <a href="https://github.com/marsupialtail/quokka" class="fa fa-github" style="color: #fcfcfc"> GitHub</a>
+        </span>
+    
+    
+      <span><a href="../tutorial/" style="color: #fcfcfc">&laquo; Previous</a></span>
+    
+    
+      <span><a href="../datastream/" style="color: #fcfcfc">Next &raquo;</a></span>
+    
+  </span>
+</div>
+    <script>var base_url = '..';</script>
+    <script src="../js/theme_extra.js" defer></script>
+    <script src="../js/theme.js" defer></script>
+      <script src="../search/main.js" defer></script>
+    <script defer>
+        window.onload = function () {
+            SphinxRtdTheme.Navigation.enable(true);
+        };
+    </script>
+
+</body>
+</html>

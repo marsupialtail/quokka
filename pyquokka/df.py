@@ -114,6 +114,7 @@ class QuokkaContext:
                         schema = resp[:first_newline].decode("utf-8").split(sep)
 
                     self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep, has_header)
+            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(self.cluster.cpu_count * 2))
         else:
 
             if type(self.cluster) == EC2Cluster:
@@ -199,7 +200,7 @@ class QuokkaContext:
                     except:
                         raise Exception("schema discovery failed for Parquet dataset at location ", table_location)
                 
-                self.nodes[self.latest_node_id] = InputS3ParquetNode(table_location, schema, None, None)
+                self.nodes[self.latest_node_id] = InputS3ParquetNode(bucket, prefix, None, schema)
             else:
                 if schema is None:
                     try:
@@ -213,9 +214,9 @@ class QuokkaContext:
                 response = s3.head_object(Bucket= bucket, Key=key)
                 size = response['ContentLength']
                 if size < 10 * 1048576:
-                    return polars.read_parquet(table_location)
+                    return polars.read_parquet("s3://" + table_location)
                 else:
-                    self.nodes[self.latest_node_id] = InputS3ParquetNode(table_location, schema, None, None)
+                    self.nodes[self.latest_node_id] = InputS3ParquetNode(bucket, None, key, schema)
 
         else:
             if type(self.cluster) == EC2Cluster:
@@ -236,7 +237,7 @@ class QuokkaContext:
                     size = os.path.getsize(table_location + files[0])
                     if size < 10 * 1048576:
                         return polars.read_parquet(table_location + files[0])
-                self.nodes[self.latest_node_id] = InputS3ParquetNode(table_location, schema, None, None)
+                self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
 
             else:
                 try:

@@ -705,8 +705,8 @@ class DataStream:
         assert type(right) == polars.internals.DataFrame or issubclass(
             type(right), DataStream)
         
-        if type(right) == polars.internals.DataFrame and right.to_arrow().nbytes > 10485760:
-            raise Exception("You cannot join a DataStream against a Polars DataFrame more than 10MB in size. Sorry.")
+        #if type(right) == polars.internals.DataFrame and right.to_arrow().nbytes > 10485760:
+        #    raise Exception("You cannot join a DataStream against a Polars DataFrame more than 10MB in size. Sorry.")
 
         if on is None:
             assert left_on is not None and right_on is not None

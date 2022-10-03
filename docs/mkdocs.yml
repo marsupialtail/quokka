@@ -1,4 +1,5 @@
 site_name: Quokka
+repo_url: https://github.com/marsupialtail/quokka
 
 nav:
         - Home: index.md

@@ -142,7 +142,7 @@ class QuokkaClusterManager:
         #self.launch_all_t("nohup python3 -u flight.py >> /home/ubuntu/flight-log &", public_ips, "Failed to start flight servers on workers.")
         self.launch_all("python3 -u flight.py &", public_ips, "Failed to start flight servers on workers.")
 
-    def create_cluster(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", requirements = ["ray==1.12.0"]):
+    def create_cluster(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", requirements = []):
 
         start_time = time.time()
         ec2 = boto3.client("ec2")
@@ -163,6 +163,7 @@ class QuokkaClusterManager:
         self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
         self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
 
+        requirements = ["pyquokka"] + requirements
         for req in requirements:
             assert type(req) == str
             try:

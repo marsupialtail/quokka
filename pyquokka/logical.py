@@ -120,22 +120,26 @@ class InputDiskCSVNode(SourceNode):
         return node
 
 class InputS3ParquetNode(SourceNode):
-    def __init__(self, filepath, schema, predicate = None, projection = None) -> None:
+    def __init__(self, bucket, prefix, key, schema, predicate = None, projection = None) -> None:
         super().__init__(schema)
-        if filepath[:5] == "s3://":
-            filepath = filepath[5:]
-        self.filepath = filepath
+        assert (prefix is None) != (key is None) # xor
+        self.prefix = prefix
+        self.key = key
+        self.bucket = bucket
         self.predicate = predicate
         self.projection = projection
     
     def lower(self, task_graph, ip_to_num_channel =None):
 
         if type(task_graph.cluster) ==  EC2Cluster:
-            parquet_reader = InputEC2ParquetDataset(self.filepath, columns = list(self.projection), filters = self.predicate)
+            if self.key is None:
+                parquet_reader = InputEC2ParquetDataset(self.bucket, self.prefix, columns = list(self.projection), filters = self.predicate)
+            else:
+                parquet_reader = InputParquetDataset(self.bucket + "/" + self.key, mode = "s3", columns = list(self.projection), filters = self.predicate)
             node = task_graph.new_input_reader_node(parquet_reader, ip_to_num_channel = ip_to_num_channel)
             return node
         elif type(task_graph.cluster) == LocalCluster:
-            parquet_reader = InputParquetDataset(self.filepath, mode = "s3", columns = list(self.projection), filters = self.predicate)
+            parquet_reader = InputParquetDataset(self.bucket + "/" + self.key, mode = "s3", columns = list(self.projection), filters = self.predicate)
             node = task_graph.new_input_reader_node(parquet_reader, ip_to_num_channel = ip_to_num_channel)
             return node
 

@@ -2,9 +2,11 @@
 
 This section is for learning how to use Quokka's graph level API. This is expected for use cases where the dataframe API cannot satisfy your needs. Most users are not expected to program at this level. You should contact me: zihengw@stanford.edu if you want to do this.
 
-The code for the tutorials can be found under `apps/tutorials`. They might perform meaningless tasks or perform tasks which you shoudn't necessarily use Quokka for, but they will showcase how Quokka works. Importantly they will showcase the Quokka DAG runtime API. Quokka doesn't currently support a dataframe API or SQL (on the roadmap).
+You should probably stop reading now, unless you are a Stanford undergrad or masters student (or somebody else) who somehow decided to work with me on Quokka. 
 
-The tutorials are written by me (zihengw@stanford.edu), the creator of Quokka. As a result I might take some things for granted that you might not. If you spot a typo or find some sections too difficult to understand, I would appreciate your feedback! Better yet, the docs are also open source under quokka/docs, so you can also make a PR.
+The code for the tutorials can be found under `apps/tutorials`. They might perform meaningless tasks or perform tasks which you shoudn't necessarily use Quokka for, but they will showcase how Quokka works. 
+
+I wrote Quokka. As a result I might take some things for granted that you might not. If you spot a typo or find some sections too difficult to understand, I would appreciate your feedback! Better yet, the docs are also open source under quokka/docs, so you can also make a PR.
 
 ## Lesson 0: Addition
 

@@ -88,7 +88,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
         self.flights_lock = Lock()
         self.mem_limit = 1e9
         self.process = psutil.Process(os.getpid())
-        self.log_file = open("/home/ubuntu/flight-log","w")
+        #self.log_file = open("/home/ubuntu/flight-log","w")
 
     @classmethod
     def descriptor_to_key(self, descriptor):
@@ -123,8 +123,8 @@ class FlightServer(pyarrow.flight.FlightServerBase):
 
     def _all_done(self, target_id, target_channel):
         if not all(k=="done" for k in self.latest_input_received[target_id, target_channel].values()):
-            self.log_file.write(str(self.latest_input_received) + "\n")
-            self.log_file.flush()
+            #self.log_file.write(str(self.latest_input_received) + "\n")
+            #self.log_file.flush()
             return False
         return True
 
@@ -135,7 +135,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
 
         # don't really need any locks with the latest_input_received because there will be no conflict.
         if self.latest_input_received[target_id, target_channel][source_id, source_channel] == "done":
-            self.log_file.write(str(source_id, source_channel , self.parents))
+            #self.log_file.write(str(source_id, source_channel , self.parents))
             print("this channel has already received the done signal. stop wasting your breath.")
             raise Exception("this channel has already received the done signal. stop wasting your breath.")
 
@@ -249,7 +249,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
         """Shut down after a delay."""
         print("Server is shutting down...")
         time.sleep(2)
-        self.log_file.close()
+        #self.log_file.close()
         self.shutdown()
 
 if __name__ == '__main__':
