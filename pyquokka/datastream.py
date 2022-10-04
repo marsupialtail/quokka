@@ -993,7 +993,7 @@ class DataStream:
             columns = [columns]
         for col in columns:
             assert col in self.schema
-        return self.agg({col: "sum" for col in columns}).collecct()
+        return self.agg({col: "sum" for col in columns}).collect()
     
     def max(self, columns):
 

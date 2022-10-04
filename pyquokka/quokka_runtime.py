@@ -116,9 +116,12 @@ class TaskGraph:
         self.node_type = {}
         
         r = redis.Redis(host=str(self.cluster.leader_public_ip), port=6800, db=0)
-        state_tags = [i.decode("utf-8") for i in r.keys() if "state-tag" in i.decode("utf-8")] 
-        for state_tag in state_tags:
-            r.delete(state_tag)
+        while True:
+            try:
+                _ = r.keys()
+                break
+            except redis.exceptions.BusyLoadingError:
+                time.sleep(0.01)
     
     def flip_ip_channels(self, ip_to_num_channel):
         ips = sorted(list(ip_to_num_channel.keys()))
@@ -128,7 +131,7 @@ class TaskGraph:
         channel_to_ip = {k: v for d in lists_to_merge for k, v in d.items()}
         for key in channel_to_ip:
             if channel_to_ip[key] == 'localhost':
-                channel_to_ip[key] = ray.worker._global_node.address.split(":")[0] 
+                channel_to_ip[key] = ray.get_runtime_context().gcs_address.split(":")[0] 
 
         return channel_to_ip
 
@@ -197,7 +200,7 @@ class TaskGraph:
                 tasknode[channel] = InputRedisDatasetNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + ip : 0.001}
                 ).remote(self.current_node, channel, channel_objects)
             else:
-                tasknode[channel] = InputRedisDatasetNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
+                tasknode[channel] = InputRedisDatasetNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.get_runtime_context().gcs_address.split(":")[0] : 0.001}
                 ).remote(self.current_node, channel, channel_objects)
         
         self.node_type[self.current_node] = INPUT_REDIS_DATASET
@@ -226,7 +229,7 @@ class TaskGraph:
                 tasknode[channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + ip : 0.001}
                 ).remote(self.current_node, channel, reader, len(channel_to_ip))
             else:
-                tasknode[channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.worker._global_node.address.split(":")[0] : 0.001}
+                tasknode[channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.get_runtime_context().gcs_address.split(":")[0] : 0.001}
                 ).remote(self.current_node, channel, reader, len(channel_to_ip)) 
         
         start = time.time()
@@ -370,7 +373,7 @@ class TaskGraph:
                 tasknode[channel] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(self.current_node, channel, mapping,  functionObject, 
                 parents)
             else:
-                tasknode[channel] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.001}).remote(self.current_node,
+                tasknode[channel] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ray.get_runtime_context().gcs_address.split(":")[0]: 0.001}).remote(self.current_node,
                  channel, mapping, functionObject, parents)
         
         self.node_type[self.current_node] = NONBLOCKING_NODE
@@ -391,7 +394,7 @@ class TaskGraph:
                 tasknode[channel] = BlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(self.current_node, channel, mapping, output_dataset, functionObject, 
                 parents)
             else:
-                tasknode[channel] = BlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ray.worker._global_node.address.split(":")[0]: 0.001}).remote(self.current_node, 
+                tasknode[channel] = BlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ray.get_runtime_context().gcs_address.split(":")[0]: 0.001}).remote(self.current_node, 
                 channel, mapping, output_dataset, functionObject, parents)
             
         self.node_type[self.current_node] = BLOCKING_NODE

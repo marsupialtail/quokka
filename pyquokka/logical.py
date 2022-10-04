@@ -139,7 +139,10 @@ class InputS3ParquetNode(SourceNode):
             node = task_graph.new_input_reader_node(parquet_reader, ip_to_num_channel = ip_to_num_channel)
             return node
         elif type(task_graph.cluster) == LocalCluster:
-            parquet_reader = InputParquetDataset(self.bucket + "/" + self.key, mode = "s3", columns = list(self.projection), filters = self.predicate)
+            if self.key is None:
+                parquet_reader = InputEC2ParquetDataset(self.bucket, self.prefix, columns = list(self.projection), filters = self.predicate)
+            else:
+                parquet_reader = InputParquetDataset(self.bucket + "/" + self.key, mode = "s3", columns = list(self.projection), filters = self.predicate)
             node = task_graph.new_input_reader_node(parquet_reader, ip_to_num_channel = ip_to_num_channel)
             return node
 

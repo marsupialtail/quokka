@@ -1,11 +1,11 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.0.4' 
+VERSION = '0.0.8' 
 DESCRIPTION = 'Quokka'
 LONG_DESCRIPTION = """
-Dope way to do cloud analytics
-Check out https://github.com/marsupialtail/quokka
-or https://marsupialtail.github.io/quokka/
+Dope way to do cloud analytics\n
+Check out https://github.com/marsupialtail/quokka\n
+or https://marsupialtail.github.io/quokka/\n
 """
 
 # Setting up
@@ -25,8 +25,8 @@ setup(
             'pandas',
             'numpy',
             'protobuf==3.20.*', # or Ray will not work
-            'ray==1.12.0',
-            'aiobotocore',
+            'ray',
+            'psutil',
             'h5py',
             'polars==0.14.*', # latest version,0.13 has some breaking APIs
             's3fs',

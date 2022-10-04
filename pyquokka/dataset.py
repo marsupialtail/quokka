@@ -1,21 +1,15 @@
-from ast import Expression
 import pickle
 import pyarrow.csv as csv
 import pyarrow.parquet as pq
 import pyarrow.dataset as ds
-from io import BytesIO, StringIO
+from io import BytesIO
 import boto3
-import s3fs
 import os
 import redis
-#import h5py
 from collections import deque
-import pyarrow as pa
 import polars
 import numpy as np
-import gc
-import time
-
+import s3fs
 from pyarrow.fs import S3FileSystem, LocalFileSystem
 from pyarrow.dataset import FileSystemDataset, ParquetFileFormat
 from pyquokka.sql_utils import filters_to_expression
