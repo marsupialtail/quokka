@@ -69,27 +69,11 @@
     <ul class="current">
     <li class="toctree-l2"><a class="reference internal" href="#quokkacontext">QuokkaContext</a>
         <ul>
-    <li class="toctree-l3"><a class="reference internal" href="#read_files">.read_files</a>
-    </li>
     <li class="toctree-l3"><a class="reference internal" href="#read_csv">.read_csv</a>
     </li>
     <li class="toctree-l3"><a class="reference internal" href="#read_parquet">.read_parquet</a>
     </li>
-    <li class="toctree-l3"><a class="reference internal" href="#new_stream">.new_stream</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#new_dataset">.new_dataset</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#optimize">.optimize</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#lower">.lower</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#execute_node">.execute_node</a>
-    </li>
-    <li class="toctree-l3"><a class="reference internal" href="#explain">.explain</a>
-    </li>
         </ul>
-    </li>
-    <li class="toctree-l2"><a class="reference internal" href="#dataset">DataSet</a>
     </li>
     </ul>
                   </li>
@@ -128,67 +112,78 @@
    cluster = None
 )
 </code></pre>
+<hr />
+<p>Initialize a <code>QuokkaContext</code> object. This is similar to Spark's <code>SQLContext</code>. It is responsible for registering all the data sources etc. and planning your execution. It is initialized by a cluster argument, which defaults to <code>LocalCluster()</code>. If you want to use EC2, you need to create and <code>EC2Cluster</code> first with the tools in <code>pyquokka.utils</code> and then make a <code>QuokkaContext</code> with an <code>EC2Cluster</code>.</p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>cluster</strong>: if None, will create a <code>LocalCluster</code> instance to execute locally. You can also provide an <code>EC2Cluster</code>. Please refer to <a href="../cloud/">this page</a> for help.</li>
+</ul>
 <p><strong>Methods:</strong></p>
-<h3 id="read_files">.read_files</h3>
-<p><a href="https://github.com/blob/master/df.py/#L24">source</a></p>
-<pre><code class="language-python">.read_files(
-   table_location: str
-)
-</code></pre>
 <h3 id="read_csv">.read_csv</h3>
-<p><a href="https://github.com/blob/master/df.py/#L63">source</a></p>
+<p><a href="https://github.com/blob/master/df.py/#L66">source</a></p>
 <pre><code class="language-python">.read_csv(
    table_location: str, schema = None, has_header = False, sep = ', '
 )
 </code></pre>
+<hr />
+<p>Read in a CSV file or files from a table location. It can be a single CSV or a list of CSVs. It can be CSV(s) on disk
+or CSV(s) on S3. Currently other cloud sare not supported. The CSVs can have a predefined schema using a list of 
+column names in the schema argument, or you can specify the CSV has a header row and Quokka will read the schema 
+from it. You should also specify the CSV's separator. </p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>table_location</strong> (str) : where the CSV(s) are. This mostly mimics Spark behavior. Look at the examples.</li>
+<li><strong>schema</strong> (list) : you can provide a list of column names, it's kinda like polars.read_csv(new_columns=...)</li>
+<li><strong>has_header</strong> (bool) : is there a header row. If the schema is not provided, this should be True. If the schema IS provided, 
+    this can still be True. Quokka will just ignore the header row.</li>
+<li><strong>sep</strong> (str) : default to ',' but could be something else, like '|' for TPC-H tables</li>
+</ul>
+<hr />
+<p>Return:
+    A new DataStream if the CSV file is larger than 10MB, otherwise a Polars DataFrame. </p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python"># read a single CSV. It's better always to specify the absolute path.
+&gt;&gt;&gt; lineitem = qc.read_csv(&quot;/home/ubuntu/tpch/lineitem.csv&quot;)
+
+# read a directory of CSVs 
+&gt;&gt;&gt; lineitem = qc.read_csv(&quot;/home/ubuntu/tpch/lineitem/*&quot;)
+
+# read a single CSV from S3
+&gt;&gt;&gt; lineitem = qc.read_csv(&quot;s3://tpc-h-csv/lineitem/lineitem.tbl.1&quot;)
+
+# read CSVs from S3 bucket with prefix
+&gt;&gt;&gt; lineitem = qc.read_csv(&quot;s3://tpc-h-csv/lineitem/*&quot;)
+</code></pre>
 <h3 id="read_parquet">.read_parquet</h3>
-<p><a href="https://github.com/blob/master/df.py/#L173">source</a></p>
+<p><a href="https://github.com/blob/master/df.py/#L209">source</a></p>
 <pre><code class="language-python">.read_parquet(
    table_location: str, schema = None
 )
 </code></pre>
-<h3 id="new_stream">.new_stream</h3>
-<p><a href="https://github.com/blob/master/df.py/#L275">source</a></p>
-<pre><code class="language-python">.new_stream(
-   sources: dict, partitioners: dict, node: Node, schema: list, ordering = None
-)
-</code></pre>
-<h3 id="new_dataset">.new_dataset</h3>
-<p><a href="https://github.com/blob/master/df.py/#L291">source</a></p>
-<pre><code class="language-python">.new_dataset(
-   source, schema: list
-)
-</code></pre>
-<h3 id="optimize">.optimize</h3>
-<p><a href="https://github.com/blob/master/df.py/#L296">source</a></p>
-<pre><code class="language-python">.optimize(
-   node_id
-)
-</code></pre>
-<h3 id="lower">.lower</h3>
-<p><a href="https://github.com/blob/master/df.py/#L314">source</a></p>
-<pre><code class="language-python">.lower(
-   end_node_id, collect = True
-)
-</code></pre>
-<h3 id="execute_node">.execute_node</h3>
-<p><a href="https://github.com/blob/master/df.py/#L374">source</a></p>
-<pre><code class="language-python">.execute_node(
-   node_id, explain = False, mode = None, collect = True
-)
-</code></pre>
-<h3 id="explain">.explain</h3>
-<p><a href="https://github.com/blob/master/df.py/#L413">source</a></p>
-<pre><code class="language-python">.explain(
-   node_id, mode = 'graph'
-)
-</code></pre>
 <hr />
-<h2 id="dataset">DataSet</h2>
-<p><a href="https://github.com/blob/master/df.py/#L699">source</a></p>
-<pre><code class="language-python">DataSet(
-   quokka_context: QuokkaContext, schema: dict, source_node_id: int
-)
+<p>Read Parquet. It can be a single Parquet or a list of Parquets. It can be Parquet(s) on disk
+or Parquet(s) on S3. Currently other cloud sare not supported. You don't really have to supply the schema
+since you can get it from the metadata always, but you can if you want.</p>
+<p><strong>Args</strong></p>
+<ul>
+<li><strong>table_location</strong> (str) : where the Parquet(s) are. This mostly mimics Spark behavior. Look at the examples.</li>
+<li><strong>schema</strong> (list) : list of column names. This is optional. If you do supply it, please make sure it's correct!</li>
+</ul>
+<hr />
+<p>Return:
+    A new DataStream if the Parquet file is larger than 10MB, otherwise a Polars DataFrame. </p>
+<p><strong>Examples</strong></p>
+<pre><code class="language-python"># read a single Parquet. It's better always to specify the absolute path.
+&gt;&gt;&gt; lineitem = qc.read_parquet(&quot;/home/ubuntu/tpch/lineitem.parquet&quot;)
+
+# read a directory of Parquets 
+&gt;&gt;&gt; lineitem = qc.read_parquet(&quot;/home/ubuntu/tpch/lineitem/*&quot;)
+
+# read a single Parquet from S3
+&gt;&gt;&gt; lineitem = qc.read_parquet(&quot;s3://tpc-h-parquet/lineitem.parquet&quot;)
+
+# read Parquets from S3 bucket with prefix
+&gt;&gt;&gt; lineitem = qc.read_parquet(&quot;s3://tpc-h-parquet/lineitem/*&quot;)
 </code></pre>
               
             </div>
