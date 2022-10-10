@@ -2,7 +2,7 @@
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/quokka-banner.png?raw=true" alt="Title"/>
 </p>
 
-[![Join Discord](https://img.shields.io/badge/-Join%20Quokka%20Discord-blue?logo=discord)](https://discord.gg/YKbK2TVk)
+[![Join Discord](https://img.shields.io/badge/-Join%20Quokka%20Discord-blue?logo=discord)](https://discord.gg/6ujVV9HAg3)
 
 ## What?
 
@@ -44,6 +44,6 @@ Quokka stands on the shoulders of giants. It uses [Ray](https://github.com/ray-p
 
 Please refer to the [docs](https://marsupialtail.github.io/quokka/) and examples in the apps directory. 
 
-For any questions/concerns/just want to chat: zihengw@stanford.edu, or join the [Discord](https://discord.gg/YKbK2TVk) channel. Please do reach out before you use Quokka for anything real -- the code is currently written by a single underpaid PhD student, who is nevertheless happy to make Quokka work for your very specific use case.
+For any questions/concerns/just want to chat: zihengw@stanford.edu, or join the [Discord](https://discord.gg/6ujVV9HAg3) channel. Please do reach out before you use Quokka for anything real -- the code is currently written by a single underpaid PhD student, who is nevertheless happy to make Quokka work for your very specific use case.
 
 Please raise a Github issue if you encounter any issues.
