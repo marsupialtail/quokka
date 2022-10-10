@@ -2,7 +2,7 @@
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/quokka-banner.png?raw=true" alt="Title"/>
 </p>
 
-Docs: https://marsupialtail.github.io/quokka/
+## What?
 
 Quokka is a pure-Python fast data processing engine. It can be leveraged to obtain near-peak performance on SQL queries on data "lakes" with CSV and Parquet file formats. It is often several times faster than SparkSQL and an order of magnitude faster than Dask. 
 
@@ -11,6 +11,13 @@ Quokka is a pure-Python fast data processing engine. It can be leveraged to obta
 </p>
 
 Quokka operates on DataStreams, which are basically Spark RDDs except data partitions can be produced serially. A data partition can be consumed immediately after it's produced, unlike Spark where all the partitions have to be present in the RDD before the shuffle happens. This allows Quokka to pipeline multiple shuffles and I/O, leading to large performance gains.
+
+## How?
+
+~~~python
+pip3 install pyquokka
+~~~
+Docs: https://marsupialtail.github.io/quokka/
 
 Quokka offers a DataStream API that resembles Spark's DataFrame API:
 
@@ -26,6 +33,8 @@ return f.collect()
 ~~~
 
 Currently Quokka supports reading data from CSV/Parquet on disk/S3, though theoretically any data source can be supported: Apache Iceberg/DeltaLake/Hudi, S3 bucket of images (apps/pinecone.py), Ethereum blockchain through web3 APIs, transactional database CDC endpoints etc. If you have some esoteric data source that you want to run analytics on, please send me a challenge as a Github issue. 
+
+## Fineprint
 
 Quokka should not be used as a replacement for SparkSQL (it doesn't parse SQL directly yet, though it is on the roadmap). Instead you can play with it to see if it can give you better performance for your use cases. Another strength of Quokka is that it's Python-native, so you will never have to worry about JVM errors when you start using hairy UDFs with custom Python packages.
 
