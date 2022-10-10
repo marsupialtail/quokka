@@ -2,6 +2,8 @@
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/quokka-banner.png?raw=true" alt="Title"/>
 </p>
 
+[![Join Discord](https://img.shields.io/badge/-Join%20Skyplane%20Slack-blue?logo=slack)](https://discord.gg/YKbK2TVk)
+
 ## What?
 
 Quokka is a pure-Python fast data processing engine. It can be leveraged to obtain near-peak performance on SQL queries on data "lakes" with CSV and Parquet file formats. It is often several times faster than SparkSQL and an order of magnitude faster than Dask. 
