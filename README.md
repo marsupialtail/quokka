@@ -2,7 +2,7 @@
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/quokka-banner.png?raw=true" alt="Title"/>
 </p>
 
-[![Join Discord](https://img.shields.io/badge/-Join%20Skyplane%20Slack-blue?logo=slack)](https://discord.gg/YKbK2TVk)
+[![Join Discord](https://img.shields.io/badge/-Join%20Quokka%20Discord-blue?logo=slack)](https://discord.gg/YKbK2TVk)
 
 ## What?
 
