@@ -19,7 +19,7 @@ Quokka operates on DataStreams, which are basically Spark RDDs except data parti
 ~~~python
 pip3 install pyquokka
 ~~~
-Docs: https://marsupialtail.github.io/quokka/
+**Docs**: https://marsupialtail.github.io/quokka/
 
 Quokka offers a DataStream API that resembles Spark's DataFrame API:
 
