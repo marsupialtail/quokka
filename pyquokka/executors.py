@@ -88,6 +88,7 @@ class OutputExecutor(Executor):
         fs = LocalFileSystem() if self.mode == "local" else S3FileSystem()
         self.my_batches.extend([i for i in batches if i is not None])
 
+
         '''
         You want to use Payrrow's write table API to flush everything at once. to get the parallelism.
         Being able to write multiple row groups at once really speeds things up. It's okay if you are slow at first
@@ -96,6 +97,9 @@ class OutputExecutor(Executor):
 
         lengths = [len(batch) for batch in self.my_batches]
         total_len = np.sum(lengths)
+
+        print(time.time(), len(self.my_batches), total_len)
+
         write_len = total_len // self.row_group_size * self.row_group_size
         cum_sum = np.cumsum(lengths)
         if len(np.where(cum_sum > write_len)[0]) == 0:

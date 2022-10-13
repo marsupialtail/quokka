@@ -1,6 +1,4 @@
-# Getting Started
-
-## Quokka in Three Cartoons
+# Quokka in Three Cartoons
 
 The fundamental concept in Quokka is a **stream of Polars DataFrames**, which we call a **DataStream**. A Polars DataFrame is basically a Pandas DataFrame, except that it's backed by [Apache Arrow](https://arrow.apache.org/) and supports fast compute with [Polars](https://github.com/pola-rs/polars). Readers familiar with Spark RDDs can interpret a DataStream as an RDD where data partitions are materialized in sequence. In contrast to Spark, partitions can be consumed as soon as they are generated. This facilitates pipelining between multiple data processing stages and is the primary reason why Quokka is fast.
 
@@ -23,36 +21,6 @@ At its core, Quokka uses [Ray](https://github.com/ray-project/ray) actors. Each 
 <p style="text-align:center;"><img src="../quokkas-placement.svg" width=800></p>
 
 The user also shouldn't have to worry about this scheduling in most cases if using the DataStream API. However I couldn't resist making this cartoon, and it might be cool to know how Quokka works under the hood.
-
-
-## Installation
-
-If you plan on trying out Quokka for whatever reason, I'd love to hear from you. Please send an email to zihengw@stanford.edu or join the [Discord](https://discord.gg/YKbK2TVk).
-
-Quokka can be installed as a pip package: 
-~~~bash
-pip3 install pyquokka
-~~~
-
-**However it needs the latest version of Redis (at least 7.0)**, which you can get by running the following:
-~~~bash
-curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
-
-echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list
-
-sudo apt-get update
-sudo apt-get install redis
-~~~
-
-If you only plan on running Quokka locally, you are done. Here is a [10 min lesson](simple.md) on how it works.
-
-If you are planning on reading files from S3, you need to install the awscli and you have your credentials set up.
-
-If you plan on using Quokka for cloud by launching EC2 clusters, there's a bit more setup that needs to be done. Currently Quokka only provides support for AWS. Quokka provides a utility library under `pyquokka.utils` which allows you to manager clusters and connect to them. It assumes that awscli is configured locally and you have a keypair and a security group with the proper configurations. To set these things up, you can follow the [AWS guide](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-quickstart.html). 
-
-More detailed instructions can be found in [Setting Up Cloud Cluster](cloud.md).
-
-Quokka also plans to extend support to Docker/Kubernetes based deployments based on KubeRay. (Contributions welcome!)
 
 <p align = "center">
 Image credits: some icons taken from flaticon.com.

@@ -66,34 +66,34 @@ class QuokkaContext:
     def read_csv(self, table_location: str, schema = None, has_header = False, sep=","):
 
         """
-        Read in a CSV file from a table location. It can be a single CSV or a list of CSVs. It can be CSV(s) on disk
+        Read in a CSV file or files from a table location. It can be a single CSV or a list of CSVs. It can be CSV(s) on disk
         or CSV(s) on S3. Currently other cloud sare not supported. The CSVs can have a predefined schema using a list of 
         column names in the schema argument, or you can specify the CSV has a header row and Quokka will read the schema 
         from it. You should also specify the CSV's separator. 
 
         Args:
             table_location (str): where the CSV(s) are. This mostly mimics Spark behavior. Look at the examples.
-            on (str): You could either specify this, if the join column has the same name in this DataStream and `right`, or `left_on` and `right_on` 
-                if the join columns don't have the same name.
-            left_on (str): the name of the join column in this DataStream.
-            right_on (str): the name of the join column in `right`.
-            suffix (str): if `right` has columns with the same names as columns in this DataStream, their names will be appended with the suffix in the result.
-            how (str): only supports "inner" for now. 
+            schema (list): you can provide a list of column names, it's kinda like polars.read_csv(new_columns=...)
+            has_header (bool): is there a header row. If the schema is not provided, this should be True. If the schema IS provided, 
+                this can still be True. Quokka will just ignore the header row.
+            sep (str): default to ',' but could be something else, like '|' for TPC-H tables
 
         Return:
-            A new DataStream that's the joined result of this DataStream and "right". By default, columns from both side will be retained, 
-            except for `right_on` from the right side. 
+            A new DataStream if the CSV file is larger than 10MB, otherwise a Polars DataFrame. 
         
         Examples:
             ~~~python
-            >>> lineitem = qc.read_csv("lineitem.csv")
+            # read a single CSV. It's better always to specify the absolute path.
+            >>> lineitem = qc.read_csv("/home/ubuntu/tpch/lineitem.csv")
 
-            >>> orders = qc.read_csv("orders.csv")
+            # read a directory of CSVs 
+            >>> lineitem = qc.read_csv("/home/ubuntu/tpch/lineitem/*")
 
-            >>> result = lineitem.join(orders, left_on = "l_orderkey", right_on = "o_orderkey")
+            # read a single CSV from S3
+            >>> lineitem = qc.read_csv("s3://tpc-h-csv/lineitem/lineitem.tbl.1")
 
-            # this will now fail, since o_orderkey is not in the joined DataStream.
-            >>> result = result.select(["o_orderkey"])
+            # read CSVs from S3 bucket with prefix
+            >>> lineitem = qc.read_csv("s3://tpc-h-csv/lineitem/*")
             ~~~
         """
 
@@ -149,7 +149,7 @@ class QuokkaContext:
                         schema = resp[:first_newline].decode("utf-8").split(sep)
 
                     self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep, has_header)
-            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(self.cluster.cpu_count * 2))
+            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(1))
         else:
 
             if type(self.cluster) == EC2Cluster:
@@ -207,6 +207,35 @@ class QuokkaContext:
     '''
 
     def read_parquet(self, table_location: str, schema = None):
+
+        """
+        Read Parquet. It can be a single Parquet or a list of Parquets. It can be Parquet(s) on disk
+        or Parquet(s) on S3. Currently other cloud sare not supported. You don't really have to supply the schema
+        since you can get it from the metadata always, but you can if you want.
+
+        Args:
+            table_location (str): where the Parquet(s) are. This mostly mimics Spark behavior. Look at the examples.
+            schema (list): list of column names. This is optional. If you do supply it, please make sure it's correct!
+
+        Return:
+            A new DataStream if the Parquet file is larger than 10MB, otherwise a Polars DataFrame. 
+        
+        Examples:
+            ~~~python
+            # read a single Parquet. It's better always to specify the absolute path.
+            >>> lineitem = qc.read_parquet("/home/ubuntu/tpch/lineitem.parquet")
+
+            # read a directory of Parquets 
+            >>> lineitem = qc.read_parquet("/home/ubuntu/tpch/lineitem/*")
+
+            # read a single Parquet from S3
+            >>> lineitem = qc.read_parquet("s3://tpc-h-parquet/lineitem.parquet")
+
+            # read Parquets from S3 bucket with prefix
+            >>> lineitem = qc.read_parquet("s3://tpc-h-parquet/lineitem/*")
+            ~~~
+        """
+
         if table_location[:5] == "s3://":
 
             if type(self.cluster) == LocalCluster:
@@ -576,8 +605,8 @@ class QuokkaContext:
         targets = node.targets
 
         if issubclass(type(node), SourceNode):
-            # push down predicates to the Parquet Nodes!, for the CSV nodes give up
-            if type(node) == InputDiskParquetNode or type(node) == InputS3ParquetNode:
+            # push down predicates to the Parquet Nodes! It benefits CSV nodes too because believe it or not polars.from_arrow could be slow
+            if type(node) == InputDiskParquetNode or type(node) == InputS3ParquetNode or type(node) == InputDiskCSVNode or type(node) == InputS3CSVNode:
                 projection = set()
                 predicate_required_columns = set()
                 for target_id in targets:
@@ -591,9 +620,11 @@ class QuokkaContext:
                 
                 # the node.required_columns for this input node is the union of the required columns of 
                 node.projection = projection.union(predicate_required_columns)
-                for target_id in targets:
-                    if targets[target_id].projection == node.projection:
-                        targets[target_id].projection = None
+                
+                # still do the extra projection to ensure columns appear in the right order.
+                #for target_id in targets:
+                #    if targets[target_id].projection == node.projection:
+                #        targets[target_id].projection = None
 
                 return
             else:

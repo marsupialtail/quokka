@@ -120,10 +120,11 @@ class QuokkaClusterManager:
                     raise Exception("Couldn't connect to new instance in 30 seconds.")
                 time.sleep(5)
         
+        self.launch_all("ulimit -c unlimited", public_ips, "Failed to set ulimit")
         self.launch_all("redis-6.2.6/src/redis-server redis-6.2.6/redis.conf --port 6800 --protected-mode no&", public_ips, "Failed to start Redis server on new worker")
         leader_public_ip = public_ips[0]
         leader_private_ip = private_ips[0]
-        z = os.system("""ssh -oStrictHostKeyChecking=no -i """ + self.key_location + """ ubuntu@""" + leader_public_ip + """ -t "echo '* hard nofile 65536\n* soft nofile 65536' | sudo tee /etc/security/limits.conf" """)
+        z = os.system("""ssh -oStrictHostKeyChecking=no -i """ + self.key_location + """ ubuntu@""" + leader_public_ip + """ -t "echo '* hard nofile 65536\n* soft nofile 65536\n* hard core unlimited\n* soft core unlimited' | sudo tee /etc/security/limits.conf" """)
         z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + 
         " /home/ubuntu/.local/bin/ray start --head --port=6380")
         if z != 0:

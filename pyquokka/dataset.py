@@ -1,4 +1,6 @@
+from ast import Bytes
 import pickle
+import pyarrow as pa
 import pyarrow.csv as csv
 import pyarrow.parquet as pq
 import pyarrow.dataset as ds
@@ -10,10 +12,13 @@ from collections import deque
 import polars
 import numpy as np
 import s3fs
+import gc
 from pyarrow.fs import S3FileSystem, LocalFileSystem
 from pyarrow.dataset import FileSystemDataset, ParquetFileFormat
 from pyquokka.sql_utils import filters_to_expression
-
+import multiprocessing
+import concurrent.futures
+import time
 
 class RedisObjectsDataset:
 
@@ -97,6 +102,64 @@ class InputEC2ParquetDataset:
                 
                 curr_pos += self.num_channels
                 yield curr_pos, polars.from_arrow(a)
+
+# class InputEC2ParquetDataset:
+
+#     # filter pushdown could be profitable in the future, especially when you can skip entire Parquet files
+#     # but when you can't it seems like you still read in the entire thing anyways
+#     # might as well do the filtering at the Pandas step. Also you need to map filters to the DNF form of tuples, which could be
+#     # an interesting project in itself. Time for an intern?
+
+#     def __init__(self, bucket, prefix, columns=None, filters=None) -> None:
+
+#         self.bucket = bucket
+#         self.prefix = prefix
+#         assert self.prefix is not None
+
+#         self.num_channels = None
+#         self.columns = columns
+#         self.filters = filters
+
+#         self.length = 0
+#         self.workers = multiprocessing.cpu_count()
+
+
+#     def set_num_channels(self, num_channels):
+#         assert self.num_channels == num_channels
+#         self.s3 = boto3.client('s3')
+
+#     def get_own_state(self, num_channels):
+#         self.num_channels = num_channels
+#         s3 = boto3.client('s3')
+#         z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
+#         self.files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
+#         self.length += sum([i['Size'] for i in z['Contents'] if i['Key'].endswith(".parquet")])
+#         while 'NextContinuationToken' in z.keys():
+#             z = self.s3.list_objects_v2(
+#                 Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
+#             self.files.extend([i['Key'] for i in z['Contents']
+#                               if i['Key'].endswith(".parquet")])
+#             self.length += sum([i['Size'] for i in z['Contents']
+#                               if i['Key'].endswith(".parquet")])
+
+
+#     def get_next_batch(self, mapper_id, pos=None):
+
+#         def download(file):
+#             return polars.from_arrow(pq.read_table("s3://" + self.bucket + "/" +
+#                               file, columns=self.columns, filters=self.filters))
+
+#         assert self.num_channels is not None
+#         executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
+#         my_files = [self.files[k] for k in range(mapper_id, len(self.files), self.num_channels)]
+#         if len(my_files) == 0:
+#             yield None, None
+        
+#         # this will return things out of order, but that's ok!
+
+#         future_to_url = {executor.submit(download, file): file for file in my_files}
+#         for future in concurrent.futures.as_completed(future_to_url):
+#             yield future_to_url[future], future.result()
 
 class InputParquetDataset:
     def __init__(self, filepath, mode = "local", columns = None, filters = None) -> None:
@@ -237,7 +300,7 @@ class InputDiskFilesDataset:
        
 # this should work for 1 CSV up to multiple
 class InputDiskCSVDataset:
-    def __init__(self, filepath , names = None , sep=",", stride=16 * 1024 * 1024, header = False, window = 1024 * 4) -> None:
+    def __init__(self, filepath , names = None , sep=",", stride=16 * 1024 * 1024, header = False, window = 1024 * 4, columns = None) -> None:
         self.filepath = filepath
 
         self.num_channels = None
@@ -245,6 +308,7 @@ class InputDiskCSVDataset:
         self.sep = sep
         self.stride = stride
         self.header = header
+        self.columns = columns
         
         self.window = window
         assert not (names is None and header is False), "if header is False, must supply column names"
@@ -393,6 +457,7 @@ class InputDiskCSVDataset:
 
                         bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
                             column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+                        bump = bump.select(self.columns) if self.columns is not None else bump
                         
                         pos += last_newline + 1
                         
@@ -402,32 +467,266 @@ class InputDiskCSVDataset:
                 curr_pos += 1
 
 
+# # this should work for 1 CSV up to multiple
+# class InputS3CSVDataset:
+#     def __init__(self, bucket, names = None, prefix = None, key = None, sep=",", stride=64 * 1024 * 1024, header = False, window = 1024 * 32, columns = columns) -> None:
+#         self.bucket = bucket
+#         self.prefix = prefix
+#         self.key = key
+
+#         assert (self.prefix is None and self.key is not None) or (self.prefix is not None and self.key is None)
+
+#         self.num_channels = None
+#         self.names = names
+#         self.sep = sep
+#         self.stride = stride
+#         self.header = header
+#         self.columns = columns
+        
+#         self.window = window
+#         assert not (names is None and header is False), "if header is False, must supply column names"
+
+#         self.length = 0
+#         #self.sample = None
+    
+#     # we need to rethink this whole setting num channels business. For this operator we don't want each node to do redundant work!
+#     def get_own_state(self, num_channels):
+        
+#         #samples = []
+#         print("Initializing S3 CSV dataset. This is currently done locally and serially, which might take a while.")
+#         self.num_channels = num_channels
+
+#         s3 = boto3.client('s3')  # needs boto3 client, however it is transient and is not part of own state, so Ray can send this thing! 
+#         if self.key is not None:
+#             files = deque([self.key])
+#             response = s3.head_object(Bucket=self.bucket, Key=self.key)
+#             sizes = deque([response['ContentLength']])
+#         else:
+#             if self.prefix is not None:
+#                 z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
+#                 files = z['Contents']
+#                 while 'NextContinuationToken' in z.keys():
+#                     z = s3.list_objects_v2(
+#                         Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
+#                     files.extend(z['Contents'])
+#             else:
+#                 z = s3.list_objects_v2(Bucket=self.bucket)
+#                 files = z['Contents']
+#                 while 'NextContinuationToken' in z.keys():
+#                     z = s3.list_objects_v2(
+#                         Bucket=self.bucket, ContinuationToken=z['NextContinuationToken'])
+#                     files.extend(z['Contents'])
+#             sizes = deque([i['Size'] for i in files])
+#             files = deque([i['Key'] for i in files])
+
+#         if self.header:
+#             resp = s3.get_object(
+#                 Bucket=self.bucket, Key=files[0], Range='bytes={}-{}'.format(0, self.window))['Body'].read()
+#             first_newline = resp.find(bytes('\n', 'utf-8'))
+#             if first_newline == -1:
+#                 raise Exception("could not detect the first line break. try setting the window argument to a large number")
+#             if self.names is None:
+#                 self.names = resp[:first_newline].decode("utf-8").split(",")
+#             else:
+#                 detected_names = resp[:first_newline].decode("utf-8").split(self.sep)
+#                 if self.names != detected_names:
+#                     print("Warning, detected column names from header row not the same as supplied column names!")
+#                     print("Detected", detected_names)
+#                     print("Supplied", self.names)
+
+#         total_size = sum(sizes)
+#         size_per_channel = total_size // num_channels
+#         channel_infos = {}
+
+#         start_byte = 0
+#         real_off = 0
+
+#         for channel in range(num_channels):
+#             my_file = []
+#             curr_size = 0
+#             done = False
+#             while curr_size + sizes[0] <= size_per_channel:
+#                 my_file.append(files.popleft())
+#                 end_byte = sizes.popleft()
+#                 if len(sizes) == 0:
+#                     done = True
+#                     break # we are taking off a bit more work each time so the last channel might leave before filling up size per channel
+#                 curr_size += end_byte
+#                 real_off = 0
+        
+#             if done:
+#                 channel_infos[channel] = (start_byte, my_file.copy(), real_off + end_byte)
+#                 break
+
+#             #curr_size + size[0] > size_per_channel, the leftmost file has enough bytes to satisfy the channel
+#             # this never gonna happen in real life
+#             if curr_size == size_per_channel:
+#                 channel_infos[channel] = (start_byte, my_file.copy(), real_off + end_byte)
+#                 continue
+
+#             my_file.append(files[0])
+#             candidate = size_per_channel - curr_size
+
+#             start = max(0, candidate - self.window)
+#             end = min(candidate + self.window, sizes[0])
+
+#             resp = s3.get_object(
+#                 Bucket=self.bucket, Key=files[0], Range='bytes={}-{}'.format(real_off + start,real_off + end))['Body'].read()
+#             first_newline = resp.find(bytes('\n', 'utf-8'))
+#             last_newline = resp.rfind(bytes('\n', 'utf-8'))
+#             if last_newline == -1:
+#                 raise Exception
+#             else:
+#                 bytes_to_take = start + last_newline
+#                 #samples.append(csv.read_csv(BytesIO(resp[first_newline: last_newline]), read_options=csv.ReadOptions(
+#                 #    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)))
+
+#             sizes[0] -= bytes_to_take
+#             end_byte = real_off + bytes_to_take
+#             real_off += bytes_to_take
+#             channel_infos[channel] = (start_byte, my_file.copy(), end_byte)
+#             start_byte = real_off
+        
+#         self.length = total_size
+#         #self.sample = pa.concat_tables(samples)
+#         self.channel_infos = channel_infos
+#         print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
+
+
+#     def get_next_batch(self, mapper_id, state = None):
+#         assert self.num_channels is not None
+
+#         if mapper_id not in self.channel_infos:
+#             yield None, None
+#         else:
+#             files = self.channel_infos[mapper_id][1]
+#             s3 = boto3.client('s3')
+            
+#             if state is None:
+#                 curr_pos = 0
+#                 pos = self.channel_infos[mapper_id][0]
+#             else:
+#                 curr_pos, pos = state
+                
+#             while curr_pos < len(files):
+                
+#                 file = files[curr_pos]
+#                 if curr_pos != len(files) - 1:
+#                     response = s3.head_object(
+#                         Bucket=self.bucket,
+#                         Key= file
+#                     )
+#                     length = response['ContentLength']
+#                     end = length
+#                 else:
+#                     end = self.channel_infos[mapper_id][2]
+
+                
+#                 while pos < end-1:
+
+#                     resp = s3.get_object(Bucket=self.bucket, Key=file, Range='bytes={}-{}'.format(
+#                         pos, min(pos+self.stride, end)))['Body'].read()
+#                     last_newline = resp.rfind(bytes('\n', 'utf-8'))
+
+#                     if last_newline == -1:
+#                         raise Exception
+#                     else:
+#                         resp = resp[:last_newline]
+
+#                         if self.header and pos == 0:
+#                             first_newline = resp.find(bytes('\n','utf-8'))
+#                             if first_newline == -1:
+#                                 raise Exception
+#                             resp = resp[first_newline + 1:]
+
+#                         bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
+#                             column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+                        
+#                         pos += last_newline
+#                         bump = bump.select(self.columns) if self.columns is not None else bump
+                        
+#                         yield (curr_pos, pos) , polars.from_arrow(bump)
+
+#                 pos = 0
+#                 curr_pos += 1
+
+
+class FakeFile:
+    def __init__(self, buffers, last_newline, prefix, end_file):
+        self.prefix = prefix
+        self.buffers = buffers
+        self.closed = False
+        self.which_file = 0
+        self.file_cursor = 0
+        self.last_newline = last_newline 
+        self.end = len(buffers[0]) if end_file != 0 else last_newline
+        self.is_first_read = True
+        self.end_file = end_file
+
+    def read(self, length):
+        if self.file_cursor + length < self.end:
+            if self.is_first_read:
+                self.file_cursor += length - len(self.prefix)
+                self.is_first_read = False
+                buf = self.prefix + self.buffers[0][:self.file_cursor]
+                #print(self.prefix)
+                #print(buf[:100])
+                return buf
+            else:
+                self.file_cursor += length
+                return self.buffers[self.which_file][self.file_cursor - length: self.file_cursor]
+        else:
+
+            buf = self.buffers[self.which_file][self.file_cursor : self.end ]
+
+            if self.which_file == self.end_file:
+                self.file_cursor = self.last_newline
+            else:
+                self.file_cursor = self.file_cursor + length - self.end
+                self.which_file += 1
+                buf += self.buffers[self.which_file][:self.file_cursor]
+                if self.which_file == self.end_file:
+                    self.end = self.last_newline
+                else:
+                    self.end = len(self.buffers[self.which_file])
+            return buf
+
+    def get_end(self):
+        return self.buffers[self.end_file][self.last_newline: len(self.buffers[self.end_file])]
+    
+    def seek(self):
+        raise NotImplementedError
+
 # this should work for 1 CSV up to multiple
 class InputS3CSVDataset:
-    def __init__(self, bucket, names = None, prefix = None, key = None, sep=",", stride=64 * 1024 * 1024, header = False, window = 1024 * 32) -> None:
+    def __init__(self, bucket, names = None, prefix = None, key = None, sep=",", stride=2e8, header = False, window = 1024 * 32, columns = None) -> None:
         self.bucket = bucket
         self.prefix = prefix
         self.key = key
-
-        assert (self.prefix is None and self.key is not None) or (self.prefix is not None and self.key is None)
-
         self.num_channels = None
         self.names = names
         self.sep = sep
         self.stride = stride
         self.header = header
-        
+        self.columns = columns
+
         self.window = window
         assert not (names is None and header is False), "if header is False, must supply column names"
 
         self.length = 0
-        #self.sample = None
+        self.sample = None
+
+        self.workers = 16
+
+    def set_num_channels(self, num_channels):
+        assert self.num_channels == num_channels
+        self.s3 = boto3.client('s3')  # needs boto3 client
     
     # we need to rethink this whole setting num channels business. For this operator we don't want each node to do redundant work!
     def get_own_state(self, num_channels):
         
-        #samples = []
-        print("Initializing S3 CSV dataset. This is currently done locally and serially, which might take a while.")
+        samples = []
+        print("intiializing CSV reading strategy. This is currently done locally, which might take a while.")
         self.num_channels = num_channels
 
         s3 = boto3.client('s3')  # needs boto3 client, however it is transient and is not part of own state, so Ray can send this thing! 
@@ -462,7 +761,7 @@ class InputS3CSVDataset:
             if self.names is None:
                 self.names = resp[:first_newline].decode("utf-8").split(",")
             else:
-                detected_names = resp[:first_newline].decode("utf-8").split(self.sep)
+                detected_names = resp[:first_newline].decode("utf-8").split(",")
                 if self.names != detected_names:
                     print("Warning, detected column names from header row not the same as supplied column names!")
                     print("Detected", detected_names)
@@ -512,8 +811,8 @@ class InputS3CSVDataset:
                 raise Exception
             else:
                 bytes_to_take = start + last_newline
-                #samples.append(csv.read_csv(BytesIO(resp[first_newline: last_newline]), read_options=csv.ReadOptions(
-                #    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)))
+                samples.append(csv.read_csv(BytesIO(resp[first_newline: last_newline]), read_options=csv.ReadOptions(
+                    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)))
 
             sizes[0] -= bytes_to_take
             end_byte = real_off + bytes_to_take
@@ -528,60 +827,100 @@ class InputS3CSVDataset:
 
 
     def get_next_batch(self, mapper_id, state = None):
+
+        s3 = boto3.client("s3")
+
         assert self.num_channels is not None
-
-        if mapper_id not in self.channel_infos:
-            yield None, None
+        files = self.channel_infos[mapper_id][1]
+        
+        if state is None:
+            curr_pos = 0
+            pos = self.channel_infos[mapper_id][0]
         else:
-            files = self.channel_infos[mapper_id][1]
-            s3 = boto3.client('s3')
+            curr_pos, pos = state
+        
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
+
+        while curr_pos < len(files):
             
-            if state is None:
-                curr_pos = 0
-                pos = self.channel_infos[mapper_id][0]
+            file = files[curr_pos]
+            if curr_pos != len(files) - 1:
+                response = self.s3.head_object(
+                    Bucket=self.bucket,
+                    Key= file
+                )
+                length = response['ContentLength']
+                end = length
             else:
-                curr_pos, pos = state
+                end = self.channel_infos[mapper_id][2]
+            
+            def download(x):
                 
-            while curr_pos < len(files):
+                end_byte = min(pos + x * self.stride + self.stride - 1, end - 1)
+                start_byte = pos + x * self.stride
+                if start_byte > end_byte:
+                    return None
+                return s3.get_object(Bucket=self.bucket, Key= file, Range='bytes={}-{}'.format(start_byte, end_byte))['Body'].read()
+
+            prefix = b''
+
+            bytes_to_read = end - pos
+
+            batches = (bytes_to_read - 1) // (self.workers * self.stride) + 1
+
+            for k in range(0, batches):
+                a = [k * self.workers + z for z in range(self.workers)]
+                future_to_url = {executor.submit(download, x): x for x in a}
+                start = time.time()
+                results = {}
+                for future in concurrent.futures.as_completed(future_to_url):
+                    url = future_to_url[future] - a[0]
+                    data = future.result()
+                    results[url] = data
+                print("download", time.time() - start)
+
+                start = time.time()
+                last_file = self.workers - 1
+
+                for z in a:
+                    if results[z - a[0]] is None:
+                        last_file = z -1 - a[0]
+                        break
                 
-                file = files[curr_pos]
-                if curr_pos != len(files) - 1:
-                    response = s3.head_object(
-                        Bucket=self.bucket,
-                        Key= file
-                    )
-                    length = response['ContentLength']
-                    end = length
-                else:
-                    end = self.channel_infos[mapper_id][2]
+                if last_file == -1:
+                    raise Exception("something is wrong, try changing the stride")
 
+                last_newline = results[last_file].rfind(bytes('\n', 'utf-8'))
+
+                fake_file = FakeFile(results, last_newline, prefix, last_file)
+                bump = csv.read_csv(fake_file, read_options=csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+                prefix = fake_file.get_end()
+                del fake_file
+
+                # concatenated = prefix
+                # for z in a:
+                #     if results[z-a[0]] is None:
+                #         break
+                #     else:
+                #         concatenated += results[z-a[0]]
+                # last_newline = concatenated.rfind(bytes('\n','utf-8'))
+                # prefix = concatenated[last_newline:]
+
+                # bump = csv.read_csv(BytesIO(concatenated[:last_newline]), read_options=csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+
+                bump = bump.select(self.columns) if self.columns is not None else bump
                 
-                while pos < end-1:
+                print("convert", time.time() - start)
+                
+                del results
+                gc.collect()
+                print("memory usage before yield", pa.total_allocated_bytes())
+                yield (None), bump
+                del bump
+                gc.collect()
+                print("memory usage after yield", pa.total_allocated_bytes())
+                
 
-                    resp = s3.get_object(Bucket=self.bucket, Key=file, Range='bytes={}-{}'.format(
-                        pos, min(pos+self.stride, end)))['Body'].read()
-                    last_newline = resp.rfind(bytes('\n', 'utf-8'))
-
-                    if last_newline == -1:
-                        raise Exception
-                    else:
-                        resp = resp[:last_newline]
-
-                        if self.header and pos == 0:
-                            first_newline = resp.find(bytes('\n','utf-8'))
-                            if first_newline == -1:
-                                raise Exception
-                            resp = resp[first_newline + 1:]
-
-                        bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
-                            column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-                        
-                        pos += last_newline
-                        
-                        yield (curr_pos, pos) , polars.from_arrow(bump)
-
-                pos = 0
-                curr_pos += 1
-
-
+            pos = 0
+            curr_pos += 1
 

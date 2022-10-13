@@ -11,7 +11,7 @@ import sys
 import polars
 import pyarrow as pa
 import types
-import concurrent.futures
+import duckdb
 import pyarrow.flight
 # isolated simplified test bench for different fault tolerance protocols
 
@@ -25,6 +25,7 @@ def convert_to_format(batch, format):
     if format == "polars":
         # ideally you use zero copy, but this could result in bugs sometimes. https://issues.apache.org/jira/browse/ARROW-17783
         return polars.from_pandas(pa.Table.from_batches([batch]).to_pandas())
+        # return polars.from_arrow(pa.Table.from_batches([batch]))
     elif format == "pandas":
         return batch.to_pandas()
     elif format == "custom":
@@ -172,6 +173,19 @@ class Node:
             my_format = "custom"
             print("custom data does not support predicates and projections")
             raise NotImplementedError
+        
+        # if type(data) == pd.core.frame.DataFrame:
+        #     data = pa.Table.from_pandas(data)
+        # elif type(data) == polars.internals.DataFrame:
+        #     data = data.to_arrow()
+        # elif type(data) == pa.lib.Table:
+        #     pass
+        # elif type(data) == pa.lib.RecordBatch:
+        #     data = pa.Table.from_batches([data])
+        # else:
+        #     my_format = "custom"
+        #     print("custom data does not support predicates and projections")
+        #     raise NotImplementedError
 
         # downstream targets are done. You should be done too then.
         try:    
@@ -191,14 +205,18 @@ class Node:
 
             assert target_info.lowered
 
-            #print("pre-filer",data)
+            start = time.time()
             
             data = data.filter(target_info.predicate(data))
+            # data = self.con.execute("select * from data where " + target_info.predicate).arrow()
             #print("post-filer", data)
-
+            print("filter ", time.time() - start)
+            #data = polars.from_arrow(data)
+            start = time.time()
             partitioned_payload = target_info.partitioner.func(data, self.channel, len(original_channel_to_ip))
-            #print("post-partition", partitioned_payload)
+            print("partition ", time.time() - start)
 
+            
             assert type(partitioned_payload) == dict and max(partitioned_payload.keys()) < len(original_channel_to_ip)
             
             for channel in self.alive_targets[target]:
@@ -210,11 +228,16 @@ class Node:
                     payload = partitioned_payload[channel]
 
                     # the batch funcs here all expect arrow data fomat.
+
+                    start = time.time()
+
                     for func in target_info.batch_funcs:
                         if len(payload) == 0:
                             payload = None
                             break
                         payload = func(payload)
+                    
+                    print("batch func time per channel ", time.time() - start)
 
                 if payload is None or len(payload) == 0:
                     payload = None
@@ -229,6 +252,8 @@ class Node:
                 
                 client = self.flight_clients[target][channel]
                 batches, my_format = convert_from_format(payload)
+
+                start = time.time()
                 
                 # format (target id, target channel, source id, source channel, tag, format)
                 #print("pushing to target",target,"channel",channel,"from source",self.id,"channel",self.channel,"tag",self.out_seq)
@@ -249,6 +274,8 @@ class Node:
                 for batch in batches:
                     writer.write_batch(batch)
                 writer.close()
+            
+                print("push time per channel ", time.time() - start)
        
         return True
 
@@ -295,10 +322,15 @@ class InputNode(Node):
         
     def execute(self):
 
+        pa.set_cpu_count(8)
+        #self.con = duckdb.connect()
+        #self.con.execute('PRAGMA threads=%d' % 8)
         self.input_generator = self.accessor.get_next_batch(self.channel, None)
         for pos, batch in self.input_generator:
             if batch is not None and len(batch) > 0:
+                start = time.time()
                 self.push(batch)
+                print("pushing", time.time() - start)
 
         if VERBOSE:
             print("INPUT DONE", self.id, self.channel, time.time())
@@ -381,7 +413,9 @@ class NonBlockingTaskNode(TaskNode):
         while True:
 
             # be nice. 
-            time.sleep(0.01)
+            time.sleep(0.001)
+            pa.set_cpu_count(8)
+            # self.con = duckdb.connect()
             batch_info, should_terminate = self.get_batches()
             if should_terminate:
                 break
@@ -455,32 +489,50 @@ class BlockingTaskNode(TaskNode):
     
     def execute(self):
 
+        pa.set_cpu_count(8)
+        # self.con = duckdb.connect()
+
         add_tasks = []
 
         while True:
+
             batch_info, should_terminate = self.get_batches()
             if should_terminate:
                 break
             # deque messages from the mailbox in a way that makes sense
             
             stream_id, requests = self.schedule_for_execution(batch_info)
+            
+            start = time.time()
+
             if stream_id is None:
                 continue
             request = ((self.id, self.channel), requests)
 
             reader = self.flight_client.do_get(pyarrow.flight.Ticket(pickle.dumps(request)))
 
+            #print("making reader", time.time() - start)
+            start = time.time()
+
             batches = []
             while True:
                 try:
+                    #start = time.time()
                     chunk, metadata = reader.read_chunk()
+                    #print("read time", time.time() - start)
+                    #start = time.time()
                     batches.append(convert_to_format(chunk, metadata))
+                    #print("convert time", time.time() - start)
                 except StopIteration:
                     break
             
-            
+            #print("reading batches", time.time() - start)
+            start = time.time()
+
             batches = [i for i in batches if i is not None]
             results = self.functionObject.execute( batches,self.physical_to_logical_mapping[stream_id], self.channel)
+
+            #print("executing", time.time() - start)
             
             if results is not None and len(results) > 0:
                 cursor = 0

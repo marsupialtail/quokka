@@ -3,7 +3,8 @@ repo_url: https://github.com/marsupialtail/quokka
 
 nav:
         - Home: index.md
-        - Getting Started: started.md
+        - Cartoons: started.md
+        - Installation: install.md
         - Setting Up Cloud Cluster: cloud.md
         - Tutorials: 
                 - DataStream API: simple.md

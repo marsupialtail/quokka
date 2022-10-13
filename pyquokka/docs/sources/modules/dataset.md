@@ -2,7 +2,7 @@
 
 
 ## RedisObjectsDataset
-[source](https://github.com/blob/master/dataset.py/#L24)
+[source](https://github.com/blob/master/dataset.py/#L18)
 ```python 
 RedisObjectsDataset(
    channel_objects, ip_set
@@ -16,7 +16,7 @@ RedisObjectsDataset(
 
 
 ### .get_next_batch
-[source](https://github.com/blob/master/dataset.py/#L34)
+[source](https://github.com/blob/master/dataset.py/#L28)
 ```python
 .get_next_batch(
    mapper_id, pos = None
@@ -28,10 +28,10 @@ RedisObjectsDataset(
 
 
 ## InputEC2ParquetDataset
-[source](https://github.com/blob/master/dataset.py/#L54)
+[source](https://github.com/blob/master/dataset.py/#L48)
 ```python 
 InputEC2ParquetDataset(
-   filepath, columns = None, filters = None
+   bucket, prefix, columns = None, filters = None
 )
 ```
 
@@ -45,7 +45,7 @@ Generally parquet files in a directory created by tools like Spark or Quokka hav
 
 
 ### .get_own_state
-[source](https://github.com/blob/master/dataset.py/#L78)
+[source](https://github.com/blob/master/dataset.py/#L65)
 ```python
 .get_own_state(
    num_channels
@@ -54,7 +54,7 @@ Generally parquet files in a directory created by tools like Spark or Quokka hav
 
 
 ### .get_next_batch
-[source](https://github.com/blob/master/dataset.py/#L96)
+[source](https://github.com/blob/master/dataset.py/#L83)
 ```python
 .get_next_batch(
    mapper_id, pos = None
@@ -66,7 +66,7 @@ Generally parquet files in a directory created by tools like Spark or Quokka hav
 
 
 ## InputParquetDataset
-[source](https://github.com/blob/master/dataset.py/#L122)
+[source](https://github.com/blob/master/dataset.py/#L101)
 ```python 
 InputParquetDataset(
    filepath, mode = 'local', columns = None, filters = None
@@ -80,7 +80,7 @@ InputParquetDataset(
 
 
 ### .get_own_state
-[source](https://github.com/blob/master/dataset.py/#L139)
+[source](https://github.com/blob/master/dataset.py/#L118)
 ```python
 .get_own_state(
    num_channels
@@ -89,7 +89,7 @@ InputParquetDataset(
 
 
 ### .get_next_batch
-[source](https://github.com/blob/master/dataset.py/#L168)
+[source](https://github.com/blob/master/dataset.py/#L147)
 ```python
 .get_next_batch(
    mapper_id, pos = None
@@ -101,7 +101,7 @@ InputParquetDataset(
 
 
 ## InputS3FilesDataset
-[source](https://github.com/blob/master/dataset.py/#L181)
+[source](https://github.com/blob/master/dataset.py/#L172)
 ```python 
 InputS3FilesDataset(
    bucket, prefix = None
@@ -115,7 +115,7 @@ InputS3FilesDataset(
 
 
 ### .get_own_state
-[source](https://github.com/blob/master/dataset.py/#L190)
+[source](https://github.com/blob/master/dataset.py/#L181)
 ```python
 .get_own_state(
    num_channels
@@ -124,7 +124,7 @@ InputS3FilesDataset(
 
 
 ### .get_next_batch
-[source](https://github.com/blob/master/dataset.py/#L206)
+[source](https://github.com/blob/master/dataset.py/#L197)
 ```python
 .get_next_batch(
    mapper_id, pos = None
@@ -136,7 +136,7 @@ InputS3FilesDataset(
 
 
 ## InputDiskFilesDataset
-[source](https://github.com/blob/master/dataset.py/#L223)
+[source](https://github.com/blob/master/dataset.py/#L214)
 ```python 
 InputDiskFilesDataset(
    directory
@@ -150,7 +150,7 @@ InputDiskFilesDataset(
 
 
 ### .get_own_state
-[source](https://github.com/blob/master/dataset.py/#L232)
+[source](https://github.com/blob/master/dataset.py/#L223)
 ```python
 .get_own_state(
    num_channels
@@ -159,7 +159,7 @@ InputDiskFilesDataset(
 
 
 ### .get_next_batch
-[source](https://github.com/blob/master/dataset.py/#L236)
+[source](https://github.com/blob/master/dataset.py/#L227)
 ```python
 .get_next_batch(
    mapper_id, pos = None
@@ -171,7 +171,7 @@ InputDiskFilesDataset(
 
 
 ## InputDiskCSVDataset
-[source](https://github.com/blob/master/dataset.py/#L248)
+[source](https://github.com/blob/master/dataset.py/#L239)
 ```python 
 InputDiskCSVDataset(
    filepath, names = None, sep = ', ', stride = 16*1024*1024, header = False,
@@ -186,7 +186,7 @@ InputDiskCSVDataset(
 
 
 ### .get_own_state
-[source](https://github.com/blob/master/dataset.py/#L265)
+[source](https://github.com/blob/master/dataset.py/#L256)
 ```python
 .get_own_state(
    num_channels
@@ -195,7 +195,7 @@ InputDiskCSVDataset(
 
 
 ### .get_next_batch
-[source](https://github.com/blob/master/dataset.py/#L358)
+[source](https://github.com/blob/master/dataset.py/#L349)
 ```python
 .get_next_batch(
    mapper_id, state = None
@@ -207,7 +207,7 @@ InputDiskCSVDataset(
 
 
 ## InputS3CSVDataset
-[source](https://github.com/blob/master/dataset.py/#L411)
+[source](https://github.com/blob/master/dataset.py/#L406)
 ```python 
 InputS3CSVDataset(
    bucket, names = None, prefix = None, key = None, sep = ', ', stride = 64*1024*1024,
@@ -222,7 +222,7 @@ InputS3CSVDataset(
 
 
 ### .get_own_state
-[source](https://github.com/blob/master/dataset.py/#L432)
+[source](https://github.com/blob/master/dataset.py/#L427)
 ```python
 .get_own_state(
    num_channels
@@ -231,7 +231,7 @@ InputS3CSVDataset(
 
 
 ### .get_next_batch
-[source](https://github.com/blob/master/dataset.py/#L535)
+[source](https://github.com/blob/master/dataset.py/#L530)
 ```python
 .get_next_batch(
    mapper_id, state = None

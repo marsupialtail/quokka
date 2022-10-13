@@ -72,8 +72,17 @@ QuokkaClusterManager(
 ```
 
 
-### .copy_all
+### .launch_all_t
 [source](https://github.com/blob/master/utils.py/#L82)
+```python
+.launch_all_t(
+   command, ips, error = 'Error'
+)
+```
+
+
+### .copy_all
+[source](https://github.com/blob/master/utils.py/#L89)
 ```python
 .copy_all(
    file_path, ips, error = 'Error'
@@ -82,7 +91,7 @@ QuokkaClusterManager(
 
 
 ### .check_instance_alive
-[source](https://github.com/blob/master/utils.py/#L89)
+[source](https://github.com/blob/master/utils.py/#L96)
 ```python
 .check_instance_alive(
    public_ip
@@ -91,17 +100,17 @@ QuokkaClusterManager(
 
 
 ### .create_cluster
-[source](https://github.com/blob/master/utils.py/#L137)
+[source](https://github.com/blob/master/utils.py/#L145)
 ```python
 .create_cluster(
    aws_access_key, aws_access_id, num_instances = 1, instance_type = 'i3.2xlarge',
-   requirements = ['ray =  = 1.12.0']
+   requirements = []
 )
 ```
 
 
 ### .stop_cluster
-[source](https://github.com/blob/master/utils.py/#L181)
+[source](https://github.com/blob/master/utils.py/#L190)
 ```python
 .stop_cluster(
    quokka_cluster
@@ -110,7 +119,7 @@ QuokkaClusterManager(
 
 
 ### .terminate_cluster
-[source](https://github.com/blob/master/utils.py/#L196)
+[source](https://github.com/blob/master/utils.py/#L205)
 ```python
 .terminate_cluster(
    quokka_cluster
@@ -119,7 +128,7 @@ QuokkaClusterManager(
 
 
 ### .get_cluster_from_json
-[source](https://github.com/blob/master/utils.py/#L211)
+[source](https://github.com/blob/master/utils.py/#L220)
 ```python
 .get_cluster_from_json(
    json_file

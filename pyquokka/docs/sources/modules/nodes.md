@@ -89,7 +89,7 @@ The other data types are not going to be used that much.
 
 
 ## InputNode
-[source](https://github.com/blob/master/nodes.py/#L283)
+[source](https://github.com/blob/master/nodes.py/#L282)
 ```python 
 InputNode(
    id, channel
@@ -103,21 +103,21 @@ InputNode(
 
 
 ### .ping
-[source](https://github.com/blob/master/nodes.py/#L293)
+[source](https://github.com/blob/master/nodes.py/#L290)
 ```python
 .ping()
 ```
 
 
 ### .initialize
-[source](https://github.com/blob/master/nodes.py/#L296)
+[source](https://github.com/blob/master/nodes.py/#L293)
 ```python
 .initialize()
 ```
 
 
 ### .execute
-[source](https://github.com/blob/master/nodes.py/#L299)
+[source](https://github.com/blob/master/nodes.py/#L296)
 ```python
 .execute()
 ```
@@ -127,7 +127,7 @@ InputNode(
 
 
 ## TaskNode
-[source](https://github.com/blob/master/nodes.py/#L336)
+[source](https://github.com/blob/master/nodes.py/#L326)
 ```python 
 TaskNode(
    id, channel, mapping, functionObject, parents
@@ -141,21 +141,21 @@ TaskNode(
 
 
 ### .initialize
-[source](https://github.com/blob/master/nodes.py/#L352)
+[source](https://github.com/blob/master/nodes.py/#L342)
 ```python
 .initialize()
 ```
 
 
 ### .get_batches
-[source](https://github.com/blob/master/nodes.py/#L358)
+[source](https://github.com/blob/master/nodes.py/#L348)
 ```python
 .get_batches()
 ```
 
 
 ### .schedule_for_execution
-[source](https://github.com/blob/master/nodes.py/#L368)
+[source](https://github.com/blob/master/nodes.py/#L358)
 ```python
 .schedule_for_execution(
    batch_info

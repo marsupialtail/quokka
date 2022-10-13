@@ -94,28 +94,30 @@ class InputDiskFilesNode(SourceNode):
         return node
 
 class InputS3CSVNode(SourceNode):
-    def __init__(self, bucket, prefix, key, schema, sep, has_header) -> None:
+    def __init__(self, bucket, prefix, key, schema, sep, has_header, projection = None) -> None:
         super().__init__(schema)
         self.bucket = bucket
         self.prefix = prefix
         self.key = key
         self.sep = sep
         self.has_header = has_header
+        self.projection = projection
 
     def lower(self, task_graph, ip_to_num_channel =None):
-        csv_reader = InputS3CSVDataset(self.bucket, self.schema, prefix = self.prefix, key = self.key, sep=self.sep, header = self.has_header, stride = 128 * 1024 * 1024)
+        csv_reader = InputS3CSVDataset(self.bucket, self.schema, prefix = self.prefix, key = self.key, sep=self.sep, header = self.has_header, stride = 128 * 1024 * 1024, columns = self.projection)
         node = task_graph.new_input_reader_node(csv_reader, ip_to_num_channel = ip_to_num_channel)
         return node
 
 class InputDiskCSVNode(SourceNode):
-    def __init__(self, filename, schema, sep, has_header) -> None:
+    def __init__(self, filename, schema, sep, has_header, projection = None) -> None:
         super().__init__(schema)
         self.filename = filename
         self.sep = sep
         self.has_header = has_header
+        self.projection = projection
 
     def lower(self, task_graph, ip_to_num_channel =None):
-        csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, header = self.has_header, stride = 128 * 1024 * 1024)
+        csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, header = self.has_header, stride = 128 * 1024 * 1024, columns = self.projection)
         node = task_graph.new_input_reader_node(csv_reader, ip_to_num_channel = ip_to_num_channel)
         return node
 

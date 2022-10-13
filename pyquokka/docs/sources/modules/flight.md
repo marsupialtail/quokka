@@ -107,7 +107,7 @@ FlightServer(
 
 
 ### .descriptor_to_key
-[source](https://github.com/blob/master/flight.py/#L93)
+[source](https://github.com/blob/master/flight.py/#L94)
 ```python
 .descriptor_to_key(
    descriptor
@@ -116,7 +116,7 @@ FlightServer(
 
 
 ### .list_flights
-[source](https://github.com/blob/master/flight.py/#L107)
+[source](https://github.com/blob/master/flight.py/#L108)
 ```python
 .list_flights(
    context, criteria
@@ -125,7 +125,7 @@ FlightServer(
 
 
 ### .get_flight_info
-[source](https://github.com/blob/master/flight.py/#L116)
+[source](https://github.com/blob/master/flight.py/#L117)
 ```python
 .get_flight_info(
    context, descriptor
@@ -134,7 +134,7 @@ FlightServer(
 
 
 ### .do_put
-[source](https://github.com/blob/master/flight.py/#L128)
+[source](https://github.com/blob/master/flight.py/#L131)
 ```python
 .do_put(
    context, descriptor, reader, writer
@@ -143,7 +143,7 @@ FlightServer(
 
 
 ### .number_batches
-[source](https://github.com/blob/master/flight.py/#L169)
+[source](https://github.com/blob/master/flight.py/#L172)
 ```python
 .number_batches(
    batches
@@ -152,7 +152,7 @@ FlightServer(
 
 
 ### .do_get
-[source](https://github.com/blob/master/flight.py/#L173)
+[source](https://github.com/blob/master/flight.py/#L176)
 ```python
 .do_get(
    context, ticket
@@ -161,7 +161,7 @@ FlightServer(
 
 
 ### .list_actions
-[source](https://github.com/blob/master/flight.py/#L191)
+[source](https://github.com/blob/master/flight.py/#L194)
 ```python
 .list_actions(
    context
@@ -170,7 +170,7 @@ FlightServer(
 
 
 ### .do_action
-[source](https://github.com/blob/master/flight.py/#L199)
+[source](https://github.com/blob/master/flight.py/#L202)
 ```python
 .do_action(
    context, action

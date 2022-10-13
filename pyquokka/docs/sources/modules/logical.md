@@ -203,7 +203,7 @@ InputDiskCSVNode(
 [source](https://github.com/blob/master/logical.py/#L122)
 ```python 
 InputS3ParquetNode(
-   filepath, schema, predicate = None, projection = None
+   bucket, prefix, key, schema, predicate = None, projection = None
 )
 ```
 
@@ -214,7 +214,7 @@ InputS3ParquetNode(
 
 
 ### .lower
-[source](https://github.com/blob/master/logical.py/#L131)
+[source](https://github.com/blob/master/logical.py/#L132)
 ```python
 .lower(
    task_graph, ip_to_num_channel = None
@@ -226,7 +226,7 @@ InputS3ParquetNode(
 
 
 ## InputDiskParquetNode
-[source](https://github.com/blob/master/logical.py/#L149)
+[source](https://github.com/blob/master/logical.py/#L156)
 ```python 
 InputDiskParquetNode(
    filepath, schema, predicate = None, projection = None
@@ -240,7 +240,7 @@ InputDiskParquetNode(
 
 
 ### .lower
-[source](https://github.com/blob/master/logical.py/#L156)
+[source](https://github.com/blob/master/logical.py/#L163)
 ```python
 .lower(
    task_graph, ip_to_num_channel = None
@@ -252,7 +252,7 @@ InputDiskParquetNode(
 
 
 ## SinkNode
-[source](https://github.com/blob/master/logical.py/#L171)
+[source](https://github.com/blob/master/logical.py/#L178)
 ```python 
 SinkNode(
    schema
@@ -265,7 +265,7 @@ SinkNode(
 
 
 ## DataSetNode
-[source](https://github.com/blob/master/logical.py/#L175)
+[source](https://github.com/blob/master/logical.py/#L182)
 ```python 
 DataSetNode(
    schema
@@ -279,7 +279,7 @@ DataSetNode(
 
 
 ### .lower
-[source](https://github.com/blob/master/logical.py/#L179)
+[source](https://github.com/blob/master/logical.py/#L186)
 ```python
 .lower(
    task_graph, parent_nodes, parent_source_info, ip_to_num_channel = None
@@ -291,7 +291,7 @@ DataSetNode(
 
 
 ## TaskNode
-[source](https://github.com/blob/master/logical.py/#L197)
+[source](https://github.com/blob/master/logical.py/#L204)
 ```python 
 TaskNode(
    schema: list, schema_mapping: dict, required_columns: set
@@ -304,7 +304,7 @@ TaskNode(
 
 
 ## StatefulNode
-[source](https://github.com/blob/master/logical.py/#L204)
+[source](https://github.com/blob/master/logical.py/#L211)
 ```python 
 StatefulNode(
    schema, schema_mapping, required_columns, operator
@@ -318,7 +318,7 @@ StatefulNode(
 
 
 ### .lower
-[source](https://github.com/blob/master/logical.py/#L209)
+[source](https://github.com/blob/master/logical.py/#L216)
 ```python
 .lower(
    task_graph, parent_nodes, parent_source_info, ip_to_num_channel = None
@@ -330,7 +330,7 @@ StatefulNode(
 
 
 ## MapNode
-[source](https://github.com/blob/master/logical.py/#L232)
+[source](https://github.com/blob/master/logical.py/#L239)
 ```python 
 MapNode(
    schema, schema_mapping, required_columns, function, foldable = True
@@ -344,7 +344,7 @@ MapNode(
 
 
 ### .lower
-[source](https://github.com/blob/master/logical.py/#L238)
+[source](https://github.com/blob/master/logical.py/#L245)
 ```python
 .lower(
    task_graph, parent_nodes, parent_source_info, ip_to_num_channel = None
@@ -356,7 +356,7 @@ MapNode(
 
 
 ## FilterNode
-[source](https://github.com/blob/master/logical.py/#L244)
+[source](https://github.com/blob/master/logical.py/#L251)
 ```python 
 FilterNode(
    schema, predicate: sqlglot.Expression
@@ -370,7 +370,7 @@ FilterNode(
 
 
 ### .lower
-[source](https://github.com/blob/master/logical.py/#L254)
+[source](https://github.com/blob/master/logical.py/#L261)
 ```python
 .lower(
    task_graph, parent_nodes, parent_source_info, ip_to_num_channel = None
@@ -382,7 +382,7 @@ FilterNode(
 
 
 ## ProjectionNode
-[source](https://github.com/blob/master/logical.py/#L258)
+[source](https://github.com/blob/master/logical.py/#L265)
 ```python 
 ProjectionNode(
    projection: set

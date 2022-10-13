@@ -54,7 +54,7 @@ TaskGraph(
 
 
 ### .flip_ip_channels
-[source](https://github.com/blob/master/quokka_runtime.py/#L123)
+[source](https://github.com/blob/master/quokka_runtime.py/#L126)
 ```python
 .flip_ip_channels(
    ip_to_num_channel
@@ -63,7 +63,7 @@ TaskGraph(
 
 
 ### .epilogue
-[source](https://github.com/blob/master/quokka_runtime.py/#L136)
+[source](https://github.com/blob/master/quokka_runtime.py/#L139)
 ```python
 .epilogue(
    tasknode, channel_to_ip, ips
@@ -72,7 +72,7 @@ TaskGraph(
 
 
 ### .new_input_redis
-[source](https://github.com/blob/master/quokka_runtime.py/#L143)
+[source](https://github.com/blob/master/quokka_runtime.py/#L146)
 ```python
 .new_input_redis(
    dataset, ip_to_num_channel = None, policy = 'default'
@@ -81,7 +81,7 @@ TaskGraph(
 
 
 ### .new_input_reader_node
-[source](https://github.com/blob/master/quokka_runtime.py/#L206)
+[source](https://github.com/blob/master/quokka_runtime.py/#L209)
 ```python
 .new_input_reader_node(
    reader, ip_to_num_channel = None
@@ -90,7 +90,7 @@ TaskGraph(
 
 
 ### .flip_channels_ip
-[source](https://github.com/blob/master/quokka_runtime.py/#L239)
+[source](https://github.com/blob/master/quokka_runtime.py/#L242)
 ```python
 .flip_channels_ip(
    channel_to_ip
@@ -99,7 +99,7 @@ TaskGraph(
 
 
 ### .get_default_partition
-[source](https://github.com/blob/master/quokka_runtime.py/#L246)
+[source](https://github.com/blob/master/quokka_runtime.py/#L249)
 ```python
 .get_default_partition(
    source_ip_to_num_channel, target_ip_to_num_channel
@@ -108,7 +108,7 @@ TaskGraph(
 
 
 ### .prologue
-[source](https://github.com/blob/master/quokka_runtime.py/#L283)
+[source](https://github.com/blob/master/quokka_runtime.py/#L286)
 ```python
 .prologue(
    streams, ip_to_num_channel, channel_to_ip, source_target_info
@@ -119,7 +119,7 @@ TaskGraph(
 Remember, the partition key is a function. It is executed on an output batch after the predicate and projection but before the batch funcs.
 
 ### .new_non_blocking_node
-[source](https://github.com/blob/master/quokka_runtime.py/#L362)
+[source](https://github.com/blob/master/quokka_runtime.py/#L365)
 ```python
 .new_non_blocking_node(
    streams, functionObject, ip_to_num_channel = None, channel_to_ip = None,
@@ -129,7 +129,7 @@ Remember, the partition key is a function. It is executed on an output batch aft
 
 
 ### .new_blocking_node
-[source](https://github.com/blob/master/quokka_runtime.py/#L379)
+[source](https://github.com/blob/master/quokka_runtime.py/#L382)
 ```python
 .new_blocking_node(
    streams, functionObject, ip_to_num_channel = None, channel_to_ip = None,
@@ -139,14 +139,14 @@ Remember, the partition key is a function. It is executed on an output batch aft
 
 
 ### .create
-[source](https://github.com/blob/master/quokka_runtime.py/#L401)
+[source](https://github.com/blob/master/quokka_runtime.py/#L404)
 ```python
 .create()
 ```
 
 
 ### .run
-[source](https://github.com/blob/master/quokka_runtime.py/#L411)
+[source](https://github.com/blob/master/quokka_runtime.py/#L414)
 ```python
 .run()
 ```
