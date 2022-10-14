@@ -41,7 +41,7 @@ schema_customers = StructType()\
     .add("c_mktsegment", StringType(), True)\
     .add("c_comment", StringType(), True)
 
-schema_part = StringType()\
+schema_part = StructType()\
         .add("p_partkey", LongType(), True)\
         .add("p_name", StringType(), True)\
         .add("p_mfgr", StringType(), True)\
@@ -82,10 +82,10 @@ df_supplier = spark.read.option("header", "false").option("delimiter","|")\
         .csv("s3://tpc-h-csv/supplier/supplier.tbl.1")
 df_region = spark.read.option("header", "false").option("delimiter","|")\
             .schema(schema_region)\
-            .csv("s3://tpc-h-csv/region/region.tbl.1")
+            .csv("s3://tpc-h-csv/region/region.tbl")
 df_nation = spark.read.option("header", "false").option("delimiter","|")\
         .schema(schema_nation)\
-        .csv("s3://tpc-h-csv/nation/nation.tbl.1")
+        .csv("s3://tpc-h-csv/nation/nation.tbl")
 
 
 df_lineitem.createOrReplaceTempView("lineitem")
