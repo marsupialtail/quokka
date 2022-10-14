@@ -41,6 +41,17 @@ schema_customers = StructType()\
     .add("c_mktsegment", StringType(), True)\
     .add("c_comment", StringType(), True)
 
+schema_part = StringType()\
+        .add("p_partkey", LongType(), True)\
+        .add("p_name", StringType(), True)\
+        .add("p_mfgr", StringType(), True)\
+        .add("p_brand", StringType(), True)\
+        .add("p_type", StringType(), True)\
+        .add("p_size", IntegerType(), True)\
+        .add("p_container", StringType(), True)\
+        .add("p_retailprice", DecimalType(10,2), True)\
+        .add("p_comment", StringType(), True)
+
 schema_supplier = StructType([StructField("s_suppkey",LongType(),False),StructField("s_name",StringType(),True),StructField("s_address",StringType(),True),StructField("s_nationkey",LongType(),False),StructField("s_phone",StringType(),True),StructField("s_acctbal",DecimalType(10,2),True),StructField("s_comment",StringType(),True)])
 
 schema_partsupp = StructType([StructField("ps_partkey",LongType(),False),StructField("ps_suppkey",LongType(),False),StructField("ps_availqty",IntegerType(),True),StructField("ps_supplycost",DecimalType(10,2),True),StructField("ps_comment",StringType(),True)])
@@ -79,7 +90,7 @@ df_nation = spark.read.option("header", "false").option("delimiter","|")\
 
 df_lineitem.createOrReplaceTempView("lineitem")
 df_orders.createOrReplaceTempView("orders")
-df_customer.createOrReplaceTempView("customer")
+df_customers.createOrReplaceTempView("customer")
 df_partsupp.createOrReplaceTempView("partsupp")
 df_part.createOrReplaceTempView("part")
 df_region.createOrReplaceTempView("region")
