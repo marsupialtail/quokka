@@ -702,6 +702,7 @@ class DataStream:
             ~~~
         """
 
+        assert how in {"inner", "left", "semi", "anti"}
         assert type(right) == polars.internals.DataFrame or issubclass(
             type(right), DataStream)
         
@@ -747,6 +748,9 @@ class DataStream:
                 schema_mapping[col] = (right_table_id, col)
 
         if issubclass(type(right), DataStream):
+
+            operator = JoinExecutor(on, left_on, right_on, suffix=suffix, how=how) if how != "anti" else AntiJoinExecutor(on , left_on, right_on, suffix = suffix)
+
             return self.quokka_context.new_stream(
                 sources={0: self, 1: right},
                 partitioners={0: HashPartitioner(
@@ -755,7 +759,7 @@ class DataStream:
                     schema=new_schema,
                     schema_mapping=schema_mapping,
                     required_columns={0: {left_on}, 1: {right_on}},
-                    operator=PolarJoinExecutor(on, left_on, right_on, suffix=suffix, how=how)),
+                    operator= operator),
                 schema=new_schema,
                 ordering=None)
         elif type(right) == polars.internals.DataFrame:

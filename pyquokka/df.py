@@ -149,7 +149,7 @@ class QuokkaContext:
                         schema = resp[:first_newline].decode("utf-8").split(sep)
 
                     self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep, has_header)
-            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(1))
+            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
         else:
 
             if type(self.cluster) == EC2Cluster:

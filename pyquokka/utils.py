@@ -42,7 +42,6 @@ class LocalCluster:
         pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
         # we assume you have pyquokka installed, and we are going to spin up a ray cluster locally
         ray.init(ignore_reinit_error=True)
-        self.redis_process = subprocess.Popen(["redis-server" , pyquokka_loc + "redis.conf", "--port 6800", "--protected-mode no"])
         flight_file = pyquokka_loc + "/flight.py"
         os.system("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288")
         try:
@@ -56,9 +55,8 @@ class LocalCluster:
         print("Finished setting up local Quokka cluster.")
     
     def __del__(self):
-        # we need to join the process that is running the flight server! and we should probably also shut down the redis server too, but that's not necessary
+        # we need to join the process that is running the flight server! 
         self.flight_process.kill()
-        self.redis_process.kill()
 
 
 class QuokkaClusterManager:
@@ -121,7 +119,8 @@ class QuokkaClusterManager:
                 time.sleep(5)
         
         self.launch_all("ulimit -c unlimited", public_ips, "Failed to set ulimit")
-        self.launch_all("redis-6.2.6/src/redis-server redis-6.2.6/redis.conf --port 6800 --protected-mode no&", public_ips, "Failed to start Redis server on new worker")
+        # eventually we need redis only on the coordinator
+        # self.launch_all("redis-6.2.6/src/redis-server redis-6.2.6/redis.conf --port 6800 --protected-mode no&", public_ips, "Failed to start Redis server on new worker")
         leader_public_ip = public_ips[0]
         leader_private_ip = private_ips[0]
         z = os.system("""ssh -oStrictHostKeyChecking=no -i """ + self.key_location + """ ubuntu@""" + leader_public_ip + """ -t "echo '* hard nofile 65536\n* soft nofile 65536\n* hard core unlimited\n* soft core unlimited' | sudo tee /etc/security/limits.conf" """)

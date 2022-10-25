@@ -161,7 +161,7 @@ class InputDiskParquetNode(SourceNode):
         self.filepath = filepath
         self.predicate = predicate
         self.projection = projection
-    
+
     def lower(self, task_graph, ip_to_num_channel =None):
 
         if type(task_graph.cluster) ==  EC2Cluster:

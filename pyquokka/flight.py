@@ -214,7 +214,6 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             yield pyarrow.flight.Result(pyarrow.py_buffer(bytes(str(cond), "utf-8")))
         elif action.type == "get_batches_info":
 
-            # this is the format of the key: (target, channel, self.id, self.channel, self.out_seq, my_format)
             action_data = pickle.loads(action.body.to_pybytes())
             node, channel = action_data
             # you will return the length of each key of the DiskQueue of that node, channel pair

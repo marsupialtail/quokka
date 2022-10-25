@@ -30,9 +30,12 @@ class Dataset:
     
     def to_dict(self):
         return ray.get(self.wrapped_dataset.to_dict.remote())
+    
+    def to_arrow_refs(self):
+        return ray.get(self.wrapped_dataset.to_arrow_refs.remote())
 
 @ray.remote
-class WrappedDataset:
+class ArrowDataset:
 
     def __init__(self, num_channels) -> None:
         self.num_channels = num_channels
@@ -45,12 +48,7 @@ class WrappedDataset:
 
         if channel not in self.objects or channel not in self.remaining_channels:
             raise Exception
-        self.objects[channel].append(object_handle)
-    
-    def add_metadata(self, channel, object_handle):
-        if channel in self.metadata or channel not in self.remaining_channels:
-            raise Exception("Cannot add metadata for the same channel twice")
-        self.metadata[channel] = object_handle
+        self.objects[channel].append(object_handle[0])
     
     def done_channel(self, channel):
         self.remaining_channels.remove(channel)
@@ -59,51 +57,25 @@ class WrappedDataset:
 
     def is_complete(self):
         return self.done
-
-    # debugging method
-    def print_all(self):
-        for channel in self.objects:
-            for object in self.objects[channel]:
-                r = redis.Redis(host=object[0], port=6800, db=0)
-                print(pickle.loads(r.get(object[1])))
     
     def get_objects(self):
         assert self.is_complete()
         return self.objects
+
+    def to_arrow_refs(self):
+        results = []
+        for channel in self.objects:
+            results.extend(self.objects[channel])
+        return results
 
     def to_df(self):
         assert self.is_complete()
         dfs = []
         for channel in self.objects:
             for object in self.objects[channel]:
-                r = redis.Redis(host=object[0], port=6800, db=0)
-                dfs.append(pickle.loads(r.get(object[1])))
-        try:
-            return polars.concat(dfs)
-        except:
-            return pd.concat(dfs)
-    
-    def to_list(self):
-        assert self.is_complete()
-        ret = []
-        for channel in self.objects:
-            for object in self.objects[channel]:
-                r = redis.Redis(host=object[0], port=6800, db=0)
-                ret.append(pickle.loads(r.get(object[1])))
-        return ret
-
-    def to_dict(self):
-        assert self.is_complete()
-        d = {channel:[] for channel in self.objects}
-        for channel in self.objects:
-            for object in self.objects[channel]:
-                r = redis.Redis(host=object[0], port=6800, db=0)
-                thing = pickle.loads(r.get(object[1]))
-                if type(thing) == list:
-                    d[channel].extend(thing)
-                else:
-                    d[channel].append(thing)
-        return d
+                dfs.append(ray.get(object))
+        arrow_table = pa.concat_tables(dfs)
+        return polars.from_arrow(arrow_table)
 
 class TaskGraph:
     # this keeps the logical dependency DAG between tasks 
@@ -114,14 +86,6 @@ class TaskGraph:
         self.node_channel_to_ip = {}
         self.node_ips = {}
         self.node_type = {}
-        
-        r = redis.Redis(host=str(self.cluster.leader_public_ip), port=6800, db=0)
-        while True:
-            try:
-                _ = r.keys()
-                break
-            except redis.exceptions.BusyLoadingError:
-                time.sleep(0.01)
     
     def flip_ip_channels(self, ip_to_num_channel):
         ips = sorted(list(ip_to_num_channel.keys()))
@@ -326,8 +290,14 @@ class TaskGraph:
         
         for key in streams:
             assert key in source_target_info
-            target_info = source_target_info[key]     
-            target_info.predicate = sql_utils.evaluate(target_info.predicate)
+            target_info = source_target_info[key] 
+            if target_info.predicate == sqlglot.exp.TRUE:
+                target_info.predicate = True
+            elif target_info.predicate == False:
+                print("false predicate detected, entire subtree is useless. We should cut the entire subtree!")
+                target_info.predicate = sql_utils.evaluate(target_info.predicate) 
+            else:    
+                target_info.predicate = sql_utils.evaluate(target_info.predicate) 
             target_info.projection = target_info.projection
 
             # this has been provided
@@ -385,7 +355,9 @@ class TaskGraph:
 
         # the datasets will all be managed on the head node. Note that they are not in charge of actually storing the objects, they just 
         # track the ids.
-        output_dataset = WrappedDataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote(len(channel_to_ip))
+        # output_dataset = WrappedDataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote(len(channel_to_ip))
+        output_dataset = ArrowDataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote(len(channel_to_ip))
+
 
         tasknode = {}
         for channel in channel_to_ip:

@@ -3,7 +3,6 @@ import ray
 from collections import deque
 from pyquokka.dataset import RedisObjectsDataset
 import pickle
-import redis
 from threading import Lock
 import time
 import gc
@@ -16,6 +15,7 @@ import pyarrow.flight
 # isolated simplified test bench for different fault tolerance protocols
 
 VERBOSE = False
+PROFILE = False
 
 # above this limit we are going to start flushing things to disk
 INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your input mailbox
@@ -23,8 +23,12 @@ INPUT_MAILBOX_SIZE_LIMIT = 1024 * 1024 * 1024 * 2 # you can have 2GB in your inp
 def convert_to_format(batch, format):
     format = pickle.loads(format.to_pybytes())
     if format == "polars":
+
+        aligned_batch = pa.record_batch([pa.concat_arrays([arr]) for arr in batch], schema=batch.schema)
+        return polars.from_arrow(pa.Table.from_batches([aligned_batch]))
+
         # ideally you use zero copy, but this could result in bugs sometimes. https://issues.apache.org/jira/browse/ARROW-17783
-        return polars.from_pandas(pa.Table.from_batches([batch]).to_pandas())
+        # return polars.from_pandas(pa.Table.from_batches([batch]).to_pandas())
         # return polars.from_arrow(pa.Table.from_batches([batch]))
     elif format == "pandas":
         return batch.to_pandas()
@@ -78,13 +82,7 @@ class Node:
         self.channel = channel
 
         self.targets = {}
-        self.r = redis.Redis(host='localhost', port=6800, db=0)
-        self.head_r = redis.Redis(host=ray.get_runtime_context().gcs_address.split(":")[0], port=6800, db=0)
-        #self.plasma_client = plasma.connect("/tmp/plasma")
-
-        self.target_rs = {}
-        self.target_ps = {}
-
+        
         self.flight_clients = {}
         self.flight_client = pyarrow.flight.connect("grpc://0.0.0.0:5005")
 
@@ -103,55 +101,21 @@ class Node:
         self.out_seq[node_id] = {channel: 0 for channel in channel_to_ip}
 
         unique_ips = set(channel_to_ip.values())
-        redis_clients = {i: redis.Redis(host=i, port=6800, db=0) if i != self.ip else redis.Redis(host='localhost', port = 6800, db=0) for i in unique_ips}
         self.targets[node_id] = (channel_to_ip, target_info)
-        self.target_rs[node_id] = {}
-        self.target_ps[node_id] = {}
         
         self.flight_clients[node_id] = {}
 
         flight_clients = {i: pyarrow.flight.connect("grpc://" + str(i) + ":5005") if i != self.ip else pyarrow.flight.connect("grpc://0.0.0.0:5005") for i in unique_ips}
         for channel in channel_to_ip:
             self.flight_clients[node_id][channel] = flight_clients[channel_to_ip[channel]]
-
-        for channel in channel_to_ip:
-            self.target_rs[node_id][channel] = redis_clients[channel_to_ip[channel]]
         
-        for client in redis_clients:
-            pubsub = redis_clients[client].pubsub(ignore_subscribe_messages = True)
-            pubsub.subscribe("node-done-"+str(node_id))
-            self.target_ps[node_id][channel] = pubsub
         
         self.alive_targets[node_id] = {i for i in channel_to_ip}
         # remember the self.strikes stuff? Now we cannot check for that because a downstream target could just die.
         # it's ok if we send stuff to dead people. Fault tolerance is supposed to take care of this.
-        
-    def update_targets(self):
-
-        for target_node in self.target_ps:
-            # there are #-ip locations you need to poll here.
-            for channel in self.target_ps[target_node]:
-                client = self.target_ps[target_node][channel]
-                while True:
-                    message = client.get_message()
-                    
-                    if message is not None:
-                        if VERBOSE:
-                            print(message['data'])
-                        self.alive_targets[target_node].remove(int(message['data']))
-                        if len(self.alive_targets[target_node]) == 0:
-                            self.alive_targets.pop(target_node)
-                    else:
-                        break 
-        if len(self.alive_targets) > 0:
-            return True
-        else:
-            return False
 
     def push(self, data):
             
-        
-
         '''
         Quokka should have some support for custom data types, similar to DaFt by Eventual.
         Since we transmit data through Arrow Flight, we need to convert the data into arrow record batches.
@@ -188,12 +152,6 @@ class Node:
         #     raise NotImplementedError
 
         # downstream targets are done. You should be done too then.
-        try:    
-            if not self.update_targets():
-                return False
-        except:
-            if VERBOSE:
-                print("downstream failure detected")
 
         for target in self.alive_targets:
             original_channel_to_ip, target_info = self.targets[target]
@@ -206,15 +164,20 @@ class Node:
             assert target_info.lowered
 
             start = time.time()
-            
-            data = data.filter(target_info.predicate(data))
-            # data = self.con.execute("select * from data where " + target_info.predicate).arrow()
-            #print("post-filer", data)
-            print("filter ", time.time() - start)
+            if target_info.predicate != True:
+                data = data.filter(target_info.predicate(data))
+            # # data = self.con.execute("select * from data where " + target_info.predicate).arrow()
             #data = polars.from_arrow(data)
+            # #print("post-filer", data)
+
+            if PROFILE:
+                print("filter ", time.time() - start)
+            
             start = time.time()
             partitioned_payload = target_info.partitioner.func(data, self.channel, len(original_channel_to_ip))
-            print("partition ", time.time() - start)
+
+            if PROFILE:
+                print("partition ", time.time() - start)
 
             
             assert type(partitioned_payload) == dict and max(partitioned_payload.keys()) < len(original_channel_to_ip)
@@ -237,7 +200,8 @@ class Node:
                             break
                         payload = func(payload)
                     
-                    print("batch func time per channel ", time.time() - start)
+                    if PROFILE:
+                        print("batch func time per channel ", time.time() - start)
 
                 if payload is None or len(payload) == 0:
                     payload = None
@@ -275,7 +239,8 @@ class Node:
                     writer.write_batch(batch)
                 writer.close()
             
-                print("push time per channel ", time.time() - start)
+                if PROFILE:
+                    print("push time per channel ", time.time() - start)
        
         return True
 
@@ -283,14 +248,6 @@ class Node:
 
         if VERBOSE:
             print("IM DONE", self.id, self.channel, time.time())
-
-        try:    
-            if not self.update_targets():
-                if VERBOSE:
-                    print("WIERD STUFF IS HAPPENING")
-                return False
-        except:
-            print("downstream failure detected")
 
         for target in self.alive_targets:
             for channel in self.alive_targets[target]:
@@ -330,7 +287,8 @@ class InputNode(Node):
             if batch is not None and len(batch) > 0:
                 start = time.time()
                 self.push(batch)
-                print("pushing", time.time() - start)
+                if PROFILE:
+                    print("pushing", time.time() - start)
 
         if VERBOSE:
             print("INPUT DONE", self.id, self.channel, time.time())
@@ -538,15 +496,18 @@ class BlockingTaskNode(TaskNode):
                 cursor = 0
                 stride = 1000000
                 while cursor < len(results):
-                    key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
-                    self.object_count += 1
-                    try:
-                        self.r.set(key, pickle.dumps(results[cursor : cursor + stride]))
-                    except:
-                        print(results)
-                        raise Exception
-                    # we really should be doing sys.getsizeof(result), but that doesn't work for polars dfs
-                    add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, stride)))
+                    # key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
+                    # self.object_count += 1
+                    # try:
+                    #     self.r.set(key, pickle.dumps(results[cursor : cursor + stride]))
+                    # except:
+                    #     print(results)
+                    #     raise Exception
+                    # # we really should be doing sys.getsizeof(result), but that doesn't work for polars dfs
+                    # add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, stride)))
+
+                    add_tasks.append(self.output_dataset.added_object.remote(self.channel, [ray.put(results[cursor: cursor + stride].to_arrow(), _owner = self.output_dataset)]))
+
                     cursor += stride
             else:
                 pass
@@ -556,13 +517,15 @@ class BlockingTaskNode(TaskNode):
         if type(obj_done) == types.GeneratorType:
             for object in obj_done:
                 if object is not None:
-                    key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
-                    self.object_count += 1
-                    self.r.set(key, pickle.dumps(object))
-                    if hasattr(object, "__len__"):
-                        add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(object))))
-                    else:
-                        add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key,sys.getsizeof(object))))
+                    # key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
+                    # self.object_count += 1
+                    # self.r.set(key, pickle.dumps(object))
+                    # if hasattr(object, "__len__"):
+                    #     add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(object))))
+                    # else:
+                    #     add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key,sys.getsizeof(object))))
+
+                    add_tasks.append(self.output_dataset.added_object.remote(self.channel, [ray.put(object.to_arrow(), _owner = self.output_dataset)]))
             del self.functionObject
             gc.collect()
         else:
@@ -570,14 +533,16 @@ class BlockingTaskNode(TaskNode):
             gc.collect()
             
             if obj_done is not None:
-                key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
-                self.object_count += 1
-                self.r.set(key, pickle.dumps(obj_done))
-                if hasattr(obj_done, "__len__"):
-                    add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(obj_done))))
-                else:
-                    add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, sys.getsizeof(obj_done))))
-     
+                # key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
+                # self.object_count += 1
+                # self.r.set(key, pickle.dumps(obj_done))
+                # if hasattr(obj_done, "__len__"):
+                #     add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(obj_done))))
+                # else:
+                #     add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, sys.getsizeof(obj_done))))
+
+                add_tasks.append(self.output_dataset.added_object.remote(self.channel, [ray.put(obj_done.to_arrow(), _owner = self.output_dataset)]))
+
         ray.get(add_tasks)
         ray.get(self.output_dataset.done_channel.remote(self.channel))
         

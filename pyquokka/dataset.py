@@ -716,7 +716,7 @@ class InputS3CSVDataset:
         self.length = 0
         self.sample = None
 
-        self.workers = 16
+        self.workers = 8
 
     def set_num_channels(self, num_channels):
         assert self.num_channels == num_channels
@@ -771,7 +771,7 @@ class InputS3CSVDataset:
         size_per_channel = total_size // num_channels
         channel_infos = {}
 
-        start_byte = 0
+        start_byte = 0 if not self.header else first_newline + 1
         real_off = 0
 
         for channel in range(num_channels):
@@ -817,7 +817,7 @@ class InputS3CSVDataset:
             sizes[0] -= bytes_to_take
             end_byte = real_off + bytes_to_take
             real_off += bytes_to_take
-            channel_infos[channel] = (start_byte, my_file.copy(), end_byte)
+            channel_infos[channel] = (start_byte, my_file.copy(), end_byte + 1)
             start_byte = real_off
         
         self.length = total_size
@@ -871,15 +871,15 @@ class InputS3CSVDataset:
             for k in range(0, batches):
                 a = [k * self.workers + z for z in range(self.workers)]
                 future_to_url = {executor.submit(download, x): x for x in a}
-                start = time.time()
+                #start = time.time()
                 results = {}
                 for future in concurrent.futures.as_completed(future_to_url):
                     url = future_to_url[future] - a[0]
                     data = future.result()
                     results[url] = data
-                print("download", time.time() - start)
+                #print("download", time.time() - start)
 
-                start = time.time()
+                #start = time.time()
                 last_file = self.workers - 1
 
                 for z in a:
@@ -897,30 +897,13 @@ class InputS3CSVDataset:
                 prefix = fake_file.get_end()
                 del fake_file
 
-                # concatenated = prefix
-                # for z in a:
-                #     if results[z-a[0]] is None:
-                #         break
-                #     else:
-                #         concatenated += results[z-a[0]]
-                # last_newline = concatenated.rfind(bytes('\n','utf-8'))
-                # prefix = concatenated[last_newline:]
-
-                # bump = csv.read_csv(BytesIO(concatenated[:last_newline]), read_options=csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-
                 bump = bump.select(self.columns) if self.columns is not None else bump
                 
-                print("convert", time.time() - start)
+                #print("convert", time.time() - start)
                 
-                del results
-                gc.collect()
-                print("memory usage before yield", pa.total_allocated_bytes())
-                yield (None), bump
+                #print("memory usage before yield", pa.total_allocated_bytes())
+                yield (curr_pos, pos, a[0], prefix), bump
                 del bump
-                gc.collect()
-                print("memory usage after yield", pa.total_allocated_bytes())
-                
 
             pos = 0
             curr_pos += 1
-
