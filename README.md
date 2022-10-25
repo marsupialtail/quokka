@@ -6,11 +6,13 @@
 
 ## What?
 
-Quokka is a pure-Python fast data processing engine. It can be leveraged to obtain near-peak performance on SQL queries on data "lakes" with CSV and Parquet file formats. It is often several times faster than SparkSQL and an order of magnitude faster than Dask. 
+Quokka is an **open-source push-based vectorized query engine**. Inspired by recent high performance database designs at Snowflake, DuckDB and SingleStore etc., it is meant to be much more performant than blocking-shuffle based alternatives like SparkSQL. On test TPC-H queries, Quokka currently is often several times faster than open-source SparkSQL and an order of magnitude faster than Dask. 
 
 <p align="center">
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/tpch-parquet.svg?raw=true" alt="Title"/>
 </p>
+
+Unlike most other database engines, Quokka is implemented completely in Python and is meant to be easily extensible for new operations and use cases, e.g. time series analytics and feature engineering. 
 
 Quokka operates on DataStreams, which are basically Spark RDDs except data partitions can be produced serially. A data partition can be consumed immediately after it's produced, unlike Spark where all the partitions have to be present in the RDD before the shuffle happens. This allows Quokka to pipeline multiple shuffles and I/O, leading to large performance gains.
 
