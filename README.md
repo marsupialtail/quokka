@@ -36,7 +36,7 @@ f = d.groupby(["l_returnflag", "l_linestatus"], orderby=["l_returnflag","l_lines
 return f.collect()
 ~~~
 
-Currently Quokka supports reading data from CSV/Parquet on disk/S3, though theoretically any data source can be supported: Apache Iceberg/DeltaLake/Hudi, S3 bucket of images (apps/pinecone.py), Ethereum blockchain through web3 APIs, transactional database CDC endpoints etc. If you have some esoteric data source that you want to run analytics on, please send me a challenge as a Github issue. 
+Currently Quokka supports reading data from CSV/Parquet on disk/S3, though theoretically any data source can be supported: Apache Iceberg/DeltaLake/Hudi, S3 bucket of images, Ethereum blockchain through web3 APIs, transactional database CDC endpoints etc. If you have some esoteric data source that you want to run analytics on, please send me a challenge as a Github issue. 
 
 ## Fineprint
 
