@@ -6,6 +6,12 @@ import multiprocessing
 import pyquokka
 import ray
 import json
+import signal
+
+def preexec_function():
+    # Ignore the SIGINT signal by setting the handler to the standard
+    # signal handler SIG_IGN.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 class EC2Cluster:
     def __init__(self, public_ips, private_ips, instance_ids, cpu_count_per_instance) -> None:
@@ -45,7 +51,7 @@ class LocalCluster:
         flight_file = pyquokka_loc + "/flight.py"
         os.system("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288")
         try:
-            self.flight_process = subprocess.Popen(["python3", flight_file])
+            self.flight_process = subprocess.Popen(["python3", flight_file], preexec_fn = preexec_fn)
         except:
             raise Exception("Could not start flight server properly. Check if there is already something using port 5005, kill it if necessary. Use lsof -i:5005")
         self.leader_public_ip = "localhost"

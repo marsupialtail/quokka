@@ -282,6 +282,7 @@ class QuokkaContext:
                 else:
                     self.nodes[self.latest_node_id] = InputS3ParquetNode(bucket, None, key, schema)
 
+            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
         else:
             if type(self.cluster) == EC2Cluster:
                 raise NotImplementedError("Does not support reading local dataset with S3 cluster. Must use S3 bucket.")

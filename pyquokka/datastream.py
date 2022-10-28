@@ -683,7 +683,7 @@ class DataStream:
             left_on (str): the name of the join column in this DataStream.
             right_on (str): the name of the join column in `right`.
             suffix (str): if `right` has columns with the same names as columns in this DataStream, their names will be appended with the suffix in the result.
-            how (str): only supports "inner" for now. 
+            how (str): supports "inner", "left", "semi" or "anti"
 
         Return:
             A new DataStream that's the joined result of this DataStream and "right". By default, columns from both side will be retained, 
@@ -746,6 +746,10 @@ class DataStream:
             else:
                 new_schema.append(col)
                 schema_mapping[col] = (right_table_id, col)
+        
+        # you only need the key column on the RHS! select overloads in DataStream or Polars DataFrame runtime polymorphic
+        if how == "semi" or how == "anti":
+            right = right.select([right_on])
 
         if issubclass(type(right), DataStream):
 
@@ -762,7 +766,9 @@ class DataStream:
                     operator= operator),
                 schema=new_schema,
                 ordering=None)
+
         elif type(right) == polars.internals.DataFrame:
+            
             return self.quokka_context.new_stream(
                 sources={0: self},
                 partitioners={0: PassThroughPartitioner()},

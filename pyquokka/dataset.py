@@ -1,4 +1,3 @@
-from ast import Bytes
 import pickle
 import pyarrow as pa
 import pyarrow.csv as csv
@@ -19,6 +18,7 @@ from pyquokka.sql_utils import filters_to_expression
 import multiprocessing
 import concurrent.futures
 import time
+import warnings
 
 class RedisObjectsDataset:
 
@@ -50,89 +50,30 @@ class RedisObjectsDataset:
 # the only difference here is that we move the fragment construction inside get_batches
 # this is because on cluster setting we want to do that instead of initializing locally
 # on local setting you want to do the reverse! 
-class InputEC2ParquetDataset:
-    """
-    The original plan was to split this up by row group and different channels might share a single file. This is too complicated and leads to high init cost.
-    Generally parquet files in a directory created by tools like Spark or Quokka have similar sizes anyway.
-    """
-    def __init__(self, bucket, prefix, columns = None, filters = None) -> None:
-        
-        self.bucket = bucket
-        self.prefix = prefix
-        self.columns = columns
-        if filters is not None:
-            assert type(filters) == list and len(filters) > 0
-            self.filters = filters
-        else:
-            self.filters = None
-        self.num_channels = None
-
-    def get_own_state(self, num_channels):
-        self.num_channels = num_channels
-        s3 = boto3.client('s3')
-        z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
-        self.files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
-        assert len(self.files) > 0
-        self.length = 0
-        self.length += sum([i['Size'] for i in z['Contents'] if i['Key'].endswith(".parquet")])
-        while 'NextContinuationToken' in z.keys():
-            z = self.s3.list_objects_v2(
-                Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
-            self.files.extend([i['Key'] for i in z['Contents']
-                              if i['Key'].endswith(".parquet")])
-            self.length += sum([i['Size'] for i in z['Contents']
-                              if i['Key'].endswith(".parquet")])
-        
-        # now order the files and lengths, not really necessary
-
-    def get_next_batch(self, mapper_id, pos=None):
-        
-        assert self.num_channels is not None
-        if pos is None:
-            start_pos = mapper_id
-        else:
-            start_pos = pos
-        if start_pos >= len(self.files):
-            yield None, None 
-        else:
-            for curr_pos in range(start_pos, len(self.files), self.num_channels):
-                
-                a = pq.read_table("s3://" + self.bucket + "/" +
-                                self.files[curr_pos], columns=self.columns, filters=self.filters)
-                
-                curr_pos += self.num_channels
-                yield curr_pos, polars.from_arrow(a)
-
 # class InputEC2ParquetDataset:
-
-#     # filter pushdown could be profitable in the future, especially when you can skip entire Parquet files
-#     # but when you can't it seems like you still read in the entire thing anyways
-#     # might as well do the filtering at the Pandas step. Also you need to map filters to the DNF form of tuples, which could be
-#     # an interesting project in itself. Time for an intern?
-
-#     def __init__(self, bucket, prefix, columns=None, filters=None) -> None:
-
+#     """
+#     The original plan was to split this up by row group and different channels might share a single file. This is too complicated and leads to high init cost.
+#     Generally parquet files in a directory created by tools like Spark or Quokka have similar sizes anyway.
+#     """
+#     def __init__(self, bucket, prefix, columns = None, filters = None) -> None:
+        
 #         self.bucket = bucket
 #         self.prefix = prefix
-#         assert self.prefix is not None
-
-#         self.num_channels = None
 #         self.columns = columns
-#         self.filters = filters
-
-#         self.length = 0
-#         self.workers = multiprocessing.cpu_count()
-
-
-#     def set_num_channels(self, num_channels):
-#         assert self.num_channels == num_channels
-#         self.s3 = boto3.client('s3')
+#         if filters is not None:
+#             assert type(filters) == list and len(filters) > 0
+#             self.filters = filters
+#         else:
+#             self.filters = None
+#         self.num_channels = None
 
 #     def get_own_state(self, num_channels):
 #         self.num_channels = num_channels
 #         s3 = boto3.client('s3')
 #         z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
 #         self.files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
+#         assert len(self.files) > 0
+#         self.length = 0
 #         self.length += sum([i['Size'] for i in z['Contents'] if i['Key'].endswith(".parquet")])
 #         while 'NextContinuationToken' in z.keys():
 #             z = self.s3.list_objects_v2(
@@ -141,25 +82,88 @@ class InputEC2ParquetDataset:
 #                               if i['Key'].endswith(".parquet")])
 #             self.length += sum([i['Size'] for i in z['Contents']
 #                               if i['Key'].endswith(".parquet")])
-
+        
+#         # now order the files and lengths, not really necessary
 
 #     def get_next_batch(self, mapper_id, pos=None):
-
-#         def download(file):
-#             return polars.from_arrow(pq.read_table("s3://" + self.bucket + "/" +
-#                               file, columns=self.columns, filters=self.filters))
-
-#         assert self.num_channels is not None
-#         executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
-#         my_files = [self.files[k] for k in range(mapper_id, len(self.files), self.num_channels)]
-#         if len(my_files) == 0:
-#             yield None, None
         
-#         # this will return things out of order, but that's ok!
+#         assert self.num_channels is not None
+#         if pos is None:
+#             start_pos = mapper_id
+#         else:
+#             start_pos = pos
+#         if start_pos >= len(self.files):
+#             yield None, None 
+#         else:
+#             for curr_pos in range(start_pos, len(self.files), self.num_channels):
+                
+#                 a = pq.read_table("s3://" + self.bucket + "/" +
+#                                 self.files[curr_pos], columns=self.columns, filters=self.filters)
+                
+#                 curr_pos += self.num_channels
+#                 yield curr_pos, polars.from_arrow(a)
 
-#         future_to_url = {executor.submit(download, file): file for file in my_files}
-#         for future in concurrent.futures.as_completed(future_to_url):
-#             yield future_to_url[future], future.result()
+class InputEC2ParquetDataset:
+
+    # filter pushdown could be profitable in the future, especially when you can skip entire Parquet files
+    # but when you can't it seems like you still read in the entire thing anyways
+    # might as well do the filtering at the Pandas step. Also you need to map filters to the DNF form of tuples, which could be
+    # an interesting project in itself. Time for an intern?
+
+    def __init__(self, bucket, prefix, columns=None, filters=None) -> None:
+
+        self.bucket = bucket
+        self.prefix = prefix
+        assert self.prefix is not None
+
+        self.num_channels = None
+        self.columns = columns
+        self.filters = filters
+
+        self.length = 0
+        self.workers = 8
+
+
+    def set_num_channels(self, num_channels):
+        assert self.num_channels == num_channels
+        self.s3 = boto3.client('s3')
+
+    def get_own_state(self, num_channels):
+        self.num_channels = num_channels
+        s3 = boto3.client('s3')
+        z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
+        self.files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
+        self.length += sum([i['Size'] for i in z['Contents'] if i['Key'].endswith(".parquet")])
+        while 'NextContinuationToken' in z.keys():
+            z = self.s3.list_objects_v2(
+                Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
+            self.files.extend([i['Key'] for i in z['Contents']
+                              if i['Key'].endswith(".parquet")])
+            self.length += sum([i['Size'] for i in z['Contents']
+                              if i['Key'].endswith(".parquet")])
+
+
+    def get_next_batch(self, mapper_id, pos=None):
+
+        s3fs = S3FileSystem()
+
+        def download(file):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return polars.from_arrow(pq.read_table(self.bucket + "/" +
+                              file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = s3fs))
+
+        assert self.num_channels is not None
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
+        my_files = [self.files[k] for k in range(mapper_id, len(self.files), self.num_channels)]
+        if len(my_files) == 0:
+            yield None, None
+        
+        # this will return things out of order, but that's ok!
+
+        future_to_url = {executor.submit(download, file): file for file in my_files}
+        for future in concurrent.futures.as_completed(future_to_url):
+            yield future_to_url[future], future.result()
 
 class InputParquetDataset:
     def __init__(self, filepath, mode = "local", columns = None, filters = None) -> None:
