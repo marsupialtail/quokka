@@ -1,7 +1,6 @@
 import pandas as pd
 import ray
 from collections import deque
-from pyquokka.dataset import RedisObjectsDataset
 import pickle
 from threading import Lock
 import time
@@ -10,7 +9,8 @@ import sys
 import polars
 import pyarrow as pa
 import types
-import duckdb
+#import duckdb
+import psutil
 import pyarrow.flight
 # isolated simplified test bench for different fault tolerance protocols
 
@@ -229,7 +229,7 @@ class Node:
                     result = next(client.do_action(action))
                     #print(result.body.to_pybytes().decode("utf-8"))
                     if result.body.to_pybytes().decode("utf-8") != "True":
-                        time.sleep(1)
+                        time.sleep(0.1)
                     else:
                         break
 
@@ -448,6 +448,7 @@ class BlockingTaskNode(TaskNode):
     def execute(self):
 
         pa.set_cpu_count(8)
+        spill_no = 0
         # self.con = duckdb.connect()
 
         add_tasks = []
@@ -496,17 +497,14 @@ class BlockingTaskNode(TaskNode):
                 cursor = 0
                 stride = 1000000
                 while cursor < len(results):
-                    # key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
-                    # self.object_count += 1
-                    # try:
-                    #     self.r.set(key, pickle.dumps(results[cursor : cursor + stride]))
-                    # except:
-                    #     print(results)
-                    #     raise Exception
-                    # # we really should be doing sys.getsizeof(result), but that doesn't work for polars dfs
-                    # add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, stride)))
 
-                    add_tasks.append(self.output_dataset.added_object.remote(self.channel, [ray.put(results[cursor: cursor + stride].to_arrow(), _owner = self.output_dataset)]))
+                    if psutil.virtual_memory().percent < 70:
+                        add_tasks.append(self.output_dataset.added_object.remote(self.channel, [ray.put(results[cursor: cursor + stride].to_arrow(), _owner = self.output_dataset)]))
+                    else:
+                        filename = "/data/spill-" + str(self.id) + "-" + str(self.channel) + "-" + str(spill_no) + ".parquet"
+                        results[cursor: cursor + stride].write_parquet(filename)
+                        add_tasks.append(self.output_dataset.added_parquet.remote(self.channel, filename))
+                        spill_no += 1
 
                     cursor += stride
             else:
@@ -517,15 +515,14 @@ class BlockingTaskNode(TaskNode):
         if type(obj_done) == types.GeneratorType:
             for object in obj_done:
                 if object is not None:
-                    # key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
-                    # self.object_count += 1
-                    # self.r.set(key, pickle.dumps(object))
-                    # if hasattr(object, "__len__"):
-                    #     add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(object))))
-                    # else:
-                    #     add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key,sys.getsizeof(object))))
+                    if psutil.virtual_memory().percent < 70:
+                        add_tasks.append(self.output_dataset.added_object.remote(self.channel, [ray.put(object.to_arrow(), _owner = self.output_dataset)]))
+                    else:
+                        filename = "/data/spill-" + str(self.id) + "-" + str(self.channel) + "-" + str(spill_no) + ".parquet"
+                        object.write_parquet(filename)
+                        add_tasks.append(self.output_dataset.added_parquet.remote(self.channel, filename))
+                        spill_no += 1
 
-                    add_tasks.append(self.output_dataset.added_object.remote(self.channel, [ray.put(object.to_arrow(), _owner = self.output_dataset)]))
             del self.functionObject
             gc.collect()
         else:
@@ -533,16 +530,13 @@ class BlockingTaskNode(TaskNode):
             gc.collect()
             
             if obj_done is not None:
-                # key = str(self.id) + "-" + str(self.channel) + "-" + str(self.object_count)
-                # self.object_count += 1
-                # self.r.set(key, pickle.dumps(obj_done))
-                # if hasattr(obj_done, "__len__"):
-                #     add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, len(obj_done))))
-                # else:
-                #     add_tasks.append(self.output_dataset.added_object.remote(self.channel, (ray.util.get_node_ip_address(), key, sys.getsizeof(obj_done))))
-
-                add_tasks.append(self.output_dataset.added_object.remote(self.channel, [ray.put(obj_done.to_arrow(), _owner = self.output_dataset)]))
-
+                if psutil.virtual_memory().percent < 70:
+                    add_tasks.append(self.output_dataset.added_object.remote(self.channel, [ray.put(obj_done.to_arrow(), _owner = self.output_dataset)]))
+                else:
+                    filename = "/data/spill-" + str(self.id) + "-" + str(self.channel) + "-" + str(spill_no) + ".parquet"
+                    obj_done.write_parquet(filename)
+                    add_tasks.append(self.output_dataset.added_parquet.remote(self.channel, filename))
+                    spill_no += 1
         ray.get(add_tasks)
         ray.get(self.output_dataset.done_channel.remote(self.channel))
         

@@ -37,9 +37,11 @@ class Dataset:
 @ray.remote
 class ArrowDataset:
 
-    def __init__(self, num_channels) -> None:
-        self.num_channels = num_channels
+    def __init__(self, channel_to_ip) -> None:
+        self.channel_to_ip = channel_to_ip
+        self.num_channels = len(channel_to_ip)
         self.objects = {i: [] for i in range(self.num_channels)}
+        self.parquets = {i : [] for i in range(self.num_channels)}
         self.metadata = {}
         self.remaining_channels = {i for i in range(self.num_channels)}
         self.done = False
@@ -49,6 +51,11 @@ class ArrowDataset:
         if channel not in self.objects or channel not in self.remaining_channels:
             raise Exception
         self.objects[channel].append(object_handle[0])
+    
+    def added_parquet(self, channel, filename):
+        if channel not in self.objects or channel not in self.remaining_channels:
+            raise Exception
+        self.parquets[channel].append(filename)
     
     def done_channel(self, channel):
         self.remaining_channels.remove(channel)
@@ -355,8 +362,7 @@ class TaskGraph:
 
         # the datasets will all be managed on the head node. Note that they are not in charge of actually storing the objects, they just 
         # track the ids.
-        # output_dataset = WrappedDataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote(len(channel_to_ip))
-        output_dataset = ArrowDataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote(len(channel_to_ip))
+        output_dataset = ArrowDataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote(channel_to_ip)
 
 
         tasknode = {}

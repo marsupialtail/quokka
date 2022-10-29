@@ -209,7 +209,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             yield pyarrow.flight.Result(pyarrow.py_buffer(b'Cleared!'))
         elif action.type == "check_puttable":
             # puts should now be blocking due to the DiskQueue!
-            cond = True #sum(self.flights[i].nbytes for i in self.flights) < self.mem_limit
+            cond = psutil.virtual_memory().percent < 80
             #cond = self.process.memory_info().rss < self.mem_limit
             yield pyarrow.flight.Result(pyarrow.py_buffer(bytes(str(cond), "utf-8")))
         elif action.type == "get_batches_info":

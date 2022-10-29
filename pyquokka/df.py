@@ -258,8 +258,8 @@ class QuokkaContext:
                 
                 if schema is None:
                     try:
-                        s3 = s3fs.S3FileSystem()
-                        f = pq.ParquetFile(s3.open(bucket + "/" + files[0], "rb"))
+                        s3 = S3FileSystem()
+                        f = pq.ParquetFile(s3.open_input_file(bucket + "/" + files[0]))
                         schema = [k.name for k in f.schema_arrow]
                     except:
                         raise Exception("schema discovery failed for Parquet dataset at location ", table_location)
@@ -268,8 +268,8 @@ class QuokkaContext:
             else:
                 if schema is None:
                     try:
-                        s3 = s3fs.S3FileSystem()
-                        f = pq.ParquetFile(s3.open(table_location, "rb"))
+                        s3 = S3FileSystem()
+                        f = pq.ParquetFile(s3.open_input_file(table_location))
                         schema = [k.name for k in f.schema_arrow]
                     except:
                         raise Exception("schema discovery failed for Parquet dataset at location ", table_location)

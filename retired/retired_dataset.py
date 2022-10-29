@@ -52,6 +52,89 @@ class SortPhase2Dataset:
             print(gc.collect())
             yield None, result
 
+class RedisObjectsDataset:
+
+    # expects objects as a dict of channel : list of tuples of (ip, key, size)
+    def __init__(self, channel_objects, ip_set) -> None:
+        self.channel_objects = channel_objects
+        self.rs = {}
+        self.ip_set = ip_set
+        for ip in self.ip_set:
+            self.rs[ip] = redis.Redis(host=ip, port=6800, db=0)
+
+    def get_next_batch(self, mapper_id, pos=None):
+        if mapper_id not in self.channel_objects:
+            raise Exception(
+                "ERROR: I dont know about where this channel is. Autoscaling here not supported yet. Will it ever be?")
+
+        total_objects = len(self.channel_objects[mapper_id])
+
+        if pos is None:
+            pos = 0
+
+        while pos < total_objects:
+            object = self.channel_objects[mapper_id][pos]
+            bump = self.rs[object[0]].get(object[1])
+            pos += 1
+            yield pos, pickle.loads(bump)
+
+
+# the only difference here is that we move the fragment construction inside get_batches
+# this is because on cluster setting we want to do that instead of initializing locally
+# on local setting you want to do the reverse! 
+class InputEC2ParquetDataset:
+    """
+    The original plan was to split this up by row group and different channels might share a single file. This is too complicated and leads to high init cost.
+    Generally parquet files in a directory created by tools like Spark or Quokka have similar sizes anyway.
+    """
+    def __init__(self, bucket, prefix, columns = None, filters = None) -> None:
+        
+        self.bucket = bucket
+        self.prefix = prefix
+        self.columns = columns
+        if filters is not None:
+            assert type(filters) == list and len(filters) > 0
+            self.filters = filters
+        else:
+            self.filters = None
+        self.num_channels = None
+
+    def get_own_state(self, num_channels):
+        self.num_channels = num_channels
+        s3 = boto3.client('s3')
+        z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
+        self.files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
+        assert len(self.files) > 0
+        self.length = 0
+        self.length += sum([i['Size'] for i in z['Contents'] if i['Key'].endswith(".parquet")])
+        while 'NextContinuationToken' in z.keys():
+            z = self.s3.list_objects_v2(
+                Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
+            self.files.extend([i['Key'] for i in z['Contents']
+                              if i['Key'].endswith(".parquet")])
+            self.length += sum([i['Size'] for i in z['Contents']
+                              if i['Key'].endswith(".parquet")])
+        
+        # now order the files and lengths, not really necessary
+
+    def get_next_batch(self, mapper_id, pos=None):
+        
+        assert self.num_channels is not None
+        if pos is None:
+            start_pos = mapper_id
+        else:
+            start_pos = pos
+        if start_pos >= len(self.files):
+            yield None, None 
+        else:
+            for curr_pos in range(start_pos, len(self.files), self.num_channels):
+                
+                a = pq.read_table("s3://" + self.bucket + "/" +
+                                self.files[curr_pos], columns=self.columns, filters=self.filters)
+                
+                curr_pos += self.num_channels
+                yield curr_pos, polars.from_arrow(a)
+
 # the only difference here is that we move the fragment construction inside get_batches
 # this is because on cluster setting we want to do that instead of initializing locally
 # on local setting you want to do the reverse! 

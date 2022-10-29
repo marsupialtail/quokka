@@ -58,6 +58,10 @@
                 <li class="toctree-l1"><a class="reference internal" href="../cloud/">Setting Up Cloud Cluster</a>
                 </li>
               </ul>
+              <ul>
+                <li class="toctree-l1"><a class="reference internal" href="../different/">How is Quokka different from ...?</a>
+                </li>
+              </ul>
               <p class="caption"><span class="caption-text">Tutorials</span></p>
               <ul>
                   <li class="toctree-l1"><a class="reference internal" href="../simple/">DataStream API</a>
@@ -97,20 +101,13 @@
             <div class="section" itemprop="articleBody">
               
                 <h1 id="installation">Installation</h1>
-<p>If you plan on trying out Quokka for whatever reason, I'd love to hear from you. Please send an email to zihengw@stanford.edu or join the <a href="https://discord.gg/YKbK2TVk">Discord</a>.</p>
+<p>If you plan on trying out Quokka for whatever reason, I'd love to hear from you. Please send an email to zihengw@stanford.edu or join the <a href="https://discord.gg/6ujVV9HAg3">Discord</a>.</p>
 <p>Quokka can be installed as a pip package: </p>
 <pre><code class="language-bash">pip3 install pyquokka
 </code></pre>
-<p><strong>However it needs the latest version of Redis (at least 7.0)</strong>, which you can get by running the following:</p>
-<pre><code class="language-bash">curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
-
-echo &quot;deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main&quot; | sudo tee /etc/apt/sources.list.d/redis.list
-
-sudo apt-get update
-sudo apt-get install redis
-</code></pre>
+<p><strong>Please note that Quokka has problems on Mac M1 laptops. It is tested to work on x86 Ubuntu environments.</strong></p>
 <p>If you only plan on running Quokka locally, you are done. Here is a <a href="../simple/">10 min lesson</a> on how it works.</p>
-<p>If you are planning on reading files from S3, you need to install the awscli and you have your credentials set up.</p>
+<p>If you are planning on reading files from S3, you need to install the awscli and have your credentials set up.</p>
 <p>If you plan on using Quokka for cloud by launching EC2 clusters, there's a bit more setup that needs to be done. Currently Quokka only provides support for AWS. Quokka provides a utility library under <code>pyquokka.utils</code> which allows you to manager clusters and connect to them. It assumes that awscli is configured locally and you have a keypair and a security group with the proper configurations. To set these things up, you can follow the <a href="https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-quickstart.html">AWS guide</a>. </p>
 <p>More detailed instructions can be found in <a href="../cloud/">Setting Up Cloud Cluster</a>.</p>
 <p>Quokka also plans to extend support to Docker/Kubernetes based deployments based on KubeRay. (Contributions welcome!)</p>

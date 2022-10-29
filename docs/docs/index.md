@@ -16,13 +16,9 @@ What's even better than being cheap and fast is the fact that since Quokka is Py
 
 Another great advantage is that a streaming data paradigm is more in line with how data arrives in the real world, making it easy to bridge your data application to production, or conduct time-series backfilling on your historical data.
 
-You develop with Quokka locally, and deploy to cloud (currently AWS) with a single line of code change. Quokka is specifically designed for the following workloads.
+You develop with Quokka locally, and deploy to cloud (currently AWS) with a single line of code change. Quokka is currently designed to target **SQLish data engineering workloads on data lake.** You can try Quokka if you want to speed up some Spark data jobs, or if you want to implement "stateful Python UDFs" in your SQL pipeline, which is kind of a nightmare in Spark. (e.g. forward computing some feature based on historical data) Quokka can also typically achieve much better performance than Spark on pure SQL workloads when input data comes from cloud storage, in Parquet or CSV foramt.
 
-1. **SQLish data engineering workloads on data lake.** You can try Quokka if you want to speed up some Spark data jobs, or if you want to implement "stateful Python UDFs" in your SQL pipeline, which is kind of a nightmare in Spark. (e.g. forward computing some feature based on historical data) Quokka can also typically achieve much better performance than Spark on pure SQL workloads when input data comes from cloud storage, especially if the data is in CSV format.
-
-    **The drawback is Quokka currently does not support SQL interface, so you are stuck with a dataframe-like DataStream API.** However SQL optimizations such as predicate pushdown and early projection are implemented.
-
-2. (support forthcoming) **ML engineering pipelines on large unstructured data datasets.** Since Quokka is Python-native, it interfaces perfectly with the Python machine learning ecosystem. **No more JVM troubles.** Unlike Spark, Quokka also will let you precisely control the placement of your stateful operators on machines, preventing GPU out-of-memory and improving performance by reducing contention. Support for these workloads are still in the works. If you are interested, please drop me a note: zihengw@stanford.edu or [Discord](https://discord.gg/YKbK2TVk).
+**The drawback is Quokka currently does not support SQL interface, so you are stuck with a dataframe-like DataStream API.** However SQL optimizations such as predicate pushdown and early projection are implemented. I also plan to support Delta Lake and Apache Iceberg in the near future. If you are interested, please drop me a note: zihengw@stanford.edu or [Discord](https://discord.gg/6ujVV9HAg3).
 
 ## Roadmap
 
@@ -32,4 +28,4 @@ You develop with Quokka locally, and deploy to cloud (currently AWS) with a sing
 4. **Time Series Package.** Quokka will support point-in-time joins and asof joins natively by Q4 2022. This will be useful for feature backtesting, etc.
 
 ## Contact
-If you are interested in trying out Quokka or hit any problems (any problems at all), please contact me at zihengw@stanford.edu or [Discord](https://discord.gg/YKbK2TVk). I will try my best to make Quokka work for you.
+If you are interested in trying out Quokka or hit any problems (any problems at all), please contact me at zihengw@stanford.edu or [Discord](https://discord.gg/6ujVV9HAg3). I will try my best to make Quokka work for you.

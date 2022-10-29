@@ -51,7 +51,7 @@ class LocalCluster:
         flight_file = pyquokka_loc + "/flight.py"
         os.system("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288")
         try:
-            self.flight_process = subprocess.Popen(["python3", flight_file], preexec_fn = preexec_fn)
+            self.flight_process = subprocess.Popen(["python3", flight_file], preexec_fn = preexec_function)
         except:
             raise Exception("Could not start flight server properly. Check if there is already something using port 5005, kill it if necessary. Use lsof -i:5005")
         self.leader_public_ip = "localhost"

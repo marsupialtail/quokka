@@ -1,6 +1,6 @@
 # Setting up Quokka for EC2
 
-To use Quokka for EC2, you need to (at minimum) have an AWS account with permissions to launch instances and create new security groups. You will probably run into issues since everybody's AWS setup is a little bit different, so please email: zihengw@stanford.edu or [Discord](https://discord.gg/YKbK2TVk). 
+To use Quokka for EC2, you need to (at minimum) have an AWS account with permissions to launch instances and create new security groups. You will definitely run into issues since everybody's AWS setup is a little bit different, so please email: zihengw@stanford.edu or [Discord](https://discord.gg/6ujVV9HAg3). 
 
 Quokka requires a security group that allows inbound and outbound connections to ports 5005 (Flight), 6379 (Ray) and 6800 (Redis) from IP addresses within the cluster. For simplicity, you can just enable all inbound and outbound connections from all IP addresses. The easiest way to make this is to manually create an instance on EC2 through the dashboard, e.g. t2.micro, and manually add rules to the security group EC2 assigns that instance. Then you can either copy that security group to a new group, or keep using that modified security group for Quokka. There must be an automated way to do this in the AWS CLI, but I am too lazy to figure it out. If you want to tell me how to do it, I'll post the steps here and buy you a coffee.
 

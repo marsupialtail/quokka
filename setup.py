@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.0.8' 
+VERSION = '0.1.2' 
 DESCRIPTION = 'Quokka'
 LONG_DESCRIPTION = """
 Dope way to do cloud analytics\n
@@ -29,7 +29,6 @@ setup(
             'psutil',
             'h5py',
             'polars==0.14.*', # latest version,0.13 has some breaking APIs
-            's3fs',
             'sqlglot',
             'graphviz'
             ], # add any additional packages that 
