@@ -253,6 +253,12 @@ class JoinExecutor(Executor):
 
         # keys that will never be seen again, safe to delete from the state on the other side
     
+    def checkpoint(self, conn, actor_id, channel_id, seq):
+        pass
+    
+    def restore(self, conn, actor_id, channel_id, seq):
+        pass
+
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
         # state compaction
@@ -440,6 +446,11 @@ class AggExecutor(Executor):
                 self.order_list.append(key)
                 self.reverse_list.append(True if dir == "desc" else False)
 
+    def checkpoint(self, conn, actor_id, channel_id, seq):
+        pass
+    
+    def restore(self, conn, actor_id, channel_id, seq):
+        pass
 
     def serialize(self):
         return {0:self.state}, "all"
@@ -470,7 +481,6 @@ class AggExecutor(Executor):
         if self.state is None:
             return None
         
-
         arrow_state = self.state.to_arrow()
         arrow_state = arrow_state.group_by(self.groupby_keys).aggregate(self.pyarrow_agg_list)
         self.state = polars.from_arrow(arrow_state).rename(self.rename_dict)

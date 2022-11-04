@@ -44,16 +44,17 @@ class EC2Cluster:
 class LocalCluster:
     def __init__(self) -> None:
         print("Initializing local Quokka cluster.")
+        self.num_node = 1
         self.cpu_count = multiprocessing.cpu_count()
         pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
         # we assume you have pyquokka installed, and we are going to spin up a ray cluster locally
         ray.init(ignore_reinit_error=True)
-        flight_file = pyquokka_loc + "/flight.py"
-        os.system("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288")
-        try:
-            self.flight_process = subprocess.Popen(["python3", flight_file], preexec_fn = preexec_function)
-        except:
-            raise Exception("Could not start flight server properly. Check if there is already something using port 5005, kill it if necessary. Use lsof -i:5005")
+        # flight_file = pyquokka_loc + "/flight.py"
+        # os.system("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288")
+        # try:
+        #     self.flight_process = subprocess.Popen(["python3", flight_file], preexec_fn = preexec_function)
+        # except:
+        #     raise Exception("Could not start flight server properly. Check if there is already something using port 5005, kill it if necessary. Use lsof -i:5005")
         self.leader_public_ip = "localhost"
         self.leader_private_ip = ray.get_runtime_context().gcs_address.split(":")[0]
         self.public_ips = {0:"localhost"}
@@ -62,7 +63,8 @@ class LocalCluster:
     
     def __del__(self):
         # we need to join the process that is running the flight server! 
-        self.flight_process.kill()
+        #self.flight_process.kill()
+        pass
 
 
 class QuokkaClusterManager:
@@ -125,10 +127,11 @@ class QuokkaClusterManager:
                 time.sleep(5)
         
         self.launch_all("ulimit -c unlimited", public_ips, "Failed to set ulimit")
-        # eventually we need redis only on the coordinator
-        # self.launch_all("redis-6.2.6/src/redis-server redis-6.2.6/redis.conf --port 6800 --protected-mode no&", public_ips, "Failed to start Redis server on new worker")
         leader_public_ip = public_ips[0]
         leader_private_ip = private_ips[0]
+
+        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + \
+            " redis-6.2.6/src/redis-server redis-6.2.6/redis.conf --port 6800 --protected-mode no&")
         z = os.system("""ssh -oStrictHostKeyChecking=no -i """ + self.key_location + """ ubuntu@""" + leader_public_ip + """ -t "echo '* hard nofile 65536\n* soft nofile 65536\n* hard core unlimited\n* soft core unlimited' | sudo tee /etc/security/limits.conf" """)
         z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + 
         " /home/ubuntu/.local/bin/ray start --head --port=6380")
