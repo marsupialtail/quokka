@@ -283,6 +283,7 @@ class InputNode(Node):
         #self.con = duckdb.connect()
         #self.con.execute('PRAGMA threads=%d' % 8)
         self.input_generator = self.accessor.get_next_batch(self.channel, None)
+
         for pos, batch in self.input_generator:
             if batch is not None and len(batch) > 0:
                 start = time.time()
