@@ -2,14 +2,14 @@ import redis
 import ray
 import polars
 import time
-from coordinator import Coordinator
-from placement_strategy import CustomChannelsStrategy, PlacementStrategy, SingleChannelStrategy
-from quokka_dataset import * 
-from placement_strategy import * 
-from target_info import * 
-from core import *
-from tables import * 
-import sql_utils
+from pyquokka.coordinator import Coordinator
+from pyquokka.placement_strategy import *
+from pyquokka.quokka_dataset import * 
+from pyquokka.placement_strategy import * 
+from pyquokka.target_info import * 
+from pyquokka.core import *
+from pyquokka.tables import * 
+import pyquokka.sql_utils as sql_utils
 from functools import partial
 
 class TaskGraph:
@@ -33,7 +33,7 @@ class TaskGraph:
         
         self.r.flushall()
 
-        self.coordinator = Coordinator.remote()
+        self.coordinator = Coordinator.options(num_cpus=0.001, max_concurrency = 2,resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote()
 
         self.nodes = {}
         # for topological ordering
@@ -86,10 +86,11 @@ class TaskGraph:
         self.current_actor += 1
         return self.current_actor - 1
 
-    def new_input_reader_node(self, reader, placement_strategy = CustomChannelsStrategy(1)):
+    def new_input_reader_node(self, reader, placement_strategy = None):
 
         self.actor_types[self.current_actor] = 'input'
-
+        if placement_strategy is None:
+            placement_strategy = CustomChannelsStrategy(1)
         assert type(placement_strategy) == CustomChannelsStrategy
         
         if hasattr(reader, "get_own_state"):
@@ -113,7 +114,7 @@ class TaskGraph:
 
         return self.epilogue(placement_strategy)
     
-    def get_default_partition(self, source_placement_strategy, target_placement_strategy):
+    def get_default_partition(self, source_node_id, target_placement_strategy):
         # this can get more sophisticated in the future. For now it's super dumb.
         
         def partition_key_0(ratio, data, source_channel, num_target_channels):
@@ -123,14 +124,19 @@ class TaskGraph:
             # return entirety of data to a random channel between source_channel * ratio and source_channel * ratio + ratio
             target_channel = int(random.random() * ratio) + source_channel * ratio
             return {target_channel: data}
+
+        source_placement_strategy = self.actor_placement_strategy[source_node_id]
         
         assert type(source_placement_strategy) == CustomChannelsStrategy and type(target_placement_strategy) == CustomChannelsStrategy
-        if source_placement_strategy.channels_per_node >= target_placement_strategy.channels_per_node:
-            assert source_placement_strategy.channels_per_node % target_placement_strategy.channels_per_node == 0
-            return partial(partition_key_0, source_placement_strategy.channels_per_node // target_placement_strategy.channels_per_node )
+        source_total_channels = self.get_total_channels_from_placement_strategy(source_placement_strategy, self.actor_types[source_node_id])
+        target_total_channels = self.get_total_channels_from_placement_strategy(target_placement_strategy, "exec")
+        
+        if source_total_channels >= target_total_channels:
+            assert source_total_channels % target_total_channels == 0
+            return partial(partition_key_0, source_total_channels // target_total_channels )
         else:
-            assert target_placement_strategy.channels_per_node % source_placement_strategy.channels_per_node == 0
-            return partial(partition_key_1, target_placement_strategy.channels_per_node // source_placement_strategy.channels_per_node)
+            assert target_total_channels % source_total_channels == 0
+            return partial(partition_key_1, target_total_channels // source_total_channels)
 
     def prologue(self, streams, placement_strategy, source_target_info):
 
@@ -197,7 +203,7 @@ class TaskGraph:
                 target_info.partitioner = target_info.partitioner.func
             elif type(target_info.partitioner) == PassThroughPartitioner:
                 source = streams[key]
-                target_info.partitioner = self.get_default_partition(self.actor_placement_strategy[source], placement_strategy)
+                target_info.partitioner = self.get_default_partition(source, placement_strategy)
             else:
                 raise Exception("Partitioner not supported")
             
@@ -228,6 +234,9 @@ class TaskGraph:
 
         assert len(source_target_info) == len(streams)
         self.actor_types[self.current_actor] = 'exec'
+
+        if placement_strategy is None:
+            placement_strategy = CustomChannelsStrategy(1)
 
         self.FOT.set(self.r, self.current_actor, ray.cloudpickle.dumps(functionObject))
 
@@ -260,8 +269,8 @@ class TaskGraph:
         
         return self.epilogue(placement_strategy)
 
-    def new_blocking_node(self, streams, functionObject, placement_strategy = CustomChannelsStrategy(1), source_target_info = {}):
-        
+    def new_blocking_node(self, streams, functionObject, placement_strategy = None, source_target_info = {}):
+
         current_actor = self.new_non_blocking_node(streams, functionObject, placement_strategy, source_target_info)
         self.actor_types[current_actor] = 'exec'
         total_channels = self.get_total_channels_from_placement_strategy(placement_strategy, 'exec')

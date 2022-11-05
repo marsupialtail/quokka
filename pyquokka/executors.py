@@ -187,6 +187,12 @@ class BroadcastJoinExecutor(Executor):
         
         assert self.small_on in self.state.columns
     
+    def checkpoint(self, conn, actor_id, channel_id, seq):
+        pass
+    
+    def restore(self, conn, actor_id, channel_id, seq):
+        pass
+
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
         # state compaction
@@ -383,6 +389,12 @@ class DistinctExecutor(Executor):
 
         self.keys = keys
         self.state = None
+    
+    def checkpoint(self, conn, actor_id, channel_id, seq):
+        pass
+    
+    def restore(self, conn, actor_id, channel_id, seq):
+        pass
 
     def execute(self, batches, stream_id, executor_id):
         
@@ -462,6 +474,8 @@ class AggExecutor(Executor):
     
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
+
+        print("exexcuting")
         batches = [i for i in batches if i is not None]
         batch = polars.concat(batches)
         assert type(batch) == polars.internals.DataFrame, batch # polars add has no index, will have wierd behavior
@@ -477,6 +491,8 @@ class AggExecutor(Executor):
 
 
     def done(self,executor_id):
+
+        print("done")
 
         if self.state is None:
             return None

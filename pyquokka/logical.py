@@ -78,9 +78,9 @@ class InputS3FilesNode(SourceNode):
         self.bucket = bucket
         self.prefix = prefix
     
-    def lower(self, task_graph, ip_to_num_channel = None):
+    def lower(self, task_graph):
         file_reader = InputS3FilesDataset(self.bucket,self.prefix)
-        node = task_graph.new_input_reader_node(file_reader, ip_to_num_channel = ip_to_num_channel)
+        node = task_graph.new_input_reader_node(file_reader, self.placement_strategy)
         return node
 
 class InputDiskFilesNode(SourceNode):
@@ -88,9 +88,9 @@ class InputDiskFilesNode(SourceNode):
         super().__init__(schema)
         self.directory = directory
     
-    def lower(self, task_graph, ip_to_num_channel = None):
+    def lower(self, task_graph):
         file_reader = InputDiskFilesDataset(self.directory)
-        node = task_graph.new_input_reader_node(file_reader, ip_to_num_channel = ip_to_num_channel)
+        node = task_graph.new_input_reader_node(file_reader, self.placement_strategy)
         return node
 
 class InputS3CSVNode(SourceNode):
@@ -103,9 +103,9 @@ class InputS3CSVNode(SourceNode):
         self.has_header = has_header
         self.projection = projection
 
-    def lower(self, task_graph, ip_to_num_channel =None):
+    def lower(self, task_graph):
         csv_reader = InputS3CSVDataset(self.bucket, self.schema, prefix = self.prefix, key = self.key, sep=self.sep, header = self.has_header, stride = 128 * 1024 * 1024, columns = self.projection)
-        node = task_graph.new_input_reader_node(csv_reader, ip_to_num_channel = ip_to_num_channel)
+        node = task_graph.new_input_reader_node(csv_reader, self.placement_strategy)
         return node
 
 class InputDiskCSVNode(SourceNode):
@@ -116,9 +116,9 @@ class InputDiskCSVNode(SourceNode):
         self.has_header = has_header
         self.projection = projection
 
-    def lower(self, task_graph, ip_to_num_channel =None):
+    def lower(self, task_graph):
         csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, header = self.has_header, stride = 128 * 1024 * 1024, columns = self.projection)
-        node = task_graph.new_input_reader_node(csv_reader, ip_to_num_channel = ip_to_num_channel)
+        node = task_graph.new_input_reader_node(csv_reader, self.placement_strategy)
         return node
 
 class InputS3ParquetNode(SourceNode):
@@ -131,21 +131,21 @@ class InputS3ParquetNode(SourceNode):
         self.predicate = predicate
         self.projection = projection
     
-    def lower(self, task_graph, ip_to_num_channel =None):
+    def lower(self, task_graph):
 
         if type(task_graph.cluster) ==  EC2Cluster:
             if self.key is None:
                 parquet_reader = InputEC2ParquetDataset(self.bucket, self.prefix, columns = list(self.projection), filters = self.predicate)
             else:
                 parquet_reader = InputParquetDataset(self.bucket + "/" + self.key, mode = "s3", columns = list(self.projection), filters = self.predicate)
-            node = task_graph.new_input_reader_node(parquet_reader, ip_to_num_channel = ip_to_num_channel)
+            node = task_graph.new_input_reader_node(parquet_reader, self.placement_strategy)
             return node
         elif type(task_graph.cluster) == LocalCluster:
             if self.key is None:
                 parquet_reader = InputEC2ParquetDataset(self.bucket, self.prefix, columns = list(self.projection), filters = self.predicate)
             else:
                 parquet_reader = InputParquetDataset(self.bucket + "/" + self.key, mode = "s3", columns = list(self.projection), filters = self.predicate)
-            node = task_graph.new_input_reader_node(parquet_reader, ip_to_num_channel = ip_to_num_channel)
+            node = task_graph.new_input_reader_node(parquet_reader, self.placement_strategy)
             return node
 
     
@@ -162,13 +162,13 @@ class InputDiskParquetNode(SourceNode):
         self.predicate = predicate
         self.projection = projection
 
-    def lower(self, task_graph, ip_to_num_channel =None):
+    def lower(self, task_graph):
 
         if type(task_graph.cluster) ==  EC2Cluster:
             raise Exception
         elif type(task_graph.cluster) == LocalCluster:
             parquet_reader = InputParquetDataset(self.filepath, mode = "local", columns = list(self.projection), filters = self.predicate)
-            node = task_graph.new_input_reader_node(parquet_reader, ip_to_num_channel = ip_to_num_channel)
+            node = task_graph.new_input_reader_node(parquet_reader, self.placement_strategy)
             return node
     
     def __str__(self):
@@ -185,9 +185,9 @@ class DataSetNode(SinkNode):
     def __init__(self, schema) -> None:
         super().__init__(schema)
     
-    def lower(self, task_graph, parent_nodes, parent_source_info, ip_to_num_channel=None ):
+    def lower(self, task_graph, parent_nodes, parent_source_info ):
         assert self.blocking
-        return task_graph.new_blocking_node(parent_nodes,StorageExecutor(), ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info)
+        return task_graph.new_blocking_node(parent_nodes,StorageExecutor(), self.placement_strategy, source_target_info=parent_source_info)
         
 '''
 We need to keep a schema mapping to map the node's schema, aka the schema after the operator, to the schema of its parents to conduct
@@ -215,11 +215,11 @@ class StatefulNode(TaskNode):
         super().__init__(schema, schema_mapping, required_columns)
         self.operator = operator
     
-    def lower(self, task_graph, parent_nodes, parent_source_info, ip_to_num_channel=None ):
+    def lower(self, task_graph, parent_nodes, parent_source_info ):
         if self.blocking:
-            return task_graph.new_blocking_node(parent_nodes,self.operator, ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info)
+            return task_graph.new_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info)
         else:
-            return task_graph.new_non_blocking_node(parent_nodes,self.operator, ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info)
+            return task_graph.new_non_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info)
         
 '''
 We need a separate MapNode from StatefulNode since we can compact UDFs
@@ -244,11 +244,11 @@ class MapNode(TaskNode):
         self.function = function
         self.foldable = foldable
 
-    def lower(self, task_graph, parent_nodes, parent_source_info, ip_to_num_channel=None ):
+    def lower(self, task_graph, parent_nodes, parent_source_info ):
         if self.blocking:
-            return task_graph.new_blocking_node(parent_nodes,UDFExecutor(self.function), ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info)
+            return task_graph.new_blocking_node(parent_nodes,UDFExecutor(self.function), self.placement_strategy, source_target_info=parent_source_info)
         else:
-            return task_graph.new_non_blocking_node(parent_nodes,UDFExecutor(self.function), ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info)
+            return task_graph.new_non_blocking_node(parent_nodes,UDFExecutor(self.function), self.placement_strategy, source_target_info=parent_source_info)
 
 class FilterNode(TaskNode):
 
@@ -260,7 +260,7 @@ class FilterNode(TaskNode):
             required_columns = {0:set(i.name for i in predicate.find_all(sqlglot.expressions.Column))})
         self.predicate = predicate
     
-    def lower(self, task_graph, parent_nodes, parent_source_info, ip_to_num_channel=None ):
+    def lower(self, task_graph, parent_nodes, parent_source_info):
         print("Tried to lower a filter node. This means the optimization probably failed and something bad is happening.")
         raise NotImplementedError
 

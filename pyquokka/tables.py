@@ -71,6 +71,10 @@ class ClientWrapper:
     def lpop(self, redis_client, key, count = 1):
         key = self.wrap_key(key)
         return redis_client.lpop(key, count)
+    
+    def llen(self, redis_client, key):
+        key = self.wrap_key(key)
+        return redis_client.llen(key)
 
     def lindex(self, redis_client, key, index):
         key = self.wrap_key(key)

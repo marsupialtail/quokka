@@ -3,9 +3,9 @@ import pyarrow
 import pyarrow.flight
 import pickle
 import redis
-from hbq import * 
-from task import * 
-from tables import * 
+from pyquokka.hbq import * 
+from pyquokka.task import * 
+from pyquokka.tables import * 
 import polars
 import time
 import boto3
@@ -15,7 +15,7 @@ CHECKPOINT_INTERVAL = 2
 HBQ_GC_INTERVAL = 2
 MAX_SEQ = 1000000000
 DEBUG = False
-PROFILE = True
+PROFILE = False
 
 def print_if_debug(*x):
     if DEBUG:
@@ -59,6 +59,7 @@ class TaskManager:
 
         # this defines how this object is going to push outputs
         self.flight_client = pyarrow.flight.connect("grpc://0.0.0.0:5005")
+        self.clear_flights(self.flight_client)
         self.flight_clients = {i: pyarrow.flight.connect("grpc://" + str(i) + ":5005") for i in worker_ips}
 
         #  Bytedance can write this.
@@ -104,36 +105,16 @@ class TaskManager:
     def alive(self):
         return True
 
-    def update_dst(self, source_actor_id):
+    def update_dst(self):
         # you only ever need the actor, channel pairs that have been registered in self.actor_flight_clients
         
         keys = self.DST.keys(self.r)
-        interested_channels = [pickle.loads(key)[1] for key in keys if pickle.loads(key)[0] == source_actor_id]
-        # now if there is already an entry in the DST
-        if self.dst is not None:
-            filter_set = set(self.dst.filter(polars.col('source_actor_id') == source_actor_id)["source_channel_id"])
-        else:
-            filter_set = set()
-        
-        new_channels = [channel for channel in interested_channels if channel not in filter_set]
-        
-        actor_ids = []
-        channel_ids = []
-        seqs = []
-        for channel_id in new_channels:
-            seq = self.DST.get(self.r, pickle.dumps((source_actor_id, channel_id)))
-            if seq is None:
-                continue
-            actor_ids.append(source_actor_id)
-            channel_ids.append(channel_id)
-            seqs.append(int(seq))
+        seqs = [int(i) for i in self.DST.mget(self.r, keys)]
+        actor_ids = [pickle.loads(k)[0] for k in keys]
+        channel_ids = [pickle.loads(k)[1] for k in keys]
 
         if len(seqs) > 0:
-            new_dst = polars.from_dict({"source_actor_id": actor_ids, "source_channel_id": channel_ids, "done_seq": seqs})
-            if self.dst is None:
-                self.dst = new_dst
-            else:
-                self.dst.vstack(new_dst, in_place=True)
+            self.dst = polars.from_dict({"source_actor_id": actor_ids, "source_channel_id": channel_ids, "done_seq": seqs})
 
     
     def register_partition_function(self, source_actor_id, target_actor_id, number_target_channels, partition_function):
@@ -189,6 +170,15 @@ class TaskManager:
                 time.sleep(1)
             else:
                 break
+    
+    def clear_flights(self, client):
+        buf = pyarrow.allocate_buffer(0)
+        action = pyarrow.flight.Action("clear", buf)
+        result = next(client.do_action(action))
+        #print(result.body.to_pybytes().decode("utf-8"))
+        if result.body.to_pybytes().decode("utf-8") != "True":
+            print(result.body.to_pybytes().decode("utf-8"))
+            raise Exception
     
     def execute_gc(self, gcable):
 
@@ -295,19 +285,18 @@ class TaskManager:
         assert all(transaction.execute())
         self.HBQ.gc(gcable)
 
-    def task_commit(self, transaction, actor_id, channel_id, out_seq, next_task):
+    def task_commit(self, transaction, candidate_task, next_task):
 
         if next_task is not None:
             # now we need to actually reflect this information in the global data structures
             # note when we put task info in the NTT, the info needs to include the entire task, including all the future tasks it could launch. i.e. the tape in taped tasks.
-            self.NTT.lpop(transaction, str(self.node_id))
+            self.NTT.lrem(transaction, str(self.node_id), 1, candidate_task.reduce())
             self.NTT.rpush(transaction, str(self.node_id), next_task.reduce())
             
         else:
             # this task is not spawning off more tasks, it's considered done
             # most likely it got done from all its input sources
-            self.NTT.lpop(transaction, str(self.node_id))
-            self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), out_seq)
+            self.NTT.lrem(transaction, str(self.node_id), 1, candidate_task.reduce())
         
 
 @ray.remote
@@ -338,15 +327,18 @@ class ExecTaskManager(TaskManager):
 
         pyarrow.set_cpu_count(8)
         count = -1
+        self.index = 0
         while True:
 
             self.check_in_recovery()
 
             count += 1
-
-            candidate_task = self.NTT.lindex(self.r, str(self.node_id), 0)
-            if candidate_task is None:
+            length = self.NTT.llen(self.r, str(self.node_id))
+            if length == 0:
                 continue
+            if self.index > length - 1:
+                self.index = self.index % length
+            candidate_task = self.NTT.lindex(self.r, str(self.node_id), self.index)
 
             task_type, tup = pickle.loads(candidate_task)
             if task_type == "input" or task_type == "inputtape":
@@ -378,102 +370,110 @@ class ExecTaskManager(TaskManager):
                     if candidate_task.state_seq > 0:
                         s3 = boto3.client("s3")
                         print("RESTORING TO ", candidate_task.state_seq -1 )
-                        self.function_objects[actor_id, channel_id].restore(s3, candidate_task.state_seq - 1)
+                        self.function_objects[actor_id, channel_id].restore(s3, actor_id, channel_id, candidate_task.state_seq - 1)
 
                 input_requirements = candidate_task.input_reqs
 
-                request = ("cache", actor_id, channel_id, input_requirements, False)
-
-                # if we can bake logic inside the the flight server we probably should, because that will be baked into C++ at some point.
-
-                reader = self.flight_client.do_get(pyarrow.flight.Ticket(pickle.dumps(request)))
-
-                # we are going to assume the Flight server gives us results sorted by source_actor_id
-                input_names = []
-                batches = []
-                source_actor_ids = set()
-                source_channel_seqs = {}
-                while True:
-                    try:
-                        chunk, metadata = reader.read_chunk()
-                        name, format = pickle.loads(metadata)
-                        source_actor_id, source_channel_id, seq, target_actor_id, partition_fn, target_channel_id = name
-                        input_names.append(name)
-                        
-                        source_actor_ids.add(source_actor_id)
-                        if source_channel_id in source_channel_seqs:
-                            source_channel_seqs[source_channel_id].append(seq)
-                        else:
-                            source_channel_seqs[source_channel_id] = [seq]
-                        assert format == "polars"
-                        batches.append(chunk)
-                    except StopIteration:
-                        break
+                self.update_dst()
                 
-
-                if len(batches) == 0:
-                    continue
-
-                assert len(source_actor_ids) == 1
-                source_actor_id = source_actor_ids.pop()
-
-                # pass a list of polars DataFrames to the executor. We could concatenate them here, but it might break some operators, though it shouldn't.
-                # TODO: figure out zero copy
-                input = [polars.from_pandas(pyarrow.Table.from_batches([batch]).to_pandas()) for batch in batches]
-                output, state_seq, out_seq = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
-
-                source_channel_ids = [i for i in source_channel_seqs]
-                source_channel_progress = [len(source_channel_seqs[i]) for i in source_channel_ids]
-                progress = polars.from_dict({"source_actor_id": [source_actor_id] * len(source_channel_ids) , "source_channel_id": source_channel_ids, "progress": source_channel_progress})
-                # progress is guaranteed to have something since len(batches) > 0
-                
-                print_if_debug("progress", progress)
-                
-                new_input_reqs = input_requirements.join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
-                new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
-                
-                print_if_debug(new_input_reqs)
-                new_input_reqs = new_input_reqs.drop("progress")
-    
-                self.update_dst(source_actor_id)
-                
-                print_if_debug(self.dst)
                 if self.dst is not None:
-                    new_input_reqs = new_input_reqs.join(self.dst, on = ["source_actor_id", "source_channel_id"], how = "left")\
+                    input_requirements = input_requirements.join(self.dst, on = ["source_actor_id", "source_channel_id"], how = "left")\
                                                     .fill_null(MAX_SEQ)\
                                                     .filter(polars.col("min_seq") <= polars.col("done_seq"))\
                                                     .drop("done_seq")
-                print_if_debug(new_input_reqs)
+                
+                # print(input_requirements)
                 
                 transaction = self.r.pipeline()
-                last_output_seq = out_seq
 
-                # note we don't have to push a None output. 
-                failed = False
-                if output is not None:
-                    assert type(output) == polars.internals.DataFrame or type(output) == types.GeneratorType
-                    if type(output) == polars.internals.DataFrame:
-                        output = [output]
+                out_seq = candidate_task.out_seq
+                state_seq = candidate_task.state_seq
+
+                input_names = []
+                if len(input_requirements) > 0:
+
+                    request = ("cache", actor_id, channel_id, input_requirements, False)
+
+                    # if we can bake logic inside the the flight server we probably should, because that will be baked into C++ at some point.
+
+                    reader = self.flight_client.do_get(pyarrow.flight.Ticket(pickle.dumps(request)))
+
+                    # we are going to assume the Flight server gives us results sorted by source_actor_id
                     
-                    for data in output:
-                        if actor_id not in self.blocking_nodes:
-                            pushed = self.push(actor_id, channel_id, out_seq, data)
-                            if not pushed:
-                                # you failed to push downstream, most likely due to node failure. wait a bit for coordinator recovery and continue, most like will be choked on barrier.
-                                time.sleep(0.2)
-                                failed = True
-                                break
-                        else:
-                            ray.get(self.blocking_nodes[actor_id].added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = self.blocking_nodes[actor_id])]))
-                        self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
+                    batches = []
+                    source_actor_ids = set()
+                    source_channel_ids = []
+                    source_channel_seqs = {}
+                    while True:
+                        try:
+                            chunk, metadata = reader.read_chunk()
+                            name, format = pickle.loads(metadata)
+                            source_actor_id, source_channel_id, seq, target_actor_id, partition_fn, target_channel_id = name
+                            input_names.append(name)
+                            
+                            source_actor_ids.add(source_actor_id)
+                            if source_channel_id in source_channel_seqs:
+                                source_channel_seqs[source_channel_id].append(seq)
+                            else:
+                                source_channel_seqs[source_channel_id] = [seq]
+                            assert format == "polars"
+                            batches.append(chunk)
+                        except StopIteration:
+                            break
+                    
 
-                        last_output_seq = out_seq
-                        out_seq += 1
+                    if len(batches) == 0:
+                        self.index += 1
+                        continue
+
+                    assert len(source_actor_ids) == 1
+                    source_actor_id = source_actor_ids.pop()
+
+                    input = [polars.from_pandas(pyarrow.Table.from_batches([batch]).to_pandas()) for batch in batches]
+                    output, _ , _ = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
+
+                    source_channel_ids = [i for i in source_channel_seqs]
+                    source_channel_progress = [len(source_channel_seqs[i]) for i in source_channel_ids]
+                    progress = polars.from_dict({"source_actor_id": [source_actor_id] * len(source_channel_ids) , "source_channel_id": source_channel_ids, "progress": source_channel_progress})
+                    # progress is guaranteed to have something since len(batches) > 0
+                    
+                    print_if_debug("progress", progress)
+                    
+                    new_input_reqs = input_requirements.join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
+                    new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
+                    
+                    print_if_debug(new_input_reqs)
+                    new_input_reqs = new_input_reqs.drop("progress")
+                    
+
+                    # note we don't have to push a None output. 
+                    failed = False
+                    if output is not None:
+                        assert type(output) == polars.internals.DataFrame or type(output) == types.GeneratorType
+                        if type(output) == polars.internals.DataFrame:
+                            output = [output]
                         
-                if failed:
-                    continue
+                        for data in output:
+                            if actor_id not in self.blocking_nodes:
+                                pushed = self.push(actor_id, channel_id, out_seq, data)
+                                if not pushed:
+                                    # you failed to push downstream, most likely due to node failure. wait a bit for coordinator recovery and continue, most like will be choked on barrier.
+                                    time.sleep(0.2)
+                                    failed = True
+                                    break
+                            else:
+                                ray.get(self.blocking_nodes[actor_id].added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = self.blocking_nodes[actor_id])]))
+                            self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
 
-                if len(new_input_reqs) == 0:
+                            out_seq += 1
+                            
+                    if failed:
+                        continue
+                        
+                    next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, new_input_reqs)
+
+                else:
+                    last_output_seq = out_seq - 1
                     output = self.function_objects[actor_id, channel_id].done(channel_id)
 
                     if output is not None:
@@ -495,14 +495,12 @@ class ExecTaskManager(TaskManager):
 
                             last_output_seq = out_seq
                             out_seq += 1
+                    
+                    self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), last_output_seq)
                 
-                if failed:
-                    continue
+                    if failed:
+                        continue
                             
-                
-                if len(new_input_reqs) > 0:
-                    next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, new_input_reqs)
-                else:
                     next_task = None
 
                 if state_seq % CHECKPOINT_INTERVAL == 0:
@@ -519,16 +517,17 @@ class ExecTaskManager(TaskManager):
                 self.EST.set(transaction, pickle.dumps((actor_id, channel_id)), state_seq)                    
                 lineage = pickle.dumps((source_actor_id, source_channel_seqs))
                 self.state_commit(transaction, actor_id, channel_id, state_seq, lineage)
-                self.task_commit(transaction, actor_id, channel_id, last_output_seq,  next_task)
+                self.task_commit(transaction, candidate_task, next_task)
                 
                 executed = transaction.execute()
                 if not all(executed):
                     raise Exception(executed)
                 
-                message = pyarrow.py_buffer(pickle.dumps(input_names))
-                action = pyarrow.flight.Action("cache_garbage_collect", message)
-                result = next(self.flight_client.do_action(action))
-                assert result.body.to_pybytes().decode("utf-8") == "True"
+                if len(input_names) > 0:
+                    message = pyarrow.py_buffer(pickle.dumps(input_names))
+                    action = pyarrow.flight.Action("cache_garbage_collect", message)
+                    result = next(self.flight_client.do_action(action))
+                    assert result.body.to_pybytes().decode("utf-8") == "True"
             
             elif task_type == "exectape":
                 candidate_task = TapedExecutorTask.from_tuple(tup)
@@ -569,15 +568,13 @@ class ExecTaskManager(TaskManager):
                         break
 
                 if len(batches) == 0:
+                    self.index += 1
                     continue
 
                 source_actor_id, source_channel_seqs = pickle.loads(input_requirements)
                 source_channel_ids = list(source_channel_seqs.keys())
                 source_channel_progress = [len(source_channel_seqs[k]) for k in source_channel_ids]
                 progress = polars.from_dict({"source_actor_id": [source_actor_id] * len(source_channel_ids) , "source_channel_id": source_channel_ids, "progress": source_channel_progress})
-                
-                print(self.tape_input_reqs)
-                print(progress)
 
                 new_input_reqs = self.tape_input_reqs[actor_id, channel_id].join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
                 new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
@@ -588,7 +585,7 @@ class ExecTaskManager(TaskManager):
 
                 if state_seq + 1 > candidate_task.last_state_seq:
 
-                    self.update_dst(source_actor_id)
+                    self.update_dst()
                     print_if_debug(self.dst)
                     if self.dst is not None:
                         new_input_reqs = self.tape_input_reqs[actor_id, channel_id].join(self.dst, on = ["source_actor_id", "source_channel_id"], how = "left")\
@@ -605,7 +602,7 @@ class ExecTaskManager(TaskManager):
                     next_task = TapedExecutorTask(actor_id, channel_id, state_seq + 1, out_seq if output is None else out_seq + 1, candidate_task.last_state_seq)
                 
                 transaction = self.r.pipeline()
-                last_output_seq = out_seq
+                last_output_seq = out_seq - 1
 
                 failed = False
 
@@ -655,14 +652,18 @@ class ExecTaskManager(TaskManager):
 
                             last_output_seq = out_seq
                             out_seq += 1
+                    
+                    self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), last_output_seq)
                             
                 if failed:
                     continue
+            
+                   
 
                 # this way of logging the lineage probably use less space than a Polars table actually.
 
                 self.EST.set(transaction, pickle.dumps((actor_id, channel_id)), state_seq)
-                self.task_commit(transaction, actor_id, channel_id, last_output_seq,  next_task)
+                self.task_commit(transaction, candidate_task, next_task)
                 
                 executed = transaction.execute()
                 if not all(executed):
@@ -744,13 +745,15 @@ class IOTaskManager(TaskManager):
 
                     next_task, output, seq, lineage = candidate_task.execute(functionObject, input_object)
                 
-                
+                if next_task is None:
+                    self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), seq)
+
                 pushed = self.push(actor_id, channel_id, seq, output)
 
                 if pushed:
                     transaction = self.r.pipeline()
                     self.output_commit(transaction, actor_id, channel_id, seq, lineage)
-                    self.task_commit(transaction, actor_id, channel_id, seq,  next_task)
+                    self.task_commit(transaction, candidate_task, next_task)
                     if not all(transaction.execute()):
                         raise Exception
                 

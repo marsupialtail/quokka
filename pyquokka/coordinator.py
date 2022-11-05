@@ -1,8 +1,8 @@
 import ray
 import pickle
 import redis
-from task import * 
-from tables import * 
+from pyquokka.task import * 
+from pyquokka.tables import * 
 import polars
 import time
 import pandas as pd

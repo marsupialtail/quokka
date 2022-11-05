@@ -456,6 +456,7 @@ class InputS3CSVDataset:
         self.sample = None
 
         self.workers = 8
+        self.s3 = None
     
     # we need to rethink this whole setting num channels business. For this operator we don't want each node to do redundant work!
     def get_own_state(self, num_channels):
@@ -561,9 +562,11 @@ class InputS3CSVDataset:
         print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
 
 
-    def get_next_batch(self, mapper_id, state = None):
+    def execute(self, mapper_id, state = None):
 
-        s3 = boto3.client("s3")
+        if self.s3 is None:
+            self.s3 = boto3.client("s3")
+            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
 
         assert self.num_channels is not None
         files = self.channel_infos[mapper_id][1]
@@ -571,74 +574,69 @@ class InputS3CSVDataset:
         if state is None:
             curr_pos = 0
             pos = self.channel_infos[mapper_id][0]
-        else:
-            curr_pos, pos = state
-        
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
-
-        while curr_pos < len(files):
-            
-            file = files[curr_pos]
-            if curr_pos != len(files) - 1:
-                response = self.s3.head_object(
-                    Bucket=self.bucket,
-                    Key= file
-                )
-                length = response['ContentLength']
-                end = length
-            else:
-                end = self.channel_infos[mapper_id][2]
-            
-            def download(x):
-                
-                end_byte = min(pos + x * self.stride + self.stride - 1, end - 1)
-                start_byte = pos + x * self.stride
-                if start_byte > end_byte:
-                    return None
-                return s3.get_object(Bucket=self.bucket, Key= file, Range='bytes={}-{}'.format(start_byte, end_byte))['Body'].read()
-
             prefix = b''
+        else:
+            curr_pos, pos, prefix = state
+        
+        
+        assert curr_pos < len(files)
+            
+        file = files[curr_pos]
+        if curr_pos != len(files) - 1:
+            response = self.s3.head_object(
+                Bucket=self.bucket,
+                Key= file
+            )
+            length = response['ContentLength']
+            end = length
+        else:
+            end = self.channel_infos[mapper_id][2]
+        
+        def download(x):
+            
+            end_byte = min(pos + x * self.stride + self.stride - 1, end - 1)
+            start_byte = pos + x * self.stride
+            if start_byte > end_byte:
+                return None
+            return self.s3.get_object(Bucket=self.bucket, Key= file, Range='bytes={}-{}'.format(start_byte, end_byte))['Body'].read()
 
-            bytes_to_read = end - pos
+        future_to_url = {self.executor.submit(download, x): x for x in range(self.workers)}
+        #start = time.time()
+        results = {}
+        for future in concurrent.futures.as_completed(future_to_url):
+            url = future_to_url[future] 
+            data = future.result()
+            results[url] = data
+        #print("download", time.time() - start)
 
-            batches = (bytes_to_read - 1) // (self.workers * self.stride) + 1
+        #start = time.time()
+        last_file = self.workers - 1
 
-            for k in range(0, batches):
-                a = [k * self.workers + z for z in range(self.workers)]
-                future_to_url = {executor.submit(download, x): x for x in a}
-                #start = time.time()
-                results = {}
-                for future in concurrent.futures.as_completed(future_to_url):
-                    url = future_to_url[future] - a[0]
-                    data = future.result()
-                    results[url] = data
-                #print("download", time.time() - start)
+        for z in range(self.workers):
+            if results[z] is None:
+                last_file = z -1
+                break
+        
+        if last_file == -1:
+            raise Exception("something is wrong, try changing the stride")
 
-                #start = time.time()
-                last_file = self.workers - 1
+        last_newline = results[last_file].rfind(bytes('\n', 'utf-8'))
 
-                for z in a:
-                    if results[z - a[0]] is None:
-                        last_file = z -1 - a[0]
-                        break
-                
-                if last_file == -1:
-                    raise Exception("something is wrong, try changing the stride")
+        fake_file = FakeFile(results, last_newline, prefix, last_file)
+        bump = csv.read_csv(fake_file, read_options=csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+        prefix = fake_file.get_end()
+        del fake_file
 
-                last_newline = results[last_file].rfind(bytes('\n', 'utf-8'))
+        bump = bump.select(self.columns) if self.columns is not None else bump
 
-                fake_file = FakeFile(results, last_newline, prefix, last_file)
-                bump = csv.read_csv(fake_file, read_options=csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-                prefix = fake_file.get_end()
-                del fake_file
-
-                bump = bump.select(self.columns) if self.columns is not None else bump
-                
-                #print("convert", time.time() - start)
-                
-                #print("memory usage before yield", pa.total_allocated_bytes())
-                yield (curr_pos, pos, a[0], prefix), bump
-                del bump
-
+        if pos + self.workers * self.stride >= end:
+            prefix = b''
             pos = 0
             curr_pos += 1
+        else:
+            pos += self.workers * self.stride
+
+        if curr_pos < len(files):
+            return (curr_pos, pos, prefix), polars.from_arrow(bump)
+        else:
+            return None, polars.from_arrow(bump)

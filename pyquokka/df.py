@@ -394,34 +394,12 @@ class QuokkaContext:
         task_graph_nodes = {}
         for node_id, node in reverse_sorted_nodes:
             if issubclass(type(node), SourceNode):
-                placement_strategy = node.placement_strategy
-                if placement_strategy is None:
-                    task_graph_nodes[node_id] = node.lower(task_graph)
-                elif type(placement_strategy) == SingleChannelStrategy:
-                    task_graph_nodes[node_id] = node.lower(task_graph, {self.cluster.leader_private_ip: 1})
-                elif type(placement_strategy) == CustomChannelsStrategy:
-                    task_graph_nodes[node_id] = node.lower(task_graph,  
-                        {ip: placement_strategy.channels_per_node for ip in list(self.cluster.private_ips.values())})
-                elif type(placement_strategy) == GPUStrategy:
-                    raise NotImplementedError
-                else:
-                    raise Exception("could not understand node placement strategy")
+                task_graph_nodes[node_id] = node.lower(task_graph)
 
             else:
                 parent_nodes = {parent_idx: task_graph_nodes[node.parents[parent_idx]] for parent_idx in node.parents}
                 target_info = {parent_idx: self.execution_nodes[node.parents[parent_idx]].targets[node_id] for parent_idx in node.parents}
-                placement_strategy = node.placement_strategy
-                if placement_strategy is None:
-                    task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info)
-                elif type(placement_strategy) == SingleChannelStrategy:
-                    task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info, {self.cluster.leader_private_ip: 1})
-                elif type(placement_strategy) == CustomChannelsStrategy:
-                    task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info,  
-                        {ip: placement_strategy.channels_per_node for ip in list(self.cluster.private_ips.values())})
-                elif type(placement_strategy) == GPUStrategy:
-                    raise NotImplementedError
-                else:
-                    raise Exception("could not understand node placement strategy")
+                task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info)
 
         task_graph.create()
         print("init time ", time.time() - start)

@@ -104,8 +104,8 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             print_if_debug('acquiring flight lock')
             self.flights_lock.acquire()
             if name in self.flights:
-                print_if_debug("duplicate data detected")
-                assert data  == self.flights[name][0] 
+                print("duplicate data detected")
+                assert data  == self.flights[name][0], "duplicate data not the same"
 
             self.flights[name] = (data, my_format)
             
@@ -125,8 +125,9 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             data = reader.read_chunk().data
             self.hbq_lock.acquire()
             if name in self.hbq:
-                print_if_debug("duplicate data detected")
-                assert data == self.hbq[name][0]
+                print("duplicate data detected")
+                assert data == self.hbq[name][0], "duplicate data not the same"
+
 
             self.hbq[name] = (data, my_format)
             
@@ -200,7 +201,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                 for name_dict in exec_plan.to_dicts():
                     name = (name_dict["source_actor_id"], name_dict["source_channel_id"], name_dict["seq"], actor_id, name_dict["partition_fn"], channel_id)
                     print_if_debug(self.flights)
-                    assert name in self.flights
+                    assert name in self.flights , "exec plan name not in flights"
                     batches.append((name, self.flights[name]))
                 
                 if len(batches) == 0:
@@ -248,9 +249,11 @@ class FlightServer(pyarrow.flight.FlightServerBase):
 
     def do_action(self, context, action):
         if action.type == "clear":
+            self.flight_keys = None
             self.flights.clear()
             # clear out the datasets that you store, not implemented yet.
-            yield pyarrow.flight.Result(pyarrow.py_buffer(b'Cleared!'))
+            cond = True
+            yield pyarrow.flight.Result(pyarrow.py_buffer(bytes(str(cond), "utf-8")))
         elif action.type == "clear_messages": # clears out messages but keeps all the data items.
             self.flights.clear()
             yield pyarrow.flight.Result(pyarrow.py_buffer(b'Cleared!'))
@@ -274,7 +277,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
 
             self.flights_lock.acquire()
             for tup in gcable:
-                assert tup in self.flights
+                assert tup in self.flights, "tuple not in flights"
                 del self.flights[tup]
 
             gcable = polars.DataFrame( gcable, columns= ["source_actor_id", "source_channel_id", "seq", "target_actor_id",\
@@ -292,7 +295,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
 
             self.hbq_lock.acquire()
             for tup in gcable:
-                assert tup in self.flights
+                assert tup in self.flights, "tuple not in flights"
                 del self.hbq[tup]
 
             gcable = polars.DataFrame( gcable, columns= ["source_actor_id", "source_channel_id", "seq"], orient='row')
