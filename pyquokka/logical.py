@@ -2,7 +2,41 @@ import sqlglot
 from pyquokka.dataset import *
 from pyquokka.executors import StorageExecutor, UDFExecutor 
 from pyquokka.utils import EC2Cluster, LocalCluster
+import pyquokka.sql_utils as sql_utils
+from functools import partial
+
 import textwrap
+
+def target_info_to_transform_func(target_info):
+
+    def transform_fn(predicate, batch_funcs, projection, data):
+
+        if data is None or len(data) == 0:
+            return None
+        if predicate != True:
+            data = data.filter(predicate(data))
+        if len(data) == 0:
+            return None
+        for batch_func in batch_funcs:
+            data = batch_func(data)
+            if data is None or len(data) == 0:
+                return None
+        if projection is not None:
+            data = data[sorted(list(projection))]
+        return data
+
+
+    if target_info.predicate == sqlglot.exp.TRUE:
+        predicate = True
+    elif target_info.predicate == False:
+        print("false predicate detected, entire subtree is useless. We should cut the entire subtree!")
+        predicate = sql_utils.evaluate(target_info.predicate) 
+    else:    
+       predicate = sql_utils.evaluate(target_info.predicate) 
+    
+    return partial(transform_fn, predicate, target_info.batch_funcs, target_info.projection)
+
+
 class PlacementStrategy:
     def __init__(self) -> None:
         pass
@@ -217,7 +251,11 @@ class StatefulNode(TaskNode):
     
     def lower(self, task_graph, parent_nodes, parent_source_info, ip_to_num_channel=None ):
         if self.blocking:
-            return task_graph.new_blocking_node(parent_nodes,self.operator, ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info)
+            assert len(self.targets) == 1
+            target_info = self.targets[list(self.targets.keys())[0]]
+            transform_func = target_info_to_transform_func(target_info)          
+            
+            return task_graph.new_blocking_node(parent_nodes,self.operator, ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info, transform_fn = transform_func)
         else:
             return task_graph.new_non_blocking_node(parent_nodes,self.operator, ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info)
         
@@ -246,7 +284,11 @@ class MapNode(TaskNode):
 
     def lower(self, task_graph, parent_nodes, parent_source_info, ip_to_num_channel=None ):
         if self.blocking:
-            return task_graph.new_blocking_node(parent_nodes,UDFExecutor(self.function), ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info)
+            assert len(self.targets) == 1
+            target_info = self.targets[list(self.targets.keys())[0]]
+            transform_func = target_info_to_transform_func(target_info)     
+
+            return task_graph.new_blocking_node(parent_nodes,UDFExecutor(self.function), ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info, transform_fn = transform_func)
         else:
             return task_graph.new_non_blocking_node(parent_nodes,UDFExecutor(self.function), ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info)
 

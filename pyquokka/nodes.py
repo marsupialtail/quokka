@@ -438,10 +438,12 @@ class NonBlockingTaskNode(TaskNode):
     
 @ray.remote
 class BlockingTaskNode(TaskNode):
-    def __init__(self, id, channel,  mapping, output_dataset, functionObject, parents) -> None:
+    def __init__(self, id, channel,  mapping, output_dataset, functionObject, parents, transform_fn = None) -> None:
         super().__init__(id, channel,  mapping, functionObject, parents)
         self.output_dataset = output_dataset
         self.object_count = 0 
+        self.transform_fn = transform_fn
+
     # explicit override with error. Makes no sense to append to targets for a blocking node. Need to use the dataset instead.
     def append_to_targets(self,tup):
         raise Exception("Trying to stream from a blocking node")
@@ -493,8 +495,12 @@ class BlockingTaskNode(TaskNode):
             results = self.functionObject.execute( batches,self.physical_to_logical_mapping[stream_id], self.channel)
 
             #print("executing", time.time() - start)
+
+            if self.transform_fn is not None:
+                results = self.transform_fn(results)
             
             if results is not None and len(results) > 0:
+
                 cursor = 0
                 stride = 1000000
                 while cursor < len(results):
@@ -512,10 +518,18 @@ class BlockingTaskNode(TaskNode):
                 pass
         
         obj_done =  self.functionObject.done(self.channel) 
+        if obj_done is not None:
+            assert type(obj_done) == polars.internals.DataFrame or type(obj_done) == types.GeneratorType
+            if type(obj_done) == polars.internals.DataFrame:
+                obj_done = [obj_done]
 
-        if type(obj_done) == types.GeneratorType:
             for object in obj_done:
+                if self.transform_fn is not None:
+                    object = self.transform_fn(object)
+
                 if object is not None:
+                    assert type(object) == polars.internals.DataFrame
+
                     if psutil.virtual_memory().percent < 70:
                         add_tasks.append(self.output_dataset.added_object.remote(self.channel, [ray.put(object.to_arrow(), _owner = self.output_dataset)]))
                     else:
@@ -524,20 +538,9 @@ class BlockingTaskNode(TaskNode):
                         add_tasks.append(self.output_dataset.added_parquet.remote(self.channel, filename))
                         spill_no += 1
 
-            del self.functionObject
-            gc.collect()
-        else:
-            del self.functionObject
-            gc.collect()
-            
-            if obj_done is not None:
-                if psutil.virtual_memory().percent < 70:
-                    add_tasks.append(self.output_dataset.added_object.remote(self.channel, [ray.put(obj_done.to_arrow(), _owner = self.output_dataset)]))
-                else:
-                    filename = "/data/spill-" + str(self.id) + "-" + str(self.channel) + "-" + str(spill_no) + ".parquet"
-                    obj_done.write_parquet(filename)
-                    add_tasks.append(self.output_dataset.added_parquet.remote(self.channel, filename))
-                    spill_no += 1
+        del self.functionObject
+        gc.collect()
+
         ray.get(add_tasks)
         ray.get(self.output_dataset.done_channel.remote(self.channel))
         

@@ -356,7 +356,7 @@ class TaskGraph:
         self.node_type[self.current_node] = NONBLOCKING_NODE
         return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
 
-    def new_blocking_node(self, streams, functionObject,ip_to_num_channel = None, channel_to_ip = None,  source_target_info = {}):
+    def new_blocking_node(self, streams, functionObject,ip_to_num_channel = None, channel_to_ip = None,  source_target_info = {}, transform_fn = None):
         
         ip_to_num_channel, channel_to_ip, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip,  source_target_info)
 
@@ -370,10 +370,10 @@ class TaskGraph:
             ip = channel_to_ip[channel]
             if ip != 'localhost':
                 tasknode[channel] = BlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(self.current_node, channel, mapping, output_dataset, functionObject, 
-                parents)
+                parents, transform_fn)
             else:
                 tasknode[channel] = BlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ray.get_runtime_context().gcs_address.split(":")[0]: 0.001}).remote(self.current_node, 
-                channel, mapping, output_dataset, functionObject, parents)
+                channel, mapping, output_dataset, functionObject, parents, transform_fn)
             
         self.node_type[self.current_node] = BLOCKING_NODE
         self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
