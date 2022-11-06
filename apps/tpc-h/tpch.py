@@ -20,7 +20,7 @@ elif mode == "S3":
 else:
     raise Exception
 
-qc = QuokkaContext(cluster)
+qc = QuokkaContext(cluster, 2, 2)
 
 if mode == "DISK":
     if format == "csv":
@@ -252,14 +252,15 @@ def word_count():
 # print(csv_to_csv_disk())
 # print(csv_to_parquet_s3())
 
-print(do_1())
+# print(do_2())
+
+# print(do_1())
 print(do_3())
 
-print(do_4())
-print(do_2())
-print(do_5())
-print(do_6())
-print(do_12())
-print(do_7())
+# print(do_4())
+# print(do_5())
+# print(do_6())
+# print(do_12())
+# print(do_7())
 
 #print(word_count())

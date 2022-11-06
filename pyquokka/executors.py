@@ -2,7 +2,7 @@ import os
 import polars
 import pandas as pd
 os.environ['ARROW_DEFAULT_MEMORY_POOL'] = 'system'
-
+import redis
 import pyarrow as pa
 import time
 import numpy as np
@@ -275,6 +275,10 @@ class JoinExecutor(Executor):
 
         result = None
         new_left_null = None
+
+        if random.random() > 0.9 and redis.Redis('172.31.54.141',port=6800).get("input_already_failed") is None:
+            redis.Redis('172.31.54.141',port=6800).set("input_already_failed", 1)
+            ray.actor.exit_actor()
 
         if stream_id == 0:
             if self.state1 is not None:

@@ -92,14 +92,16 @@ class TaskManager:
         # self.tasks = deque()
 
     def init(self):
-        print("init called")
         self.actor_flight_clients = {}
         keys = self.CLT.keys(self.r)
         values = self.CLT.mget(self.r, keys)
         for key, value in zip(keys, values):
             actor, channel = pickle.loads(key)
             ip = value.decode('utf-8')
-            self.actor_flight_clients[actor, channel] = self.flight_clients[ip]
+            if actor in self.actor_flight_clients:
+                self.actor_flight_clients[actor][channel] = self.flight_clients[ip]
+            else:
+                self.actor_flight_clients[actor] = {channel : self.flight_clients[ip]}
         return True
 
     def alive(self):
@@ -157,8 +159,13 @@ class TaskManager:
                     for key, value in zip(keys, values):
                         actor, channel = pickle.loads(key)
                         ip = value.decode('utf-8')
-                        self.actor_flight_clients[actor, channel] = self.flight_clients[ip]
+                        print("reset", actor, channel, ip)
+                        if actor in self.actor_flight_clients:
+                            self.actor_flight_clients[actor][channel] = self.flight_clients[ip]
+                        else:
+                            self.actor_flight_clients[actor] = {channel : self.flight_clients[ip]}
                     break
+            print("exitted recovery loop", self.node_id)
 
     def check_puttable(self, client):
         while True:
@@ -214,6 +221,9 @@ class TaskManager:
 
         my_format = "polars" # let's not worry about different formats for now though that will be needed eventually
         
+        if target_mask is not None:
+            print("TARGET_MASK", target_mask)
+
         if local:
             name = (source_actor_id, source_channel_id, seq)
             self.HBQ.put(name, output)
@@ -230,20 +240,31 @@ class TaskManager:
             outputs = partition_fn(output, source_channel_id)
 
             # wrap all the outputs with their actual names and by default persist all outputs
-            for target_channel_id in outputs:
+
+            fake_row = outputs[list(outputs.keys())[0]][:0]
+            expected_schema = outputs[list(outputs.keys())[0]].to_arrow().schema
+
+            for target_channel_id in self.actor_flight_clients[target_actor_id]:
 
                 if target_mask is not None and target_channel_id not in target_mask[target_actor_id]:
                     continue
 
-                data = outputs[target_channel_id]
-                # set the partition function number to 0 for now because we won't ever be changing the partition function.
-                name = (source_actor_id, source_channel_id, seq, target_actor_id, 0, target_channel_id)
-                batches = data.to_arrow().to_batches()
-                assert len(batches) == 1, batches
+                if target_channel_id in outputs:
+                    data = outputs[target_channel_id]
+                    # set the partition function number to 0 for now because we won't ever be changing the partition function.
+                    name = (source_actor_id, source_channel_id, seq, target_actor_id, 0, target_channel_id)
+                    batches = data.to_arrow().to_batches()
+                    assert len(batches) == 1, batches
+                else:
+                    name = (source_actor_id, source_channel_id, seq, target_actor_id, 0, target_channel_id)
+                   
+                    batches = [pyarrow.RecordBatch.from_pandas(fake_row.to_pandas(), schema = expected_schema)]
+                    # print(fake_row.schema, fake_row.to_pandas(), batches[0].schema)
+                    # print(name, batches, fake_row.to_pandas())
 
                 # spin here until you can finally push it. If you die while spinning, well yourself will be recovered.
                 # this is fine since you don't have the recovery lock.
-                client = self.actor_flight_clients[target_actor_id, target_channel_id]
+                client = self.actor_flight_clients[target_actor_id][target_channel_id]
                 while True:
                     try:
                         self.check_puttable(client)
@@ -351,7 +372,7 @@ class ExecTaskManager(TaskManager):
                 replayed = self.replay(candidate_task.actor_id, candidate_task.channel_id, candidate_task.replay_specification)
                 if replayed:
                     transaction = self.r.pipeline()
-                    self.NTT.lpop(transaction, str(self.node_id))
+                    self.NTT.lrem(transaction, str(self.node_id),1, candidate_task.reduce())
                     if not all(transaction.execute()):
                         raise Exception
                 else:
@@ -417,6 +438,7 @@ class ExecTaskManager(TaskManager):
                             else:
                                 source_channel_seqs[source_channel_id] = [seq]
                             assert format == "polars"
+
                             batches.append(chunk)
                         except StopIteration:
                             break
@@ -429,7 +451,7 @@ class ExecTaskManager(TaskManager):
                     assert len(source_actor_ids) == 1
                     source_actor_id = source_actor_ids.pop()
 
-                    input = [polars.from_pandas(pyarrow.Table.from_batches([batch]).to_pandas()) for batch in batches]
+                    input = [polars.from_pandas(pyarrow.Table.from_batches([batch]).to_pandas()) for batch in batches if len(batch) > 0]
                     output, _ , _ = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
 
                     source_channel_ids = [i for i in source_channel_seqs]
@@ -520,8 +542,8 @@ class ExecTaskManager(TaskManager):
                 self.task_commit(transaction, candidate_task, next_task)
                 
                 executed = transaction.execute()
-                if not all(executed):
-                    raise Exception(executed)
+                #if not all(executed):
+                #    raise Exception(executed)
                 
                 if len(input_names) > 0:
                     message = pyarrow.py_buffer(pickle.dumps(input_names))
@@ -580,7 +602,7 @@ class ExecTaskManager(TaskManager):
                 new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
                 self.tape_input_reqs[actor_id, channel_id] = new_input_reqs.select(["source_actor_id", "source_channel_id","min_seq"])
 
-                input = [polars.from_pandas(pyarrow.Table.from_batches([batch]).to_pandas()) for batch in batches]
+                input = [polars.from_pandas(pyarrow.Table.from_batches([batch]).to_pandas()) for batch in batches if len(batch) > 0]
                 output, state_seq, out_seq = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
 
                 if state_seq + 1 > candidate_task.last_state_seq:
@@ -666,8 +688,8 @@ class ExecTaskManager(TaskManager):
                 self.task_commit(transaction, candidate_task, next_task)
                 
                 executed = transaction.execute()
-                if not all(executed):
-                    raise Exception(executed)
+                #if not all(executed):
+                #    raise Exception(executed)
             
                 message = pyarrow.py_buffer(pickle.dumps(input_names))
                 action = pyarrow.flight.Action("cache_garbage_collect", message)
@@ -700,7 +722,6 @@ class IOTaskManager(TaskManager):
         pyarrow.set_cpu_count(8)
         count = -1
         while True:
-
             self.check_in_recovery()
 
             count += 1
@@ -748,6 +769,7 @@ class IOTaskManager(TaskManager):
                 if next_task is None:
                     self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), seq)
 
+                print("pushing", actor_id, channel_id, seq)
                 pushed = self.push(actor_id, channel_id, seq, output)
 
                 if pushed:
@@ -755,15 +777,15 @@ class IOTaskManager(TaskManager):
                     self.output_commit(transaction, actor_id, channel_id, seq, lineage)
                     self.task_commit(transaction, candidate_task, next_task)
                     if not all(transaction.execute()):
+                        print("COMMITING TRANSACTION FAILED")
                         raise Exception
                 
                 # downstream failure detected, will start recovery soon, DO NOT COMMIT!
                 else:
+                    print("push failed!")
                     # sleep for 0.2 seconds, since recovery happens every 0.1 seconds
                     time.sleep(0.2)
-
-                
-                continue
+                    continue
 
             elif task_type == "exec" or task_type == "exectape":
                 raise Exception("assigned exec task to IO node")
@@ -775,7 +797,7 @@ class IOTaskManager(TaskManager):
                 replayed = self.replay(candidate_task.actor_id, candidate_task.channel_id, candidate_task.replay_specification)
                 if replayed:
                     transaction = self.r.pipeline()
-                    self.NTT.lpop(transaction, str(self.node_id))
+                    self.NTT.lrem(transaction, str(self.node_id), 1, candidate_task.reduce())
                     if not all(transaction.execute()):
                         raise Exception
                 else:

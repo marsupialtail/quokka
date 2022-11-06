@@ -188,21 +188,37 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                 source_actor_id = exec_plan.lazy().groupby("source_actor_id").agg(polars.count()).sort("count",reverse=True).limit(1).collect().to_dicts()[0]["source_actor_id"]
                 
                 # we need to sort the exec plan!
-                exec_plan = exec_plan.filter(polars.col("source_actor_id") == source_actor_id).sort(["source_channel_id","seq"])
+                # exec_plan = exec_plan.filter(polars.col("source_actor_id") == source_actor_id).sort(["source_channel_id","seq"])
 
-                print_if_debug("exec plan", exec_plan)
-                print_if_debug("current flights", self.flight_keys)
+                exec_plan_candidate = exec_plan.filter(polars.col("source_actor_id") == source_actor_id)
 
-                # do a check here that the returned input batches are contiguous. there could be failure cases but this check should handle most of it.
-                z = exec_plan.groupby("source_channel_id").agg([polars.max("seq"), polars.count(), polars.max("min_seq")])
-                print_if_debug(z)
-                assert (z["seq"] == z["min_seq"] + z["count"] - 1).all(), "Failed check, returned sequence numbers likely not contiguous"
+                for df in exec_plan_candidate.groupby("source_channel_id"):
+                    source_channel_id = df["source_channel_id"][0]
+                    seqs = sorted(df["seq"].to_list())
+                    min_seq = df["min_seq"][0]
+                    last_seq = min_seq
+                    for seq in seqs:
+                        if seq == last_seq:
+                            name = (source_actor_id, source_channel_id, seq, actor_id, 0, channel_id)
+                            assert name in self.flights
+                            batches.append((name, self.flights[name]))
+                            last_seq += 1
+                        else:
+                            break
+
+                # print_if_debug("exec plan", exec_plan)
+                # print_if_debug("current flights", self.flight_keys)
+
+                # # do a check here that the returned input batches are contiguous. there could be failure cases but this check should handle most of it.
+                # z = exec_plan.groupby("source_channel_id").agg([polars.max("seq"), polars.count(), polars.max("min_seq")])
+                # print_if_debug(z)
+                # assert (z["seq"] == z["min_seq"] + z["count"] - 1).all(), "Failed check, returned sequence numbers likely not contiguous"
                                                 
-                for name_dict in exec_plan.to_dicts():
-                    name = (name_dict["source_actor_id"], name_dict["source_channel_id"], name_dict["seq"], actor_id, name_dict["partition_fn"], channel_id)
-                    print_if_debug(self.flights)
-                    assert name in self.flights , "exec plan name not in flights"
-                    batches.append((name, self.flights[name]))
+                # for name_dict in exec_plan.to_dicts():
+                #     name = (name_dict["source_actor_id"], name_dict["source_channel_id"], name_dict["seq"], actor_id, name_dict["partition_fn"], channel_id)
+                #     print_if_debug(self.flights)
+                #     assert name in self.flights , "exec plan name not in flights"
+                #     batches.append((name, self.flights[name]))
                 
                 if len(batches) == 0:
                     return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches(batches))

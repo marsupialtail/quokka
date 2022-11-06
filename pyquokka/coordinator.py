@@ -298,6 +298,7 @@ class Coordinator:
         print(rewind_requests)
         print(new_input_requests)
         print(replay_requests)
+        print(remembered_input_objects)
 
         for actor_id, channel_id in rewind_requests:
 

@@ -109,9 +109,6 @@ class TaskGraph:
         
         ray.get(self.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
         
-        start = time.time()
-        print("actor spin up took ", time.time() -start)
-
         return self.epilogue(placement_strategy)
     
     def get_default_partition(self, source_node_id, target_placement_strategy):

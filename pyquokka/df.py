@@ -7,10 +7,12 @@ from pyquokka.datastream import *
 import os
 
 class QuokkaContext:
-    def __init__(self, cluster = None) -> None:
+    def __init__(self, cluster = None, io_per_node = 2, exec_per_node = 1) -> None:
         self.latest_node_id = 0
         self.nodes = {}
         self.cluster = LocalCluster() if cluster is None else cluster
+        self.io_per_node = io_per_node
+        self.exec_per_node = exec_per_node
 
     def read_files(self, table_location: str):
 
@@ -380,7 +382,7 @@ class QuokkaContext:
     def lower(self, end_node_id, collect = True):
 
         start = time.time()
-        task_graph = TaskGraph(self.cluster)
+        task_graph = TaskGraph(self.cluster, self.io_per_node, self.exec_per_node)
         node = self.execution_nodes[end_node_id]
         nodes = deque([node])
         reverse_sorted_nodes = [(end_node_id,node)]
