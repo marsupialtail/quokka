@@ -3,6 +3,7 @@ lists of redis client wrappers that prepend keys with schema
 can't use different Redis DBs because that's not best practice, and you can't do transactions across different DBs.
 to do a transaction here just take out r.pipeline on the main redis client that's passed in to construct these tables.
 '''
+import pickle
 
 class ClientWrapper:
     def __init__(self,  key_prefix) -> None:
@@ -99,6 +100,13 @@ class CemetaryTable(ClientWrapper):
     def __init__(self) -> None:
         super().__init__( "CT")
     
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        result = {}
+        for key in keys:
+            result[pickle.loads(key)] = [pickle.loads(k) for k in self.smembers(redis_client, key)]
+        return result
+    
 
 '''
 Node Object Table (NOT): track the objects held by each node. Persistent storage like S3 is treated like a node. 
@@ -110,6 +118,12 @@ class NodeObjectTable(ClientWrapper):
     def __init__(self) -> None:
         super().__init__( "NOT")
 
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        result = {}
+        for key in keys:
+            result[key] = [pickle.loads(k) for k in self.smembers(redis_client, key)]
+        return result
 
 '''
 - Present Objects Set (POT): This ikeeps track of all the objects that are present across the cluster.
@@ -120,6 +134,11 @@ class NodeObjectTable(ClientWrapper):
 class PresentObjectTable(ClientWrapper):
     def __init__(self) -> None:
         super().__init__( "POT")
+    
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        values = self.mget(redis_client, keys)
+        return {pickle.loads(key): value for key, value in zip(keys, values)}
 
 '''
 - Node Task Table (NTT): this keeps track of all the tasks on a node.
@@ -129,6 +148,13 @@ class PresentObjectTable(ClientWrapper):
 class NodeTaskTable(ClientWrapper):
     def __init__(self) -> None:
         super().__init__( "NTT")
+    
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        result = {}
+        for key in keys:
+            result[key] = [pickle.loads(k) for k in self.lrange(redis_client, key, 0, -1)]
+        return result
 
 '''
 - Generated Input Table (GIT): no tasks in the system are running to generate those objects. This could be figured out
@@ -140,6 +166,14 @@ class NodeTaskTable(ClientWrapper):
 class GeneratedInputTable(ClientWrapper):
     def __init__(self) -> None:
         super().__init__("GIT")
+    
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        result = {}
+        for key in keys:
+            result[pickle.loads(key)] = self.smembers(redis_client, key)
+        return result
+
 
 '''
 - Lineage Table (LT): this tracks the inputs of each output. This dynamically tells you what is IN(x)
@@ -149,6 +183,11 @@ class GeneratedInputTable(ClientWrapper):
 class LineageTable(ClientWrapper):
     def __init__(self) -> None:
         super().__init__( "LT")
+    
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        values = self.mget(redis_client, keys)
+        return {pickle.loads(key): value for key, value in zip(keys, values)}
 
 '''
 - Done Seq Table (DST): this tracks the last sequence number of each actor_id, channel_id. There can only be one value
@@ -157,6 +196,11 @@ class LineageTable(ClientWrapper):
 class DoneSeqTable(ClientWrapper):
     def __init__(self) -> None:
         super().__init__( "DST")
+    
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        values = self.mget(redis_client, keys)
+        return {pickle.loads(key): value for key, value in zip(keys, values)}
 
 
 '''
@@ -166,15 +210,25 @@ class DoneSeqTable(ClientWrapper):
 class LastCheckpointTable(ClientWrapper):
     def __init__(self) -> None:
         super().__init__("LCT")
+    
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        values = self.mget(redis_client, keys)
+        return {pickle.loads(key): value for key, value in zip(keys, values)}
 
 
 '''
-- Executor State Table (EST): this tracks what state_seq, out_seq each actor_id and channel_id are on (last committed)
+- Executor State Table (EST): this tracks what state_seq each actor_id and channel_id are on (last committed)
 '''
 
 class ExecutorStateTable(ClientWrapper):
     def __init__(self) -> None:
         super().__init__("EST")
+    
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        values = self.mget(redis_client, keys)
+        return {pickle.loads(key): value for key, value in zip(keys, values)}
 
 '''
 - Channel Location Table (CLT): this tracks where each channel is scheduled
@@ -183,6 +237,11 @@ class ExecutorStateTable(ClientWrapper):
 class ChannelLocationTable(ClientWrapper):
     def __init__(self) -> None:
         super().__init__("CLT")
+    
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        values = self.mget(redis_client, keys)
+        return {pickle.loads(key): value for key, value in zip(keys, values)}
 
 '''
 - Function Object Table (FOT): this stores the function objects
@@ -201,3 +260,8 @@ class FunctionObjectTable(ClientWrapper):
 class InputRequirementsTable(ClientWrapper):
     def __init__(self) -> None:
         super().__init__("IRT")
+    
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        values = self.mget(redis_client, keys)
+        return {pickle.loads(key): pickle.loads(value) for key, value in zip(keys, values)}

@@ -73,7 +73,7 @@ class InputTask(Task):
 
 class TapedInputTask(Task):
     def __init__(self, actor_id, channel_id, tape ) -> None:
-        super().___init__(actor_id,channel_id)
+        super().__init__(actor_id,channel_id)
         assert len(type) > 0
         self.tape = tape
     

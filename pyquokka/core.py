@@ -254,7 +254,7 @@ class TaskManager:
                     # set the partition function number to 0 for now because we won't ever be changing the partition function.
                     name = (source_actor_id, source_channel_id, seq, target_actor_id, 0, target_channel_id)
                     batches = data.to_arrow().to_batches()
-                    assert len(batches) == 1, batches
+                    
                 else:
                     name = (source_actor_id, source_channel_id, seq, target_actor_id, 0, target_channel_id)
                    
@@ -262,23 +262,21 @@ class TaskManager:
                     # print(fake_row.schema, fake_row.to_pandas(), batches[0].schema)
                     # print(name, batches, fake_row.to_pandas())
 
+                assert len(batches) == 1, batches
                 # spin here until you can finally push it. If you die while spinning, well yourself will be recovered.
                 # this is fine since you don't have the recovery lock.
                 client = self.actor_flight_clients[target_actor_id][target_channel_id]
-                while True:
-                    try:
-                        self.check_puttable(client)
-                        upload_descriptor = pyarrow.flight.FlightDescriptor.for_command(pickle.dumps((True, name, my_format)))
-                        writer, _ = client.do_put(upload_descriptor, batches[0].schema)
-                        for batch in batches:
-                            writer.write_batch(batch)
-                        writer.close()
-                        break
+                try:
+                    self.check_puttable(client)
+                    upload_descriptor = pyarrow.flight.FlightDescriptor.for_command(pickle.dumps((True, name, my_format)))
+                    writer, _ = client.do_put(upload_descriptor, batches[0].schema)
+                    writer.write_batch(batches[0])
+                    writer.close()
 
-                    except pyarrow._flight.FlightUnavailableError:
-                        # failed to push to cache, probably because downstream node failed. update actor_flight_clients
-                        print("downstream unavailable")
-                        return False
+                except pyarrow._flight.FlightUnavailableError:
+                    # failed to push to cache, probably because downstream node failed. update actor_flight_clients
+                    print("downstream unavailable")
+                    return False
         
         return True
         

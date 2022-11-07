@@ -71,6 +71,7 @@ class TaskGraph:
         self.FOT = FunctionObjectTable()
         self.CLT = ChannelLocationTable()
         self.NTT = NodeTaskTable()
+        self.IRT = InputRequirementsTable()
 
     def get_total_channels_from_placement_strategy(self, placement_strategy, node_type):
 
@@ -248,6 +249,7 @@ class TaskGraph:
             channel_locs[0] = node
             self.NTT.rpush(self.r, node, exec_task.reduce())
             self.CLT.set(self.r, pickle.dumps((self.current_actor, 0)), self.node_locs[node])
+            self.IRT.set(self.r, pickle.dumps((self.current_actor, 0, -1)), pickle.dumps(input_reqs))
 
         elif type(placement_strategy) == CustomChannelsStrategy:
 
@@ -258,6 +260,7 @@ class TaskGraph:
                     channel_locs[count] = node
                     self.NTT.rpush(self.r, node, exec_task.reduce())
                     self.CLT.set(self.r, pickle.dumps((self.current_actor, count)), self.node_locs[node])
+                    self.IRT.set(self.r, pickle.dumps((self.current_actor, count, -1)), pickle.dumps(input_reqs))
                     count += 1
         else:
             raise Exception("placement strategy not supported")

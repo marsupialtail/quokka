@@ -147,10 +147,11 @@ class FlightServer(pyarrow.flight.FlightServerBase):
 
     def do_get(self, context, ticket):
 
-        batches = []
         mode, actor_id, channel_id, input_requirements, exact = pickle.loads(ticket.ticket)
 
         if mode == "hbq":
+
+            batches = []
 
             self.hbq_lock.acquire()
 
@@ -161,6 +162,8 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             self.hbq_lock.release()
 
         elif mode == "cache":
+
+            batches = []
 
             self.flights_lock.acquire()
             if not exact:
@@ -228,7 +231,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                 if self.flight_keys is None or len(self.flight_keys) == 0:
                     print_if_debug("flights empty!")
                     self.flights_lock.release()
-                    return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches(batches))
+                    return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches([]))
 
                 partition_fn = 0 # TODO: only support 1 partition fn right now
                 source_actor_id, source_channel_seqs = pickle.loads(input_requirements)
@@ -238,7 +241,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                         name = (source_actor_id, source_channel_id, seq, actor_id, partition_fn, channel_id)
                         if name not in self.flights:
                             self.flights_lock.release()
-                            return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches(batches))
+                            return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches([]))
                         batches.append((name, self.flights[name]))
  
                 print_if_debug("current flights", self.flight_keys)

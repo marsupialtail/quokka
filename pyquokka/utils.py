@@ -56,6 +56,7 @@ class LocalCluster:
             self.flight_process = subprocess.Popen(["python3", flight_file], preexec_fn = preexec_function)
         except:
             raise Exception("Could not start flight server properly. Check if there is already something using port 5005, kill it if necessary. Use lsof -i:5005")
+        self.redis_process = subprocess.Popen(["redis-server" , pyquokka_loc + "redis.conf", "--port 6800", "--protected-mode no"], preexec_fn=preexec_function)
         self.leader_public_ip = "localhost"
         self.leader_private_ip = ray.get_runtime_context().gcs_address.split(":")[0]
         self.public_ips = {0:"localhost"}
@@ -65,6 +66,7 @@ class LocalCluster:
     def __del__(self):
         # we need to join the process that is running the flight server! 
         self.flight_process.kill()
+        self.redis_process.kill()
         pass
 
 

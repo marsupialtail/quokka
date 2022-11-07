@@ -3,6 +3,8 @@ import pickle
 import redis
 from pyquokka.task import * 
 from pyquokka.tables import * 
+import pyarrow
+import pyarrow.flight
 import polars
 import time
 import pandas as pd
@@ -24,9 +26,29 @@ class Coordinator:
         self.DST = DoneSeqTable()
         self.LCT = LastCheckpointTable()
         self.CLT = ChannelLocationTable()
+        self.IRT = InputRequirementsTable()
 
         self.undone = set()
         self.actor_channel_locations = {}
+    
+    def dump_redis_state(self, path):
+        state = {"CT": self.CT.to_dict(self.r),
+        "NOT": self.NOT.to_dict(self.r),
+        "PT": self.PT.to_dict(self.r),
+        "NTT": self.NTT.to_dict(self.r),
+        "GIT": self.GIT.to_dict(self.r),
+        "EST": self.EST.to_dict(self.r),
+        "LT": self.LT.to_dict(self.r),
+        "DST": self.DST.to_dict(self.r),
+        "LCT": self.LCT.to_dict(self.r),
+        "CLT": self.CLT.to_dict(self.r)}
+        flight_client = pyarrow.flight.connect("grpc://0.0.0.0:5005")
+        buf = pyarrow.allocate_buffer(0)
+        action = pyarrow.flight.Action("get_flights_info", buf)
+        result = next(flight_client.do_action(action))
+        state["flights"] = pickle.loads(result.body.to_pybytes())[1]
+
+        pickle.dump(state, open(path,"wb"))
 
     def register_actor_topo(self, topological_order):
         self.topological_order = topological_order
@@ -141,6 +163,8 @@ class Coordinator:
                 rewind_ckpt = (-1, 0)
             return rewind_ckpt
 
+        self.dump_redis_state("pre.pkl")
+
         keys = self.EST.keys(self.r)
         # easy way to check if an actor_id is an executor or an input is check if it's in keys of this table.
         print(keys)
@@ -201,8 +225,7 @@ class Coordinator:
                     else:
                         new_input_requests[actor_id, channel_id].add(out_seq)
 
-            else:
-                assert self.PT.delete(self.r, object) == 1
+            assert self.PT.delete(self.r, object) == 1
         
         for task in exec_tasks:
 
@@ -255,16 +278,39 @@ class Coordinator:
                     assert current_state_seq >= rewinded_state_seq
 
                     required_inputs = {}
-                    for state_seq in range(rewinded_state_seq + 1, current_state_seq + 1):
-                        name_prefix = pickle.dumps(('s', actor_id, channel_id, state_seq))
-                        lineage = self.LT.get(self.r, name_prefix)
-                        source_actor_id, source_channel_seqs = pickle.loads(lineage)
-                        for source_channel_id in source_channel_seqs:
-                            if (source_actor_id, source_channel_id) in required_inputs:
-                                required_inputs[source_actor_id, source_channel_id].extend(source_channel_seqs[source_channel_id])
-                            else:
-                                required_inputs[source_actor_id, source_channel_id] = source_channel_seqs[source_channel_id]
-                    
+                    # for state_seq in range(rewinded_state_seq + 1, current_state_seq + 1):
+                    #     name_prefix = pickle.dumps(('s', actor_id, channel_id, state_seq))
+                    #     lineage = self.LT.get(self.r, name_prefix)
+                    #     source_actor_id, source_channel_seqs = pickle.loads(lineage)
+                    #     for source_channel_id in source_channel_seqs:
+                    #         if (source_actor_id, source_channel_id) in required_inputs:
+                    #             required_inputs[source_actor_id, source_channel_id].extend(source_channel_seqs[source_channel_id])
+                    #         else:
+                    #             required_inputs[source_actor_id, source_channel_id] = source_channel_seqs[source_channel_id]
+
+                    print(actor_id, channel_id, rewinded_state_seq)
+                    for requirement in pickle.loads(self.IRT.get(self.r, pickle.dumps((actor_id, channel_id, rewinded_state_seq)))).to_dicts():
+                        source_actor_id = requirement['source_actor_id']
+                        source_channel_id = requirement["source_channel_id"]
+                        min_seq = requirement["min_seq"]
+
+                        # you will have to reproduce everything from min_seq, including min_seq all the way up to the last currently generated thing.
+                        # exec node
+                        if (source_actor_id, source_channel_id) in est:
+                            # WARNING: TODO horribly inefficient. but simplest
+                            relevant_keys = [pickle.loads(k) for k in self.LT.keys(self.r)]
+                            print(source_actor_id, source_channel_id, relevant_keys)
+                            relevant_keys = [key for key in relevant_keys if key[0] == source_actor_id and key[1] == source_channel_id]
+                            if len(relevant_keys) > 0:
+                                last_pushed_seq = max(relevant_keys)[2]
+                                required_inputs[source_actor_id, source_channel_id] = [k for k in range(min_seq, last_pushed_seq + 1)]
+                        # input node
+                        else:
+                            git = self.GIT.smembers(self.r, pickle.dumps((source_actor_id, source_channel_id)))
+                            required_inputs[source_actor_id, source_channel_id] = [int(i) for i in git if int(i) >= min_seq]
+
+                    print(actor_id, channel_id, rewinded_state_seq, required_inputs)
+
                     for source_actor_id, source_channel_id in required_inputs:
                         input_seqs = required_inputs[source_actor_id, source_channel_id]
                         object_names = [pickle.dumps((source_actor_id, source_channel_id, seq)) for seq in input_seqs]
@@ -390,3 +436,5 @@ class Coordinator:
             for tup, df in location_df.groupby(["source_actor_id", "source_channel_id"]):
                 source_actor_id, source_channel_id = tup
                 self.NTT.lpush(self.r, location, ReplayTask(source_actor_id, source_channel_id, polars.from_pandas(df[["seq", "target_actor_id", "target_channel_id"]])).reduce())
+
+        self.dump_redis_state("post.pkl")

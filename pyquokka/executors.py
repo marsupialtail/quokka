@@ -15,6 +15,7 @@ import sys
 from pyarrow.fs import S3FileSystem, LocalFileSystem
 import pyarrow.dataset as ds
 import ray
+import pickle
 
 class Executor:
     def __init__(self) -> None:
@@ -260,9 +261,11 @@ class JoinExecutor(Executor):
         # keys that will never be seen again, safe to delete from the state on the other side
     
     def checkpoint(self, conn, actor_id, channel_id, seq):
+        #redis.Redis('localhost',port=6800).set(pickle.dumps(("ckpt", actor_id, channel_id, seq)), pickle.dumps((self.state0, self.state1)))
         pass
     
     def restore(self, conn, actor_id, channel_id, seq):
+        #self.state0, self.state1 = pickle.loads(redis.Redis('localhost',port=6800).get(pickle.dumps(("ckpt", actor_id, channel_id, seq))))
         pass
 
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
@@ -276,9 +279,9 @@ class JoinExecutor(Executor):
         result = None
         new_left_null = None
 
-        if random.random() > 0.9 and redis.Redis('172.31.54.141',port=6800).get("input_already_failed") is None:
-            redis.Redis('172.31.54.141',port=6800).set("input_already_failed", 1)
-            ray.actor.exit_actor()
+        # if random.random() > 0.9 and redis.Redis('172.31.54.141',port=6800).get("input_already_failed") is None:
+        #     redis.Redis('172.31.54.141',port=6800).set("input_already_failed", 1)
+        #     ray.actor.exit_actor()
 
         if stream_id == 0:
             if self.state1 is not None:
