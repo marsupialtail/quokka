@@ -213,8 +213,10 @@ class LastCheckpointTable(ClientWrapper):
     
     def to_dict(self, redis_client):
         keys = self.keys(redis_client)
-        values = self.mget(redis_client, keys)
-        return {pickle.loads(key): value for key, value in zip(keys, values)}
+        result = {}
+        for key in keys:
+            result[key] = [pickle.loads(k) for k in self.lrange(redis_client, key, 0, -1)]
+        return result
 
 
 '''

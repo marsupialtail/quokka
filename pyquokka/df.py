@@ -51,7 +51,7 @@ class QuokkaContext:
                 raise NotImplemented("Are you trying to read a single file? It's not supported. Please supply absolute directory to the files, like /tmp/*. Add the asterisk!")
             
             # if local, you should not launch too many actors since not that many needed to saturate disk
-            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
+            # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
 
         self.latest_node_id += 1
         return DataStream(self, ["filename","object"], self.latest_node_id - 1)
@@ -151,7 +151,7 @@ class QuokkaContext:
                         schema = resp[:first_newline].decode("utf-8").split(sep)
 
                     self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep, has_header)
-            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
+            # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
         else:
 
             if type(self.cluster) == EC2Cluster:
@@ -194,7 +194,7 @@ class QuokkaContext:
                     self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep, has_header)
             
             # if local, you should not launch too many actors since not that many needed to saturate disk
-            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
+            # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
 
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
@@ -284,7 +284,7 @@ class QuokkaContext:
                 else:
                     self.nodes[self.latest_node_id] = InputS3ParquetNode(bucket, None, key, schema)
 
-            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
+            # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
         else:
             if type(self.cluster) == EC2Cluster:
                 raise NotImplementedError("Does not support reading local dataset with S3 cluster. Must use S3 bucket.")
@@ -321,7 +321,7 @@ class QuokkaContext:
                     self.nodes[self.latest_node_id] = self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
 
             # if local, you should not launch too many actors since not that many needed to saturate disk
-            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
+            # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
 
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)

@@ -104,16 +104,21 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             print_if_debug('acquiring flight lock')
             self.flights_lock.acquire()
             if name in self.flights:
-                print("duplicate data detected")
-                assert data  == self.flights[name][0], "duplicate data not the same"
-
-            self.flights[name] = (data, my_format)
+                # print("duplicate data detected")
+                # assert data  == self.flights[name][0], "duplicate data not the same"
+                # important bug fix: the same name could be pushed again with different data.
+                # in case of failure upstream after push and before commit, the object with that name will be reconstructed with different inputs.
+                # we want to accept the most up to date version!
+                self.flights[name] = (data, my_format)
             
-            # very important this happens after update self.flights, due to locking strategy in do_get.
-            if self.flight_keys is None:
-                self.flight_keys = new_row
             else:
-                self.flight_keys.vstack(new_row,in_place=True)
+                self.flights[name] = (data, my_format)
+                
+                # very important this happens after update self.flights, due to locking strategy in do_get.
+                if self.flight_keys is None:
+                    self.flight_keys = new_row
+                else:
+                    self.flight_keys.vstack(new_row,in_place=True)
             self.flights_lock.release()
             print_if_debug('flight lock released')
 
@@ -127,14 +132,14 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             if name in self.hbq:
                 print("duplicate data detected")
                 assert data == self.hbq[name][0], "duplicate data not the same"
-
-
-            self.hbq[name] = (data, my_format)
-            
-            if self.hbq_keys is None:
-                self.hbq_keys = new_row
             else:
-                self.hbq_keys.vstack(new_row, in_place = True)
+
+                self.hbq[name] = (data, my_format)
+                
+                if self.hbq_keys is None:
+                    self.hbq_keys = new_row
+                else:
+                    self.hbq_keys.vstack(new_row, in_place = True)
             
             self.hbq_lock.release()
         

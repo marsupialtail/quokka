@@ -74,7 +74,7 @@ class InputTask(Task):
 class TapedInputTask(Task):
     def __init__(self, actor_id, channel_id, tape ) -> None:
         super().__init__(actor_id,channel_id)
-        assert len(type) > 0
+        assert len(tape) > 0
         self.tape = tape
     
     @classmethod
@@ -86,7 +86,7 @@ class TapedInputTask(Task):
 
         # currently we have to serialize the tape. This maybe fine for input tasks but is definitely not acceptable for real tasks
         # gotta figure out what to do in that regard.
-        return pickle.dumps("inputtape", (self.actor_id, self.channel_id, self.tape))
+        return pickle.dumps(("inputtape", (self.actor_id, self.channel_id, self.tape)))
 
     def execute(self, functionObject, input_object):
 
@@ -98,7 +98,7 @@ class TapedInputTask(Task):
         if len(self.tape) == 1:
             return None, result, seq, None
         else:
-            return TapedInputTask(self.reader_id, self.tape[1:]), result, seq, None
+            return TapedInputTask(self.actor_id, self.channel_id, self.tape[1:]), result, seq, None
 
 """
 An example input_reqs is a Polars DataFrame that looks like this:

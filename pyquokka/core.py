@@ -187,14 +187,6 @@ class TaskManager:
             print(result.body.to_pybytes().decode("utf-8"))
             raise Exception
     
-    def execute_gc(self, gcable):
-
-        client = self.self_flight_client
-        message = pyarrow.py_buffer(pickle.dumps(gcable))
-        action = pyarrow.flight.Action("garbage_collect", message)
-        result = next(client.do_action(action))
-        assert result.body.to_pybytes().decode("utf-8") == "True"
-    
     def replay(self, source_actor_id, source_channel_id, plan):
 
         # plan is going to be a polars dataframe with three columns: seq, target_actor, target_channel
@@ -202,8 +194,6 @@ class TaskManager:
         seqs = plan['seq'].unique().to_list()
         
         for seq in seqs:
-            name = (source_actor_id, source_channel_id, seq)
-            data = self.HBQ.get(name)
 
             targets = plan.filter(polars.col('seq') == seq).select(["target_actor_id", "target_channel_id"])
             target_mask_list = targets.groupby('target_actor_id').agg_list().to_dicts()
@@ -211,22 +201,18 @@ class TaskManager:
 
             # figure out a pythonic way to convert a dataframe to a dict of lists
 
-            pushed = self.push(source_actor_id, source_channel_id, seq, data, target_mask, False)
+            pushed = self.push(source_actor_id, source_channel_id, seq, None, target_mask, True)
             if not pushed:
                 return False
         
         return True
 
-    def push(self, source_actor_id: int, source_channel_id: int, seq: int, output: polars.internals.DataFrame, target_mask = None, local = True):
+    def push(self, source_actor_id: int, source_channel_id: int, seq: int, output: polars.internals.DataFrame, target_mask = None, from_local = False):
 
         my_format = "polars" # let's not worry about different formats for now though that will be needed eventually
         
         if target_mask is not None:
             print("TARGET_MASK", target_mask)
-
-        if local:
-            name = (source_actor_id, source_channel_id, seq)
-            self.HBQ.put(name, output)
         
         partition_fns = self.partition_fns[source_actor_id]
 
@@ -237,7 +223,12 @@ class TaskManager:
 
             partition_fn = partition_fns[target_actor_id]
             # this will be a dict of channel -> Polars DataFrame
-            outputs = partition_fn(output, source_channel_id)
+
+            if from_local:
+                outputs = self.HBQ.get(source_actor_id, source_channel_id, seq, target_actor_id)
+            else:
+                outputs = partition_fn(output, source_channel_id)
+                self.HBQ.put(source_actor_id, source_channel_id, seq, target_actor_id, outputs)
 
             # wrap all the outputs with their actual names and by default persist all outputs
 
@@ -248,6 +239,8 @@ class TaskManager:
 
                 if target_mask is not None and target_channel_id not in target_mask[target_actor_id]:
                     continue
+
+                
 
                 if target_channel_id in outputs:
                     data = outputs[target_channel_id]
@@ -266,6 +259,9 @@ class TaskManager:
                 # spin here until you can finally push it. If you die while spinning, well yourself will be recovered.
                 # this is fine since you don't have the recovery lock.
                 client = self.actor_flight_clients[target_actor_id][target_channel_id]
+
+                print("pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
+
                 try:
                     self.check_puttable(client)
                     upload_descriptor = pyarrow.flight.FlightDescriptor.for_command(pickle.dumps((True, name, my_format)))
@@ -291,13 +287,13 @@ class TaskManager:
         gcable = []
         
         transaction = self.r.pipeline()
-        for source_actor_id, source_channel_id, seq in self.HBQ.get_objects():
+        for source_actor_id, source_channel_id, seq, target_actor_id in self.HBQ.get_objects():
 
             # refer to the comment of the cemetary table in tables.py to understand this logic.
             # basically count is the number of objects in the flight server with the right name prefix, which should be total number of target object slices
             if self.CT.scard(self.r, pickle.dumps(source_actor_id, source_channel_id, seq)) == self.target_count[source_actor_id]:
                 
-                gcable.append((source_actor_id, source_channel_id, seq))
+                gcable.append((source_actor_id, source_channel_id, seq, target_actor_id))
                 self.NOT.srem(transaction, self.node_id, pickle.dumps((source_actor_id, source_channel_id, seq)))
                 self.PT.delete(transaction, pickle.dumps((source_actor_id, source_channel_id, seq)))
                         
@@ -320,11 +316,16 @@ class TaskManager:
 
 @ray.remote
 class ExecTaskManager(TaskManager):
-    def __init__(self, node_id: int, coordinator_ip: str, worker_ips: list) -> None:
+    def __init__(self, node_id: int, coordinator_ip: str, worker_ips: list, checkpoint_bucket = "quokka-checkpoint") -> None:
         super().__init__(node_id, coordinator_ip, worker_ips)
         self.LCT = LastCheckpointTable()
         self.EST = ExecutorStateTable()
         self.IRT = InputRequirementsTable()
+
+        self.checkpoint_bucket = checkpoint_bucket
+        s3 = boto3.resource('s3')
+        bucket = s3.Bucket(checkpoint_bucket)
+        bucket.objects.all().delete()
 
         self.tape_input_reqs = {}
     
@@ -389,7 +390,7 @@ class ExecTaskManager(TaskManager):
                     if candidate_task.state_seq > 0:
                         s3 = boto3.client("s3")
                         print("RESTORING TO ", candidate_task.state_seq -1 )
-                        self.function_objects[actor_id, channel_id].restore(s3, actor_id, channel_id, candidate_task.state_seq - 1)
+                        self.function_objects[actor_id, channel_id].restore(self.checkpoint_bucket, actor_id, channel_id, candidate_task.state_seq - 1)
 
                 input_requirements = candidate_task.input_reqs
 
@@ -428,6 +429,18 @@ class ExecTaskManager(TaskManager):
                             chunk, metadata = reader.read_chunk()
                             name, format = pickle.loads(metadata)
                             source_actor_id, source_channel_id, seq, target_actor_id, partition_fn, target_channel_id = name
+
+                            # important bug fix: you must ignore objects whose names are not in LineageTable. This means they have not yet
+                            # been committed upstream, which means their lineage could potentially change upon reconstruction!
+
+                            if self.LT.get(self.r, pickle.dumps((source_actor_id, source_channel_id, seq))) is None:
+
+                                # note we need to guarantee that the resulting batches are still contiguous in terms of their sequence numbers
+                                # this is true because only the last batch for every source channel can still be uncommitted.
+                                # this is very subtle and was difficult to debug, distributed bugs are fun.
+                                print("SKIPPING UNCOMMITED STUFF ", source_actor_id, source_channel_id, seq)
+                                continue
+
                             input_names.append(name)
                             
                             source_actor_ids.add(source_actor_id)
@@ -524,8 +537,7 @@ class ExecTaskManager(TaskManager):
                     next_task = None
 
                 if state_seq % CHECKPOINT_INTERVAL == 0:
-                    s3 = boto3.client("s3")
-                    self.function_objects[actor_id, channel_id].checkpoint(s3, actor_id, channel_id, state_seq)
+                    self.function_objects[actor_id, channel_id].checkpoint(self.checkpoint_bucket, actor_id, channel_id, state_seq)
                     for source_channel_id in source_channel_ids:
                         for seq in source_channel_seqs[source_channel_id]:
                             self.CT.sadd(transaction, pickle.dumps((source_actor_id, source_channel_id, seq)), pickle.dumps((actor_id, channel_id)))
@@ -558,9 +570,8 @@ class ExecTaskManager(TaskManager):
                 if (actor_id, channel_id) not in self.function_objects:
                     self.function_objects[actor_id, channel_id] = ray.cloudpickle.loads(self.FOT.get(self.r, actor_id))
                     if candidate_task.state_seq > 0:
-                        s3 = boto3.client("s3")
                         print("RESTORING TO ", state_seq -1 )
-                        self.function_objects[actor_id, channel_id].restore(s3, actor_id, channel_id, state_seq - 1)
+                        self.function_objects[actor_id, channel_id].restore(self.checkpoint_bucket, actor_id, channel_id, state_seq - 1)
                         new_input_reqs = pickle.loads(self.IRT.get(self.r, pickle.dumps((actor_id, channel_id, state_seq - 1))))
                         assert new_input_reqs is not None
                         assert (actor_id, channel_id) not in self.tape_input_reqs
@@ -615,8 +626,10 @@ class ExecTaskManager(TaskManager):
                     print_if_debug(new_input_reqs)
                     if len(new_input_reqs) > 0:
                         next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq if output is None else out_seq + 1, new_input_reqs)
+                        print("finished exectape, next input requirement is ", new_input_reqs)
                     else:
                         next_task = None
+                        print("finished exectape, done!! This hsould not happen.")
 
                 else:
                     next_task = TapedExecutorTask(actor_id, channel_id, state_seq + 1, out_seq if output is None else out_seq + 1, candidate_task.last_state_seq)
@@ -634,6 +647,7 @@ class ExecTaskManager(TaskManager):
                     
                     for data in output:
                         if actor_id not in self.blocking_nodes:
+                            print(data)
                             pushed = self.push(actor_id, channel_id, out_seq, data)
                             if not pushed:
                             # you failed to push downstream, most likely due to node failure. wait a bit for coordinator recovery and continue, most like will be choked on barrier.
@@ -707,8 +721,9 @@ class IOTaskManager(TaskManager):
         self.NOT.sadd(transaction, str(self.node_id), name_prefix)
         self.PT.set(transaction, name_prefix, str(self.node_id))
         # this probably doesn't have to be done transactionally, but why not.
-
-        self.LT.set(transaction, name_prefix, lineage)
+        # lineage can be None for taped tasks, since no need to put lineage anymore.
+        if lineage is not None:
+            self.LT.set(transaction, name_prefix, lineage)
         self.GIT.sadd(transaction, pickle.dumps((actor_id, channel_id)), out_seq)
 
     def execute(self):
@@ -749,6 +764,9 @@ class IOTaskManager(TaskManager):
                     next_task, output, seq, lineage = candidate_task.execute(functionObject)
 
                     print_if_profile(time.time() - start)
+
+                    if next_task is None:
+                        self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), seq)
                 
                 elif task_type == "inputtape":
                     candidate_task = TapedInputTask.from_tuple(tup)
@@ -763,11 +781,7 @@ class IOTaskManager(TaskManager):
                     input_object = pickle.loads(self.LT.get(self.r, pickle.dumps((actor_id, channel_id, seq))))
 
                     next_task, output, seq, lineage = candidate_task.execute(functionObject, input_object)
-                
-                if next_task is None:
-                    self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), seq)
 
-                print("pushing", actor_id, channel_id, seq)
                 pushed = self.push(actor_id, channel_id, seq, output)
 
                 if pushed:

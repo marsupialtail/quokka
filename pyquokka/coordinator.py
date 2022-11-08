@@ -252,10 +252,11 @@ class Coordinator:
         
         for task in inputtape_tasks:
 
-            if (actor_id, channel_id) not in new_input_requests:
-                new_input_requests[actor_id, channel_id] = {out_seq}
+            if (task.actor_id, task.channel_id) not in new_input_requests:
+                new_input_requests[task.actor_id, task.channel_id] = set([seq for seq in task.tape])
             else:
-                new_input_requests[actor_id, channel_id].add(out_seq)
+                for seq in task.tape:
+                    new_input_requests[task.actor_id, task.channel_id].add(seq)
 
 
         # at the end of the recovery process, we have to ensure that 
@@ -288,6 +289,8 @@ class Coordinator:
                     #         else:
                     #             required_inputs[source_actor_id, source_channel_id] = source_channel_seqs[source_channel_id]
 
+                    # important bug fix: you must repush things that you haven't consumed yet. because they will be needed in the future
+                    # otherwise deadlock.
                     print(actor_id, channel_id, rewinded_state_seq)
                     for requirement in pickle.loads(self.IRT.get(self.r, pickle.dumps((actor_id, channel_id, rewinded_state_seq)))).to_dicts():
                         source_actor_id = requirement['source_actor_id']
