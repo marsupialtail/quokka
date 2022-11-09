@@ -165,12 +165,11 @@ class TaskGraph:
             for channel in partitioned:
                 payload = partitioned[channel]
                 for func in batch_funcs:
-                    if payload is None or len(payload) == 0:
-                        payload = None
+                    if payload is None:
                         break
                     payload = func(payload)
 
-                if payload is None or len(payload) == 0:
+                if payload is None:
                     continue
                 if projection is not None:
                     results[channel] =  payload[sorted(list(projection))]
@@ -239,7 +238,7 @@ class TaskGraph:
         self.FOT.set(self.r, self.current_actor, ray.cloudpickle.dumps(functionObject))
 
         input_reqs = self.prologue(streams, placement_strategy, source_target_info)
-        print("input_reqs",input_reqs)
+        # print("input_reqs",input_reqs)
         
         channel_locs = {}
         if type(placement_strategy) == SingleChannelStrategy:

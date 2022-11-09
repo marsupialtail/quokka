@@ -11,7 +11,7 @@ import time
 import boto3
 import types
 
-CHECKPOINT_INTERVAL = 2
+CHECKPOINT_INTERVAL = 100
 HBQ_GC_INTERVAL = 2
 MAX_SEQ = 1000000000
 DEBUG = False
@@ -23,7 +23,11 @@ def print_if_debug(*x):
 
 def print_if_profile(*x):
     if PROFILE:
-        print(*x)
+        print(*x, time.time())
+
+def record_batch_to_polars(batch):
+    aligned_batch = pyarrow.record_batch([pyarrow.concat_arrays([arr]) for arr in batch], schema=batch.schema)
+    return polars.from_arrow(pyarrow.Table.from_batches([aligned_batch]))
 
 class ConnectionError(Exception):
     pass
@@ -43,7 +47,7 @@ An example:
 
 
 class TaskManager:
-    def __init__(self, node_id : int, coordinator_ip : str, worker_ips:list) -> None:
+    def __init__(self, node_id : int, coordinator_ip : str, worker_ips:list, hbq_path = "/data/") -> None:
 
         self.node_id = node_id
         self.mappings = {}
@@ -63,7 +67,7 @@ class TaskManager:
         self.flight_clients = {i: pyarrow.flight.connect("grpc://" + str(i) + ":5005") for i in worker_ips}
 
         #  Bytedance can write this.
-        self.HBQ = HBQ()
+        self.HBQ = HBQ(hbq_path)
 
         '''
         - Node Task Table (NTT): track the current tasks for each node. Key- node IP. Value - Set of tasks on that node. 
@@ -159,7 +163,7 @@ class TaskManager:
                     for key, value in zip(keys, values):
                         actor, channel = pickle.loads(key)
                         ip = value.decode('utf-8')
-                        print("reset", actor, channel, ip)
+                        # print("reset", actor, channel, ip)
                         if actor in self.actor_flight_clients:
                             self.actor_flight_clients[actor][channel] = self.flight_clients[ip]
                         else:
@@ -208,6 +212,8 @@ class TaskManager:
         return True
 
     def push(self, source_actor_id: int, source_channel_id: int, seq: int, output: polars.internals.DataFrame, target_mask = None, from_local = False):
+        
+        start = time.time()
 
         my_format = "polars" # let's not worry about different formats for now though that will be needed eventually
         
@@ -232,6 +238,7 @@ class TaskManager:
 
             # wrap all the outputs with their actual names and by default persist all outputs
 
+            # print(outputs)
             fake_row = outputs[list(outputs.keys())[0]][:0]
             expected_schema = outputs[list(outputs.keys())[0]].to_arrow().schema
 
@@ -240,9 +247,7 @@ class TaskManager:
                 if target_mask is not None and target_channel_id not in target_mask[target_actor_id]:
                     continue
 
-                
-
-                if target_channel_id in outputs:
+                if target_channel_id in outputs and len(outputs[target_channel_id]) > 0:
                     data = outputs[target_channel_id]
                     # set the partition function number to 0 for now because we won't ever be changing the partition function.
                     name = (source_actor_id, source_channel_id, seq, target_actor_id, 0, target_channel_id)
@@ -260,10 +265,10 @@ class TaskManager:
                 # this is fine since you don't have the recovery lock.
                 client = self.actor_flight_clients[target_actor_id][target_channel_id]
 
-                print("pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
+                print_if_debug("pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
 
                 try:
-                    self.check_puttable(client)
+                    # self.check_puttable(client)
                     upload_descriptor = pyarrow.flight.FlightDescriptor.for_command(pickle.dumps((True, name, my_format)))
                     writer, _ = client.do_put(upload_descriptor, batches[0].schema)
                     writer.write_batch(batches[0])
@@ -273,7 +278,8 @@ class TaskManager:
                     # failed to push to cache, probably because downstream node failed. update actor_flight_clients
                     print("downstream unavailable")
                     return False
-        
+
+        print_if_profile("push time", time.time() - start)
         return True
         
     
@@ -438,7 +444,7 @@ class ExecTaskManager(TaskManager):
                                 # note we need to guarantee that the resulting batches are still contiguous in terms of their sequence numbers
                                 # this is true because only the last batch for every source channel can still be uncommitted.
                                 # this is very subtle and was difficult to debug, distributed bugs are fun.
-                                print("SKIPPING UNCOMMITED STUFF ", source_actor_id, source_channel_id, seq)
+                                # print("SKIPPING UNCOMMITED STUFF ", source_actor_id, source_channel_id, seq)
                                 continue
 
                             input_names.append(name)
@@ -462,8 +468,16 @@ class ExecTaskManager(TaskManager):
                     assert len(source_actor_ids) == 1
                     source_actor_id = source_actor_ids.pop()
 
-                    input = [polars.from_pandas(pyarrow.Table.from_batches([batch]).to_pandas()) for batch in batches if len(batch) > 0]
-                    output, _ , _ = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
+                    input = [record_batch_to_polars(batch) for batch in batches if len(batch) > 0]
+
+                    start = time.time()
+
+                    if len(input) > 0:
+                        output, _ , _ = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
+                    else:
+                        output = None
+
+                    print_if_profile("execute time", time.time() - start)
 
                     source_channel_ids = [i for i in source_channel_seqs]
                     source_channel_progress = [len(source_channel_seqs[i]) for i in source_channel_ids]
@@ -611,8 +625,14 @@ class ExecTaskManager(TaskManager):
                 new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
                 self.tape_input_reqs[actor_id, channel_id] = new_input_reqs.select(["source_actor_id", "source_channel_id","min_seq"])
 
-                input = [polars.from_pandas(pyarrow.Table.from_batches([batch]).to_pandas()) for batch in batches if len(batch) > 0]
-                output, state_seq, out_seq = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
+                input = [record_batch_to_polars(batch) for batch in batches if len(batch) > 0]
+                
+                if len(input) > 0:
+                    output, state_seq, out_seq = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
+                else:
+                    state_seq = candidate_task.state_seq
+                    out_seq = candidate_task.out_seq
+                    output = None
 
                 if state_seq + 1 > candidate_task.last_state_seq:
 
@@ -738,11 +758,10 @@ class IOTaskManager(TaskManager):
             self.check_in_recovery()
 
             count += 1
-
-            candidate_task = self.NTT.lindex(self.r, str(self.node_id), 0)
-            if candidate_task is None:
-                continue
-            
+            length = self.NTT.llen(self.r, str(self.node_id))
+            if length == 0:
+                continue 
+            candidate_task = self.NTT.lindex(self.r, str(self.node_id), random.choice(range(length)))         
 
             task_type, tup = pickle.loads(candidate_task)
 
@@ -763,7 +782,7 @@ class IOTaskManager(TaskManager):
 
                     next_task, output, seq, lineage = candidate_task.execute(functionObject)
 
-                    print_if_profile(time.time() - start)
+                    print_if_profile("read time", time.time() - start)
 
                     if next_task is None:
                         self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), seq)
@@ -781,6 +800,7 @@ class IOTaskManager(TaskManager):
                     input_object = pickle.loads(self.LT.get(self.r, pickle.dumps((actor_id, channel_id, seq))))
 
                     next_task, output, seq, lineage = candidate_task.execute(functionObject, input_object)
+                
 
                 pushed = self.push(actor_id, channel_id, seq, output)
 

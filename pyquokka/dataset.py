@@ -41,6 +41,9 @@ class InputEC2ParquetDataset:
         self.length = 0
         self.workers = 8
 
+        self.s3 = None
+        self.iterator = None
+        self.count = 0
 
     def get_own_state(self, num_channels):
         self.num_channels = num_channels
@@ -57,32 +60,79 @@ class InputEC2ParquetDataset:
                               if i['Key'].endswith(".parquet")])
 
 
-    def get_next_batch(self, mapper_id, pos=None):
+    def execute(self, mapper_id, pos=None):
 
-        s3 = S3FileSystem()
+        if self.s3 is None:
+            self.s3 = S3FileSystem()
+            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
 
         def download(file):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 return polars.from_arrow(pq.read_table(self.bucket + "/" +
-                              file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = s3))
+                              file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3))
 
         assert self.num_channels is not None
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
+        
         my_files = [self.files[k] for k in range(mapper_id, len(self.files), self.num_channels)]
         if len(my_files) == 0:
-            yield None, None
+            return None, None
         
         # this will return things out of order, but that's ok!
 
-        future_to_url = {executor.submit(download, file): file for file in my_files}
+        if pos is None:
+            pos = 0
+
+        files_to_do = my_files[pos: pos + self.workers]
+        future_to_url = {self.executor.submit(download, file): file for file in files_to_do}
+        dfs = []
         for future in concurrent.futures.as_completed(future_to_url):
-            yield future_to_url[future], future.result()
+            dfs.append(future.result())
+        
+        if pos + self.workers >= len(my_files):
+            return None, polars.concat(dfs)
+        else:
+            return pos + self.workers, polars.concat(dfs)
+    # def get_next_batch(self, mapper_id, pos=None):
+
+    #     s3 = S3FileSystem()
+
+    #     def download(file):
+    #         with warnings.catch_warnings():
+    #             warnings.simplefilter("ignore")
+    #             return polars.from_arrow(pq.read_table(self.bucket + "/" +
+    #                           file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = s3))
+
+    #     assert self.num_channels is not None
+    #     executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
+    #     my_files = [self.files[k] for k in range(mapper_id, len(self.files), self.num_channels)]
+    #     if len(my_files) == 0:
+    #         yield None, None
+        
+    #     # this will return things out of order, but that's ok!
+
+    #     future_to_url = {executor.submit(download, file): file for file in my_files}
+    #     for future in concurrent.futures.as_completed(future_to_url):
+    #         yield future.result()
+    
+    # def execute(self, mapper_id, pos = None):
+
+    #     if self.iterator is None:
+    #         self.iterator = self.get_next_batch(mapper_id, None)
+    #     my_files = [self.files[k] for k in range(mapper_id, len(self.files), self.num_channels)]
+    #     self.count += 1
+
+    #     if self.count < len(my_files):
+    #         return self.count, next(self.iterator)
+    #     else:
+    #         return None, next(self.iterator)
 
 class InputParquetDataset:
-    def __init__(self, filepath, mode = "local", columns = None, filters = None) -> None:
-        
-        self.filepath = filepath
+
+    def __init__(self, filename, columns=None, filters = None) -> None:
+
+        self.filename = filename
+        self.num_channels = None
         self.columns = columns
         if filters is not None:
             if type(filters) == list:
@@ -93,61 +143,101 @@ class InputParquetDataset:
                 raise Exception("cannot understand filters format.")
         else:
             self.filters = None
-        self.mode = mode
-        self.num_channels = None
 
     def get_own_state(self, num_channels):
 
+        self.parquet_file = pq.ParquetFile(self.filename)
+        self.num_row_groups = self.parquet_file.num_row_groups
         self.num_channels = num_channels
-        if self.mode == "s3":
-            s3 = S3FileSystem()
-            dataset = ds.dataset(self.filepath, filesystem = s3)
-        else:
-            dataset = ds.dataset(self.filepath)
-
-        self.schema = dataset.schema
-        total_rows = dataset.count_rows()
-        print("Parquet dataset at ", self.filepath, " has total ", total_rows, " rows")
-        row_group_fragments = [fragment.split_by_row_group() for fragment in dataset.get_fragments()]
-        row_group_fragments_with_size = [(item.count_rows(), item) for sublist in row_group_fragments for item in sublist]
-        row_group_fragments_with_size.sort(key = lambda x: x[0])
-
-        self.channel_assigments = {i: [] for i in range(num_channels)}
-        channel_lengths = np.array([0] * num_channels)
-
-        '''
-        Hey we encounter the Partition Problem! We would like to evenly divide the row groups based on length.
-        We will use Greedy number partitioning. The easiest to implement approximate algorithm.
-        '''
-        
-        for size, fragment in row_group_fragments_with_size:
-            channel = np.argmin(channel_lengths)
-            self.channel_assigments[channel].append(fragment)
-            channel_lengths[channel] += size
 
     def get_next_batch(self, mapper_id, pos=None):
         assert self.num_channels is not None
         if pos is None:
-            pos = 0
-
-        format = ParquetFileFormat()
-        filesystem = S3FileSystem() if self.mode == "s3" else LocalFileSystem()
-        # fragments = [
-        #     format.make_fragment(
-        #         file,
-        #         filesystem=filesystem,
-        #         partition_expression=part_expression,
-        #     )
-        #     for file, part_expression in self.channel_assigments[mapper_id]
-        # ]
-
-        if mapper_id not in self.channel_assigments:
-            yield None, None
+            curr_row_group = mapper_id
         else:
-            self.dataset = FileSystemDataset(self.channel_assigments[mapper_id][pos:], self.schema, format , filesystem)
-            for batch in self.dataset.to_batches(filter= self.filters,columns=self.columns ):
-                pos += 1
-                yield pos, batch
+            curr_row_group = pos
+
+        a = self.parquet_file.read_row_group(
+            curr_row_group, columns=self.columns)
+        if self.filters is not None:
+            a = a.filter(self.filters)
+        curr_row_group += self.num_channels
+        
+        if curr_row_group < len(self.num_row_groups):
+            return curr_row_group, a
+        else:
+            return None, a
+
+
+# class InputParquetDataset:
+#     def __init__(self, filepath, mode = "local", columns = None, filters = None) -> None:
+        
+#         self.filepath = filepath
+#         self.columns = columns
+#         if filters is not None:
+#             if type(filters) == list:
+#                 self.filters = filters_to_expression(filters)
+#             elif type(filters) == ds.Expression:
+#                 self.filters = filters
+#             else:
+#                 raise Exception("cannot understand filters format.")
+#         else:
+#             self.filters = None
+#         self.mode = mode
+#         self.num_channels = None
+
+#     def get_own_state(self, num_channels):
+
+#         self.num_channels = num_channels
+#         if self.mode == "s3":
+#             s3 = S3FileSystem()
+#             dataset = ds.dataset(self.filepath, filesystem = s3)
+#         else:
+#             dataset = ds.dataset(self.filepath)
+
+#         self.schema = dataset.schema
+#         total_rows = dataset.count_rows()
+#         print("Parquet dataset at ", self.filepath, " has total ", total_rows, " rows")
+#         row_group_fragments = [fragment.split_by_row_group() for fragment in dataset.get_fragments()]
+#         row_group_fragments_with_size = [(item.count_rows(), item) for sublist in row_group_fragments for item in sublist]
+#         row_group_fragments_with_size.sort(key = lambda x: x[0])
+
+#         self.channel_assigments = {i: [] for i in range(num_channels)}
+#         channel_lengths = np.array([0] * num_channels)
+
+#         '''
+#         Hey we encounter the Partition Problem! We would like to evenly divide the row groups based on length.
+#         We will use Greedy number partitioning. The easiest to implement approximate algorithm.
+#         '''
+        
+#         for size, fragment in row_group_fragments_with_size:
+#             channel = np.argmin(channel_lengths)
+#             self.channel_assigments[channel].append(fragment)
+#             channel_lengths[channel] += size
+
+#     def get_next_batch(self, mapper_id, pos=None):
+#         assert self.num_channels is not None
+#         if pos is None:
+#             pos = 0
+
+#         format = ParquetFileFormat()
+#         filesystem = S3FileSystem() if self.mode == "s3" else LocalFileSystem()
+#         # fragments = [
+#         #     format.make_fragment(
+#         #         file,
+#         #         filesystem=filesystem,
+#         #         partition_expression=part_expression,
+#         #     )
+#         #     for file, part_expression in self.channel_assigments[mapper_id]
+#         # ]
+
+#         if mapper_id not in self.channel_assigments:
+#             yield None, None
+#         else:
+#             self.dataset = FileSystemDataset(self.channel_assigments[mapper_id][pos:], self.schema, format , filesystem)
+#             for batch in self.dataset.to_batches(filter= self.filters,columns=self.columns ):
+#                 pos += 1
+#                 yield pos, batch
 
 # this works for a directoy of objects.
 class InputS3FilesDataset:

@@ -80,7 +80,7 @@ class Coordinator:
             seq = self.DST.get(self.r, pickle.dumps((actor_id, channel_id)))
             if seq is None:
                 continue
-            print("done seq", seq)
+            # print("done seq", seq)
             self.undone.remove((actor_id, channel_id))
 
 
@@ -111,6 +111,7 @@ class Coordinator:
                 print("detected failure")
                 self.r.set("recovery-lock", 1)
 
+                start = time.time()
                 while True:
                     time.sleep(0.01)
 
@@ -137,9 +138,12 @@ class Coordinator:
                     if set(alive_nodes).issubset(set(waiting_workers)):
                         break
                 
+                print("WORKER BARRIER TOOK", time.time() - start)
+                start = time.time()
                 self.recover(alive_nodes, failed_nodes)
                 self.r.set("recovery-lock", 0)
                 self.r.delete("waiting-workers")
+                print("RECOVERY PLANNING TOOK", time.time() - start)
                 execute_handles = {worker: execute_handles[worker] for worker in alive_nodes}
                 execute_handles_list = list(execute_handles.values())
             
@@ -402,16 +406,35 @@ class Coordinator:
             self.CLT.set(self.r, pickle.dumps((actor_id, channel_id)), self.node_ip_address[unlucky_one])
             self.EST.set(self.r, pickle.dumps((actor_id, channel_id)), state_seq )
 
+        ip_scores = {}
+        ip_to_alive_io_nodes = {}
+        alive_io_nodes = [k for k in alive_nodes if k in self.io_nodes]
+        for io_node in alive_io_nodes:
+            ip = self.node_ip_address[io_node]
+            if ip not in ip_to_alive_io_nodes:
+                ip_to_alive_io_nodes[ip] = [io_node]
+                ip_scores[ip] = 0
+            else:
+                ip_to_alive_io_nodes[ip].append(io_node)
+
         for actor_id, channel_id in remembered_input_objects:
             seq, input_object = remembered_input_objects[actor_id, channel_id]
             alive_io_nodes = [k for k in alive_nodes if k in self.io_nodes]
             if len(alive_io_nodes) == 0:
                 print("Ran out of IOTaskManagers to schedule work, fault recovery has failed most likely because of catastrophic number of server losses")
                 exit()
-            unlucky_one = random.choice(alive_io_nodes)
-            self.NTT.lpush(self.r, unlucky_one, InputTask(actor_id, channel_id, seq, input_object).reduce())
-            
 
+            ip = min(ip_scores, key=ip_scores.get)
+            ip_scores[ip] += 1
+            unlucky_one = random.choice(ip_to_alive_io_nodes[ip])
+
+            assert unlucky_one is not None
+            
+            self.NTT.lpush(self.r, unlucky_one, InputTask(actor_id, channel_id, seq, input_object).reduce())
+
+        # ready for the next round?
+        ip_scores = {k: 0 for k in ip_scores}
+        
         for actor_id, channel_id in new_input_requests:
 
             git = self.GIT.smembers(self.r, pickle.dumps((actor_id, channel_id)))
@@ -429,9 +452,14 @@ class Coordinator:
 
             # handle the rest
             assert self.GIT.srem(self.r, pickle.dumps((actor_id, channel_id)), seqs) == len(seqs)
-            unlucky_one = random.choice(alive_io_nodes)
 
-            self.NTT.lpush(self.r, unlucky_one, TapedInputTask(actor_id, channel_id, seqs).reduce())
+            ip = min(ip_scores, key=ip_scores.get)
+            ip_scores[ip] += len(seqs)
+            unlucky_one = random.choice(ip_to_alive_io_nodes[ip])
+
+            assert unlucky_one is not None
+
+            self.NTT.lpush(self.r,unlucky_one, TapedInputTask(actor_id, channel_id, seqs).reduce())
         
         replay_requests = pd.DataFrame(replay_requests, columns = ['source_actor_id','source_channel_id','location','seq', 'target_actor_id', 'target_channel_id'])
         for location, location_df in replay_requests.groupby('location'):
