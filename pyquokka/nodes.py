@@ -300,18 +300,6 @@ class InputReaderNode(InputNode):
     def __init__(self, id, channel, accessor, num_channels) -> None:
         super().__init__(id, channel)
         self.accessor = accessor
-        
-
-@ray.remote
-class InputRedisDatasetNode(InputNode):
-    def __init__(self, id, channel,channel_objects):
-        super().__init__(id, channel)
-        ip_set = set()
-        for da in channel_objects:
-            for object in channel_objects[da]:
-                ip_set.add(object[0])
-        self.accessor = RedisObjectsDataset(channel_objects, ip_set)
-        self.input_generator = self.accessor.get_next_batch(channel, None)
 
 
 class TaskNode(Node):
