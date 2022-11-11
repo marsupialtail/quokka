@@ -53,6 +53,17 @@ class HashPartitioner(Partitioner):
     def __str__(self):
         return self.key
 
+class RangePartitioner(Partitioner):
+    # total_range needs to be filled by the cardinality estimator
+    def __init__(self, key, total_range) -> None:
+        super().__init__()
+        assert type(total_range) == int
+        self.key = key
+        self.total_range = total_range
+    
+    def __str__(self):
+        return "range partitioner on " + str(self.key) + ", range estimate " + str(self.total_range)
+
 class FunctionPartitioner(Partitioner):
     def __init__(self, func) -> None:
         super().__init__()

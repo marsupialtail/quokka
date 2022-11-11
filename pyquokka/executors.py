@@ -17,6 +17,7 @@ import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 import ray
 import pickle
+import concurrent.futures
 
 class Executor:
     def __init__(self) -> None:
@@ -68,7 +69,7 @@ class StorageExecutor(Executor):
         return
 
 class OutputExecutor(Executor):
-    def __init__(self, filepath, format, prefix = "part", mode = "local", row_group_size = 5000000) -> None:
+    def __init__(self, filepath, format, prefix = "part", mode = "local", row_group_size = 5500000) -> None:
         self.num = 0
         assert format == "csv" or format == "parquet"
         self.format = format
@@ -100,17 +101,16 @@ class OutputExecutor(Executor):
         lengths = [len(batch) for batch in self.my_batches]
         total_len = np.sum(lengths)
 
+        if total_len <= self.row_group_size:
+            return None
+
         print(time.time(), len(self.my_batches), total_len)
 
         write_len = total_len // self.row_group_size * self.row_group_size
         cum_sum = np.cumsum(lengths)
-        if len(np.where(cum_sum > write_len)[0]) == 0:
-            batches_to_take, rows_remaining, rows_to_take = len(lengths), 0,0
+    
         batches_to_take = np.where(cum_sum > write_len)[0][0]
-
-        if batches_to_take == 0:
-            return None
-
+        print(batches_to_take)
         rows_remaining = cum_sum[batches_to_take] - write_len
         rows_to_take = lengths[batches_to_take] - rows_remaining
 
@@ -452,7 +452,7 @@ class DistinctExecutor(Executor):
             return batch
         else:
             contribution = batch.join(self.state, on = self.keys, how="anti")
-            self.state.vstack(contribution)
+            self.state.vstack(contribution, in_place = True)
             return contribution
     
     def serialize(self):
@@ -606,166 +606,114 @@ class CountExecutor(Executor):
         return polars.DataFrame([self.state])
 
 
-class MergeSortedExecutor(Executor):
-    def __init__(self, key, record_batch_rows = None, length_limit = 5000, file_prefix = "mergesort") -> None:
-        self.states = []
-        self.num = 1
+class SuperFastSortExecutor(Executor):
+    def __init__(self, key, record_batch_rows = 100000, output_batch_rows = 1000000, file_prefix = "mergesort") -> None:
         self.key = key
         self.record_batch_rows = record_batch_rows
+        self.output_batch_rows = output_batch_rows
         self.fileno = 0
-        self.length_limit = length_limit
         self.prefix = file_prefix # make sure this is different for different executors
-
-        self.filename_to_size = {}
-        self.data_dir = "/data"
-    
-    def serialize(self):
-        return {}, "all" # don't support fault tolerance of sort
-    
-    def deserialize(self, s):
-        raise Exception
+        self.data_dir = "/data/"
+        self.in_mem_state = None
+        self.executor = None
 
     def write_out_df_to_disk(self, target_filepath, input_mem_table):
-        arrow_table = input_mem_table.to_arrow()
-        batches = arrow_table.to_batches(self.record_batch_rows)
-        writer =  pa.ipc.new_file(pa.OSFile(target_filepath, 'wb'), arrow_table.schema)
-        for batch in batches:
-            writer.write(batch)
-        writer.close()
-    
-    # with minimal memory used!
-    def produce_sorted_file_from_two_sorted_files(self, target_filepath, input_filepath1, input_filepath2):
+        # arrow_table = input_mem_table.to_arrow()
+        # batches = arrow_table.to_batches(1000000)
+        # writer =  pa.ipc.new_file(pa.OSFile(target_filepath, 'wb'), arrow_table.schema)
+        # for batch in batches:
+        #     writer.write(batch)
+        # writer.close()
+        input_mem_table.write_parquet(target_filepath, row_group_size = self.record_batch_rows, use_pyarrow =True)
 
-        read_time = 0
-        sort_time = 0
-        write_time = 0
+        return True
 
-        source1 =  pa.ipc.open_file(pa.memory_map(input_filepath1, 'rb'))
-        number_of_batches_in_source1 = source1.num_record_batches
-        source2 =  pa.ipc.open_file(pa.memory_map(input_filepath2, 'rb'))
-        number_of_batches_in_source2 = source2.num_record_batches
+    def execute(self, batches, stream_id, executor_id):
 
-        next_batch_to_get1 = 1
+        # if self.executor is None:
+        #     self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+        # we are going to update the in memory index and flush out the sorted stuff
+        
+        flush_file_name = self.data_dir + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
+        batches = [i for i in batches if i is not None and len(i) > 0]
+        if len(batches) == 0:
+            return None
+        
+        start = time.time()
+        batch = polars.concat(batches)
+        print("concat execute used", time.time() - start)
 
         start = time.time()
-        cached_batches_in_mem1 = polars.from_arrow(pa.Table.from_batches([source1.get_batch(0)]))
-        next_batch_to_get2 = 1
-        cached_batches_in_mem2 = polars.from_arrow(pa.Table.from_batches([source2.get_batch(0)]))
-        read_time += time.time() - start
-
-        writer =  pa.ipc.new_file(pa.OSFile(target_filepath, 'wb'), source1.schema)
-
-        # each iteration will write a batch to the target filepath
-        while len(cached_batches_in_mem1) > 0 and len(cached_batches_in_mem2) > 0:
-            
-            disk_portion1 = cached_batches_in_mem1[:self.record_batch_rows]
-            disk_portion1['asdasd'] = np.zeros(len(disk_portion1))
-
-            disk_portion2 = cached_batches_in_mem2[:self.record_batch_rows]
-            disk_portion2['asdasd'] = np.ones(len(disk_portion2))
-            
-            start = time.time()
-            new_batch = polars.concat([disk_portion1, disk_portion2]).sort(self.key)[:self.record_batch_rows]
-
-            result_idx = polars.concat([disk_portion1.select([self.key, "asdasd"]), disk_portion2.select([self.key, "asdasd"])]).sort(self.key)[:self.record_batch_rows]
-            disk_contrib2 = int(result_idx["asdasd"].sum())
-            disk_contrib1 = len(result_idx) - disk_contrib2
-            
-            new_batch = polars.concat([disk_portion1[:disk_contrib1], disk_portion2[:disk_contrib2]]).sort(self.key)[:self.record_batch_rows]
-            new_batch.drop_in_place('asdasd')
-            sort_time += time.time() - start
-
-            #print(source.schema, new_batch.to_arrow().schema)
-            start = time.time()
-            writer.write(new_batch.to_arrow().to_batches()[0])
-            write_time += time.time() - start
-
-            cached_batches_in_mem1 = cached_batches_in_mem1[disk_contrib1:]
-            
-            start = time.time()
-            if len(cached_batches_in_mem1) < self.record_batch_rows and next_batch_to_get1 < number_of_batches_in_source1:
-                next_batch = source1.get_batch(next_batch_to_get1)
-                next_batch_to_get1 += 1
-                next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
-                cached_batches_in_mem1 = cached_batches_in_mem1.vstack(next_batch)
-            
-            cached_batches_in_mem2 = cached_batches_in_mem2[disk_contrib2:]
-            if len(cached_batches_in_mem2) < self.record_batch_rows and next_batch_to_get2 < number_of_batches_in_source2:
-                next_batch = source2.get_batch(next_batch_to_get2)
-                next_batch_to_get2 += 1
-                next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
-                cached_batches_in_mem2 = cached_batches_in_mem2.vstack(next_batch)
-            
-            read_time += time.time() - start
-
+        sorted_batch = batch.sort(self.key)
+        print("sort execute used", time.time() - start)
         
-        writer.close()
+        start = time.time()
+        self.write_out_df_to_disk(flush_file_name, sorted_batch)
+        # future = self.executor.submit(self.write_out_df_to_disk, flush_file_name, sorted_batch)
+        print("flush execute used", time.time() - start)
 
-        process = psutil.Process(os.getpid())
-        print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
-        print(read_time, write_time, sort_time)
-
-    def done(self, executor_id):
+        start = time.time()
+        new_in_mem_state = polars.from_dict({ "values": sorted_batch[self.key], "file_no": np.ones(len(batch), dtype=np.int32) * self.fileno})
+        if self.in_mem_state is None:
+            self.in_mem_state = new_in_mem_state
+        else:
+            self.in_mem_state.vstack(new_in_mem_state, in_place=True)
         
-        # first merge all of the in memory states to a file. This makes programming easier and likely not horrible in terms of performance. And we can save some memory! 
-        # yolo and hope that that you can concatenate all and not die
-        if len(self.states) > 0:
-            in_mem_state = polars.concat(self.states).sort(self.key)
-            self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", in_mem_state)
-            self.filename_to_size[self.fileno] = len(in_mem_state)
-            self.fileno += 1
-            del in_mem_state
-        self.states = []
-
-        # now all the states should be strs!
-        print("MY DISK STATE", self.filename_to_size.keys())
-        sources = [self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(k) + ".arrow" for k in self.filename_to_size]
-        return sources
+        print("update execute state used", time.time() - start)
+        
+        # assert future.result()
+        self.fileno += 1
+        
     
-    # this is some crazy wierd algo that I came up with, might be there before.
-    def execute(self, batches, stream_id, executor_id):
-        print("NUMBER OF INCOMING BATCHES", len(batches))
-        #print("MY SORT STATE", [(type(i), len(i)) for i in self.states if type(i) == polars.internals.DataFrame])
-        import os, psutil
-        process = psutil.Process(os.getpid())
-        print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
-        batches = deque([batch for batch in batches if batch is not None and len(batch) > 0])
-        if len(batches) == 0:
-            return
+    def done(self, executor_id):
 
-        while len(batches) > 0:
-            batch = batches.popleft()
-            #batch = batch.sort(self.key)
-            print("LENGTH OF INCOMING BATCH", len(batch))
-            
-            if self.record_batch_rows is None:
-                self.record_batch_rows = len(batch)
+        # first sort the in memory state
+        print("STARTING DONE", time.time())
+        self.in_mem_state = self.in_mem_state.sort("values")
+        
+        # load the cache
+        num_sources = self.fileno 
+        sources =  {i : pa.ipc.open_file(pa.memory_map( self.data_dir + self.prefix + "-" + str(executor_id) + "-" + str(i) + ".arrow"  , 'rb')) for i in range(num_sources)}
+        number_of_batches_in_source = { source: sources[source].num_record_batches for source in sources}
+        cached_batches = {i : polars.from_arrow( pa.Table.from_batches([sources[i].get_batch(0)]) ) for i in sources}
+        current_number_for_source = {i: 1 for i in sources}
 
-            if len(batch) > self.length_limit:
-                self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", batch)
-                self.filename_to_size[self.fileno] = len(batch)
-                self.fileno += 1
-            elif sum([len(i) for i in self.states if type(i) == polars.internals.DataFrame]) + len(batch) > self.length_limit:
-                mega_batch = polars.concat([i for i in self.states if type(i) == polars.internals.DataFrame] + [batch]).sort(self.key)
-                self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", mega_batch)
-                self.filename_to_size[self.fileno] = len(mega_batch)
-                del mega_batch
-                self.fileno += 1
-                self.states = []
-            else:
-                self.states.append(batch)
+        print("END DONE SETUP", time.time())
+
+        # now start assembling batches of the output
+        for k in range(0, len(self.in_mem_state), self.output_batch_rows):
+
+            start = time.time()
+
+            things_to_get = self.in_mem_state[k : k + self.output_batch_rows]
+            file_requirements = things_to_get.groupby("file_no").count()
+            desired_batches = []
+            for i in range(len(file_requirements)):
+                desired_length = file_requirements["count"][i]
+                source = file_requirements["file_no"][i]
+                while desired_length > len(cached_batches[source]):
+                    if current_number_for_source[source] == number_of_batches_in_source[source]:
+                        raise Exception
+                    else:
+                        cached_batches[source].vstack(polars.from_arrow( pa.Table.from_batches( [sources[source].get_batch(current_number_for_source[source])])), in_place=True)
+                        current_number_for_source[source] += 1
+                else:
+                    desired_batches.append(cached_batches[source][:desired_length])
+                    cached_batches[source] = cached_batches[source][desired_length:]
             
-            while len(self.filename_to_size) > 4:
-                files_to_merge = [y[0] for y in sorted(self.filename_to_size.items(), key = lambda x: x[1])[:2]]
-                self.produce_sorted_file_from_two_sorted_files(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", 
-                self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[0]) + ".arrow",
-                self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[1]) + ".arrow")
-                self.filename_to_size[self.fileno] = self.filename_to_size.pop(files_to_merge[0]) + self.filename_to_size.pop(files_to_merge[1])
-                self.fileno += 1
-                os.remove(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[0]) + ".arrow")
-                os.remove(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[1]) + ".arrow")
+            result = polars.concat(desired_batches).sort(self.key)
+            print("yield one took", time.time() - start)
+            yield result
             
-            
+
+#table = polars.read_parquet("/home/ziheng/tpc-h/lineitem.parquet")
+#exe = SuperFastSortExecutor("l_partkey", record_batch_rows = 10000, output_batch_rows = 1000000, file_prefix = "mergesort")
+#for i in range(0, len(table), 1000000):
+#    exe.execute([table[i:i+1000000]],0,0)
+#for k in exe.done(0):
+#    print(k["l_partkey"])
+
 #executor = MergeSortedExecutor("l_partkey", record_batch_rows = 250000, length_limit = 500000)
 #executor.filename_to_size = {i: 0 for i in range(95, 127, 2)}
 #executor.filename_to_size[126] = 0

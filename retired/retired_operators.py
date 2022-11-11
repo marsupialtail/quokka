@@ -419,3 +419,164 @@ class GroupAsOfJoinExecutor():
         
         print("done asof join ", executor_id)
         return polars.concat(ret_vals).drop_nulls()
+
+
+
+class MergeSortedExecutor(Executor):
+    def __init__(self, key, record_batch_rows = None, length_limit = 5000, file_prefix = "mergesort") -> None:
+        self.states = []
+        self.num = 1
+        self.key = key
+        self.record_batch_rows = record_batch_rows
+        self.fileno = 0
+        self.length_limit = length_limit
+        self.prefix = file_prefix # make sure this is different for different executors
+
+        self.filename_to_size = {}
+        self.data_dir = "/data"
+    
+    def serialize(self):
+        return {}, "all" # don't support fault tolerance of sort
+    
+    def deserialize(self, s):
+        raise Exception
+
+    def write_out_df_to_disk(self, target_filepath, input_mem_table):
+        arrow_table = input_mem_table.to_arrow()
+        batches = arrow_table.to_batches(self.record_batch_rows)
+        writer =  pa.ipc.new_file(pa.OSFile(target_filepath, 'wb'), arrow_table.schema)
+        for batch in batches:
+            writer.write(batch)
+        writer.close()
+    
+    # with minimal memory used!
+    def produce_sorted_file_from_two_sorted_files(self, target_filepath, input_filepath1, input_filepath2):
+
+        read_time = 0
+        sort_time = 0
+        write_time = 0
+
+        source1 =  pa.ipc.open_file(pa.memory_map(input_filepath1, 'rb'))
+        number_of_batches_in_source1 = source1.num_record_batches
+        source2 =  pa.ipc.open_file(pa.memory_map(input_filepath2, 'rb'))
+        number_of_batches_in_source2 = source2.num_record_batches
+
+        next_batch_to_get1 = 1
+
+        start = time.time()
+        cached_batches_in_mem1 = polars.from_arrow(pa.Table.from_batches([source1.get_batch(0)]))
+        next_batch_to_get2 = 1
+        cached_batches_in_mem2 = polars.from_arrow(pa.Table.from_batches([source2.get_batch(0)]))
+        read_time += time.time() - start
+
+        writer =  pa.ipc.new_file(pa.OSFile(target_filepath, 'wb'), source1.schema)
+
+        # each iteration will write a batch to the target filepath
+        while len(cached_batches_in_mem1) > 0 and len(cached_batches_in_mem2) > 0:
+            
+            disk_portion1 = cached_batches_in_mem1[:self.record_batch_rows]
+            disk_portion1['asdasd'] = np.zeros(len(disk_portion1))
+
+            disk_portion2 = cached_batches_in_mem2[:self.record_batch_rows]
+            disk_portion2['asdasd'] = np.ones(len(disk_portion2))
+            
+            start = time.time()
+            new_batch = polars.concat([disk_portion1, disk_portion2]).sort(self.key)[:self.record_batch_rows]
+
+            result_idx = polars.concat([disk_portion1.select([self.key, "asdasd"]), disk_portion2.select([self.key, "asdasd"])]).sort(self.key)[:self.record_batch_rows]
+            disk_contrib2 = int(result_idx["asdasd"].sum())
+            disk_contrib1 = len(result_idx) - disk_contrib2
+            
+            new_batch = polars.concat([disk_portion1[:disk_contrib1], disk_portion2[:disk_contrib2]]).sort(self.key)[:self.record_batch_rows]
+            new_batch.drop_in_place('asdasd')
+            sort_time += time.time() - start
+
+            #print(source.schema, new_batch.to_arrow().schema)
+            start = time.time()
+            writer.write(new_batch.to_arrow().to_batches()[0])
+            write_time += time.time() - start
+
+            cached_batches_in_mem1 = cached_batches_in_mem1[disk_contrib1:]
+            
+            start = time.time()
+            if len(cached_batches_in_mem1) < self.record_batch_rows and next_batch_to_get1 < number_of_batches_in_source1:
+                next_batch = source1.get_batch(next_batch_to_get1)
+                next_batch_to_get1 += 1
+                next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
+                cached_batches_in_mem1 = cached_batches_in_mem1.vstack(next_batch)
+            
+            cached_batches_in_mem2 = cached_batches_in_mem2[disk_contrib2:]
+            if len(cached_batches_in_mem2) < self.record_batch_rows and next_batch_to_get2 < number_of_batches_in_source2:
+                next_batch = source2.get_batch(next_batch_to_get2)
+                next_batch_to_get2 += 1
+                next_batch = polars.from_arrow(pa.Table.from_batches([next_batch]))
+                cached_batches_in_mem2 = cached_batches_in_mem2.vstack(next_batch)
+            
+            read_time += time.time() - start
+
+        
+        writer.close()
+
+        process = psutil.Process(os.getpid())
+        print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
+        print(read_time, write_time, sort_time)
+
+    def done(self, executor_id):
+        
+        # first merge all of the in memory states to a file. This makes programming easier and likely not horrible in terms of performance. And we can save some memory! 
+        # yolo and hope that that you can concatenate all and not die
+        if len(self.states) > 0:
+            in_mem_state = polars.concat(self.states).sort(self.key)
+            self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", in_mem_state)
+            self.filename_to_size[self.fileno] = len(in_mem_state)
+            self.fileno += 1
+            del in_mem_state
+        self.states = []
+
+        # now all the states should be strs!
+        print("MY DISK STATE", self.filename_to_size.keys())
+        sources = [self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(k) + ".arrow" for k in self.filename_to_size]
+        return sources
+    
+    # this is some crazy wierd algo that I came up with, might be there before.
+    def execute(self, batches, stream_id, executor_id):
+        print("NUMBER OF INCOMING BATCHES", len(batches))
+        #print("MY SORT STATE", [(type(i), len(i)) for i in self.states if type(i) == polars.internals.DataFrame])
+        import os, psutil
+        process = psutil.Process(os.getpid())
+        print("mem usage", process.memory_info().rss, pa.total_allocated_bytes())
+        batches = deque([batch for batch in batches if batch is not None and len(batch) > 0])
+        if len(batches) == 0:
+            return
+
+        while len(batches) > 0:
+            batch = batches.popleft()
+            #batch = batch.sort(self.key)
+            print("LENGTH OF INCOMING BATCH", len(batch))
+            
+            if self.record_batch_rows is None:
+                self.record_batch_rows = len(batch)
+
+            if len(batch) > self.length_limit:
+                self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", batch)
+                self.filename_to_size[self.fileno] = len(batch)
+                self.fileno += 1
+            elif sum([len(i) for i in self.states if type(i) == polars.internals.DataFrame]) + len(batch) > self.length_limit:
+                mega_batch = polars.concat([i for i in self.states if type(i) == polars.internals.DataFrame] + [batch]).sort(self.key)
+                self.write_out_df_to_disk(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", mega_batch)
+                self.filename_to_size[self.fileno] = len(mega_batch)
+                del mega_batch
+                self.fileno += 1
+                self.states = []
+            else:
+                self.states.append(batch)
+            
+            while len(self.filename_to_size) > 4:
+                files_to_merge = [y[0] for y in sorted(self.filename_to_size.items(), key = lambda x: x[1])[:2]]
+                self.produce_sorted_file_from_two_sorted_files(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow", 
+                self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[0]) + ".arrow",
+                self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[1]) + ".arrow")
+                self.filename_to_size[self.fileno] = self.filename_to_size.pop(files_to_merge[0]) + self.filename_to_size.pop(files_to_merge[1])
+                self.fileno += 1
+                os.remove(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[0]) + ".arrow")
+                os.remove(self.data_dir + "/" + self.prefix + "-" + str(executor_id) + "-" + str(files_to_merge[1]) + ".arrow")

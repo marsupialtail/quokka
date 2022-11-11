@@ -297,6 +297,10 @@ def word_count():
     f = counted.groupby("word").agg({"count":"sum"})
     return f.collect()
 
+def sort():
+
+    return lineitem.drop("l_comment").sort("l_partkey", 200000000).write_parquet("s3://yugan/tpc-h-out/", output_line_limit = 5000000)
+
 # print(count())
 # print(csv_to_parquet_disk())
 # print(csv_to_csv_disk())

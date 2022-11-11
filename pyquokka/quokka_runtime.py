@@ -153,6 +153,18 @@ class TaskGraph:
                 result[channel] = payload
             return result
         
+
+        def partition_key_range(key, total_range, data, source_channel, num_target_channels):
+
+            per_channel_range = total_range // num_target_channels
+            result = {}
+            assert type(data) == polars.internals.DataFrame
+            partitions = data.with_column(polars.Series(name="__partition__", values=((data[key] - 1) // per_channel_range))).partition_by("__partition__")
+            for partition in partitions:
+                target = partition["__partition__"][0]
+                result[target] = partition.drop("__partition__")   
+            return result 
+
         def broadcast(data, source_channel, num_target_channels):
             return {i: data for i in range(num_target_channels)}
         
@@ -191,7 +203,9 @@ class TaskGraph:
             # this has been provided
             if type(target_info.partitioner)== HashPartitioner:
                 #print("Inferring hash partitioning strategy for column ", target_info.partitioner.key, "the source node must produce pyarrow, polars or pandas dataframes, and the dataframes must have this column!")
-                target_info.partitioner = partial(partition_key_str, target_info.partitioner.key)
+                target_info.partitioner = FunctionPartitioner(partial(partition_key_str, target_info.partitioner.key))
+            elif type(target_info.partitioner) == RangePartitioner:
+                target_info.partitioner = FunctionPartitioner(partial(partition_key_range, target_info.partitioner.key, target_info.partitioner.total_range))
             elif type(target_info.partitioner) == BroadcastPartitioner:
                 target_info.partitioner = broadcast
             elif type(target_info.partitioner) == FunctionPartitioner:
@@ -268,7 +282,7 @@ class TaskGraph:
         
         return self.epilogue(placement_strategy)
 
-    def new_blocking_node(self, streams, functionObject, placement_strategy = None, source_target_info = {}):
+    def new_blocking_node(self, streams, functionObject, placement_strategy = None, source_target_info = {}, transform_fn = None):
 
         current_actor = self.new_non_blocking_node(streams, functionObject, placement_strategy, source_target_info)
         self.actor_types[current_actor] = 'exec'
