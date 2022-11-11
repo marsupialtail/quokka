@@ -1,223 +1,118 @@
+import redis
+import ray
 import polars
-from pyquokka.nodes import * 
-from pyquokka.utils import * 
-import numpy as np
-import pandas as pd
 import time
-import random
-import pickle
-from functools import partial
-import random
-from pyquokka.flight import * 
-from pyquokka.target_info import *
+from pyquokka.coordinator import Coordinator
+from pyquokka.placement_strategy import *
+from pyquokka.quokka_dataset import * 
+from pyquokka.placement_strategy import * 
+from pyquokka.target_info import * 
+from pyquokka.core import *
+from pyquokka.tables import * 
 import pyquokka.sql_utils as sql_utils
-
-NONBLOCKING_NODE = 1
-BLOCKING_NODE = 2
-INPUT_REDIS_DATASET = 3
-INPUT_READER_DATASET = 6
-
-class Dataset:
-
-    def __init__(self, wrapped_dataset) -> None:
-        self.wrapped_dataset = wrapped_dataset
-    
-    def to_list(self):
-        return ray.get(self.wrapped_dataset.to_list.remote())
-    
-    def to_df(self):
-        return ray.get(self.wrapped_dataset.to_df.remote())
-    
-    def to_dict(self):
-        return ray.get(self.wrapped_dataset.to_dict.remote())
-    
-    def to_arrow_refs(self):
-        return ray.get(self.wrapped_dataset.to_arrow_refs.remote())
-
-@ray.remote
-class ArrowDataset:
-
-    def __init__(self, channel_to_ip) -> None:
-        self.channel_to_ip = channel_to_ip
-        self.num_channels = len(channel_to_ip)
-        self.objects = {i: [] for i in range(self.num_channels)}
-        self.parquets = {i : [] for i in range(self.num_channels)}
-        self.metadata = {}
-        self.remaining_channels = {i for i in range(self.num_channels)}
-        self.done = False
-
-    def added_object(self, channel, object_handle):
-
-        if channel not in self.objects or channel not in self.remaining_channels:
-            raise Exception
-        self.objects[channel].append(object_handle[0])
-    
-    def added_parquet(self, channel, filename):
-        if channel not in self.objects or channel not in self.remaining_channels:
-            raise Exception
-        self.parquets[channel].append(filename)
-    
-    def done_channel(self, channel):
-        self.remaining_channels.remove(channel)
-        if len(self.remaining_channels) == 0:
-            self.done = True
-
-    def is_complete(self):
-        return self.done
-    
-    def get_objects(self):
-        assert self.is_complete()
-        return self.objects
-
-    def to_arrow_refs(self):
-        results = []
-        for channel in self.objects:
-            results.extend(self.objects[channel])
-        return results
-
-    def to_df(self):
-        assert self.is_complete()
-        dfs = []
-        for channel in self.objects:
-            for object in self.objects[channel]:
-                dfs.append(ray.get(object))
-        arrow_table = pa.concat_tables(dfs)
-        return polars.from_arrow(arrow_table)
+from functools import partial
 
 class TaskGraph:
     # this keeps the logical dependency DAG between tasks 
-    def __init__(self, cluster) -> None:
+    def __init__(self, cluster, io_per_node = 2, exec_per_node = 1) -> None:
+
+        self.io_per_node = io_per_node
+        self.exec_per_node = exec_per_node
         self.cluster = cluster
-        self.current_node = 0
+        self.current_actor = 0
+        self.actors = {}
+        self.actor_placement_strategy = {}
+        
+        self.r = redis.Redis(host=str(self.cluster.leader_public_ip), port=6800, db=0)
+        while True:
+            try:
+                _ = self.r.keys()
+                break
+            except redis.exceptions.BusyLoadingError:
+                time.sleep(0.01)
+        
+        self.r.flushall()
+
+        self.coordinator = Coordinator.options(num_cpus=0.001, max_concurrency = 2,resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote()
+
         self.nodes = {}
-        self.node_channel_to_ip = {}
-        self.node_ips = {}
-        self.node_type = {}
-    
-    def flip_ip_channels(self, ip_to_num_channel):
-        ips = sorted(list(ip_to_num_channel.keys()))
-        starts = np.cumsum([0] + [ip_to_num_channel[ip] for ip in ips])
-        start_dict = {ips[k]: starts[k] for k in range(len(ips))}
-        lists_to_merge =  [ {i: ip for i in range(start_dict[ip], start_dict[ip] + ip_to_num_channel[ip])} for ip in ips ]
-        channel_to_ip = {k: v for d in lists_to_merge for k, v in d.items()}
-        for key in channel_to_ip:
-            if channel_to_ip[key] == 'localhost':
-                channel_to_ip[key] = ray.get_runtime_context().gcs_address.split(":")[0] 
+        # for topological ordering
+        self.actor_types = {}
 
-        return channel_to_ip
+        self.node_locs= {}
+        self.io_nodes = set()
+        self.compute_nodes = set()
+        count = 0
 
+        self.leader_compute_nodes = []
 
-    def epilogue(self,tasknode, channel_to_ip, ips):
-        self.nodes[self.current_node] = tasknode
-        self.node_channel_to_ip[self.current_node] = channel_to_ip
-        self.node_ips[self.current_node] = ips
-        self.current_node += 1
-        return self.current_node - 1
+        # default strategy launches two IO nodes and one compute node per machine
+        private_ips = list(self.cluster.private_ips.values())
+        for ip in private_ips:
+            
+            for k in range(io_per_node):
+                self.nodes[count] = IOTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()))
+                self.io_nodes.add(count)
+                self.node_locs[count] = ip
+                count += 1
+            for k in range(exec_per_node):
+                self.nodes[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()))
+                
+                if ip == self.cluster.leader_private_ip:
+                    self.leader_compute_nodes.append(count)
+                
+                self.compute_nodes.add(count)
+                self.node_locs[count] = ip
+                count += 1        
 
-    def new_input_redis(self, dataset, ip_to_num_channel = None, policy = "default"):
-        
-        if ip_to_num_channel is None:
-            # automatically come up with some policy
-            ip_to_num_channel = {ip: self.cluster.cpu_count for ip in list(self.cluster.private_ips.values())}
-        channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
+        ray.get(self.coordinator.register_nodes.remote(io_nodes = {k: self.nodes[k] for k in self.io_nodes}, compute_nodes = {k: self.nodes[k] for k in self.compute_nodes}))
+        ray.get(self.coordinator.register_node_ips.remote( self.node_locs ))
 
-        # this will assert that the dataset is complete. You can only call this API on a completed dataset
-        objects = ray.get(dataset.get_objects.remote())
+        self.FOT = FunctionObjectTable()
+        self.CLT = ChannelLocationTable()
+        self.NTT = NodeTaskTable()
+        self.IRT = InputRequirementsTable()
 
-        ip_to_channel_sets = {}
-        for channel in channel_to_ip:
-            ip = channel_to_ip[channel]
-            if ip not in ip_to_channel_sets:
-                ip_to_channel_sets[ip] = {channel}
-            else:
-                ip_to_channel_sets[ip].add(channel)
+    def get_total_channels_from_placement_strategy(self, placement_strategy, node_type):
 
-        # current heuristics for scheduling objects to reader channels:
-        # if an object can be streamed out locally from someone, always do that
-        # try to balance the amounts of things that people have to stream out locally
-        # if an object cannot be streamed out locally, assign it to anyone
-        # try to balance the amounts of things that people have to fetch over the network.
-        
-        channel_objects = {channel: [] for channel in channel_to_ip}
-
-        if policy == "default":
-            local_read_sizes = {channel: 0 for channel in channel_to_ip}
-            remote_read_sizes = {channel: 0 for channel in channel_to_ip}
-
-            for writer_channel in objects:
-                for object in objects[writer_channel]:
-                    ip, key, size = object
-                    # the object is on a machine that is not part of this task node, will have to remote fetch
-                    if ip not in ip_to_channel_sets:
-                        # find the channel with the least amount of remote read
-                        my_channel = min(remote_read_sizes, key = remote_read_sizes.get)
-                        channel_objects[my_channel].append(object)
-                        remote_read_sizes[my_channel] += size
-                    else:
-                        eligible_sizes = {reader_channel : local_read_sizes[reader_channel] for reader_channel in ip_to_channel_sets[ip]}
-                        my_channel = min(eligible_sizes, key = eligible_sizes.get)
-                        channel_objects[my_channel].append(object)
-                        local_read_sizes[my_channel] += size
-        
+        if type(placement_strategy) == SingleChannelStrategy:
+            return 1
+        elif type(placement_strategy) == CustomChannelsStrategy:
+            return self.cluster.num_node * placement_strategy.channels_per_node * (self.io_per_node if node_type == 'input' else self.exec_per_node)
         else:
-            raise Exception("other distribution policies not implemented yet.")
+            raise Exception("strategy not supported")
 
-        print("CHANNEL_OBJECTS",channel_objects)
+    def epilogue(self, placement_strategy):
+        self.actor_placement_strategy[self.current_actor] = placement_strategy
+        self.current_actor += 1
+        return self.current_actor - 1
 
-        tasknode = {}
-        for channel in channel_to_ip:
-            ip = channel_to_ip[channel]
-            if ip != 'localhost':
-                tasknode[channel] = InputRedisDatasetNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, channel, channel_objects)
-            else:
-                tasknode[channel] = InputRedisDatasetNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.get_runtime_context().gcs_address.split(":")[0] : 0.001}
-                ).remote(self.current_node, channel, channel_objects)
-        
-        self.node_type[self.current_node] = INPUT_REDIS_DATASET
-        return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
+    def new_input_reader_node(self, reader, placement_strategy = None):
 
-    def new_input_reader_node(self, reader, ip_to_num_channel = None):
-
-
-        if ip_to_num_channel is None:
-            # automatically come up with some policy
-            ip_to_num_channel = {ip: self.cluster.cpu_count   for ip in list(self.cluster.private_ips.values())}
-            #ip_to_num_channel = {ip: 2 for ip in list(self.cluster.private_ips.values())}
-
-        channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
-
-        # this is some state that is associated with the number of channels. typically for reading csvs or text files where you have to decide the split points.
+        self.actor_types[self.current_actor] = 'input'
+        if placement_strategy is None:
+            placement_strategy = CustomChannelsStrategy(1)
+        assert type(placement_strategy) == CustomChannelsStrategy
         
         if hasattr(reader, "get_own_state"):
-            reader.get_own_state(len(channel_to_ip))        
-        # set num channels is still needed later to initialize the self.s3 object, which can't be pickled!
+            reader.get_own_state(self.get_total_channels_from_placement_strategy(placement_strategy, 'input'))
+                
+        self.FOT.set(self.r, self.current_actor, ray.cloudpickle.dumps(reader))
 
-        tasknode = {}
-        for channel in channel_to_ip:
-            ip = channel_to_ip[channel]
-            if ip != 'localhost':
-                tasknode[channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001, resources={"node:" + ip : 0.001}
-                ).remote(self.current_node, channel, reader, len(channel_to_ip))
-            else:
-                tasknode[channel] = InputReaderNode.options(max_concurrency = 2, num_cpus=0.001,resources={"node:" + ray.get_runtime_context().gcs_address.split(":")[0] : 0.001}
-                ).remote(self.current_node, channel, reader, len(channel_to_ip)) 
+        count = 0
+        channel_locs = {}
+        for node in self.io_nodes:
+            for channel in range(placement_strategy.channels_per_node):
+                input_task = InputTask(self.current_actor, count, 0, None)
+                channel_locs[count] = node
+                count += 1
+                self.NTT.rpush(self.r, node, input_task.reduce())
         
-        start = time.time()
-        ray.get([tasknode[channel].ping.remote() for channel in channel_to_ip])
-        print("actor spin up took ", time.time() -start)
-
-        self.node_type[self.current_node] = INPUT_READER_DATASET
-        return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
+        ray.get(self.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
+        
+        return self.epilogue(placement_strategy)
     
-    def flip_channels_ip(self, channel_to_ip):
-        ips = channel_to_ip.values()
-        result = {ip: 0 for ip in ips}
-        for channel in channel_to_ip:
-            result[channel_to_ip[channel]] += 1
-        return result
-    
-    def get_default_partition(self, source_ip_to_num_channel, target_ip_to_num_channel):
+    def get_default_partition(self, source_node_id, target_placement_strategy):
         # this can get more sophisticated in the future. For now it's super dumb.
         
         def partition_key_0(ratio, data, source_channel, num_target_channels):
@@ -227,56 +122,34 @@ class TaskGraph:
             # return entirety of data to a random channel between source_channel * ratio and source_channel * ratio + ratio
             target_channel = int(random.random() * ratio) + source_channel * ratio
             return {target_channel: data}
-        assert(set(source_ip_to_num_channel) == set(target_ip_to_num_channel))
-        ratio = None
-        direction = None
-        for ip in source_ip_to_num_channel:
-            if ratio is None:
-                if source_ip_to_num_channel[ip] % target_ip_to_num_channel[ip] == 0:
-                    ratio = source_ip_to_num_channel[ip] // target_ip_to_num_channel[ip]
-                    direction = 0
-                elif target_ip_to_num_channel[ip] % source_ip_to_num_channel[ip] == 0:
-                    ratio = target_ip_to_num_channel[ip] // source_ip_to_num_channel[ip]
-                    direction = 1
-                else:
-                    raise Exception("Can't support automated partition function generation since number of channels not a whole multiple of each other between source and target")
-            elif ratio is not None:
-                if direction == 0:
-                    assert target_ip_to_num_channel[ip] * ratio == source_ip_to_num_channel[ip], "ratio of number of channels between source and target must be same for every ip right now"
-                elif direction == 1:
-                    assert source_ip_to_num_channel[ip] * ratio == target_ip_to_num_channel[ip], "ratio of number of channels between source and target must be same for every ip right now"
+
+        source_placement_strategy = self.actor_placement_strategy[source_node_id]
         
-        #print("RATIO", ratio)
-        if direction == 0:
-            return partial(partition_key_0, ratio)
-        elif direction == 1:
-            return partial(partition_key_1, ratio)
+        assert type(source_placement_strategy) == CustomChannelsStrategy and type(target_placement_strategy) == CustomChannelsStrategy
+        source_total_channels = self.get_total_channels_from_placement_strategy(source_placement_strategy, self.actor_types[source_node_id])
+        target_total_channels = self.get_total_channels_from_placement_strategy(target_placement_strategy, "exec")
+        
+        if source_total_channels >= target_total_channels:
+            assert source_total_channels % target_total_channels == 0
+            return partial(partition_key_0, source_total_channels // target_total_channels )
         else:
-            return "Something is wrong"
+            assert target_total_channels % source_total_channels == 0
+            return partial(partition_key_1, target_total_channels // source_total_channels)
 
-    def prologue(self, streams, ip_to_num_channel, channel_to_ip, source_target_info):
+    def prologue(self, streams, placement_strategy, source_target_info):
 
-        '''
-        Remember, the partition key is a function. It is executed on an output batch after the predicate and projection but before the batch funcs.
-        '''
         def partition_key_str(key, data, source_channel, num_target_channels):
             result = {}
             for channel in range(num_target_channels):
-                if type(data) == pd.core.frame.DataFrame:
-                    if "int" in str(data.dtypes[key]).lower() or "float" in str(data.dtypes[key]).lower():
-                        payload = data[data[key] % num_target_channels == channel]
-                    elif data.dtypes[key] == 'object': # str
-                        # this is not the fastest. we rehashing this everytime.
-                        payload = data[pd.util.hash_array(data[key].to_numpy()) % num_target_channels == channel]
-                    else:
-                        raise Exception("invalid partition column type, supports ints, floats and strs")
-                elif type(data) == polars.internals.DataFrame:
+                if type(data) == polars.internals.DataFrame:
                     if "int" in str(data[key].dtype).lower() or "float" in str(data[key].dtype).lower():
                         payload = data.filter(data[key] % num_target_channels == channel)
                     elif data[key].dtype == polars.datatypes.Utf8:
                         payload = data.filter(data[key].hash() % num_target_channels == channel)
                     else:
                         raise Exception("invalid partition column type, supports ints, floats and strs")
+                else:
+                    raise Exception("only support polars format")
                 result[channel] = payload
             return result
         
@@ -294,29 +167,37 @@ class TaskGraph:
 
         def broadcast(data, source_channel, num_target_channels):
             return {i: data for i in range(num_target_channels)}
+        
+        def partition_fn(predicate_fn, partitioner_fn, batch_funcs, projection, num_target_channels, x, source_channel):
 
-        if ip_to_num_channel is None and channel_to_ip is None: 
-            # automatically come up with some policy, user supplied no information
-            ip_to_num_channel = {ip: 1 for ip in list(self.cluster.private_ips.values())}
-            channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
-        elif channel_to_ip is None:
-            channel_to_ip = self.flip_ip_channels(ip_to_num_channel)
-        elif ip_to_num_channel is None:
-            ip_to_num_channel = self.flip_channels_ip(channel_to_ip)
-        else:
-            raise Exception("Cannot specify both ip_to_num_channel and channel_to_ip")
+            if predicate_fn != True:
+                x = x.filter(predicate_fn(x))
+            partitioned = partitioner_fn(x, source_channel, num_target_channels)
+            results = {}
+            for channel in partitioned:
+                payload = partitioned[channel]
+                for func in batch_funcs:
+                    if payload is None:
+                        break
+                    payload = func(payload)
+
+                if payload is None:
+                    continue
+                if projection is not None:
+                    results[channel] =  payload[sorted(list(projection))]
+                else:
+                    results[channel] = payload
+            return results
         
-        
+        mapping = {}
+
         for key in streams:
             assert key in source_target_info
-            target_info = source_target_info[key] 
-            if target_info.predicate == sqlglot.exp.TRUE:
-                target_info.predicate = True
-            elif target_info.predicate == False:
-                print("false predicate detected, entire subtree is useless. We should cut the entire subtree!")
-                target_info.predicate = sql_utils.evaluate(target_info.predicate) 
-            else:    
-                target_info.predicate = sql_utils.evaluate(target_info.predicate) 
+            source = streams[key]
+            mapping[source] = key
+
+            target_info = source_target_info[key]     
+            target_info.predicate = sql_utils.evaluate(target_info.predicate)
             target_info.projection = target_info.projection
 
             # this has been provided
@@ -326,94 +207,103 @@ class TaskGraph:
             elif type(target_info.partitioner) == RangePartitioner:
                 target_info.partitioner = FunctionPartitioner(partial(partition_key_range, target_info.partitioner.key, target_info.partitioner.total_range))
             elif type(target_info.partitioner) == BroadcastPartitioner:
-                target_info.partitioner = FunctionPartitioner(broadcast)
+                target_info.partitioner = broadcast
             elif type(target_info.partitioner) == FunctionPartitioner:
                 from inspect import signature
                 assert len(signature(target_info.partitioner.func).parameters) == 3, "custom partition function must accept three arguments: data object, source channel id, and the number of target channels"
+                target_info.partitioner = target_info.partitioner.func
             elif type(target_info.partitioner) == PassThroughPartitioner:
                 source = streams[key]
-                source_ip_to_num_channel = self.flip_channels_ip(self.node_channel_to_ip[source])
-                target_info.partitioner = FunctionPartitioner(self.get_default_partition(source_ip_to_num_channel, ip_to_num_channel))
+                target_info.partitioner = self.get_default_partition(source, placement_strategy)
             else:
                 raise Exception("Partitioner not supported")
             
             target_info.lowered = True
 
-        # this is the mapping of physical node id to the key the user called in streams. i.e. if you made a node, task graph assigns it an internal id #
-        # then if you set this node as the input of this new non blocking task node and do streams = {0: node}, then mapping will be {0: the internal id of that node}
-        mapping = {}
-        parents = {}
-        for key in streams:
-            source = streams[key]
-            if source not in self.nodes:
-                raise Exception("stream source not registered")
-            ray.get([self.nodes[source][i].append_to_targets.remote((self.current_node, channel_to_ip, source_target_info[key])) for i in self.nodes[source]])
-            mapping[source] = key
-            parents[source] = self.nodes[source]
+            func = partial(partition_fn, target_info.predicate, target_info.partitioner, target_info.batch_funcs, target_info.projection, self.get_total_channels_from_placement_strategy(placement_strategy, 'exec'))
+
+            registered = ray.get([node.register_partition_function.remote(source, self.current_actor, self.get_total_channels_from_placement_strategy(placement_strategy, 'exec'), func) for node in (self.nodes.values())])
+            assert all(registered)
+
         
-        return ip_to_num_channel, channel_to_ip, mapping, parents
+        registered = ray.get([node.register_mapping.remote(self.current_actor, mapping) for node in (self.nodes.values())])
+        assert all(registered)
 
-    def new_non_blocking_node(self, streams, functionObject, ip_to_num_channel = None, channel_to_ip = None, source_target_info = {}):
+        source_actor_ids = []
+        source_channel_ids = []
+        min_seqs = []
+        for source in mapping:
+            num_channels = self.get_total_channels_from_placement_strategy(self.actor_placement_strategy[source], self.actor_types[source])
+            source_actor_ids.extend([source] * num_channels)
+            source_channel_ids.extend(range(num_channels))
+            min_seqs.extend([0] * num_channels)
+        input_reqs = polars.from_dict({"source_actor_id":source_actor_ids, "source_channel_id":source_channel_ids, "min_seq":min_seqs})
+
+        return input_reqs
+
+    def new_non_blocking_node(self, streams, functionObject, placement_strategy = CustomChannelsStrategy(1), source_target_info = {}):
+
+        assert len(source_target_info) == len(streams)
+        self.actor_types[self.current_actor] = 'exec'
+
+        if placement_strategy is None:
+            placement_strategy = CustomChannelsStrategy(1)
+
+        self.FOT.set(self.r, self.current_actor, ray.cloudpickle.dumps(functionObject))
+
+        input_reqs = self.prologue(streams, placement_strategy, source_target_info)
+        # print("input_reqs",input_reqs)
         
-        ip_to_num_channel, channel_to_ip, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip, source_target_info)
-        #print("MAPPING", mapping)
-        tasknode = {}
-        for channel in channel_to_ip:
-            ip = channel_to_ip[channel]
-            if ip != 'localhost':
-                tasknode[channel] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(self.current_node, channel, mapping,  functionObject, 
-                parents)
-            else:
-                tasknode[channel] = NonBlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ray.get_runtime_context().gcs_address.split(":")[0]: 0.001}).remote(self.current_node,
-                 channel, mapping, functionObject, parents)
+        channel_locs = {}
+        if type(placement_strategy) == SingleChannelStrategy:
+
+            node = self.leader_compute_nodes[0]
+            exec_task = ExecutorTask(self.current_actor, 0, 0, 0, input_reqs)
+            channel_locs[0] = node
+            self.NTT.rpush(self.r, node, exec_task.reduce())
+            self.CLT.set(self.r, pickle.dumps((self.current_actor, 0)), self.node_locs[node])
+            self.IRT.set(self.r, pickle.dumps((self.current_actor, 0, -1)), pickle.dumps(input_reqs))
+
+        elif type(placement_strategy) == CustomChannelsStrategy:
+
+            count = 0
+            for node in self.compute_nodes:
+                for channel in range(placement_strategy.channels_per_node):
+                    exec_task = ExecutorTask(self.current_actor, count, 0, 0, input_reqs)
+                    channel_locs[count] = node
+                    self.NTT.rpush(self.r, node, exec_task.reduce())
+                    self.CLT.set(self.r, pickle.dumps((self.current_actor, count)), self.node_locs[node])
+                    self.IRT.set(self.r, pickle.dumps((self.current_actor, count, -1)), pickle.dumps(input_reqs))
+                    count += 1
+        else:
+            raise Exception("placement strategy not supported")
         
-        self.node_type[self.current_node] = NONBLOCKING_NODE
-        return self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
-
-    def new_blocking_node(self, streams, functionObject,ip_to_num_channel = None, channel_to_ip = None,  source_target_info = {}, transform_fn = None):
+        ray.get(self.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
         
-        ip_to_num_channel, channel_to_ip, mapping, parents = self.prologue(streams, ip_to_num_channel, channel_to_ip,  source_target_info)
+        return self.epilogue(placement_strategy)
 
-        # the datasets will all be managed on the head node. Note that they are not in charge of actually storing the objects, they just 
-        # track the ids.
-        output_dataset = ArrowDataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote(channel_to_ip)
+    def new_blocking_node(self, streams, functionObject, placement_strategy = None, source_target_info = {}, transform_fn = None):
 
+        current_actor = self.new_non_blocking_node(streams, functionObject, placement_strategy, source_target_info)
+        self.actor_types[current_actor] = 'exec'
+        total_channels = self.get_total_channels_from_placement_strategy(placement_strategy, 'exec')
 
-        tasknode = {}
-        for channel in channel_to_ip:
-            ip = channel_to_ip[channel]
-            if ip != 'localhost':
-                tasknode[channel] = BlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ip : 0.001}).remote(self.current_node, channel, mapping, output_dataset, functionObject, 
-                parents, transform_fn)
-            else:
-                tasknode[channel] = BlockingTaskNode.options(max_concurrency = 2, num_cpus = 0.001, resources={"node:" + ray.get_runtime_context().gcs_address.split(":")[0]: 0.001}).remote(self.current_node, 
-                channel, mapping, output_dataset, functionObject, parents, transform_fn)
-            
-        self.node_type[self.current_node] = BLOCKING_NODE
-        self.epilogue(tasknode,channel_to_ip, tuple(ip_to_num_channel.keys()))
+        output_dataset = ArrowDataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote(total_channels)
+
+        registered = ray.get([node.register_blocking.remote(current_actor , output_dataset) for node in list(self.nodes.values())])
+        assert all(registered)
         return Dataset(output_dataset)
     
     def create(self):
 
-        launches = []
-        for key in self.nodes:
-            node = self.nodes[key]
-            for channel in node:
-                replica = node[channel]
-                launches.append(replica.initialize.remote())
-        ray.get(launches)
+        initted = ray.get([node.init.remote() for node in list(self.nodes.values())])
+        assert all(initted)
+
+        # galaxy brain shit here -- the topological order is implicit given the way the API works. 
+        topological_order = list(range(self.current_actor))[::-1]
+        topological_order = [k for k in topological_order if self.actor_types[k] != 'input']
+        print("topological_order", topological_order)
+        ray.get(self.coordinator.register_actor_topo.remote(topological_order))
         
     def run(self):
-        processes = []
-        for key in self.nodes:
-            node = self.nodes[key]
-            for channel in node:
-                replica = node[channel]
-                processes.append(replica.execute.remote())
-        ray.get(processes)
-        # for key in self.nodes:
-        #     node = self.nodes[key]
-        #     for channel in node:
-        #         replica = node[channel]
-        #         ray.kill(replica)
-        # self.nodes = {}
+        ray.get(self.coordinator.execute.remote())

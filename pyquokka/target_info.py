@@ -1,4 +1,3 @@
-
 import sqlglot
 import sqlglot.optimizer as optimizer
 

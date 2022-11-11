@@ -18,6 +18,8 @@ import multiprocessing
 import concurrent.futures
 import time
 import warnings
+import random
+import ray
 
 class InputEC2ParquetDataset:
 
@@ -39,10 +41,9 @@ class InputEC2ParquetDataset:
         self.length = 0
         self.workers = 8
 
-
-    def set_num_channels(self, num_channels):
-        assert self.num_channels == num_channels
-        self.s3 = boto3.client('s3')
+        self.s3 = None
+        self.iterator = None
+        self.count = 0
 
     def get_own_state(self, num_channels):
         self.num_channels = num_channels
@@ -59,32 +60,79 @@ class InputEC2ParquetDataset:
                               if i['Key'].endswith(".parquet")])
 
 
-    def get_next_batch(self, mapper_id, pos=None):
+    def execute(self, mapper_id, pos=None):
 
-        s3 = S3FileSystem()
+        if self.s3 is None:
+            self.s3 = S3FileSystem()
+            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
 
         def download(file):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 return polars.from_arrow(pq.read_table(self.bucket + "/" +
-                              file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = s3))
+                              file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3))
 
         assert self.num_channels is not None
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
+        
         my_files = [self.files[k] for k in range(mapper_id, len(self.files), self.num_channels)]
         if len(my_files) == 0:
-            yield None, None
+            return None, None
         
         # this will return things out of order, but that's ok!
 
-        future_to_url = {executor.submit(download, file): file for file in my_files}
+        if pos is None:
+            pos = 0
+
+        files_to_do = my_files[pos: pos + self.workers]
+        future_to_url = {self.executor.submit(download, file): file for file in files_to_do}
+        dfs = []
         for future in concurrent.futures.as_completed(future_to_url):
-            yield future_to_url[future], future.result()
+            dfs.append(future.result())
+        
+        if pos + self.workers >= len(my_files):
+            return None, polars.concat(dfs)
+        else:
+            return pos + self.workers, polars.concat(dfs)
+    # def get_next_batch(self, mapper_id, pos=None):
+
+    #     s3 = S3FileSystem()
+
+    #     def download(file):
+    #         with warnings.catch_warnings():
+    #             warnings.simplefilter("ignore")
+    #             return polars.from_arrow(pq.read_table(self.bucket + "/" +
+    #                           file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = s3))
+
+    #     assert self.num_channels is not None
+    #     executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
+    #     my_files = [self.files[k] for k in range(mapper_id, len(self.files), self.num_channels)]
+    #     if len(my_files) == 0:
+    #         yield None, None
+        
+    #     # this will return things out of order, but that's ok!
+
+    #     future_to_url = {executor.submit(download, file): file for file in my_files}
+    #     for future in concurrent.futures.as_completed(future_to_url):
+    #         yield future.result()
+    
+    # def execute(self, mapper_id, pos = None):
+
+    #     if self.iterator is None:
+    #         self.iterator = self.get_next_batch(mapper_id, None)
+    #     my_files = [self.files[k] for k in range(mapper_id, len(self.files), self.num_channels)]
+    #     self.count += 1
+
+    #     if self.count < len(my_files):
+    #         return self.count, next(self.iterator)
+    #     else:
+    #         return None, next(self.iterator)
 
 class InputParquetDataset:
-    def __init__(self, filepath, mode = "local", columns = None, filters = None) -> None:
-        
-        self.filepath = filepath
+
+    def __init__(self, filename, columns=None, filters = None) -> None:
+
+        self.filename = filename
+        self.num_channels = None
         self.columns = columns
         if filters is not None:
             if type(filters) == list:
@@ -95,61 +143,101 @@ class InputParquetDataset:
                 raise Exception("cannot understand filters format.")
         else:
             self.filters = None
-        self.mode = mode
-        self.num_channels = None
 
     def get_own_state(self, num_channels):
 
+        self.parquet_file = pq.ParquetFile(self.filename)
+        self.num_row_groups = self.parquet_file.num_row_groups
         self.num_channels = num_channels
-        if self.mode == "s3":
-            s3 = S3FileSystem()
-            dataset = ds.dataset(self.filepath, filesystem = s3)
-        else:
-            dataset = ds.dataset(self.filepath)
-
-        self.schema = dataset.schema
-        total_rows = dataset.count_rows()
-        print("Parquet dataset at ", self.filepath, " has total ", total_rows, " rows")
-        row_group_fragments = [fragment.split_by_row_group() for fragment in dataset.get_fragments()]
-        row_group_fragments_with_size = [(item.count_rows(), item) for sublist in row_group_fragments for item in sublist]
-        row_group_fragments_with_size.sort(key = lambda x: x[0])
-
-        self.channel_assigments = {i: [] for i in range(num_channels)}
-        channel_lengths = np.array([0] * num_channels)
-
-        '''
-        Hey we encounter the Partition Problem! We would like to evenly divide the row groups based on length.
-        We will use Greedy number partitioning. The easiest to implement approximate algorithm.
-        '''
-        
-        for size, fragment in row_group_fragments_with_size:
-            channel = np.argmin(channel_lengths)
-            self.channel_assigments[channel].append(fragment)
-            channel_lengths[channel] += size
 
     def get_next_batch(self, mapper_id, pos=None):
         assert self.num_channels is not None
         if pos is None:
-            pos = 0
-
-        format = ParquetFileFormat()
-        filesystem = S3FileSystem() if self.mode == "s3" else LocalFileSystem()
-        # fragments = [
-        #     format.make_fragment(
-        #         file,
-        #         filesystem=filesystem,
-        #         partition_expression=part_expression,
-        #     )
-        #     for file, part_expression in self.channel_assigments[mapper_id]
-        # ]
-
-        if mapper_id not in self.channel_assigments:
-            yield None, None
+            curr_row_group = mapper_id
         else:
-            self.dataset = FileSystemDataset(self.channel_assigments[mapper_id][pos:], self.schema, format , filesystem)
-            for batch in self.dataset.to_batches(filter= self.filters,columns=self.columns ):
-                pos += 1
-                yield pos, batch
+            curr_row_group = pos
+
+        a = self.parquet_file.read_row_group(
+            curr_row_group, columns=self.columns)
+        if self.filters is not None:
+            a = a.filter(self.filters)
+        curr_row_group += self.num_channels
+        
+        if curr_row_group < len(self.num_row_groups):
+            return curr_row_group, a
+        else:
+            return None, a
+
+
+# class InputParquetDataset:
+#     def __init__(self, filepath, mode = "local", columns = None, filters = None) -> None:
+        
+#         self.filepath = filepath
+#         self.columns = columns
+#         if filters is not None:
+#             if type(filters) == list:
+#                 self.filters = filters_to_expression(filters)
+#             elif type(filters) == ds.Expression:
+#                 self.filters = filters
+#             else:
+#                 raise Exception("cannot understand filters format.")
+#         else:
+#             self.filters = None
+#         self.mode = mode
+#         self.num_channels = None
+
+#     def get_own_state(self, num_channels):
+
+#         self.num_channels = num_channels
+#         if self.mode == "s3":
+#             s3 = S3FileSystem()
+#             dataset = ds.dataset(self.filepath, filesystem = s3)
+#         else:
+#             dataset = ds.dataset(self.filepath)
+
+#         self.schema = dataset.schema
+#         total_rows = dataset.count_rows()
+#         print("Parquet dataset at ", self.filepath, " has total ", total_rows, " rows")
+#         row_group_fragments = [fragment.split_by_row_group() for fragment in dataset.get_fragments()]
+#         row_group_fragments_with_size = [(item.count_rows(), item) for sublist in row_group_fragments for item in sublist]
+#         row_group_fragments_with_size.sort(key = lambda x: x[0])
+
+#         self.channel_assigments = {i: [] for i in range(num_channels)}
+#         channel_lengths = np.array([0] * num_channels)
+
+#         '''
+#         Hey we encounter the Partition Problem! We would like to evenly divide the row groups based on length.
+#         We will use Greedy number partitioning. The easiest to implement approximate algorithm.
+#         '''
+        
+#         for size, fragment in row_group_fragments_with_size:
+#             channel = np.argmin(channel_lengths)
+#             self.channel_assigments[channel].append(fragment)
+#             channel_lengths[channel] += size
+
+#     def get_next_batch(self, mapper_id, pos=None):
+#         assert self.num_channels is not None
+#         if pos is None:
+#             pos = 0
+
+#         format = ParquetFileFormat()
+#         filesystem = S3FileSystem() if self.mode == "s3" else LocalFileSystem()
+#         # fragments = [
+#         #     format.make_fragment(
+#         #         file,
+#         #         filesystem=filesystem,
+#         #         partition_expression=part_expression,
+#         #     )
+#         #     for file, part_expression in self.channel_assigments[mapper_id]
+#         # ]
+
+#         if mapper_id not in self.channel_assigments:
+#             yield None, None
+#         else:
+#             self.dataset = FileSystemDataset(self.channel_assigments[mapper_id][pos:], self.schema, format , filesystem)
+#             for batch in self.dataset.to_batches(filter= self.filters,columns=self.columns ):
+#                 pos += 1
+#                 yield pos, batch
 
 # this works for a directoy of objects.
 class InputS3FilesDataset:
@@ -261,7 +349,7 @@ class InputDiskCSVDataset:
             if first_newline == -1:
                 raise Exception("could not detect the first line break. try setting the window argument to a large number")
             if self.names is None:
-                self.names = resp[:first_newline].split(",")
+                self.names = resp[:first_newline].split(self.sep)
             else:
                 detected_names = resp[:first_newline].split(self.sep)
                 if self.names != detected_names:
@@ -330,11 +418,11 @@ class InputDiskCSVDataset:
         print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
 
 
-    def get_next_batch(self, mapper_id, state = None):
+    def execute(self, mapper_id, state = None):
         assert self.num_channels is not None
 
         if mapper_id not in self.channel_infos:
-            yield None, None
+            return None, None
         else:
             files = self.channel_infos[mapper_id][1]
             
@@ -344,231 +432,52 @@ class InputDiskCSVDataset:
             else:
                 curr_pos, pos = state
                 
-            while curr_pos < len(files):
                 
-                file = files[curr_pos]
-                if curr_pos != len(files) - 1:
-                    end = os.path.getsize(file)
-                else:
-                    end = self.channel_infos[mapper_id][2]
+            file = files[curr_pos]
+            if curr_pos != len(files) - 1:
+                end = os.path.getsize(file)
+            else:
+                end = self.channel_infos[mapper_id][2]
 
-                f = open(file, "rb")   
-                f.seek(pos)         
-                while pos < end:
-                    f.seek(pos)
+            f = open(file, "rb")   
+            assert pos < end
+            f.seek(pos)         
 
-                    bytes_to_read = min(pos+self.stride, end) - pos
-                    resp = f.read(bytes_to_read)
-                    
-                    #print(pos, bytes_to_read)
-                    
-                    last_newline = resp.rfind(bytes('\n', 'utf-8'))
-
-                    if last_newline == -1:
-                        raise Exception
-                    else:
-                        resp = resp[:last_newline]
-
-                        if self.header and pos == 0:
-                            first_newline = resp.find(bytes('\n','utf-8'))
-                            if first_newline == -1:
-                                raise Exception
-                            resp = resp[first_newline + 1:]
-
-                        bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
-                            column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-                        bump = bump.select(self.columns) if self.columns is not None else bump
-                        
-                        pos += last_newline + 1
-                        
-                        yield (curr_pos, pos) , polars.from_arrow(bump)
-
-                pos = 0
-                curr_pos += 1
-
-
-# # this should work for 1 CSV up to multiple
-# class InputS3CSVDataset:
-#     def __init__(self, bucket, names = None, prefix = None, key = None, sep=",", stride=64 * 1024 * 1024, header = False, window = 1024 * 32, columns = columns) -> None:
-#         self.bucket = bucket
-#         self.prefix = prefix
-#         self.key = key
-
-#         assert (self.prefix is None and self.key is not None) or (self.prefix is not None and self.key is None)
-
-#         self.num_channels = None
-#         self.names = names
-#         self.sep = sep
-#         self.stride = stride
-#         self.header = header
-#         self.columns = columns
-        
-#         self.window = window
-#         assert not (names is None and header is False), "if header is False, must supply column names"
-
-#         self.length = 0
-#         #self.sample = None
-    
-#     # we need to rethink this whole setting num channels business. For this operator we don't want each node to do redundant work!
-#     def get_own_state(self, num_channels):
-        
-#         #samples = []
-#         print("Initializing S3 CSV dataset. This is currently done locally and serially, which might take a while.")
-#         self.num_channels = num_channels
-
-#         s3 = boto3.client('s3')  # needs boto3 client, however it is transient and is not part of own state, so Ray can send this thing! 
-#         if self.key is not None:
-#             files = deque([self.key])
-#             response = s3.head_object(Bucket=self.bucket, Key=self.key)
-#             sizes = deque([response['ContentLength']])
-#         else:
-#             if self.prefix is not None:
-#                 z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
-#                 files = z['Contents']
-#                 while 'NextContinuationToken' in z.keys():
-#                     z = s3.list_objects_v2(
-#                         Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
-#                     files.extend(z['Contents'])
-#             else:
-#                 z = s3.list_objects_v2(Bucket=self.bucket)
-#                 files = z['Contents']
-#                 while 'NextContinuationToken' in z.keys():
-#                     z = s3.list_objects_v2(
-#                         Bucket=self.bucket, ContinuationToken=z['NextContinuationToken'])
-#                     files.extend(z['Contents'])
-#             sizes = deque([i['Size'] for i in files])
-#             files = deque([i['Key'] for i in files])
-
-#         if self.header:
-#             resp = s3.get_object(
-#                 Bucket=self.bucket, Key=files[0], Range='bytes={}-{}'.format(0, self.window))['Body'].read()
-#             first_newline = resp.find(bytes('\n', 'utf-8'))
-#             if first_newline == -1:
-#                 raise Exception("could not detect the first line break. try setting the window argument to a large number")
-#             if self.names is None:
-#                 self.names = resp[:first_newline].decode("utf-8").split(",")
-#             else:
-#                 detected_names = resp[:first_newline].decode("utf-8").split(self.sep)
-#                 if self.names != detected_names:
-#                     print("Warning, detected column names from header row not the same as supplied column names!")
-#                     print("Detected", detected_names)
-#                     print("Supplied", self.names)
-
-#         total_size = sum(sizes)
-#         size_per_channel = total_size // num_channels
-#         channel_infos = {}
-
-#         start_byte = 0
-#         real_off = 0
-
-#         for channel in range(num_channels):
-#             my_file = []
-#             curr_size = 0
-#             done = False
-#             while curr_size + sizes[0] <= size_per_channel:
-#                 my_file.append(files.popleft())
-#                 end_byte = sizes.popleft()
-#                 if len(sizes) == 0:
-#                     done = True
-#                     break # we are taking off a bit more work each time so the last channel might leave before filling up size per channel
-#                 curr_size += end_byte
-#                 real_off = 0
-        
-#             if done:
-#                 channel_infos[channel] = (start_byte, my_file.copy(), real_off + end_byte)
-#                 break
-
-#             #curr_size + size[0] > size_per_channel, the leftmost file has enough bytes to satisfy the channel
-#             # this never gonna happen in real life
-#             if curr_size == size_per_channel:
-#                 channel_infos[channel] = (start_byte, my_file.copy(), real_off + end_byte)
-#                 continue
-
-#             my_file.append(files[0])
-#             candidate = size_per_channel - curr_size
-
-#             start = max(0, candidate - self.window)
-#             end = min(candidate + self.window, sizes[0])
-
-#             resp = s3.get_object(
-#                 Bucket=self.bucket, Key=files[0], Range='bytes={}-{}'.format(real_off + start,real_off + end))['Body'].read()
-#             first_newline = resp.find(bytes('\n', 'utf-8'))
-#             last_newline = resp.rfind(bytes('\n', 'utf-8'))
-#             if last_newline == -1:
-#                 raise Exception
-#             else:
-#                 bytes_to_take = start + last_newline
-#                 #samples.append(csv.read_csv(BytesIO(resp[first_newline: last_newline]), read_options=csv.ReadOptions(
-#                 #    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)))
-
-#             sizes[0] -= bytes_to_take
-#             end_byte = real_off + bytes_to_take
-#             real_off += bytes_to_take
-#             channel_infos[channel] = (start_byte, my_file.copy(), end_byte)
-#             start_byte = real_off
-        
-#         self.length = total_size
-#         #self.sample = pa.concat_tables(samples)
-#         self.channel_infos = channel_infos
-#         print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
-
-
-#     def get_next_batch(self, mapper_id, state = None):
-#         assert self.num_channels is not None
-
-#         if mapper_id not in self.channel_infos:
-#             yield None, None
-#         else:
-#             files = self.channel_infos[mapper_id][1]
-#             s3 = boto3.client('s3')
+            bytes_to_read = min(pos+self.stride, end) - pos
+            resp = f.read(bytes_to_read)
             
-#             if state is None:
-#                 curr_pos = 0
-#                 pos = self.channel_infos[mapper_id][0]
-#             else:
-#                 curr_pos, pos = state
+            #print(pos, bytes_to_read)
+            
+            last_newline = resp.rfind(bytes('\n', 'utf-8'))
+
+            if last_newline == -1:
+                raise Exception
+            else:
+                resp = resp[:last_newline]
+
+                if self.header and pos == 0:
+                    first_newline = resp.find(bytes('\n','utf-8'))
+                    if first_newline == -1:
+                        raise Exception
+                    resp = resp[first_newline + 1:]
+
+                bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
+                    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+                bump = bump.select(self.columns) if self.columns is not None else bump
                 
-#             while curr_pos < len(files):
-                
-#                 file = files[curr_pos]
-#                 if curr_pos != len(files) - 1:
-#                     response = s3.head_object(
-#                         Bucket=self.bucket,
-#                         Key= file
-#                     )
-#                     length = response['ContentLength']
-#                     end = length
-#                 else:
-#                     end = self.channel_infos[mapper_id][2]
+                # if random.random() > 0.9 and redis.Redis('localhost',port=6800).get("input_already_failed") is None:
+                #     redis.Redis('localhost',port=6800).set("input_already_failed", 1)
+                #     ray.actor.exit_actor()
 
-                
-#                 while pos < end-1:
+                pos += last_newline + 1
+                if pos >= end:
+                    curr_pos += 1
+                    pos = 0
 
-#                     resp = s3.get_object(Bucket=self.bucket, Key=file, Range='bytes={}-{}'.format(
-#                         pos, min(pos+self.stride, end)))['Body'].read()
-#                     last_newline = resp.rfind(bytes('\n', 'utf-8'))
-
-#                     if last_newline == -1:
-#                         raise Exception
-#                     else:
-#                         resp = resp[:last_newline]
-
-#                         if self.header and pos == 0:
-#                             first_newline = resp.find(bytes('\n','utf-8'))
-#                             if first_newline == -1:
-#                                 raise Exception
-#                             resp = resp[first_newline + 1:]
-
-#                         bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
-#                             column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-                        
-#                         pos += last_newline
-#                         bump = bump.select(self.columns) if self.columns is not None else bump
-                        
-#                         yield (curr_pos, pos) , polars.from_arrow(bump)
-
-#                 pos = 0
-#                 curr_pos += 1
+                if curr_pos < len(files):                
+                    return (curr_pos, pos) , polars.from_arrow(bump)
+                else:
+                    return None, polars.from_arrow(bump)
 
 
 class FakeFile:
@@ -637,10 +546,7 @@ class InputS3CSVDataset:
         self.sample = None
 
         self.workers = 8
-
-    def set_num_channels(self, num_channels):
-        assert self.num_channels == num_channels
-        self.s3 = boto3.client('s3')  # needs boto3 client
+        self.s3 = None
     
     # we need to rethink this whole setting num channels business. For this operator we don't want each node to do redundant work!
     def get_own_state(self, num_channels):
@@ -746,9 +652,11 @@ class InputS3CSVDataset:
         print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
 
 
-    def get_next_batch(self, mapper_id, state = None):
+    def execute(self, mapper_id, state = None):
 
-        s3 = boto3.client("s3")
+        if self.s3 is None:
+            self.s3 = boto3.client("s3")
+            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
 
         assert self.num_channels is not None
         files = self.channel_infos[mapper_id][1]
@@ -756,74 +664,69 @@ class InputS3CSVDataset:
         if state is None:
             curr_pos = 0
             pos = self.channel_infos[mapper_id][0]
-        else:
-            curr_pos, pos = state
-        
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
-
-        while curr_pos < len(files):
-            
-            file = files[curr_pos]
-            if curr_pos != len(files) - 1:
-                response = self.s3.head_object(
-                    Bucket=self.bucket,
-                    Key= file
-                )
-                length = response['ContentLength']
-                end = length
-            else:
-                end = self.channel_infos[mapper_id][2]
-            
-            def download(x):
-                
-                end_byte = min(pos + x * self.stride + self.stride - 1, end - 1)
-                start_byte = pos + x * self.stride
-                if start_byte > end_byte:
-                    return None
-                return s3.get_object(Bucket=self.bucket, Key= file, Range='bytes={}-{}'.format(start_byte, end_byte))['Body'].read()
-
             prefix = b''
+        else:
+            curr_pos, pos, prefix = state
+        
+        
+        assert curr_pos < len(files)
+            
+        file = files[curr_pos]
+        if curr_pos != len(files) - 1:
+            response = self.s3.head_object(
+                Bucket=self.bucket,
+                Key= file
+            )
+            length = response['ContentLength']
+            end = length
+        else:
+            end = self.channel_infos[mapper_id][2]
+        
+        def download(x):
+            
+            end_byte = min(pos + x * self.stride + self.stride - 1, end - 1)
+            start_byte = pos + x * self.stride
+            if start_byte > end_byte:
+                return None
+            return self.s3.get_object(Bucket=self.bucket, Key= file, Range='bytes={}-{}'.format(start_byte, end_byte))['Body'].read()
 
-            bytes_to_read = end - pos
+        future_to_url = {self.executor.submit(download, x): x for x in range(self.workers)}
+        #start = time.time()
+        results = {}
+        for future in concurrent.futures.as_completed(future_to_url):
+            url = future_to_url[future] 
+            data = future.result()
+            results[url] = data
+        #print("download", time.time() - start)
 
-            batches = (bytes_to_read - 1) // (self.workers * self.stride) + 1
+        #start = time.time()
+        last_file = self.workers - 1
 
-            for k in range(0, batches):
-                a = [k * self.workers + z for z in range(self.workers)]
-                future_to_url = {executor.submit(download, x): x for x in a}
-                #start = time.time()
-                results = {}
-                for future in concurrent.futures.as_completed(future_to_url):
-                    url = future_to_url[future] - a[0]
-                    data = future.result()
-                    results[url] = data
-                #print("download", time.time() - start)
+        for z in range(self.workers):
+            if results[z] is None:
+                last_file = z -1
+                break
+        
+        if last_file == -1:
+            raise Exception("something is wrong, try changing the stride")
 
-                #start = time.time()
-                last_file = self.workers - 1
+        last_newline = results[last_file].rfind(bytes('\n', 'utf-8'))
 
-                for z in a:
-                    if results[z - a[0]] is None:
-                        last_file = z -1 - a[0]
-                        break
-                
-                if last_file == -1:
-                    raise Exception("something is wrong, try changing the stride")
+        fake_file = FakeFile(results, last_newline, prefix, last_file)
+        bump = csv.read_csv(fake_file, read_options=csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+        prefix = fake_file.get_end()
+        del fake_file
 
-                last_newline = results[last_file].rfind(bytes('\n', 'utf-8'))
+        bump = bump.select(self.columns) if self.columns is not None else bump
 
-                fake_file = FakeFile(results, last_newline, prefix, last_file)
-                bump = csv.read_csv(fake_file, read_options=csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-                prefix = fake_file.get_end()
-                del fake_file
-
-                bump = bump.select(self.columns) if self.columns is not None else bump
-                
-                #print("convert", time.time() - start)
-                
-                #print("memory usage before yield", pa.total_allocated_bytes())
-                yield (curr_pos, pos, a[0], prefix), bump
-                del bump
-
+        if pos + self.workers * self.stride >= end:
+            prefix = b''
             pos = 0
             curr_pos += 1
+        else:
+            pos += self.workers * self.stride
+
+        if curr_pos < len(files):
+            return (curr_pos, pos, prefix), polars.from_arrow(bump)
+        else:
+            return None, polars.from_arrow(bump)

@@ -2,7 +2,7 @@ import os
 import polars
 import pandas as pd
 os.environ['ARROW_DEFAULT_MEMORY_POOL'] = 'system'
-
+import redis
 import pyarrow as pa
 import time
 import numpy as np
@@ -14,7 +14,9 @@ import random
 import sys
 from pyarrow.fs import S3FileSystem, LocalFileSystem
 import pyarrow.dataset as ds
+import pyarrow.parquet as pq
 import ray
+import pickle
 import concurrent.futures
 
 class Executor:
@@ -187,6 +189,12 @@ class BroadcastJoinExecutor(Executor):
         
         assert self.small_on in self.state.columns
     
+    def checkpoint(self, conn, actor_id, channel_id, seq):
+        pass
+    
+    def restore(self, conn, actor_id, channel_id, seq):
+        pass
+
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
         # state compaction
@@ -250,9 +258,48 @@ class JoinExecutor(Executor):
         if how == "left":
             self.left_null = None
             self.first_row_right = None # this is a hack to produce the left join NULLs at the end.
+            self.left_null_last_ckpt = 0
 
         # keys that will never be seen again, safe to delete from the state on the other side
+
+        self.state0_last_ckpt = 0
+        self.state1_last_ckpt = 0
+        self.s3fs = None
     
+    def checkpoint(self, bucket, actor_id, channel_id, seq):
+        # redis.Redis('localhost',port=6800).set(pickle.dumps(("ckpt", actor_id, channel_id, seq)), pickle.dumps((self.state0, self.state1)))
+        
+        if self.s3fs is None:
+            self.s3fs = S3FileSystem()
+
+        if self.state0 is not None:
+            state0_to_ckpt = self.state0[self.state0_last_ckpt : ]
+            self.state0_last_ckpt += len(state0_to_ckpt)
+            pq.write_table(self.state0.to_arrow(), bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-0.parquet", filesystem=self.s3fs)
+
+        if self.state1 is not None:
+            state1_to_ckpt = self.state1[self.state1_last_ckpt : ]
+            self.state1_last_ckpt += len(state1_to_ckpt)
+            pq.write_table(self.state1.to_arrow(), bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-1.parquet", filesystem=self.s3fs)
+        
+    
+    def restore(self, bucket, actor_id, channel_id, seq):
+        # self.state0, self.state1 = pickle.loads(redis.Redis('localhost',port=6800).get(pickle.dumps(("ckpt", actor_id, channel_id, seq))))
+        
+        if self.s3fs is None:
+            self.s3fs = S3FileSystem()
+        try:
+            print(bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-0.parquet")
+            self.state0 = polars.from_arrow(pq.read_table(bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-0.parquet", filesystem=self.s3fs))
+            print(self.state0)
+        except:
+            self.state0 = None
+        try:
+            print(bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-1.parquet")
+            self.state1 = polars.from_arrow(pq.read_table(bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-1.parquet", filesystem=self.s3fs))
+            print(self.state1)
+        except:
+            self.state1 = None
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
         # state compaction
@@ -263,6 +310,13 @@ class JoinExecutor(Executor):
 
         result = None
         new_left_null = None
+
+        # if random.random() > 0.9 and redis.Redis('172.31.54.141',port=6800).get("input_already_failed") is None:
+        #     redis.Redis('172.31.54.141',port=6800).set("input_already_failed", 1)
+        #     ray.actor.exit_actor()
+        # if random.random() > 0.9 and redis.Redis('localhost',port=6800).get("input_already_failed") is None:
+        #     redis.Redis('localhost',port=6800).set("input_already_failed", 1)
+        #     ray.actor.exit_actor()
 
         if stream_id == 0:
             if self.state1 is not None:
@@ -308,6 +362,7 @@ class JoinExecutor(Executor):
             assert self.first_row_right is not None, "empty RHS"
             return self.left_null.join(self.first_row_right, left_on= self.left_on, right_on= self.right_on, how = "left", suffix = self.suffix)
 
+        print("DONE", executor_id, len(self.state0), len(self.state1))
 
 
 class AntiJoinExecutor(Executor):
@@ -377,6 +432,12 @@ class DistinctExecutor(Executor):
 
         self.keys = keys
         self.state = None
+    
+    def checkpoint(self, conn, actor_id, channel_id, seq):
+        pass
+    
+    def restore(self, conn, actor_id, channel_id, seq):
+        pass
 
     def execute(self, batches, stream_id, executor_id):
         
@@ -440,6 +501,11 @@ class AggExecutor(Executor):
                 self.order_list.append(key)
                 self.reverse_list.append(True if dir == "desc" else False)
 
+    def checkpoint(self, conn, actor_id, channel_id, seq):
+        pass
+    
+    def restore(self, conn, actor_id, channel_id, seq):
+        pass
 
     def serialize(self):
         return {0:self.state}, "all"
@@ -451,6 +517,7 @@ class AggExecutor(Executor):
     
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
+
         batches = [i for i in batches if i is not None]
         batch = polars.concat(batches)
         assert type(batch) == polars.internals.DataFrame, batch # polars add has no index, will have wierd behavior
@@ -467,10 +534,11 @@ class AggExecutor(Executor):
 
     def done(self,executor_id):
 
+        print("done", time.time())
+
         if self.state is None:
             return None
         
-
         arrow_state = self.state.to_arrow()
         arrow_state = arrow_state.group_by(self.groupby_keys).aggregate(self.pyarrow_agg_list)
         self.state = polars.from_arrow(arrow_state).rename(self.rename_dict)
@@ -515,6 +583,12 @@ class CountExecutor(Executor):
 
         self.state = 0
 
+    def checkpoint(self, conn, actor_id, channel_id, seq):
+        pass
+    
+    def restore(self, conn, actor_id, channel_id, seq):
+        pass
+
     def execute(self, batches, stream_id, executor_id):
         
         self.state += sum(len(batch) for batch in batches)
@@ -529,7 +603,7 @@ class CountExecutor(Executor):
     
     def done(self, executor_id):
         #print("COUNT:", self.state)
-        return self.state
+        return polars.DataFrame([self.state])
 
 
 class SuperFastSortExecutor(Executor):

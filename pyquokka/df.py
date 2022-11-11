@@ -7,10 +7,12 @@ from pyquokka.datastream import *
 import os
 
 class QuokkaContext:
-    def __init__(self, cluster = None) -> None:
+    def __init__(self, cluster = None, io_per_node = 2, exec_per_node = 1) -> None:
         self.latest_node_id = 0
         self.nodes = {}
         self.cluster = LocalCluster() if cluster is None else cluster
+        self.io_per_node = io_per_node
+        self.exec_per_node = exec_per_node
 
     def read_files(self, table_location: str):
 
@@ -49,7 +51,7 @@ class QuokkaContext:
                 raise NotImplemented("Are you trying to read a single file? It's not supported. Please supply absolute directory to the files, like /tmp/*. Add the asterisk!")
             
             # if local, you should not launch too many actors since not that many needed to saturate disk
-            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
+            # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
 
         self.latest_node_id += 1
         return DataStream(self, ["filename","object"], self.latest_node_id - 1)
@@ -149,7 +151,7 @@ class QuokkaContext:
                         schema = resp[:first_newline].decode("utf-8").split(sep)
 
                     self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep, has_header)
-            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
+            # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
         else:
 
             if type(self.cluster) == EC2Cluster:
@@ -192,7 +194,7 @@ class QuokkaContext:
                     self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep, has_header)
             
             # if local, you should not launch too many actors since not that many needed to saturate disk
-            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
+            # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
 
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
@@ -282,7 +284,7 @@ class QuokkaContext:
                 else:
                     self.nodes[self.latest_node_id] = InputS3ParquetNode(bucket, None, key, schema)
 
-            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
+            # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
         else:
             if type(self.cluster) == EC2Cluster:
                 raise NotImplementedError("Does not support reading local dataset with S3 cluster. Must use S3 bucket.")
@@ -319,7 +321,7 @@ class QuokkaContext:
                     self.nodes[self.latest_node_id] = self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
 
             # if local, you should not launch too many actors since not that many needed to saturate disk
-            self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
+            # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
 
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
@@ -380,7 +382,7 @@ class QuokkaContext:
     def lower(self, end_node_id, collect = True):
 
         start = time.time()
-        task_graph = TaskGraph(self.cluster)
+        task_graph = TaskGraph(self.cluster, self.io_per_node, self.exec_per_node)
         node = self.execution_nodes[end_node_id]
         nodes = deque([node])
         reverse_sorted_nodes = [(end_node_id,node)]
@@ -394,34 +396,12 @@ class QuokkaContext:
         task_graph_nodes = {}
         for node_id, node in reverse_sorted_nodes:
             if issubclass(type(node), SourceNode):
-                placement_strategy = node.placement_strategy
-                if placement_strategy is None:
-                    task_graph_nodes[node_id] = node.lower(task_graph)
-                elif type(placement_strategy) == SingleChannelStrategy:
-                    task_graph_nodes[node_id] = node.lower(task_graph, {self.cluster.leader_private_ip: 1})
-                elif type(placement_strategy) == CustomChannelsStrategy:
-                    task_graph_nodes[node_id] = node.lower(task_graph,  
-                        {ip: placement_strategy.channels_per_node for ip in list(self.cluster.private_ips.values())})
-                elif type(placement_strategy) == GPUStrategy:
-                    raise NotImplementedError
-                else:
-                    raise Exception("could not understand node placement strategy")
+                task_graph_nodes[node_id] = node.lower(task_graph)
 
             else:
                 parent_nodes = {parent_idx: task_graph_nodes[node.parents[parent_idx]] for parent_idx in node.parents}
                 target_info = {parent_idx: self.execution_nodes[node.parents[parent_idx]].targets[node_id] for parent_idx in node.parents}
-                placement_strategy = node.placement_strategy
-                if placement_strategy is None:
-                    task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info)
-                elif type(placement_strategy) == SingleChannelStrategy:
-                    task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info, {self.cluster.leader_private_ip: 1})
-                elif type(placement_strategy) == CustomChannelsStrategy:
-                    task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info,  
-                        {ip: placement_strategy.channels_per_node for ip in list(self.cluster.private_ips.values())})
-                elif type(placement_strategy) == GPUStrategy:
-                    raise NotImplementedError
-                else:
-                    raise Exception("could not understand node placement strategy")
+                task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info)
 
         task_graph.create()
         print("init time ", time.time() - start)

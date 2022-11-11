@@ -20,7 +20,7 @@ elif mode == "S3":
 else:
     raise Exception
 
-qc = QuokkaContext(cluster)
+qc = QuokkaContext(cluster, 4, 1)
 
 if mode == "DISK":
     if format == "csv":
@@ -192,6 +192,56 @@ def do_7():
     f.explain()
     return f.collect()
 
+def do_8():
+    america = region.filter(region["r_name"] == "AMERICA")
+    american_nations = nation.join(america, left_on="n_regionkey",right_on="r_regionkey").select(["n_nationkey"])
+    american_customers = customer.join(american_nations, left_on="c_nationkey", right_on="n_nationkey")
+    american_orders = orders.join(american_customers, left_on = "o_custkey", right_on="c_custkey")
+    d = lineitem.join(part, left_on="l_partkey", right_on="p_partkey")
+    d = d.join(american_orders, left_on = "l_orderkey", right_on = "o_custkey")
+    d = d.join(supplier, left_on="l_suppkey", right_on="s_suppkey")
+    d = d.join(nation, left_on="s_nationkey", right_on = "n_nationkey")
+    d = d.filter("""
+       o_orderdate between date '1995-01-01' and date '1996-12-31'
+        and p_type = 'ECONOMY ANODIZED STEEL'         
+    """)
+    d = d.with_column("o_year", lambda x: x["o_orderdate"].str.strptime(polars.datatypes.Date).dt.year(), required_columns = {"o_orderdate"})
+    d = d.with_column("volume", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]), required_columns = {"l_extendedprice", "l_discount"})
+    d = d.rename({"n_name" : "nation"})
+    d = d.with_column("brazil_volume", lambda x: x["volume"] * (x["nation"] == 'BRAZIL'), required_columns={"volume", "nation"})
+
+    f = d.groupby("o_year").aggregate(aggregations={"volume":"sum", "brazil_volume":"sum"})
+    f.explain()
+    return f.collect()
+
+# join ordering will be hard for this one
+def do_9():
+    d1 = supplier.join(nation, left_on="s_nationkey", right_on="n_nationkey")
+    d2 = part.join(partsupp, left_on="p_partkey", right_on="ps_partkey")
+    d2 = d2.filter("p_name like '%green%'")
+    d = d2.join(d1, left_on="ps_suppkey", right_on = "s_suppkey")
+    d = d.join(lineitem, left_on="p_partkey", right_on="l_partkey")
+    d = d.join(orders, left_on = "l_orderkey", right_on = "o_orderkey")
+    d = d.with_column("o_year", lambda x: x["o_orderdate"].str.strptime(polars.datatypes.Date).dt.year(), required_columns = {"o_orderdate"})
+    d = d.with_column("amount", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]) - x["ps_supplycost"] * x["l_quantity"], required_columns = {"l_extendedprice", "l_discount", "ps_supplycost", "l_quantity"})
+    d = d.rename({"n_name" : "nation"})
+    
+    f = d.groupby(["nation", "o_year"]).aggregate(aggregations = {"amount":"sum"})
+    f.explain()
+    return f.collect()
+
+def do_10():
+    d = customer.join(nation, left_on="c_nationkey", right_on="n_nationkey")
+    d = d.join(orders, left_on = "c_custkey", right_on = "o_orderkey")
+    d = d.join(lineitem, left_on = "o_orderkey", right_on="l_orderkey")
+    d = d.filter("""
+        o_orderdate >= date '1993-10-01'
+        and o_orderdate < date '1993-10-01' + interval '3' month
+        and l_returnflag = 'R'
+    """)
+    f = d.groupby(["c_custkey", "c_name", "c_acctbal", "c_phone", "n_name", \
+        "c_address", "c_comment"]).aggregate()
+
 def do_12():
     
     d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
@@ -256,16 +306,17 @@ def sort():
 # print(csv_to_csv_disk())
 # print(csv_to_parquet_s3())
 
+# print(do_2())
+
 # print(do_1())
 # print(do_3())
 
 print(do_4())
-# print(do_2())
 # print(do_5())
 # print(do_6())
 # print(do_12())
 # print(do_7())
 
-# print(sort())
+# print(do_9())
 
 #print(word_count())
