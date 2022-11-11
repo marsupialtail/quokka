@@ -2,7 +2,7 @@ from pyquokka.df import *
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
 mode = "S3"
-format = "csv"
+format = "parquet"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
 s3_path_csv = "s3://tpc-h-csv/"
@@ -259,13 +259,13 @@ def sort():
 # print(do_1())
 # print(do_3())
 
-# print(do_4())
+print(do_4())
 # print(do_2())
 # print(do_5())
 # print(do_6())
 # print(do_12())
 # print(do_7())
 
-print(sort())
+# print(sort())
 
 #print(word_count())

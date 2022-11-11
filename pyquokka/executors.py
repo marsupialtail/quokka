@@ -391,7 +391,7 @@ class DistinctExecutor(Executor):
             return batch
         else:
             contribution = batch.join(self.state, on = self.keys, how="anti")
-            self.state.vstack(contribution)
+            self.state.vstack(contribution, in_place = True)
             return contribution
     
     def serialize(self):

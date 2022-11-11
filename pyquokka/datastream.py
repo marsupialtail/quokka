@@ -614,7 +614,7 @@ class DataStream:
             ordering=None
         )
     
-    def distinct(self, keys: list):
+    def distinct(self, key: str):
 
         """
         Return a new DataStream with specified columns and unique rows. This is like `SELECT DISTINCT(KEYS) FROM ...` in SQL.
@@ -643,25 +643,22 @@ class DataStream:
             ~~~
         """
 
-        if type(keys) == str:
-            keys = [keys]
+        assert type(key) == str
+        assert key in self.schema
 
-        for key in keys:
-            assert key in self.schema
-
-        select_stream = self.select(keys)
+        select_stream = self.select([key])
 
         return self.quokka_context.new_stream(
             sources={0: select_stream},
-            partitioners={0: PassThroughPartitioner()},
+            partitioners={0: HashPartitioner(key)},
             node=StatefulNode(
-                schema=keys,
+                schema=[key],
                 # this is a stateful node, but predicates and projections can be pushed down.
-                schema_mapping={col: (0, col) for col in keys},
-                required_columns={0: set(keys)},
-                operator=DistinctExecutor(keys)
+                schema_mapping={col: (0, col) for col in [key]},
+                required_columns={0: set([key])},
+                operator=DistinctExecutor([key])
             ),
-            schema=keys,
+            schema=[key],
             ordering=None
         )
 
