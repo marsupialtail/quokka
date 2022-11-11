@@ -11,3 +11,4 @@ nation_scheme = ["n_nationkey","n_name","n_regionkey","n_comment","null"]
 region_scheme = ["r_regionkey" ,"r_name","r_comment","null"]
 schema_quotes = ["time","symbol","seq","bid","ask","bsize","asize","is_nbbo"]
 schema_trades = ["time","symbol","size","price"]
+
