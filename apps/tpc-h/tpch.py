@@ -1,8 +1,8 @@
 from pyquokka.df import * 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
-mode = "S3"
-format = "parquet"
+mode = "DISK"
+format = "csv"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
 s3_path_csv = "s3://tpc-h-csv/"
@@ -20,7 +20,7 @@ elif mode == "S3":
 else:
     raise Exception
 
-qc = QuokkaContext(cluster, 4, 1)
+qc = QuokkaContext(cluster, 4, 2)
 
 if mode == "DISK":
     if format == "csv":
@@ -108,16 +108,20 @@ def do_2():
     european_nations = nation.join(europe, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
     d = supplier.join(european_nations, left_on="s_nationkey", right_on="n_nationkey")
     d = partsupp.join(d, left_on="ps_suppkey", right_on="s_suppkey")
-    f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"}).collect()
+    f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"})
     f = f.rename({"ps_supplycost_min":"min_cost","ps_partkey":"europe_key"})
-    print(f)
 
     d = d.join(f, left_on="ps_supplycost", right_on="min_cost", suffix="_2")
     d = d.join(part, left_on="europe_key", right_on="p_partkey", suffix="_3")
     d = d.filter("""europe_key = ps_partkey and p_size = 15 and p_type like '%BRASS' """)
     d = d.select(["s_acctbal", "s_name", "n_name", "europe_key", "p_mfgr", "s_address", "s_phone", "s_comment"])
+
+    d.explain()
+
     f = d.collect()
     f = f.sort(["s_acctbal","n_name","s_name","europe_key"],reverse=[True,False,False,False])[:100]
+
+    
     return f
 
 
@@ -139,8 +143,8 @@ def do_4():
     '''
 
     d = lineitem.filter("l_commitdate < l_receiptdate")
-    d = d.distinct("l_orderkey")
-    d = d.join(orders, left_on="l_orderkey", right_on="o_orderkey")
+    #d = d.distinct("l_orderkey")
+    d = orders.join(d, left_on="o_orderkey", right_on="l_orderkey", how = "semi")
     d = d.filter("o_orderdate >= date '1993-07-01' and o_orderdate < date '1993-10-01'")
     f = d.groupby("o_orderpriority").agg({'*':['count']})
     return f.collect()
@@ -166,6 +170,25 @@ def do_5():
     f = d.groupby("n_name").agg({"revenue":["sum"]})
 
     return f.collect()
+
+# def do_5():
+
+#     '''
+#     Quokka currently does not pick the best join order, or the best join strategy. This is upcoming improvement for a future release.
+#     You will have to pick the best join order. One way to do this is to do sparksql.explain and "borrow" Spark Catalyst CBO's plan.
+#     As a general rule of thumb you want to join small tables first and then bigger ones.
+#     '''
+
+    
+#     d = customer.filter("c_nationkey IN (8, 9, 12, 18,21)").join(orders, left_on="c_custkey", right_on="o_custkey", suffix="_3")
+#     d = d.join(lineitem, left_on="o_orderkey", right_on="l_orderkey", suffix="_4")
+#     d = d.join(supplier, left_on="l_suppkey", right_on="s_suppkey", suffix="_5")
+#     d = d.filter("s_nationkey = c_nationkey and o_orderdate >= date '1994-01-01' and o_orderdate < date '1994-01-01' + interval '1' year")
+#     d = d.with_column("revenue", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
+#     #f = d.groupby("n_name", orderby=[("revenue",'desc')]).agg({"revenue":["sum"]})
+#     f = d.groupby("c_nationkey").agg({"revenue":["sum"]})
+
+#     return f.collect()
 
 def do_6():
     d = lineitem.filter("l_shipdate >= date '1994-01-01' and l_shipdate < date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01 and l_quantity < 24")
@@ -205,7 +228,7 @@ def do_8():
        o_orderdate between date '1995-01-01' and date '1996-12-31'
         and p_type = 'ECONOMY ANODIZED STEEL'         
     """)
-    d = d.with_column("o_year", lambda x: x["o_orderdate"].str.strptime(polars.datatypes.Date).dt.year(), required_columns = {"o_orderdate"})
+    d = d.with_column("o_year", lambda x: x["o_orderdate"].dt.year(), required_columns = {"o_orderdate"})
     d = d.with_column("volume", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]), required_columns = {"l_extendedprice", "l_discount"})
     d = d.rename({"n_name" : "nation"})
     d = d.with_column("brazil_volume", lambda x: x["volume"] * (x["nation"] == 'BRAZIL'), required_columns={"volume", "nation"})
@@ -222,7 +245,7 @@ def do_9():
     d = d2.join(d1, left_on="ps_suppkey", right_on = "s_suppkey")
     d = d.join(lineitem, left_on="p_partkey", right_on="l_partkey")
     d = d.join(orders, left_on = "l_orderkey", right_on = "o_orderkey")
-    d = d.with_column("o_year", lambda x: x["o_orderdate"].str.strptime(polars.datatypes.Date).dt.year(), required_columns = {"o_orderdate"})
+    d = d.with_column("o_year", lambda x: x["o_orderdate"].dt.year(), required_columns = {"o_orderdate"})
     d = d.with_column("amount", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]) - x["ps_supplycost"] * x["l_quantity"], required_columns = {"l_extendedprice", "l_discount", "ps_supplycost", "l_quantity"})
     d = d.rename({"n_name" : "nation"})
     
@@ -306,17 +329,18 @@ def sort():
 # print(csv_to_csv_disk())
 # print(csv_to_parquet_s3())
 
-# print(do_2())
+print(do_2())
 
 # print(do_1())
 # print(do_3())
 
-print(do_4())
+# print(do_4())
 # print(do_5())
 # print(do_6())
 # print(do_12())
 # print(do_7())
 
+# print(do_8())
 # print(do_9())
 
 #print(word_count())

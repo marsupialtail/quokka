@@ -255,7 +255,7 @@ class StatefulNode(TaskNode):
             target_info = self.targets[list(self.targets.keys())[0]]
             transform_func = target_info_to_transform_func(target_info)          
             
-            return task_graph.new_blocking_node(parent_nodes,self.operator, ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info, transform_fn = transform_func)
+            return task_graph.new_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info, transform_fn = transform_func)
         else:
             return task_graph.new_non_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info)
         
@@ -288,7 +288,7 @@ class MapNode(TaskNode):
             target_info = self.targets[list(self.targets.keys())[0]]
             transform_func = target_info_to_transform_func(target_info)     
 
-            return task_graph.new_blocking_node(parent_nodes,UDFExecutor(self.function), ip_to_num_channel=ip_to_num_channel, source_target_info=parent_source_info, transform_fn = transform_func)
+            return task_graph.new_blocking_node(parent_nodes,UDFExecutor(self.function), self.placement_strategy, source_target_info=parent_source_info, transform_fn = transform_func)
         else:
             return task_graph.new_non_blocking_node(parent_nodes,UDFExecutor(self.function), self.placement_strategy, source_target_info=parent_source_info)
 

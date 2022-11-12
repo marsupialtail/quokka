@@ -10,6 +10,9 @@ import time
 import pandas as pd
 
 DEBUG =  False
+def print_if_debug(*x):
+    if DEBUG:
+        print(*x)
 
 @ray.remote
 class Coordinator:
@@ -124,13 +127,13 @@ class Coordinator:
                         except:
                             failed_nodes.append(worker)
                         
-                    print("alive", alive_nodes)
-                    print("failed", failed_nodes)
+                    # print("alive", alive_nodes)
+                    # print("failed", failed_nodes)
                     for failed_node in failed_nodes:
                         ray.kill(self.node_handles[failed_node])
 
                     waiting_workers = [int(i) for i in self.r.smembers("waiting-workers")]
-                    print(waiting_workers)
+                    # print(waiting_workers)
 
                     # this guarantees that at this point, all the alive nodes are waiting. 
                     # note this does not guarantee that during recovery, all the alive nodes will stay alive, which might not be true.
@@ -167,11 +170,11 @@ class Coordinator:
                 rewind_ckpt = (-1, 0)
             return rewind_ckpt
 
-        self.dump_redis_state("pre.pkl")
+        if DEBUG:
+            self.dump_redis_state("pre.pkl")
 
         keys = self.EST.keys(self.r)
         # easy way to check if an actor_id is an executor or an input is check if it's in keys of this table.
-        print(keys)
         est = {pickle.loads(key): int(self.EST.get(self.r, key)) for key in keys}
 
         recovery_tasks = []
@@ -295,7 +298,7 @@ class Coordinator:
 
                     # important bug fix: you must repush things that you haven't consumed yet. because they will be needed in the future
                     # otherwise deadlock.
-                    print(actor_id, channel_id, rewinded_state_seq)
+                    # print(actor_id, channel_id, rewinded_state_seq)
                     for requirement in pickle.loads(self.IRT.get(self.r, pickle.dumps((actor_id, channel_id, rewinded_state_seq)))).to_dicts():
                         source_actor_id = requirement['source_actor_id']
                         source_channel_id = requirement["source_channel_id"]
@@ -306,7 +309,7 @@ class Coordinator:
                         if (source_actor_id, source_channel_id) in est:
                             # WARNING: TODO horribly inefficient. but simplest
                             relevant_keys = [pickle.loads(k) for k in self.LT.keys(self.r)]
-                            print(source_actor_id, source_channel_id, relevant_keys)
+                            print_if_debug(source_actor_id, source_channel_id, relevant_keys)
                             relevant_keys = [key for key in relevant_keys if key[0] == source_actor_id and key[1] == source_channel_id]
                             if len(relevant_keys) > 0:
                                 last_pushed_seq = max(relevant_keys)[2]
@@ -316,7 +319,7 @@ class Coordinator:
                             git = self.GIT.smembers(self.r, pickle.dumps((source_actor_id, source_channel_id)))
                             required_inputs[source_actor_id, source_channel_id] = [int(i) for i in git if int(i) >= min_seq]
 
-                    print(actor_id, channel_id, rewinded_state_seq, required_inputs)
+                    print_if_debug(actor_id, channel_id, rewinded_state_seq, required_inputs)
 
                     for source_actor_id, source_channel_id in required_inputs:
                         input_seqs = required_inputs[source_actor_id, source_channel_id]
@@ -467,5 +470,6 @@ class Coordinator:
             for tup, df in location_df.groupby(["source_actor_id", "source_channel_id"]):
                 source_actor_id, source_channel_id = tup
                 self.NTT.lpush(self.r, location, ReplayTask(source_actor_id, source_channel_id, polars.from_pandas(df[["seq", "target_actor_id", "target_channel_id"]])).reduce())
-
-        self.dump_redis_state("post.pkl")
+        
+        if DEBUG:
+            self.dump_redis_state("post.pkl")

@@ -80,6 +80,8 @@ class TaskGraph:
         elif type(placement_strategy) == CustomChannelsStrategy:
             return self.cluster.num_node * placement_strategy.channels_per_node * (self.io_per_node if node_type == 'input' else self.exec_per_node)
         else:
+            print(placement_strategy)
+            import pdb; pdb.set_trace()
             raise Exception("strategy not supported")
 
     def epilogue(self, placement_strategy):
@@ -139,18 +141,18 @@ class TaskGraph:
     def prologue(self, streams, placement_strategy, source_target_info):
 
         def partition_key_str(key, data, source_channel, num_target_channels):
+
             result = {}
-            for channel in range(num_target_channels):
-                if type(data) == polars.internals.DataFrame:
-                    if "int" in str(data[key].dtype).lower() or "float" in str(data[key].dtype).lower():
-                        payload = data.filter(data[key] % num_target_channels == channel)
-                    elif data[key].dtype == polars.datatypes.Utf8:
-                        payload = data.filter(data[key].hash() % num_target_channels == channel)
-                    else:
-                        raise Exception("invalid partition column type, supports ints, floats and strs")
-                else:
-                    raise Exception("only support polars format")
-                result[channel] = payload
+            assert type(data) == polars.internals.DataFrame
+            if "int" in str(data[key].dtype).lower():
+                partitions = data.with_column(polars.Series(name="__partition__", values=(data[key] % num_target_channels))).partition_by("__partition__")
+            elif data[key].dtype == polars.datatypes.Utf8:
+                partitions = data.with_column(polars.Series(name="__partition__", values=(data[key].hash() % num_target_channels))).partition_by("__partition__")
+            else:
+                raise Exception("partition key type not supported")
+            for partition in partitions:
+                target = partition["__partition__"][0]
+                result[target] = partition.drop("__partition__")   
             return result
         
 
@@ -203,15 +205,11 @@ class TaskGraph:
             # this has been provided
             if type(target_info.partitioner)== HashPartitioner:
                 #print("Inferring hash partitioning strategy for column ", target_info.partitioner.key, "the source node must produce pyarrow, polars or pandas dataframes, and the dataframes must have this column!")
-                target_info.partitioner = FunctionPartitioner(partial(partition_key_str, target_info.partitioner.key))
+                target_info.partitioner = partial(partition_key_str, target_info.partitioner.key)
             elif type(target_info.partitioner) == RangePartitioner:
-                target_info.partitioner = FunctionPartitioner(partial(partition_key_range, target_info.partitioner.key, target_info.partitioner.total_range))
+                target_info.partitioner = partial(partition_key_range, target_info.partitioner.key, target_info.partitioner.total_range)
             elif type(target_info.partitioner) == BroadcastPartitioner:
                 target_info.partitioner = broadcast
-            elif type(target_info.partitioner) == FunctionPartitioner:
-                from inspect import signature
-                assert len(signature(target_info.partitioner.func).parameters) == 3, "custom partition function must accept three arguments: data object, source channel id, and the number of target channels"
-                target_info.partitioner = target_info.partitioner.func
             elif type(target_info.partitioner) == PassThroughPartitioner:
                 source = streams[key]
                 target_info.partitioner = self.get_default_partition(source, placement_strategy)
@@ -282,15 +280,19 @@ class TaskGraph:
         
         return self.epilogue(placement_strategy)
 
-    def new_blocking_node(self, streams, functionObject, placement_strategy = None, source_target_info = {}, transform_fn = None):
+    def new_blocking_node(self, streams, functionObject, placement_strategy = CustomChannelsStrategy(1), source_target_info = {}, transform_fn = None):
+
+        if placement_strategy is None:
+            placement_strategy = CustomChannelsStrategy(1)
 
         current_actor = self.new_non_blocking_node(streams, functionObject, placement_strategy, source_target_info)
         self.actor_types[current_actor] = 'exec'
         total_channels = self.get_total_channels_from_placement_strategy(placement_strategy, 'exec')
 
         output_dataset = ArrowDataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote(total_channels)
+        ray.get(output_dataset.ping.remote())
 
-        registered = ray.get([node.register_blocking.remote(current_actor , output_dataset) for node in list(self.nodes.values())])
+        registered = ray.get([node.register_blocking.remote(current_actor , transform_fn, output_dataset) for node in list(self.nodes.values())])
         assert all(registered)
         return Dataset(output_dataset)
     

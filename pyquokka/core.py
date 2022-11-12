@@ -144,8 +144,8 @@ class TaskManager:
         self.mappings[actor_id] = mapping
         return True
     
-    def register_blocking(self, actor_id, dataset_object):
-        self.blocking_nodes[actor_id] = dataset_object
+    def register_blocking(self, actor_id, transform_fn, dataset_object):
+        self.blocking_nodes[actor_id] = (transform_fn, dataset_object)
         return True
     
     def check_in_recovery(self):
@@ -213,7 +213,7 @@ class TaskManager:
 
     def push(self, source_actor_id: int, source_channel_id: int, seq: int, output: polars.internals.DataFrame, target_mask = None, from_local = False):
         
-        start = time.time()
+        start_push = time.time()
 
         my_format = "polars" # let's not worry about different formats for now though that will be needed eventually
         
@@ -233,9 +233,13 @@ class TaskManager:
             if from_local:
                 outputs = self.HBQ.get(source_actor_id, source_channel_id, seq, target_actor_id)
             else:
-                outputs = partition_fn(output, source_channel_id)
-                self.HBQ.put(source_actor_id, source_channel_id, seq, target_actor_id, outputs)
 
+                start_part = time.time()
+                outputs = partition_fn(output, source_channel_id)
+                print_if_profile("partitioner time", time.time() - start_part)
+                start_spill = time.time()
+                self.HBQ.put(source_actor_id, source_channel_id, seq, target_actor_id, outputs)
+                print_if_profile("disk spill time", time.time() - start_spill)
             # wrap all the outputs with their actual names and by default persist all outputs
 
             # print(outputs)
@@ -279,7 +283,7 @@ class TaskManager:
                     print("downstream unavailable")
                     return False
 
-        print_if_profile("push time", time.time() - start)
+        print_if_profile("push time", time.time() - start_push)
         return True
         
     
@@ -509,7 +513,10 @@ class ExecTaskManager(TaskManager):
                                     failed = True
                                     break
                             else:
-                                ray.get(self.blocking_nodes[actor_id].added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = self.blocking_nodes[actor_id])]))
+                                transform_fn, dataset = self.blocking_nodes[actor_id]
+                                if transform_fn is not None:
+                                    data = transform_fn(data)
+                                ray.get(dataset.added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = dataset)]))
                             self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
 
                             out_seq += 1
@@ -537,7 +544,10 @@ class ExecTaskManager(TaskManager):
                                     failed = True
                                     break
                             else:
-                                ray.get(self.blocking_nodes[actor_id].added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = self.blocking_nodes[actor_id])]))
+                                transform_fn, dataset = self.blocking_nodes[actor_id]
+                                if transform_fn is not None:
+                                    data = transform_fn(data)
+                                ray.get(dataset.added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = dataset)]))
                             self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
 
                             last_output_seq = out_seq
@@ -675,7 +685,10 @@ class ExecTaskManager(TaskManager):
                                 failed = True
                                 break
                         else:
-                            ray.get(self.blocking_nodes[actor_id].added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = self.blocking_nodes[actor_id])]))
+                            transform_fn, dataset = self.blocking_nodes[actor_id]
+                            if transform_fn is not None:
+                                data = transform_fn(data)
+                            ray.get(dataset.added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = dataset)]))
                         self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
 
                         last_output_seq = out_seq
@@ -701,7 +714,10 @@ class ExecTaskManager(TaskManager):
                                     failed = True
                                     break
                             else:
-                                ray.get(self.blocking_nodes[actor_id].added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = self.blocking_nodes[actor_id])]))
+                                transform_fn, dataset = self.blocking_nodes[actor_id]
+                                if transform_fn is not None:
+                                    data = transform_fn(data)
+                                ray.get(dataset.added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = dataset)]))
                             self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
 
                             last_output_seq = out_seq

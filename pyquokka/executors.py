@@ -253,9 +253,14 @@ class JoinExecutor(Executor):
         
         assert how in {"inner", "left",  "semi"}
         self.how = how
-        self.batch_how = how if how != "left" else "inner"
+        if how == "inner":
+            self.batch_how = "inner"
+        elif how == "semi":
+            self.batch_how = "semi"
+        elif how == "left":
+            self.batch_how = "inner"
         
-        if how == "left":
+        if how == "left" or how =="semi":
             self.left_null = None
             self.first_row_right = None # this is a hack to produce the left join NULLs at the end.
             self.left_null_last_ckpt = 0
@@ -321,30 +326,35 @@ class JoinExecutor(Executor):
         if stream_id == 0:
             if self.state1 is not None:
                 result = batch.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how=self.batch_how, suffix=self.suffix)
-                if self.how == "left":
+                if self.how == "left" or self.how == "semi":
                     new_left_null = batch.join(self.state1, left_on = self.left_on, right_on= self.right_on, how = "anti", suffix = self.suffix)
             else:
-                if self.how == "left":
+                if self.how == "left" or self.how == "semi":
                     new_left_null = batch
 
-            if self.state0 is None:
-                self.state0 = batch
-            else:
-                self.state0.vstack(batch, in_place = True)
+            if self.how != "semi":
+                if self.state0 is None:
+                    self.state0 = batch
+                else:
+                    self.state0.vstack(batch, in_place = True)
 
-            if self.how == "left" and new_left_null is not None and len(new_left_null) > 0:
+            if (self.how == "left" or self.how == "semi") and new_left_null is not None and len(new_left_null) > 0:
                 if self.left_null is None:
                     self.left_null = new_left_null
                 else:
                     self.left_null.vstack(new_left_null, in_place= True)
              
         elif stream_id == 1:
-            if self.state0 is not None:
+
+            if self.state0 is not None and self.how != "semi":
                 result = self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how=self.batch_how, suffix=self.suffix)
             
-            if self.how == "left" and self.left_null is not None:
-                self.left_null = self.left_null.join(batch, left_on = self.left_on, right_on = self.right_on, how = "anti", suffix = self.suffix)
+            if self.how == "semi" and self.left_null is not None:
+                result = self.left_null.join(batch, left_on = self.left_on, right_on = self.right_on, how = "semi", suffix = self.suffix)
             
+            if (self.how == "left" or self.how == "semi") and self.left_null is not None:
+                self.left_null = self.left_null.join(batch, left_on = self.left_on, right_on = self.right_on, how = "anti", suffix = self.suffix)
+
             if self.state1 is None:
                 if self.how == "left":
                     self.first_row_right = batch[0]
@@ -362,7 +372,7 @@ class JoinExecutor(Executor):
             assert self.first_row_right is not None, "empty RHS"
             return self.left_null.join(self.first_row_right, left_on= self.left_on, right_on= self.right_on, how = "left", suffix = self.suffix)
 
-        print("DONE", executor_id, len(self.state0), len(self.state1))
+        print("DONE", executor_id)
 
 
 class AntiJoinExecutor(Executor):

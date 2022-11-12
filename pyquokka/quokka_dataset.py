@@ -54,3 +54,6 @@ class ArrowDataset:
                 dfs.append(ray.get(object))
         arrow_table = pa.concat_tables(dfs)
         return polars.from_arrow(arrow_table)
+    
+    def ping(self):
+        return True
