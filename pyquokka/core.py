@@ -218,7 +218,7 @@ class TaskManager:
         my_format = "polars" # let's not worry about different formats for now though that will be needed eventually
         
         if target_mask is not None:
-            print("TARGET_MASK", target_mask)
+            print_if_debug("TARGET_MASK", target_mask)
         
         partition_fns = self.partition_fns[source_actor_id]
 
@@ -520,9 +520,9 @@ class ExecTaskManager(TaskManager):
                             self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
 
                             out_seq += 1
-                            
-                    if failed:
-                        continue
+
+                        if failed:
+                            continue
                         
                     next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, new_input_reqs)
 
@@ -552,15 +552,17 @@ class ExecTaskManager(TaskManager):
 
                             last_output_seq = out_seq
                             out_seq += 1
+                        
+                        if failed:
+                            continue
                     
                     self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), last_output_seq)
                 
-                    if failed:
-                        continue
+                    
                             
                     next_task = None
 
-                if state_seq % CHECKPOINT_INTERVAL == 0:
+                if False: #state_seq % CHECKPOINT_INTERVAL == 0:
                     self.function_objects[actor_id, channel_id].checkpoint(self.checkpoint_bucket, actor_id, channel_id, state_seq)
                     for source_channel_id in source_channel_ids:
                         for seq in source_channel_seqs[source_channel_id]:
@@ -593,13 +595,16 @@ class ExecTaskManager(TaskManager):
 
                 if (actor_id, channel_id) not in self.function_objects:
                     self.function_objects[actor_id, channel_id] = ray.cloudpickle.loads(self.FOT.get(self.r, actor_id))
+                    assert candidate_task.state_seq >= 0
+
                     if candidate_task.state_seq > 0:
                         print("RESTORING TO ", state_seq -1 )
                         self.function_objects[actor_id, channel_id].restore(self.checkpoint_bucket, actor_id, channel_id, state_seq - 1)
-                        new_input_reqs = pickle.loads(self.IRT.get(self.r, pickle.dumps((actor_id, channel_id, state_seq - 1))))
-                        assert new_input_reqs is not None
-                        assert (actor_id, channel_id) not in self.tape_input_reqs
-                        self.tape_input_reqs[actor_id, channel_id] = new_input_reqs
+                    
+                    new_input_reqs = pickle.loads(self.IRT.get(self.r, pickle.dumps((actor_id, channel_id, state_seq - 1))))
+                    assert new_input_reqs is not None
+                    assert (actor_id, channel_id) not in self.tape_input_reqs
+                    self.tape_input_reqs[actor_id, channel_id] = new_input_reqs
 
                 name_prefix = pickle.dumps(('s', actor_id, channel_id, state_seq))
                 input_requirements = self.LT.get(self.r, name_prefix)
@@ -646,20 +651,8 @@ class ExecTaskManager(TaskManager):
 
                 if state_seq + 1 > candidate_task.last_state_seq:
 
-                    self.update_dst()
-                    print_if_debug(self.dst)
-                    if self.dst is not None:
-                        new_input_reqs = self.tape_input_reqs[actor_id, channel_id].join(self.dst, on = ["source_actor_id", "source_channel_id"], how = "left")\
-                                                        .fill_null(MAX_SEQ)\
-                                                        .filter(polars.col("min_seq") <= polars.col("done_seq"))\
-                                                        .drop("done_seq")
-                    print_if_debug(new_input_reqs)
-                    if len(new_input_reqs) > 0:
-                        next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq if output is None else out_seq + 1, new_input_reqs)
-                        print("finished exectape, next input requirement is ", new_input_reqs)
-                    else:
-                        next_task = None
-                        print("finished exectape, done!! This hsould not happen.")
+                    next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq if output is None else out_seq + 1, self.tape_input_reqs[actor_id, channel_id])
+                    print("finished exectape, next input requirement is ", new_input_reqs)
 
                 else:
                     next_task = TapedExecutorTask(actor_id, channel_id, state_seq + 1, out_seq if output is None else out_seq + 1, candidate_task.last_state_seq)
@@ -677,7 +670,6 @@ class ExecTaskManager(TaskManager):
                     
                     for data in output:
                         if actor_id not in self.blocking_nodes:
-                            print(data)
                             pushed = self.push(actor_id, channel_id, out_seq, data)
                             if not pushed:
                             # you failed to push downstream, most likely due to node failure. wait a bit for coordinator recovery and continue, most like will be choked on barrier.
@@ -696,39 +688,7 @@ class ExecTaskManager(TaskManager):
                 
                 if failed:
                     continue
-                
-                if next_task is None:
-                    output = self.function_objects[actor_id, channel_id].done(channel_id)
 
-                    if output is not None:
-                        assert type(output) == polars.internals.DataFrame or type(output) == types.GeneratorType
-                        if type(output) == polars.internals.DataFrame:
-                            output = [output]
-
-                        for data in output:
-                            if actor_id not in self.blocking_nodes:
-                                pushed = self.push(actor_id, channel_id, out_seq, data)
-                                if not pushed:
-                                # you failed to push downstream, most likely due to node failure. wait a bit for coordinator recovery and continue, most like will be choked on barrier.
-                                    time.sleep(0.2)
-                                    failed = True
-                                    break
-                            else:
-                                transform_fn, dataset = self.blocking_nodes[actor_id]
-                                if transform_fn is not None:
-                                    data = transform_fn(data)
-                                ray.get(dataset.added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = dataset)]))
-                            self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
-
-                            last_output_seq = out_seq
-                            out_seq += 1
-                    
-                    self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), last_output_seq)
-                            
-                if failed:
-                    continue
-            
-                   
 
                 # this way of logging the lineage probably use less space than a Polars table actually.
 

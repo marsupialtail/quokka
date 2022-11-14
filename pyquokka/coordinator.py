@@ -326,7 +326,6 @@ class Coordinator:
                         object_names = [pickle.dumps((source_actor_id, source_channel_id, seq)) for seq in input_seqs]
                         where = self.PT.mget(self.r, object_names)
 
-                        # TODO: you should probably check GIT and EST for this.
                         if None in where:
                             # out of luck! currently just reconstruct everything.
                             if (source_actor_id, source_channel_id) in est:
