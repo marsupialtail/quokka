@@ -133,16 +133,17 @@ class ExecutorTask(Task):
         return pickle.dumps(("exec", (self.actor_id, self.channel_id, self.state_seq, self.out_seq, self.input_reqs)))
 
 class TapedExecutorTask(Task):
-    def __init__(self, actor_id, channel_id, state_seq, out_seq, last_state_seq) -> None:
+    def __init__(self, actor_id, channel_id, state_seq, out_seq, last_state_seq, input_persisted = False) -> None:
         super().__init__(actor_id, channel_id)
         self.state_seq = state_seq
         self.out_seq = out_seq
         self.last_state_seq = last_state_seq
+        self.input_persisted = input_persisted
 
     @classmethod
     def from_tuple(cls, tup):
-        assert len(tup) == 5, tup
-        return cls(tup[0], tup[1], tup[2], tup[3], tup[4])
+        assert len(tup) == 6, tup
+        return cls(tup[0], tup[1], tup[2], tup[3], tup[4], tup[5])
 
     def execute(self, functionObject, inputs, stream_id, channel_id):
 
@@ -150,7 +151,7 @@ class TapedExecutorTask(Task):
         return output, self.state_seq, self.out_seq 
 
     def reduce(self):
-        return pickle.dumps(("exectape", (self.actor_id, self.channel_id, self.state_seq, self.out_seq, self.last_state_seq)))
+        return pickle.dumps(("exectape", (self.actor_id, self.channel_id, self.state_seq, self.out_seq, self.last_state_seq, self.input_persisted)))
 
 
 class ReplayTask(Task):

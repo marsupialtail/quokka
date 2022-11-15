@@ -1,8 +1,8 @@
 from pyquokka.df import * 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
-mode = "DISK"
-format = "csv"
+mode = "S3"
+format = "parquet"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
 s3_path_csv = "s3://tpc-h-csv/"
@@ -108,7 +108,7 @@ def do_2():
     european_nations = nation.join(europe, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
     d = supplier.join(european_nations, left_on="s_nationkey", right_on="n_nationkey")
     d = partsupp.join(d, left_on="ps_suppkey", right_on="s_suppkey")
-    f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"})
+    f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"}).collect()
     f = f.rename({"ps_supplycost_min":"min_cost","ps_partkey":"europe_key"})
 
     d = d.join(f, left_on="ps_supplycost", right_on="min_cost", suffix="_2")
@@ -116,7 +116,7 @@ def do_2():
     d = d.filter("""europe_key = ps_partkey and p_size = 15 and p_type like '%BRASS' """)
     d = d.select(["s_acctbal", "s_name", "n_name", "europe_key", "p_mfgr", "s_address", "s_phone", "s_comment"])
 
-    d.explain()
+    #d.explain()
 
     f = d.collect()
     f = f.sort(["s_acctbal","n_name","s_name","europe_key"],reverse=[True,False,False,False])[:100]
@@ -329,7 +329,7 @@ def sort():
 # print(csv_to_csv_disk())
 # print(csv_to_parquet_s3())
 
-print(do_2())
+# print(do_2())
 
 # print(do_1())
 # print(do_3())
@@ -341,6 +341,6 @@ print(do_2())
 # print(do_7())
 
 # print(do_8())
-# print(do_9())
+print(do_9())
 
 #print(word_count())

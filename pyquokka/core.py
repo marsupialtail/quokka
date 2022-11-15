@@ -10,12 +10,15 @@ import polars
 import time
 import boto3
 import types
+import pyarrow.parquet as pq
 
 CHECKPOINT_INTERVAL = None
 HBQ_GC_INTERVAL = 2
 MAX_SEQ = 1000000000
 DEBUG = False
 PROFILE = False
+QUOKKA_SPOOL_PATH="s3://quokka-spool"
+PERSIST = True
 
 def print_if_debug(*x):
     if DEBUG:
@@ -26,6 +29,7 @@ def print_if_profile(*x):
         print(*x, time.time())
 
 def record_batch_to_polars(batch):
+
     aligned_batch = pyarrow.record_batch([pyarrow.concat_arrays([arr]) for arr in batch], schema=batch.schema)
     return polars.from_arrow(pyarrow.Table.from_batches([aligned_batch]))
 
@@ -205,13 +209,13 @@ class TaskManager:
 
             # figure out a pythonic way to convert a dataframe to a dict of lists
 
-            pushed = self.push(source_actor_id, source_channel_id, seq, None, target_mask, True)
+            pushed = self.push(source_actor_id, source_channel_id, seq, None, target_mask, True, False)
             if not pushed:
                 return False
         
         return True
 
-    def push(self, source_actor_id: int, source_channel_id: int, seq: int, output: polars.internals.DataFrame, target_mask = None, from_local = False):
+    def push(self, source_actor_id: int, source_channel_id: int, seq: int, output: polars.internals.DataFrame, target_mask = None, from_local = False, persist = False):
         
         start_push = time.time()
 
@@ -239,10 +243,9 @@ class TaskManager:
                 print_if_profile("partitioner time", time.time() - start_part)
                 start_spill = time.time()
                 self.HBQ.put(source_actor_id, source_channel_id, seq, target_actor_id, outputs)
-                print_if_profile("disk spill time", time.time() - start_spill)
+                print_if_profile("hbq spill time", time.time() - start_spill)
             # wrap all the outputs with their actual names and by default persist all outputs
 
-            # print(outputs)
             fake_row = outputs[list(outputs.keys())[0]][:0]
             expected_schema = outputs[list(outputs.keys())[0]].to_arrow().schema
 
@@ -270,6 +273,11 @@ class TaskManager:
                 client = self.actor_flight_clients[target_actor_id][target_channel_id]
 
                 print_if_debug("pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
+                if persist:
+                    filename = QUOKKA_SPOOL_PATH[5:] + "/hbq-" + str(source_actor_id) + "-" + str(source_channel_id) + "-" + str(seq) \
+                        + "-" + str(target_actor_id) + "-" + str(target_channel_id) + ".parquet"
+                    # print("S3 spooling to ", new_outputs[key])
+                    pq.write_table( pyarrow.Table.from_batches(batches), filename, compression= 'NONE', filesystem=self.s3fs )
 
                 try:
                     # self.check_puttable(client)
@@ -336,6 +344,10 @@ class ExecTaskManager(TaskManager):
         s3 = boto3.resource('s3')
         bucket = s3.Bucket(checkpoint_bucket)
         bucket.objects.all().delete()
+        if PERSIST:
+            s3 = boto3.resource('s3')
+            bucket = s3.Bucket(QUOKKA_SPOOL_PATH[5:])
+            bucket.objects.all().delete()
 
         self.tape_input_reqs = {}
     
@@ -344,8 +356,12 @@ class ExecTaskManager(TaskManager):
         
         self.NOT.sadd(transaction, str(self.node_id), name_prefix)
         self.PT.set(transaction, name_prefix, str(self.node_id))
-        # this probably doesn't have to be done transactionally, but why not.
-
+        self.LT.set(transaction, name_prefix, lineage)
+    
+    def persisted_output_commit(self, transaction, actor_id, channel_id, out_seq, lineage):
+        name_prefix = pickle.dumps((actor_id, channel_id, out_seq))
+        
+        self.PT.set(transaction, name_prefix, 's3')
         self.LT.set(transaction, name_prefix, lineage)
     
     def state_commit(self, transaction, actor_id, channel_id, state_seq, lineage):
@@ -353,7 +369,7 @@ class ExecTaskManager(TaskManager):
         name_prefix = pickle.dumps(('s', actor_id, channel_id, state_seq))
         self.LT.set(transaction, name_prefix, lineage)
 
-    def process_output(self, actor_id, channel_id, output, transaction, state_seq, out_seq):
+    def process_output(self, actor_id, channel_id, output, transaction, state_seq, out_seq, persist = False):
         if output is not None:
             assert type(output) == polars.internals.DataFrame or type(output) == types.GeneratorType
             if type(output) == polars.internals.DataFrame:
@@ -361,7 +377,7 @@ class ExecTaskManager(TaskManager):
             
             for data in output:
                 if actor_id not in self.blocking_nodes:
-                    pushed = self.push(actor_id, channel_id, out_seq, data)
+                    pushed = self.push(actor_id, channel_id, out_seq, data, persist = persist)
                     if not pushed:
                         # you failed to push downstream, most likely due to node failure. wait a bit for coordinator recovery and continue, most like will be choked on barrier.
                         time.sleep(0.2)
@@ -371,13 +387,18 @@ class ExecTaskManager(TaskManager):
                     if transform_fn is not None:
                         data = transform_fn(data)
                     ray.get(dataset.added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = dataset)]))
-                self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
+                
+                if PERSIST:
+                    self.persisted_output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
+                else:
+                    self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
 
                 out_seq += 1
         return out_seq
 
     def execute(self):
 
+        self.s3fs = S3FileSystem()
         pyarrow.set_cpu_count(8)
         count = -1
         self.index = 0
@@ -421,7 +442,6 @@ class ExecTaskManager(TaskManager):
                 if (actor_id, channel_id) not in self.function_objects:
                     self.function_objects[actor_id, channel_id] = ray.cloudpickle.loads(self.FOT.get(self.r, actor_id))
                     if candidate_task.state_seq > 0:
-                        s3 = boto3.client("s3")
                         print("RESTORING TO ", candidate_task.state_seq -1 )
                         self.function_objects[actor_id, channel_id].restore(self.checkpoint_bucket, actor_id, channel_id, candidate_task.state_seq - 1)
 
@@ -518,7 +538,7 @@ class ExecTaskManager(TaskManager):
                     print_if_debug(new_input_reqs)
                     new_input_reqs = new_input_reqs.drop("progress")
 
-                    out_seq = self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq)
+                    out_seq = self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq, PERSIST)
                     if out_seq == -1:
                         continue
                         
@@ -527,7 +547,7 @@ class ExecTaskManager(TaskManager):
                 else:
                     output = self.function_objects[actor_id, channel_id].done(channel_id)
 
-                    out_seq = self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq)
+                    out_seq = self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq, PERSIST)
                     if out_seq == -1:
                         continue
                     last_output_seq = out_seq - 1
@@ -566,6 +586,7 @@ class ExecTaskManager(TaskManager):
                 actor_id = candidate_task.actor_id
                 channel_id = candidate_task.channel_id
                 state_seq = candidate_task.state_seq
+                input_persisted = candidate_task.input_persisted
 
                 if (actor_id, channel_id) not in self.function_objects:
                     self.function_objects[actor_id, channel_id] = ray.cloudpickle.loads(self.FOT.get(self.r, actor_id))
@@ -584,37 +605,50 @@ class ExecTaskManager(TaskManager):
                 input_requirements = self.LT.get(self.r, name_prefix)
                 assert input_requirements is not None, pickle.loads(name_prefix)
                 
-                request = ("cache", actor_id, channel_id, input_requirements, True)
-                reader = self.flight_client.do_get(pyarrow.flight.Ticket(pickle.dumps(request)))
+                if not input_persisted:
+                    request = ("cache", actor_id, channel_id, input_requirements, True)
+                    reader = self.flight_client.do_get(pyarrow.flight.Ticket(pickle.dumps(request)))
 
-                # we are going to assume the Flight server gives us results sorted by source_actor_id
-                batches = []
-                input_names = []
+                    # we are going to assume the Flight server gives us results sorted by source_actor_id
+                    batches = []
+                    input_names = []
 
-                while True:
-                    try:
-                        chunk, metadata = reader.read_chunk()
-                        name, format = pickle.loads(metadata)
-                        assert format == "polars"
-                        batches.append(chunk)
-                        input_names.append(name)
-                    except StopIteration:
-                        break
+                    while True:
+                        try:
+                            chunk, metadata = reader.read_chunk()
+                            name, format = pickle.loads(metadata)
+                            assert format == "polars"
+                            batches.append(chunk)
+                            input_names.append(name)
+                        except StopIteration:
+                            break
 
-                if len(batches) == 0:
-                    self.index += 1
-                    continue
+                    if len(batches) == 0:
+                        self.index += 1
+                        continue
 
-                source_actor_id, source_channel_seqs = pickle.loads(input_requirements)
-                source_channel_ids = list(source_channel_seqs.keys())
-                source_channel_progress = [len(source_channel_seqs[k]) for k in source_channel_ids]
-                progress = polars.from_dict({"source_actor_id": [source_actor_id] * len(source_channel_ids) , "source_channel_id": source_channel_ids, "progress": source_channel_progress})
+                    source_actor_id, source_channel_seqs = pickle.loads(input_requirements)
+                    source_channel_ids = list(source_channel_seqs.keys())
+                    source_channel_progress = [len(source_channel_seqs[k]) for k in source_channel_ids]
+                    progress = polars.from_dict({"source_actor_id": [source_actor_id] * len(source_channel_ids) , "source_channel_id": source_channel_ids, "progress": source_channel_progress})
 
-                new_input_reqs = self.tape_input_reqs[actor_id, channel_id].join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
-                new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
-                self.tape_input_reqs[actor_id, channel_id] = new_input_reqs.select(["source_actor_id", "source_channel_id","min_seq"])
+                    new_input_reqs = self.tape_input_reqs[actor_id, channel_id].join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
+                    new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
+                    self.tape_input_reqs[actor_id, channel_id] = new_input_reqs.select(["source_actor_id", "source_channel_id","min_seq"])
 
-                input = [record_batch_to_polars(batch) for batch in batches if len(batch) > 0]
+                    input = [record_batch_to_polars(batch) for batch in batches if len(batch) > 0]
+                
+                else:
+                    source_actor_id, source_channel_seqs = pickle.loads(input_requirements)
+                    source_channel_ids = list(source_channel_seqs.keys())
+                    input = []
+                    for source_channel_id in source_channel_ids:
+                        things_to_read = [ QUOKKA_SPOOL_PATH[5:] + "/hbq-" + str(source_actor_id) + "-" + str(source_channel_id) + "-" + str(seq) \
+                            + "-" + str(actor_id) + "-" + str(channel_id) + ".parquet" for seq in source_channel_seqs[source_channel_id]]
+                        for filename in things_to_read:
+                            input.append(polars.read_parquet(filename , use_pyarrow = True, pyarrow_options = {"filesystem" : self.s3fs}))
+                    
+                    input = [table for table in input if len(table) > 0]
                 
                 if len(input) > 0:
                     output, state_seq, out_seq = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
@@ -625,7 +659,7 @@ class ExecTaskManager(TaskManager):
                 
                 transaction = self.r.pipeline()
                     
-                out_seq = self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq)
+                out_seq = self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq, False)
                 if out_seq == -1:
                     continue
                     
@@ -634,7 +668,7 @@ class ExecTaskManager(TaskManager):
                     print("finished exectape, next input requirement is ", new_input_reqs)
 
                 else:
-                    next_task = TapedExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, candidate_task.last_state_seq)
+                    next_task = TapedExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, candidate_task.last_state_seq, candidate_task.input_persisted)
 
                 # this way of logging the lineage probably use less space than a Polars table actually.
 
@@ -644,11 +678,12 @@ class ExecTaskManager(TaskManager):
                 executed = transaction.execute()
                 #if not all(executed):
                 #    raise Exception(executed)
-            
-                message = pyarrow.py_buffer(pickle.dumps(input_names))
-                action = pyarrow.flight.Action("cache_garbage_collect", message)
-                result = next(self.flight_client.do_action(action))
-                assert result.body.to_pybytes().decode("utf-8") == "True"
+
+                if not input_persisted:
+                    message = pyarrow.py_buffer(pickle.dumps(input_names))
+                    action = pyarrow.flight.Action("cache_garbage_collect", message)
+                    result = next(self.flight_client.do_action(action))
+                    assert result.body.to_pybytes().decode("utf-8") == "True"
 
 
 @ray.remote
@@ -662,8 +697,16 @@ class IOTaskManager(TaskManager):
         
         self.NOT.sadd(transaction, str(self.node_id), name_prefix)
         self.PT.set(transaction, name_prefix, str(self.node_id))
-        # this probably doesn't have to be done transactionally, but why not.
-        # lineage can be None for taped tasks, since no need to put lineage anymore.
+        # this needs to be done transactionally. People cannot read things whose lineage have not been committed.
+        if lineage is not None:
+            self.LT.set(transaction, name_prefix, lineage)
+        self.GIT.sadd(transaction, pickle.dumps((actor_id, channel_id)), out_seq)
+    
+    def persisted_output_commit(self, transaction, actor_id, channel_id, out_seq, lineage):
+        name_prefix = pickle.dumps((actor_id, channel_id, out_seq))
+        
+        self.PT.set(transaction, name_prefix, 's3')
+        # this needs to be done transactionally. People cannot read things whose lineage have not been committed.
         if lineage is not None:
             self.LT.set(transaction, name_prefix, lineage)
         self.GIT.sadd(transaction, pickle.dumps((actor_id, channel_id)), out_seq)
@@ -673,7 +716,8 @@ class IOTaskManager(TaskManager):
         Let's start with having one functionObject object for each channel.
         This might need to duplicated data etc. future optimization.
         """
-    
+
+        self.s3fs = S3FileSystem()
         pyarrow.set_cpu_count(8)
         count = -1
         while True:
@@ -724,11 +768,14 @@ class IOTaskManager(TaskManager):
                     next_task, output, seq, lineage = candidate_task.execute(functionObject, input_object)
                 
 
-                pushed = self.push(actor_id, channel_id, seq, output)
+                pushed = self.push(actor_id, channel_id, seq, output, persist= PERSIST)
 
                 if pushed:
                     transaction = self.r.pipeline()
-                    self.output_commit(transaction, actor_id, channel_id, seq, lineage)
+                    if PERSIST:
+                        self.persisted_output_commit(transaction, actor_id, channel_id, seq, lineage)
+                    else:
+                        self.output_commit(transaction, actor_id, channel_id, seq, lineage)
                     self.task_commit(transaction, candidate_task, next_task)
                     if not all(transaction.execute()):
                         print("COMMITING TRANSACTION FAILED")
