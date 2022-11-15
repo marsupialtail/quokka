@@ -195,6 +195,7 @@ class Coordinator:
         new_input_requests = {}
         remembered_input_objects = {}
         replay_requests = []
+        rewind_requests_with_persisted_inputs = set()
 
         remembered_input_reqs = {}
 
@@ -321,12 +322,23 @@ class Coordinator:
 
                     print_if_debug(actor_id, channel_id, rewinded_state_seq, required_inputs)
 
+                    persisted = False
+
                     for source_actor_id, source_channel_id in required_inputs:
                         input_seqs = required_inputs[source_actor_id, source_channel_id]
+
+                        if len(input_seqs) == 0:
+                            continue
+
                         object_names = [pickle.dumps((source_actor_id, source_channel_id, seq)) for seq in input_seqs]
+
                         where = self.PT.mget(self.r, object_names)
 
                         if None in where:
+
+                            if persisted:
+                                raise Exception
+
                             # out of luck! currently just reconstruct everything.
                             if (source_actor_id, source_channel_id) in est:
                                 # this is an executor
@@ -346,8 +358,24 @@ class Coordinator:
 
                         else:
                             # you can replay all of them.
-                            for seq, loc in zip(input_seqs, where):
-                                replay_requests.append((source_actor_id, source_channel_id, loc, seq, actor_id, channel_id))
+                            if b's3' in where:
+
+                                if persisted is False:
+                                    persisted = True
+
+                                for k in where:
+                                    assert k == b's3', "cannot handle mixed spool/unreliable output buffering strategy"
+                                continue
+                            else:
+
+                                if persisted:
+                                    raise Exception
+
+                                for seq, loc in zip(input_seqs, where):
+                                    replay_requests.append((source_actor_id, source_channel_id, loc, seq, actor_id, channel_id))
+                    
+                    if persisted:
+                        rewind_requests_with_persisted_inputs.add((actor_id, channel_id))
         
 
         print(rewind_requests)
@@ -403,7 +431,10 @@ class Coordinator:
                 # you are recovering right into a checkpoint
                 self.NTT.lpush(self.r, unlucky_one, ExecutorTask(actor_id, channel_id, state_seq + 1, next_out_seq, remembered_input_reqs[actor_id, channel_id]).reduce())
             else:
-                self.NTT.lpush(self.r, unlucky_one, TapedExecutorTask(actor_id, channel_id, state_seq + 1, next_out_seq, last_known_seq).reduce())
+                if (actor_id, channel_id) in rewind_requests_with_persisted_inputs:
+                    self.NTT.lpush(self.r, unlucky_one, TapedExecutorTask(actor_id, channel_id, state_seq + 1, next_out_seq, last_known_seq, True).reduce())
+                else:
+                    self.NTT.lpush(self.r, unlucky_one, TapedExecutorTask(actor_id, channel_id, state_seq + 1, next_out_seq, last_known_seq, False).reduce())
 
             self.CLT.set(self.r, pickle.dumps((actor_id, channel_id)), self.node_ip_address[unlucky_one])
             self.EST.set(self.r, pickle.dumps((actor_id, channel_id)), state_seq )
