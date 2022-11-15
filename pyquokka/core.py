@@ -11,7 +11,7 @@ import time
 import boto3
 import types
 
-CHECKPOINT_INTERVAL = 100
+CHECKPOINT_INTERVAL = None
 HBQ_GC_INTERVAL = 2
 MAX_SEQ = 1000000000
 DEBUG = False
@@ -353,6 +353,29 @@ class ExecTaskManager(TaskManager):
         name_prefix = pickle.dumps(('s', actor_id, channel_id, state_seq))
         self.LT.set(transaction, name_prefix, lineage)
 
+    def process_output(self, actor_id, channel_id, output, transaction, state_seq, out_seq):
+        if output is not None:
+            assert type(output) == polars.internals.DataFrame or type(output) == types.GeneratorType
+            if type(output) == polars.internals.DataFrame:
+                output = [output]
+            
+            for data in output:
+                if actor_id not in self.blocking_nodes:
+                    pushed = self.push(actor_id, channel_id, out_seq, data)
+                    if not pushed:
+                        # you failed to push downstream, most likely due to node failure. wait a bit for coordinator recovery and continue, most like will be choked on barrier.
+                        time.sleep(0.2)
+                        return -1
+                else:
+                    transform_fn, dataset = self.blocking_nodes[actor_id]
+                    if transform_fn is not None:
+                        data = transform_fn(data)
+                    ray.get(dataset.added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = dataset)]))
+                self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
+
+                out_seq += 1
+        return out_seq
+
     def execute(self):
 
         pyarrow.set_cpu_count(8)
@@ -442,13 +465,12 @@ class ExecTaskManager(TaskManager):
 
                             # important bug fix: you must ignore objects whose names are not in LineageTable. This means they have not yet
                             # been committed upstream, which means their lineage could potentially change upon reconstruction!
+                            #  we need to guarantee that the resulting batches are still contiguous in terms of their sequence numbers
+                            # this is true because only the last batch for every source channel can still be uncommitted.
 
                             if self.LT.get(self.r, pickle.dumps((source_actor_id, source_channel_id, seq))) is None:
-
-                                # note we need to guarantee that the resulting batches are still contiguous in terms of their sequence numbers
-                                # this is true because only the last batch for every source channel can still be uncommitted.
-                                # this is very subtle and was difficult to debug, distributed bugs are fun.
-                                # print("SKIPPING UNCOMMITED STUFF ", source_actor_id, source_channel_id, seq)
+                                
+                                print_if_debug("SKIPPING UNCOMMITED STUFF ", source_actor_id, source_channel_id, seq)
                                 continue
 
                             input_names.append(name)
@@ -495,74 +517,26 @@ class ExecTaskManager(TaskManager):
                     
                     print_if_debug(new_input_reqs)
                     new_input_reqs = new_input_reqs.drop("progress")
-                    
 
-                    # note we don't have to push a None output. 
-                    failed = False
-                    if output is not None:
-                        assert type(output) == polars.internals.DataFrame or type(output) == types.GeneratorType
-                        if type(output) == polars.internals.DataFrame:
-                            output = [output]
-                        
-                        for data in output:
-                            if actor_id not in self.blocking_nodes:
-                                pushed = self.push(actor_id, channel_id, out_seq, data)
-                                if not pushed:
-                                    # you failed to push downstream, most likely due to node failure. wait a bit for coordinator recovery and continue, most like will be choked on barrier.
-                                    time.sleep(0.2)
-                                    failed = True
-                                    break
-                            else:
-                                transform_fn, dataset = self.blocking_nodes[actor_id]
-                                if transform_fn is not None:
-                                    data = transform_fn(data)
-                                ray.get(dataset.added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = dataset)]))
-                            self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
-
-                            out_seq += 1
-
-                        if failed:
-                            continue
+                    out_seq = self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq)
+                    if out_seq == -1:
+                        continue
                         
                     next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, new_input_reqs)
 
                 else:
-                    last_output_seq = out_seq - 1
                     output = self.function_objects[actor_id, channel_id].done(channel_id)
 
-                    if output is not None:
-                        assert type(output) == polars.internals.DataFrame or type(output) == types.GeneratorType
-                        if type(output) == polars.internals.DataFrame:
-                            output = [output]
-
-                        for data in output:
-                            if actor_id not in self.blocking_nodes:
-                                pushed = self.push(actor_id, channel_id, out_seq, data)
-                                if not pushed:
-                                # you failed to push downstream, most likely due to node failure. wait a bit for coordinator recovery and continue, most like will be choked on barrier.
-                                    time.sleep(0.2)
-                                    failed = True
-                                    break
-                            else:
-                                transform_fn, dataset = self.blocking_nodes[actor_id]
-                                if transform_fn is not None:
-                                    data = transform_fn(data)
-                                ray.get(dataset.added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = dataset)]))
-                            self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
-
-                            last_output_seq = out_seq
-                            out_seq += 1
-                        
-                        if failed:
-                            continue
+                    out_seq = self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq)
+                    if out_seq == -1:
+                        continue
+                    last_output_seq = out_seq - 1
                     
                     self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), last_output_seq)
-                
-                    
                             
                     next_task = None
 
-                if False: #state_seq % CHECKPOINT_INTERVAL == 0:
+                if CHECKPOINT_INTERVAL is not None and state_seq % CHECKPOINT_INTERVAL == 0:
                     self.function_objects[actor_id, channel_id].checkpoint(self.checkpoint_bucket, actor_id, channel_id, state_seq)
                     for source_channel_id in source_channel_ids:
                         for seq in source_channel_seqs[source_channel_id]:
@@ -648,47 +622,19 @@ class ExecTaskManager(TaskManager):
                     state_seq = candidate_task.state_seq
                     out_seq = candidate_task.out_seq
                     output = None
-
+                
+                transaction = self.r.pipeline()
+                    
+                out_seq = self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq)
+                if out_seq == -1:
+                    continue
+                    
                 if state_seq + 1 > candidate_task.last_state_seq:
-
-                    next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq if output is None else out_seq + 1, self.tape_input_reqs[actor_id, channel_id])
+                    next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, self.tape_input_reqs[actor_id, channel_id])
                     print("finished exectape, next input requirement is ", new_input_reqs)
 
                 else:
-                    next_task = TapedExecutorTask(actor_id, channel_id, state_seq + 1, out_seq if output is None else out_seq + 1, candidate_task.last_state_seq)
-                
-                transaction = self.r.pipeline()
-                last_output_seq = out_seq - 1
-
-                failed = False
-
-                # note we don't have to push a None output. 
-                if output is not None:
-                    assert type(output) == polars.internals.DataFrame or type(output) == types.GeneratorType
-                    if type(output) == polars.internals.DataFrame:
-                        output = [output]
-                    
-                    for data in output:
-                        if actor_id not in self.blocking_nodes:
-                            pushed = self.push(actor_id, channel_id, out_seq, data)
-                            if not pushed:
-                            # you failed to push downstream, most likely due to node failure. wait a bit for coordinator recovery and continue, most like will be choked on barrier.
-                                time.sleep(0.2)
-                                failed = True
-                                break
-                        else:
-                            transform_fn, dataset = self.blocking_nodes[actor_id]
-                            if transform_fn is not None:
-                                data = transform_fn(data)
-                            ray.get(dataset.added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = dataset)]))
-                        self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
-
-                        last_output_seq = out_seq
-                        out_seq += 1
-                
-                if failed:
-                    continue
-
+                    next_task = TapedExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, candidate_task.last_state_seq)
 
                 # this way of logging the lineage probably use less space than a Polars table actually.
 
