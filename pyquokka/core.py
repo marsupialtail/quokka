@@ -11,6 +11,7 @@ import time
 import boto3
 import types
 import pyarrow.parquet as pq
+from pyarrow.fs import S3FileSystem
 
 CHECKPOINT_INTERVAL = None
 HBQ_GC_INTERVAL = 2
@@ -277,7 +278,8 @@ class TaskManager:
                     filename = QUOKKA_SPOOL_PATH[5:] + "/hbq-" + str(source_actor_id) + "-" + str(source_channel_id) + "-" + str(seq) \
                         + "-" + str(target_actor_id) + "-" + str(target_channel_id) + ".parquet"
                     # print("S3 spooling to ", new_outputs[key])
-                    pq.write_table( pyarrow.Table.from_batches(batches), filename, compression= 'NONE', filesystem=self.s3fs )
+                    if len(batches[0]) > 0:
+                        pq.write_table( pyarrow.Table.from_batches(batches), filename, compression= 'NONE', filesystem=self.s3fs )
 
                 try:
                     # self.check_puttable(client)
