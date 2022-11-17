@@ -164,7 +164,7 @@ class QuokkaClusterManager:
         # important 2 things:
         # this instance needs to have all the things installed on it
         # this instance needs to have the right tcp permissions
-        res = ec2.run_instances(ImageId="ami-0ac46f512c1730e1a", InstanceType = instance_type, SecurityGroupIds = [self.security_group], KeyName=self.key_name ,MaxCount=num_instances, MinCount=num_instances)
+        res = ec2.run_instances(ImageId="ami-053b02db14020957b", InstanceType = instance_type, SecurityGroupIds = [self.security_group], KeyName=self.key_name ,MaxCount=num_instances, MinCount=num_instances)
         instance_ids = [res['Instances'][i]['InstanceId'] for i in range(num_instances)] 
         waiter.wait(InstanceIds=instance_ids)
         a = ec2.describe_instances(InstanceIds = instance_ids)
@@ -175,7 +175,7 @@ class QuokkaClusterManager:
         self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
         self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
 
-        requirements = ["pyquokka"] + requirements
+        # requirements = ["pyquokka"] + requirements
         for req in requirements:
             assert type(req) == str
             try:
@@ -184,12 +184,16 @@ class QuokkaClusterManager:
                 pass
 
         print("Trying to set up spill dir.")
-        self.launch_all("sudo mkdir /data", public_ips, "failed to make temp spill directory")
-        if "i3" in instance_type: # use a more sophisticated policy later
-            self.launch_all("sudo mkfs.ext4 -E nodiscard /dev/nvme0n1;", public_ips, "failed to format nvme ssd")
-            self.launch_all("sudo mount /dev/nvme0n1 /data;", public_ips, "failed to mount nvme ssd")
+        try:
+            self.launch_all("sudo mkdir /data", public_ips, "failed to make temp spill directory")
+            if "i3" in instance_type: # use a more sophisticated policy later
+                self.launch_all("sudo mkfs.ext4 -E nodiscard /dev/nvme0n1;", public_ips, "failed to format nvme ssd")
+                self.launch_all("sudo mount /dev/nvme0n1 /data;", public_ips, "failed to mount nvme ssd")
+        except:
+            pass
         
         self.launch_all("sudo chmod -R a+rw /data/", public_ips, "failed to give spill dir permissions")
+        
 
         # I can't think of a better way to do this. This is the way to launch the flight server on each worker:
         # first find the flight.py locally, copy it to each of the machines, and run all of them. 

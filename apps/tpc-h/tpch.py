@@ -1,7 +1,7 @@
 from pyquokka.df import * 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
-mode = "DISK"
+mode = "S3"
 format = "csv"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
@@ -16,22 +16,22 @@ if mode == "DISK":
     cluster = LocalCluster()
 elif mode == "S3":
     manager = QuokkaClusterManager()
-    cluster = manager.get_cluster_from_json("config.json")
+    cluster = manager.get_cluster_from_json("16.json")
 else:
     raise Exception
 
-qc = QuokkaContext(cluster, 4, 2)
+qc = QuokkaContext(cluster, 2, 1)
 
 if mode == "DISK":
     if format == "csv":
-        lineitem = qc.read_csv(disk_path + "lineitem.tbl", sep="|", has_header=True)
-        orders = qc.read_csv(disk_path + "orders.tbl", sep="|", has_header=True)
-        customer = qc.read_csv(disk_path + "customer.tbl",sep = "|", has_header=True)
-        part = qc.read_csv(disk_path + "part.tbl", sep = "|", has_header=True)
-        supplier = qc.read_csv(disk_path + "supplier.tbl", sep = "|", has_header=True)
-        partsupp = qc.read_csv(disk_path + "partsupp.tbl", sep = "|", has_header=True)
-        nation = qc.read_csv(disk_path + "nation.tbl", sep = "|", has_header=True)
-        region = qc.read_csv(disk_path + "region.tbl", sep = "|", has_header=True)
+        lineitem = qc.read_csv(disk_path + "lineitem.tbl", sep="|", has_header=True).drop(["null"])
+        orders = qc.read_csv(disk_path + "orders.tbl", sep="|", has_header=True).drop(["null"])
+        customer = qc.read_csv(disk_path + "customer.tbl",sep = "|", has_header=True).drop(["null"])
+        part = qc.read_csv(disk_path + "part.tbl", sep = "|", has_header=True).drop(["null"])
+        supplier = qc.read_csv(disk_path + "supplier.tbl", sep = "|", has_header=True).drop(["null"])
+        partsupp = qc.read_csv(disk_path + "partsupp.tbl", sep = "|", has_header=True).drop(["null"])
+        nation = qc.read_csv(disk_path + "nation.tbl", sep = "|", has_header=True).drop(["null"])
+        region = qc.read_csv(disk_path + "region.tbl", sep = "|", has_header=True).drop(["null"])
     elif format == "parquet":
         lineitem = qc.read_parquet(disk_path + "lineitem.parquet")
         orders = qc.read_parquet(disk_path + "orders.parquet")
@@ -45,14 +45,14 @@ if mode == "DISK":
         raise Exception
 elif mode == "S3":
     if format == "csv":
-        lineitem = qc.read_csv(s3_path_csv + "lineitem/lineitem.tbl.1", lineitem_scheme, sep="|")
-        orders = qc.read_csv(s3_path_csv + "orders/orders.tbl.1", order_scheme, sep="|")
-        customer = qc.read_csv(s3_path_csv + "customer/customer.tbl.1",customer_scheme, sep = "|")
-        part = qc.read_csv(s3_path_csv + "part/part.tbl.1", part_scheme, sep = "|")
-        supplier = qc.read_csv(s3_path_csv + "supplier/supplier.tbl.1", supplier_scheme, sep = "|")
-        partsupp = qc.read_csv(s3_path_csv + "partsupp/partsupp.tbl.1", partsupp_scheme, sep = "|")
-        nation = qc.read_csv(s3_path_csv + "nation/nation.tbl", nation_scheme, sep = "|")
-        region = qc.read_csv(s3_path_csv + "region/region.tbl", region_scheme, sep = "|")
+        lineitem = qc.read_csv(s3_path_csv + "lineitem/lineitem.tbl.1", lineitem_scheme, sep="|").drop(["null"])
+        orders = qc.read_csv(s3_path_csv + "orders/orders.tbl.1", order_scheme, sep="|").drop(["null"])
+        customer = qc.read_csv(s3_path_csv + "customer/customer.tbl.1",customer_scheme, sep = "|").drop(["null"])
+        part = qc.read_csv(s3_path_csv + "part/part.tbl.1", part_scheme, sep = "|").drop(["null"])
+        supplier = qc.read_csv(s3_path_csv + "supplier/supplier.tbl.1", supplier_scheme, sep = "|").drop(["null"])
+        partsupp = qc.read_csv(s3_path_csv + "partsupp/partsupp.tbl.1", partsupp_scheme, sep = "|").drop(["null"])
+        nation = qc.read_csv(s3_path_csv + "nation/nation.tbl", nation_scheme, sep = "|").drop(["null"])
+        region = qc.read_csv(s3_path_csv + "region/region.tbl", region_scheme, sep = "|").drop(["null"])
     elif format == "parquet":
         lineitem = qc.read_parquet(s3_path_parquet + "lineitem.parquet/*")
         #lineitem = qc.read_parquet("s3://yugan/tpc-h-out/*")
@@ -108,7 +108,7 @@ def do_2():
     european_nations = nation.join(europe, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
     d = supplier.join(european_nations, left_on="s_nationkey", right_on="n_nationkey")
     d = partsupp.join(d, left_on="ps_suppkey", right_on="s_suppkey")
-    f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"})
+    f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"}).collect()
     f = f.rename({"ps_supplycost_min":"min_cost","ps_partkey":"europe_key"})
 
     d = d.join(f, left_on="ps_supplycost", right_on="min_cost", suffix="_2")
@@ -221,7 +221,7 @@ def do_8():
     american_customers = customer.join(american_nations, left_on="c_nationkey", right_on="n_nationkey")
     american_orders = orders.join(american_customers, left_on = "o_custkey", right_on="c_custkey")
     d = lineitem.join(part, left_on="l_partkey", right_on="p_partkey")
-    d = d.join(american_orders, left_on = "l_orderkey", right_on = "o_custkey")
+    d = d.join(american_orders, left_on = "l_orderkey", right_on = "o_orderkey")
     d = d.join(supplier, left_on="l_suppkey", right_on="s_suppkey")
     d = d.join(nation, left_on="s_nationkey", right_on = "n_nationkey")
     d = d.filter("""
@@ -331,16 +331,15 @@ def sort():
 
 print(do_2())
 
-# print(do_1())
-# print(do_3())
+print(do_1())
+print(do_3())
 
-# print(do_4())
-# print(do_5())
-# print(do_6())
-# print(do_12())
-# print(do_7())
-
-# print(do_8())
-# print(do_9())
+print(do_4())
+print(do_5())
+print(do_6())
+print(do_7())
+print(do_8())
+print(do_9())
+print(do_12())
 
 #print(word_count())
