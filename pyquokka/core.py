@@ -16,6 +16,7 @@ HBQ_GC_INTERVAL = 2
 MAX_SEQ = 1000000000
 DEBUG = False
 PROFILE = False
+FT = False
 
 def print_if_debug(*x):
     if DEBUG:
@@ -238,7 +239,8 @@ class TaskManager:
                 outputs = partition_fn(output, source_channel_id)
                 print_if_profile("partitioner time", time.time() - start_part)
                 start_spill = time.time()
-                self.HBQ.put(source_actor_id, source_channel_id, seq, target_actor_id, outputs)
+                if FT:
+                    self.HBQ.put(source_actor_id, source_channel_id, seq, target_actor_id, outputs)
                 print_if_profile("disk spill time", time.time() - start_spill)
             # wrap all the outputs with their actual names and by default persist all outputs
 
@@ -332,26 +334,35 @@ class ExecTaskManager(TaskManager):
         self.EST = ExecutorStateTable()
         self.IRT = InputRequirementsTable()
 
-        self.checkpoint_bucket = checkpoint_bucket
-        s3 = boto3.resource('s3')
-        bucket = s3.Bucket(checkpoint_bucket)
-        bucket.objects.all().delete()
+        if checkpoint_bucket is not None:
+            self.checkpoint_bucket = checkpoint_bucket
+            s3 = boto3.resource('s3')
+            bucket = s3.Bucket(checkpoint_bucket)
+            bucket.objects.all().delete()
 
         self.tape_input_reqs = {}
     
     def output_commit(self, transaction, actor_id, channel_id, out_seq, lineage):
-        name_prefix = pickle.dumps((actor_id, channel_id, out_seq))
-        
-        self.NOT.sadd(transaction, str(self.node_id), name_prefix)
-        self.PT.set(transaction, name_prefix, str(self.node_id))
-        # this probably doesn't have to be done transactionally, but why not.
 
-        self.LT.set(transaction, name_prefix, lineage)
+        if FT:
+            name_prefix = pickle.dumps((actor_id, channel_id, out_seq))
+            
+            self.NOT.sadd(transaction, str(self.node_id), name_prefix)
+            self.PT.set(transaction, name_prefix, str(self.node_id))
+            # this probably doesn't have to be done transactionally, but why not.
+
+            self.LT.set(transaction, name_prefix, lineage)
+        else:
+            pass
     
     def state_commit(self, transaction, actor_id, channel_id, state_seq, lineage):
 
-        name_prefix = pickle.dumps(('s', actor_id, channel_id, state_seq))
-        self.LT.set(transaction, name_prefix, lineage)
+        if FT:
+
+            name_prefix = pickle.dumps(('s', actor_id, channel_id, state_seq))
+            self.LT.set(transaction, name_prefix, lineage)
+        else:
+            pass
 
     def process_output(self, actor_id, channel_id, output, transaction, state_seq, out_seq):
         if output is not None:
@@ -468,7 +479,7 @@ class ExecTaskManager(TaskManager):
                             #  we need to guarantee that the resulting batches are still contiguous in terms of their sequence numbers
                             # this is true because only the last batch for every source channel can still be uncommitted.
 
-                            if self.LT.get(self.r, pickle.dumps((source_actor_id, source_channel_id, seq))) is None:
+                            if FT and self.LT.get(self.r, pickle.dumps((source_actor_id, source_channel_id, seq))) is None:
                                 
                                 print_if_debug("SKIPPING UNCOMMITED STUFF ", source_actor_id, source_channel_id, seq)
                                 continue
@@ -658,15 +669,17 @@ class IOTaskManager(TaskManager):
         self.GIT = GeneratedInputTable()
     
     def output_commit(self, transaction, actor_id, channel_id, out_seq, lineage):
-        name_prefix = pickle.dumps((actor_id, channel_id, out_seq))
-        
-        self.NOT.sadd(transaction, str(self.node_id), name_prefix)
-        self.PT.set(transaction, name_prefix, str(self.node_id))
-        # this probably doesn't have to be done transactionally, but why not.
-        # lineage can be None for taped tasks, since no need to put lineage anymore.
-        if lineage is not None:
-            self.LT.set(transaction, name_prefix, lineage)
-        self.GIT.sadd(transaction, pickle.dumps((actor_id, channel_id)), out_seq)
+
+        if FT:
+            name_prefix = pickle.dumps((actor_id, channel_id, out_seq))
+            
+            self.NOT.sadd(transaction, str(self.node_id), name_prefix)
+            self.PT.set(transaction, name_prefix, str(self.node_id))
+            # this probably doesn't have to be done transactionally, but why not.
+            # lineage can be None for taped tasks, since no need to put lineage anymore.
+            if lineage is not None:
+                self.LT.set(transaction, name_prefix, lineage)
+            self.GIT.sadd(transaction, pickle.dumps((actor_id, channel_id)), out_seq)
 
     def execute(self):
         """

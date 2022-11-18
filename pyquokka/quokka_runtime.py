@@ -9,6 +9,7 @@ from pyquokka.placement_strategy import *
 from pyquokka.target_info import * 
 from pyquokka.core import *
 from pyquokka.tables import * 
+from pyquokka.utils import LocalCluster, EC2Cluster
 import pyquokka.sql_utils as sql_utils
 from functools import partial
 
@@ -56,8 +57,13 @@ class TaskGraph:
                 self.node_locs[count] = ip
                 count += 1
             for k in range(exec_per_node):
-                self.nodes[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()))
-                
+                if type(self.cluster) == LocalCluster:
+                    self.nodes[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()), None)
+                elif type(self.cluster) == EC2Cluster:
+                    self.nodes[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()), "quokka-checkpoint") 
+                else:
+                    raise Exception
+
                 if ip == self.cluster.leader_private_ip:
                     self.leader_compute_nodes.append(count)
                 
