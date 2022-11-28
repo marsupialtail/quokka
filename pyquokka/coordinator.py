@@ -9,7 +9,7 @@ import polars
 import time
 import pandas as pd
 
-DEBUG =  False
+DEBUG =  True
 def print_if_debug(*x):
     if DEBUG:
         print(*x)
@@ -32,6 +32,8 @@ class Coordinator:
         self.IRT = InputRequirementsTable()
 
         self.undone = set()
+
+        # input channel locations don't have to be tracked
         self.actor_channel_locations = {}
     
     def dump_redis_state(self, path):
@@ -101,9 +103,6 @@ class Coordinator:
                 ray.get(finished)
 
                 self.update_undone()
-
-                if DEBUG:
-                    print(self.undone)
                 
                 if len(self.undone) == 0:
                     for worker in self.node_handles:
@@ -198,6 +197,17 @@ class Coordinator:
 
         remembered_input_reqs = {}
 
+        d = self.NTT.to_dict(self.r)
+        for k in d:
+            for tup in [i for i in d[k] if i[0] == "exec"]:
+                task = ExecutorTask.from_tuple(tup[1])
+                remembered_input_reqs[task.actor_id, task.channel_id] = task.input_reqs
+        d = self.IRT.to_dict(self.r)
+        for actor, task_id, seq in d:
+            if (actor, task_id) in est and est[actor, task_id] == -1:
+                remembered_input_reqs[actor,task_id] = d[actor, task_id, seq]
+
+
         # you can safely delete all objects this node stores UNLESS there is a replay task asking for it. 
         # other objects are purely for fault recovery. Instead of remaking them here, why not just remake them 
         # when another failure asks for them. Do as little work as possible!
@@ -240,8 +250,6 @@ class Coordinator:
                 rewind_requests[task.actor_id, task.channel_id] = min(rewind_requests[task.actor_id, task.channel_id], find_lastest_valid_ckpt(task.actor_id, task.channel_id, task.state_seq))
             else:
                 rewind_requests[task.actor_id, task.channel_id] = find_lastest_valid_ckpt(task.actor_id, task.channel_id, task.state_seq)
-            
-            remembered_input_reqs[task.actor_id, task.channel_id] = task.input_reqs
         
         for task in exectape_tasks:
 
@@ -309,7 +317,6 @@ class Coordinator:
                         if (source_actor_id, source_channel_id) in est:
                             # WARNING: TODO horribly inefficient. but simplest
                             relevant_keys = [pickle.loads(k) for k in self.LT.keys(self.r)]
-                            print_if_debug(source_actor_id, source_channel_id, relevant_keys)
                             relevant_keys = [key for key in relevant_keys if key[0] == source_actor_id and key[1] == source_channel_id]
                             if len(relevant_keys) > 0:
                                 last_pushed_seq = max(relevant_keys)[2]
@@ -318,8 +325,6 @@ class Coordinator:
                         else:
                             git = self.GIT.smembers(self.r, pickle.dumps((source_actor_id, source_channel_id)))
                             required_inputs[source_actor_id, source_channel_id] = [int(i) for i in git if int(i) >= min_seq]
-
-                    print_if_debug(actor_id, channel_id, rewinded_state_seq, required_inputs)
 
                     for source_actor_id, source_channel_id in required_inputs:
                         input_seqs = required_inputs[source_actor_id, source_channel_id]
@@ -354,6 +359,7 @@ class Coordinator:
         print(new_input_requests)
         print(replay_requests)
         print(remembered_input_objects)
+        print(remembered_input_reqs)
 
         for actor_id, channel_id in rewind_requests:
 
@@ -386,6 +392,7 @@ class Coordinator:
                             if task.actor_id == actor_id and task.channel_id == channel_id:
 
                                 assert self.NTT.lrem(self.r, str(node_id),1 , task_str) == 1
+                                last_known_seq = task.last_state_seq
                                 break
             
 
@@ -405,6 +412,7 @@ class Coordinator:
             else:
                 self.NTT.lpush(self.r, unlucky_one, TapedExecutorTask(actor_id, channel_id, state_seq + 1, next_out_seq, last_known_seq).reduce())
 
+            self.actor_channel_locations[actor_id][channel_id] = unlucky_one
             self.CLT.set(self.r, pickle.dumps((actor_id, channel_id)), self.node_ip_address[unlucky_one])
             self.EST.set(self.r, pickle.dumps((actor_id, channel_id)), state_seq )
 

@@ -16,7 +16,7 @@ HBQ_GC_INTERVAL = 2
 MAX_SEQ = 1000000000
 DEBUG = False
 PROFILE = False
-FT = False
+FT = True
 
 def print_if_debug(*x):
     if DEBUG:
@@ -284,6 +284,8 @@ class TaskManager:
                     # failed to push to cache, probably because downstream node failed. update actor_flight_clients
                     print("downstream unavailable")
                     return False
+                
+                print_if_debug("finished pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
 
         print_if_profile("push time", time.time() - start_push)
         return True
@@ -759,6 +761,8 @@ class IOTaskManager(TaskManager):
             
             elif task_type == "replay":
 
+                print_if_debug("executing replay")
+
                 candidate_task = ReplayTask.from_tuple(tup)
                 
                 replayed = self.replay(candidate_task.actor_id, candidate_task.channel_id, candidate_task.replay_specification)
@@ -768,6 +772,7 @@ class IOTaskManager(TaskManager):
                     if not all(transaction.execute()):
                         raise Exception
                 else:
+                    print("replay failed!")
                     time.sleep(0.2)
 
                 continue                

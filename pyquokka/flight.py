@@ -229,6 +229,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                 #     batches.append((name, self.flights[name]))
                 
                 if len(batches) == 0:
+                    self.flights_lock.release()
                     return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches(batches))
 
             else:
