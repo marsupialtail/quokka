@@ -115,8 +115,8 @@ class QuokkaClusterManager:
         waiter = ec2.get_waiter('instance_running')
         waiter.wait(InstanceIds=instance_ids)
         a = ec2.describe_instances(InstanceIds = instance_ids)
-        public_ips = [a['Reservations'][0]['Instances'][i]['PublicIpAddress'] for i in range(num_instances)]
-        private_ips = [a['Reservations'][0]['Instances'][i]['PrivateIpAddress'] for i in range(num_instances)]
+        public_ips = [k['PublicIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
+        private_ips = [k['PrivateIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
 
         count = 0
         while True:
@@ -242,17 +242,21 @@ class QuokkaClusterManager:
         instance_ids = self.str_key_to_int(stuff["instance_ids"])
         instance_ids = [instance_ids[i] for i in range(len(instance_ids))]
         a = ec2.describe_instances(InstanceIds = instance_ids)
-        states = [a['Reservations'][0]['Instances'][i]['State']['Name'] for i in range(len(instance_ids))]
+        
+        states = [k['State']['Name'] for reservation in a['Reservations'] for k in reservation['Instances']] 
+
         if sum([i=="stopped" for i in states]) == len(states):
             ec2.start_instances(InstanceIds = instance_ids)
             self._initialize_instances(instance_ids)
             a = ec2.describe_instances(InstanceIds = instance_ids)
-            public_ips = [a['Reservations'][0]['Instances'][i]['PublicIpAddress'] for i in range(len(instance_ids))]
-            private_ips = [a['Reservations'][0]['Instances'][i]['PrivateIpAddress'] for i in range(len(instance_ids))]
+
+            public_ips = [k['PublicIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
+            private_ips = [k['PrivateIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
+
             return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count)
         if sum([i=="running" for i in states]) == len(states):
-            public_ips = [a['Reservations'][0]['Instances'][i]['PublicIpAddress'] for i in range(len(instance_ids))]
-            private_ips = [a['Reservations'][0]['Instances'][i]['PrivateIpAddress'] for i in range(len(instance_ids))]
+            public_ips = [k['PublicIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
+            private_ips = [k['PrivateIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
             return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count)
         else:
             print("Cluster in an inconsistent state. Either only some machines are running or some machines have been terminated.")

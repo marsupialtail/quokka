@@ -555,7 +555,7 @@ class DataStream:
             ordering=None)
 
     def stateful_transform(self, executor: Executor, new_schema: list, required_columns: set,
-                           partitioner=PassThroughPartitioner(), placement="cpu"):
+                           partitioner=PassThroughPartitioner(), placement_strategy = CustomChannelsStrategy(1)):
 
         """
 
@@ -601,10 +601,7 @@ class DataStream:
             operator=executor
         )
 
-        assert placement == "cpu" or placement == "gpu"
-        if placement == "gpu":
-            raise NotImplementedError(
-                "does not support GPU yet! Please email me zihengw@stanford.edu")
+        custom_node.set_placement_strategy(placement_strategy)
 
         return self.quokka_context.new_stream(
             sources={0: select_stream},

@@ -225,7 +225,6 @@ class TaskGraph:
             target_info.lowered = True
 
             func = partial(partition_fn, target_info.predicate, target_info.partitioner, target_info.batch_funcs, target_info.projection, self.get_total_channels_from_placement_strategy(placement_strategy, 'exec'))
-
             registered = ray.get([node.register_partition_function.remote(source, self.current_actor, self.get_total_channels_from_placement_strategy(placement_strategy, 'exec'), func) for node in (self.nodes.values())])
             assert all(registered)
 

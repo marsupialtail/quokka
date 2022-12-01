@@ -1,0 +1,16 @@
+drop table lineitem_csv;
+drop table orders_csv;
+drop table customer_csv ;
+drop table part_csv;
+drop table supplier_csv;
+drop table partsupp_csv;
+drop table nation_csv;
+drop table region_csv;
+drop view lineitem;
+drop view orders;
+drop view customer;
+drop view part;
+drop view supplier;
+drop view partsupp;
+drop view nation;
+drop view region;
