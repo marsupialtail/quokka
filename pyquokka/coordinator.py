@@ -58,16 +58,21 @@ class Coordinator:
     def register_actor_topo(self, topological_order):
         self.topological_order = topological_order
 
-    def register_nodes(self, io_nodes, compute_nodes):
+    def register_nodes(self, replay_nodes, io_nodes, compute_nodes):
 
         # this is going to be a dict of ip -> dict of node_id to actor_handle.
+        self.replay_nodes = set(replay_nodes.keys())
         self.io_nodes = set(io_nodes.keys())
         self.compute_nodes = set(compute_nodes.keys())
         
-        self.node_handles = {**io_nodes, **compute_nodes}
+        self.node_handles = {**replay_nodes, **io_nodes, **compute_nodes}
     
     def register_node_ips(self, node_ip_address):
         self.node_ip_address = node_ip_address
+        self.ip_replay_node = {}
+        for node in self.node_ip_address:
+            if node in self.replay_nodes:
+                self.ip_replay_node[self.node_ip_address[node]] = node
 
     def register_actor_location(self, actor_id, channel_to_node_id):
         self.actor_channel_locations[actor_id] = {}
@@ -102,8 +107,7 @@ class Coordinator:
                 execute_handles_list = unfinished
                 ray.get(finished)
 
-                self.update_undone()
-                
+                self.update_undone()                
                 if len(self.undone) == 0:
                     for worker in self.node_handles:
                         ray.kill(self.node_handles[worker])
@@ -359,7 +363,7 @@ class Coordinator:
         print(new_input_requests)
         print(replay_requests)
         print(remembered_input_objects)
-        print(remembered_input_reqs)
+        # print(remembered_input_reqs)
 
         for actor_id, channel_id in rewind_requests:
 
@@ -474,9 +478,14 @@ class Coordinator:
         replay_requests = pd.DataFrame(replay_requests, columns = ['source_actor_id','source_channel_id','location','seq', 'target_actor_id', 'target_channel_id'])
         for location, location_df in replay_requests.groupby('location'):
             assert int(location) in alive_nodes, (location, alive_nodes)
+
+            # find the replay node on that alive node
+            ip = self.node_ip_address[int(location)]
+            replay_node = self.ip_replay_node[ip]
+
             for tup, df in location_df.groupby(["source_actor_id", "source_channel_id"]):
                 source_actor_id, source_channel_id = tup
-                self.NTT.lpush(self.r, location, ReplayTask(source_actor_id, source_channel_id, polars.from_pandas(df[["seq", "target_actor_id", "target_channel_id"]])).reduce())
+                self.NTT.lpush(self.r, replay_node, ReplayTask(source_actor_id, source_channel_id, polars.from_pandas(df[["seq", "target_actor_id", "target_channel_id"]])).reduce())
         
         if DEBUG:
             self.dump_redis_state("post.pkl")

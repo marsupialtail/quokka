@@ -52,8 +52,16 @@ class HBQ:
     def get(self, source_actor_id, source_channel_id, seq, target_actor_id):
 
         results = {}
-        for key in self.store[source_actor_id, source_channel_id, seq, target_actor_id]:
-            results[key] = polars.read_parquet(self.store[source_actor_id, source_channel_id, seq, target_actor_id][key])
+
+        files = glob.glob(self.path + "hbq-" + str(source_actor_id) + "-" + str(source_channel_id) + "-" + str(seq) \
+                + "-" + str(target_actor_id) + "-*")
+        
+        for file in files:
+            channel = int(file.split(".")[0].split("-")[-1])
+            results[channel] = polars.read_parquet(file)
+
+        # for key in self.store[source_actor_id, source_channel_id, seq, target_actor_id]:
+        #     results[key] = polars.read_parquet(self.store[source_actor_id, source_channel_id, seq, target_actor_id][key])
 
         return results
 

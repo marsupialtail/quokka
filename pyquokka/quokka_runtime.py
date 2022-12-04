@@ -43,6 +43,7 @@ class TaskGraph:
         self.node_locs= {}
         self.io_nodes = set()
         self.compute_nodes = set()
+        self.replay_nodes = set()
         count = 0
 
         self.leader_compute_nodes = []
@@ -51,6 +52,11 @@ class TaskGraph:
         private_ips = list(self.cluster.private_ips.values())
         for ip in private_ips:
             
+            for k in range(1):
+                self.nodes[count] = ReplayTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()))
+                self.replay_nodes.add(count)
+                self.node_locs[count] = ip
+                count += 1
             for k in range(io_per_node):
                 self.nodes[count] = IOTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()))
                 self.io_nodes.add(count)
@@ -71,7 +77,7 @@ class TaskGraph:
                 self.node_locs[count] = ip
                 count += 1        
 
-        ray.get(self.coordinator.register_nodes.remote(io_nodes = {k: self.nodes[k] for k in self.io_nodes}, compute_nodes = {k: self.nodes[k] for k in self.compute_nodes}))
+        ray.get(self.coordinator.register_nodes.remote(replay_nodes = {k: self.nodes[k] for k in self.replay_nodes}, io_nodes = {k: self.nodes[k] for k in self.io_nodes}, compute_nodes = {k: self.nodes[k] for k in self.compute_nodes}))
         ray.get(self.coordinator.register_node_ips.remote( self.node_locs ))
 
         self.FOT = FunctionObjectTable()

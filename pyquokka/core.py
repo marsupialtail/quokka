@@ -191,26 +191,6 @@ class TaskManager:
         if result.body.to_pybytes().decode("utf-8") != "True":
             print(result.body.to_pybytes().decode("utf-8"))
             raise Exception
-    
-    def replay(self, source_actor_id, source_channel_id, plan):
-
-        # plan is going to be a polars dataframe with three columns: seq, target_actor, target_channel
-
-        seqs = plan['seq'].unique().to_list()
-        
-        for seq in seqs:
-
-            targets = plan.filter(polars.col('seq') == seq).select(["target_actor_id", "target_channel_id"])
-            target_mask_list = targets.groupby('target_actor_id').agg_list().to_dicts()
-            target_mask = {k['target_actor_id'] : k['target_channel_id'] for k in target_mask_list}
-
-            # figure out a pythonic way to convert a dataframe to a dict of lists
-
-            pushed = self.push(source_actor_id, source_channel_id, seq, None, target_mask, True)
-            if not pushed:
-                return False
-        
-        return True
 
     def push(self, source_actor_id: int, source_channel_id: int, seq: int, output: polars.internals.DataFrame, target_mask = None, from_local = False):
         
@@ -402,28 +382,15 @@ class ExecTaskManager(TaskManager):
             length = self.NTT.llen(self.r, str(self.node_id))
             if length == 0:
                 continue
+
             if self.index > length - 1:
                 self.index = self.index % length
             candidate_task = self.NTT.lindex(self.r, str(self.node_id), self.index)
-
             task_type, tup = pickle.loads(candidate_task)
-            if task_type == "input" or task_type == "inputtape":
-                raise Exception("assigned input task to IO node")
-            
-            elif task_type == "replay":
 
-                candidate_task = ReplayTask.from_tuple(tup)
-                
-                replayed = self.replay(candidate_task.actor_id, candidate_task.channel_id, candidate_task.replay_specification)
-                if replayed:
-                    transaction = self.r.pipeline()
-                    self.NTT.lrem(transaction, str(self.node_id),1, candidate_task.reduce())
-                    if not all(transaction.execute()):
-                        raise Exception
-                else:
-                    time.sleep(0.2)
-
-                continue  
+        
+            if task_type == "input" or task_type == "inputtape" or task_type == "replay":
+                raise Exception("unsupported task type", task_type)
 
             elif task_type == "exec":
                 candidate_task = ExecutorTask.from_tuple(tup)
@@ -544,7 +511,7 @@ class ExecTaskManager(TaskManager):
                     if out_seq == -1:
                         continue
                     last_output_seq = out_seq - 1
-                    
+                    # print("DONE", actor_id, channel_id)
                     self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), last_output_seq)
                             
                     next_task = None
@@ -698,81 +665,121 @@ class IOTaskManager(TaskManager):
             length = self.NTT.llen(self.r, str(self.node_id))
             if length == 0:
                 continue 
-            candidate_task = self.NTT.lindex(self.r, str(self.node_id), random.choice(range(length)))         
 
-            task_type, tup = pickle.loads(candidate_task)
+            candidate_tasks = self.NTT.lrange(self.r, str(self.node_id), 0, -1)
+            for candidate_task in candidate_tasks:
+                task_type, tup = pickle.loads(candidate_task)
+                # prioritize recovery tasks
+                if task_type == "inputtape":
+                    break
 
-            if task_type == "input" or task_type == "inputtape":
-
-                if task_type == "input":
-                    
-                    candidate_task = InputTask.from_tuple(tup)
-                    actor_id = candidate_task.actor_id
-                    channel_id = candidate_task.channel_id
-
-                    if (actor_id, channel_id) not in self.function_objects:
-                        self.function_objects[actor_id, channel_id] = ray.cloudpickle.loads(self.FOT.get(self.r, actor_id))
-
-                    functionObject = self.function_objects[actor_id, channel_id]
-                    
-                    start = time.time()
-
-                    next_task, output, seq, lineage = candidate_task.execute(functionObject)
-
-                    print_if_profile("read time", time.time() - start)
-
-                    if next_task is None:
-                        self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), seq)
+            if task_type == "input":
                 
-                elif task_type == "inputtape":
-                    candidate_task = TapedInputTask.from_tuple(tup)
-                    actor_id = candidate_task.actor_id
-                    channel_id = candidate_task.channel_id
+                candidate_task = InputTask.from_tuple(tup)
+                actor_id = candidate_task.actor_id
+                channel_id = candidate_task.channel_id
 
-                    if (actor_id, channel_id) not in self.function_objects:
-                        self.function_objects[actor_id, channel_id] = ray.cloudpickle.loads(self.FOT.get(self.r, actor_id))
+                if (actor_id, channel_id) not in self.function_objects:
+                    self.function_objects[actor_id, channel_id] = ray.cloudpickle.loads(self.FOT.get(self.r, actor_id))
 
-                    functionObject = self.function_objects[actor_id, channel_id]
-                    seq = candidate_task.tape[0]
-                    input_object = pickle.loads(self.LT.get(self.r, pickle.dumps((actor_id, channel_id, seq))))
-
-                    next_task, output, seq, lineage = candidate_task.execute(functionObject, input_object)
+                functionObject = self.function_objects[actor_id, channel_id]
                 
+                start = time.time()
 
-                pushed = self.push(actor_id, channel_id, seq, output)
+                next_task, output, seq, lineage = candidate_task.execute(functionObject)
 
-                if pushed:
-                    transaction = self.r.pipeline()
-                    self.output_commit(transaction, actor_id, channel_id, seq, lineage)
-                    self.task_commit(transaction, candidate_task, next_task)
-                    if not all(transaction.execute()):
-                        print("COMMITING TRANSACTION FAILED")
-                        raise Exception
-                
-                # downstream failure detected, will start recovery soon, DO NOT COMMIT!
-                else:
-                    print("push failed!")
-                    # sleep for 0.2 seconds, since recovery happens every 0.1 seconds
-                    time.sleep(0.2)
-                    continue
+                print_if_profile("read time", time.time() - start)
 
-            elif task_type == "exec" or task_type == "exectape":
-                raise Exception("assigned exec task to IO node")
+                if next_task is None:
+                    # print("DONE", actor_id, channel_id)
+                    self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), seq)
             
-            elif task_type == "replay":
+            elif task_type == "inputtape":
+                candidate_task = TapedInputTask.from_tuple(tup)
+                actor_id = candidate_task.actor_id
+                channel_id = candidate_task.channel_id
 
-                print_if_debug("executing replay")
+                if (actor_id, channel_id) not in self.function_objects:
+                    self.function_objects[actor_id, channel_id] = ray.cloudpickle.loads(self.FOT.get(self.r, actor_id))
 
-                candidate_task = ReplayTask.from_tuple(tup)
-                
-                replayed = self.replay(candidate_task.actor_id, candidate_task.channel_id, candidate_task.replay_specification)
-                if replayed:
-                    transaction = self.r.pipeline()
-                    self.NTT.lrem(transaction, str(self.node_id), 1, candidate_task.reduce())
-                    if not all(transaction.execute()):
-                        raise Exception
-                else:
-                    print("replay failed!")
-                    time.sleep(0.2)
+                functionObject = self.function_objects[actor_id, channel_id]
+                seq = candidate_task.tape[0]
+                input_object = pickle.loads(self.LT.get(self.r, pickle.dumps((actor_id, channel_id, seq))))
 
-                continue                
+                next_task, output, seq, lineage = candidate_task.execute(functionObject, input_object)
+            
+            else:
+                raise Exception("unsupported task type", task_type)       
+
+            pushed = self.push(actor_id, channel_id, seq, output)
+
+            if pushed:
+                transaction = self.r.pipeline()
+                self.output_commit(transaction, actor_id, channel_id, seq, lineage)
+                self.task_commit(transaction, candidate_task, next_task)
+                if not all(transaction.execute()):
+                    print("COMMITING TRANSACTION FAILED")
+                    raise Exception
+            
+            # downstream failure detected, will start recovery soon, DO NOT COMMIT!
+            else:
+                print("push failed!")
+                # sleep for 0.2 seconds, since recovery happens every 0.1 seconds
+                time.sleep(0.2)
+                continue
+
+@ray.remote
+class ReplayTaskManager(TaskManager):
+    def __init__(self, node_id: int, coordinator_ip: str, worker_ips: list) -> None:
+        super().__init__(node_id, coordinator_ip, worker_ips)
+    
+    def replay(self, source_actor_id, source_channel_id, plan):
+
+        # plan is going to be a polars dataframe with three columns: seq, target_actor, target_channel
+
+        seqs = plan['seq'].unique().to_list()
+        
+        for seq in seqs:
+
+            targets = plan.filter(polars.col('seq') == seq).select(["target_actor_id", "target_channel_id"])
+            target_mask_list = targets.groupby('target_actor_id').agg_list().to_dicts()
+            target_mask = {k['target_actor_id'] : k['target_channel_id'] for k in target_mask_list}
+
+            # figure out a pythonic way to convert a dataframe to a dict of lists
+
+            pushed = self.push(source_actor_id, source_channel_id, seq, None, target_mask, True)
+            if not pushed:
+                return False
+        
+        return True
+
+    def execute(self):
+        """
+        Let's start with having one functionObject object for each channel.
+        This might need to duplicated data etc. future optimization.
+        """
+    
+        pyarrow.set_cpu_count(8)
+        count = -1
+        while True:
+            self.check_in_recovery()
+
+            count += 1
+            length = self.NTT.llen(self.r, str(self.node_id))
+            if length == 0:
+                continue 
+
+            candidate_task = self.NTT.lindex(self.r, str(self.node_id), 0)
+            task_type, tup = pickle.loads(candidate_task)
+            assert task_type == "replay"
+            
+            print_if_debug("executing replay")
+
+            candidate_task = ReplayTask.from_tuple(tup)
+            
+            replayed = self.replay(candidate_task.actor_id, candidate_task.channel_id, candidate_task.replay_specification)
+            if replayed:
+                self.NTT.lrem(self.r, str(self.node_id), 1, candidate_task.reduce())
+            else:
+                print("replay failed!")
+                time.sleep(0.2)
