@@ -383,11 +383,19 @@ class ExecTaskManager(TaskManager):
             if length == 0:
                 continue
 
-            if self.index > length - 1:
-                self.index = self.index % length
-            candidate_task = self.NTT.lindex(self.r, str(self.node_id), self.index)
-            task_type, tup = pickle.loads(candidate_task)
-
+            candidate_tasks = self.NTT.lrange(self.r, str(self.node_id), 0, -1)
+            exec_tape_task = False
+            for candidate_task in candidate_tasks:
+                task_type, tup = pickle.loads(candidate_task)
+                # prioritize recovery tasks
+                if task_type == "exectape":
+                    exec_tape_task = True
+                    break
+            if not exec_tape_task:
+                if self.index > length - 1:
+                    self.index = self.index % length
+                candidate_task = candidate_tasks[self.index]
+                task_type, tup = pickle.loads(candidate_task)
         
             if task_type == "input" or task_type == "inputtape" or task_type == "replay":
                 raise Exception("unsupported task type", task_type)
@@ -667,11 +675,16 @@ class IOTaskManager(TaskManager):
                 continue 
 
             candidate_tasks = self.NTT.lrange(self.r, str(self.node_id), 0, -1)
+            input_tape_task = False
             for candidate_task in candidate_tasks:
                 task_type, tup = pickle.loads(candidate_task)
                 # prioritize recovery tasks
                 if task_type == "inputtape":
+                    input_tape_task = True
                     break
+            if not input_tape_task:
+                candidate_task = random.sample(candidate_tasks,1 )[0]
+                task_type, tup = pickle.loads(candidate_task)
 
             if task_type == "input":
                 

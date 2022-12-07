@@ -2,7 +2,7 @@ from pyquokka.df import *
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
 mode = "S3"
-format = "parquet"
+format = "csv"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
 s3_path_csv = "s3://tpc-h-csv/"
@@ -362,18 +362,18 @@ def sort():
 # print(csv_to_csv_disk())
 # print(csv_to_parquet_s3())
 
-print(do_2())
+# print(do_2())
 
 print(do_1())
-print(do_3())
+# print(do_3())
 
-print(do_4())
-print(do_5())
-print(do_6())
-print(do_7())
-print(do_8())
-print(do_9())
-print(do_12())
+# print(do_4())
+# print(do_5())
+# print(do_6())
+# print(do_7())
+# print(do_8())
+# print(do_9())
+# print(do_12())
 
 #print(word_count())
 # print(covariance())

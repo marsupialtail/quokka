@@ -20,6 +20,30 @@ df_region.createOrReplaceTempView("region")
 df_nation.createOrReplaceTempView("nation")
 df_supplier.createOrReplaceTempView("supplier")
 
+cubequery = """
+select
+        l_returnflag,
+        l_linestatus,
+        l_shipmode,
+        sum(l_quantity) as sum_qty,
+        sum(l_extendedprice) as sum_base_price,
+        sum(l_extendedprice * (1 - l_discount)) as sum_disc_price,
+        sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge,
+        avg(l_quantity) as avg_qty,
+        avg(l_extendedprice) as avg_price,
+        avg(l_discount) as avg_disc,
+        count(*) as count_order
+from
+        lineitem
+where
+        l_shipdate <= date '1998-12-01' - interval '90' day
+group by cube(
+        l_returnflag,
+        l_linestatus,
+        l_shipmode)
+
+"""
+
 query1 = """
 select
         l_returnflag,
@@ -337,6 +361,6 @@ order by
 import time, sys
 
 queries = [None, query1, query2,query3,query4,query5,query6,query7,query8,query9,query12]
-start = time.time(); result = spark.sql(query9).collect(); print("QUERY TOOK", time.time() - start)
+start = time.time(); result = spark.sql(cubequery).collect(); print("QUERY TOOK", time.time() - start)
 
 start = time.time(); result = spark.sql(queries[int(sys.argv[1])]).collect(); print("QUERY TOOK", time.time() - start)
