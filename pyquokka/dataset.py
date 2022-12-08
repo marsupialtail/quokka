@@ -95,8 +95,8 @@ class InputEC2ParquetDataset:
         for future in concurrent.futures.as_completed(future_to_url):
             dfs.append(future.result())
         
-        return None, polars.concat(dfs)
         
+        return None, polars.concat(dfs)
 
 class InputParquetDataset:
 
