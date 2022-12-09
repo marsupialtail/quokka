@@ -597,7 +597,9 @@ class InputS3CSVDataset:
 
         total_size = sum(sizes)
         assert total_size > 0
-        size_per_partition = int(self.stride * self.workers)
+        size_per_partition = min(int(self.stride * self.workers), math.ceil(total_size / num_channels))
+        # size_per_partition = int(self.stride * workers)
+        print(size_per_partition)
 
         partitions = {}
         curr_partition_num = 0

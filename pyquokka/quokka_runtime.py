@@ -111,7 +111,7 @@ class TaskGraph:
         assert type(placement_strategy) == CustomChannelsStrategy
         
         channel_info = reader.get_own_state(self.get_total_channels_from_placement_strategy(placement_strategy, 'input'))
-                
+        print(channel_info)
         self.FOT.set(self.r, self.current_actor, ray.cloudpickle.dumps(reader))
 
         count = 0
