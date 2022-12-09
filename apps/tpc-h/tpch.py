@@ -22,7 +22,7 @@ elif mode == "S3":
 else:
     raise Exception
 
-qc = QuokkaContext(cluster,4, 2)
+qc = QuokkaContext(cluster,4,2)
 
 if mode == "DISK":
     if format == "csv":
@@ -364,7 +364,7 @@ def sort():
 
 # print(do_2())
 
-print(do_1())
+# print(do_1())
 # print(do_3())
 
 # print(do_4())
@@ -372,7 +372,7 @@ print(do_1())
 # print(do_6())
 # print(do_7())
 # print(do_8())
-# print(do_9())
+print(do_9())
 # print(do_12())
 
 #print(word_count())

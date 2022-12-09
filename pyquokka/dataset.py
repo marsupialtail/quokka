@@ -20,6 +20,7 @@ import time
 import warnings
 import random
 import ray
+import math
 
 class InputEC2ParquetDataset:
 
@@ -527,6 +528,7 @@ class FakeFile:
         raise NotImplementedError
 
 # this should work for 1 CSV up to multiple
+# this should work for 1 CSV up to multiple
 class InputS3CSVDataset:
     def __init__(self, bucket, names = None, prefix = None, key = None, sep=",", stride=2e8, header = False, window = 1024 * 32, columns = None) -> None:
         self.bucket = bucket
@@ -552,14 +554,14 @@ class InputS3CSVDataset:
     def get_own_state(self, num_channels):
         
         samples = []
-        print("intiializing CSV reading strategy. This is currently done locally, which might take a while.")
+        print("intializing CSV reading strategy. This is currently done locally, which might take a while.")
         self.num_channels = num_channels
 
         s3 = boto3.client('s3')  # needs boto3 client, however it is transient and is not part of own state, so Ray can send this thing! 
         if self.key is not None:
-            files = deque([self.key])
+            files = [self.key]
             response = s3.head_object(Bucket=self.bucket, Key=self.key)
-            sizes = deque([response['ContentLength']])
+            sizes = [response['ContentLength']]
         else:
             if self.prefix is not None:
                 z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
@@ -575,8 +577,8 @@ class InputS3CSVDataset:
                     z = s3.list_objects_v2(
                         Bucket=self.bucket, ContinuationToken=z['NextContinuationToken'])
                     files.extend(z['Contents'])
-            sizes = deque([i['Size'] for i in files])
-            files = deque([i['Key'] for i in files])
+            sizes = [i['Size'] for i in files]
+            files = [i['Key'] for i in files]
 
         if self.header:
             resp = s3.get_object(
@@ -594,63 +596,41 @@ class InputS3CSVDataset:
                     print("Supplied", self.names)
 
         total_size = sum(sizes)
-        size_per_channel = total_size // num_channels
-        channel_infos = {}
+        assert total_size > 0
+        size_per_partition = int(self.stride * self.workers)
 
-        start_byte = 0 if not self.header else first_newline + 1
-        real_off = 0
+        partitions = {}
+        curr_partition_num = 0
 
-        for channel in range(num_channels):
-            my_file = []
-            curr_size = 0
-            done = False
-            while curr_size + sizes[0] <= size_per_channel:
-                my_file.append(files.popleft())
-                end_byte = sizes.popleft()
-                if len(sizes) == 0:
-                    done = True
-                    break # we are taking off a bit more work each time so the last channel might leave before filling up size per channel
-                curr_size += end_byte
-                real_off = 0
+        for curr_file, curr_size in zip(files, sizes):
+            num_partitions = math.ceil(curr_size / size_per_partition)
+            for i in range(num_partitions):
+                partitions[curr_partition_num + i] = (curr_file, i * size_per_partition)
+            curr_partition_num += num_partitions
         
-            if done:
-                channel_infos[channel] = (start_byte, my_file.copy(), real_off + end_byte)
-                break
-
-            #curr_size + size[0] > size_per_channel, the leftmost file has enough bytes to satisfy the channel
-            # this never gonna happen in real life
-            if curr_size == size_per_channel:
-                channel_infos[channel] = (start_byte, my_file.copy(), real_off + end_byte)
-                continue
-
-            my_file.append(files[0])
-            candidate = size_per_channel - curr_size
-
-            start = max(0, candidate - self.window)
-            end = min(candidate + self.window, sizes[0])
-
-            resp = s3.get_object(
-                Bucket=self.bucket, Key=files[0], Range='bytes={}-{}'.format(real_off + start,real_off + end))['Body'].read()
-            first_newline = resp.find(bytes('\n', 'utf-8'))
-            last_newline = resp.rfind(bytes('\n', 'utf-8'))
-            if last_newline == -1:
-                raise Exception
+        # refinement
+        for partition in partitions:
+            curr_file, start_byte = partitions[partition]
+            if start_byte == 0:
+                partitions[partition] = (curr_file, start_byte, b'')
             else:
-                bytes_to_take = start + last_newline
-                samples.append(csv.read_csv(BytesIO(resp[first_newline: last_newline]), read_options=csv.ReadOptions(
-                    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)))
-
-            sizes[0] -= bytes_to_take
-            end_byte = real_off + bytes_to_take
-            real_off += bytes_to_take
-            channel_infos[channel] = (start_byte, my_file.copy(), end_byte + 1)
-            start_byte = real_off
+                resp = s3.get_object(
+                    Bucket=self.bucket, Key=files[0], Range='bytes={}-{}'.format(start_byte - self.window, start_byte - 1))['Body'].read()
+                last_newline = resp.rfind(b'\n')
+                prefix = resp[last_newline + 1:]
+                partitions[partition] = (curr_file, start_byte, prefix)
         
-        self.length = total_size
-        #self.sample = pa.concat_tables(samples)
-        self.channel_infos = channel_infos
-        print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
+        #assign partitions
+        print(curr_partition_num)
+        partitions_per_channel = math.ceil(curr_partition_num / num_channels) 
+        channel_info = {}
+        for channel in range(num_channels):
+            channel_info[channel] = [partitions[channel * partitions_per_channel + i] for i in range(partitions_per_channel)\
+                if (channel * partitions_per_channel + i) in partitions]
 
+        self.file_sizes = {files[i] : sizes[i] for i in range(len(files))}
+        print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
+        return channel_info
 
     def execute(self, mapper_id, state = None):
 
@@ -658,29 +638,14 @@ class InputS3CSVDataset:
             self.s3 = boto3.client("s3")
             self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
 
-        assert self.num_channels is not None
-        files = self.channel_infos[mapper_id][1]
+        assert self.file_sizes is not None
         
         if state is None:
-            curr_pos = 0
-            pos = self.channel_infos[mapper_id][0]
-            prefix = b''
+            raise Exception("Input lineage is now static.")
         else:
-            curr_pos, pos, prefix = state
-        
-        
-        assert curr_pos < len(files)
-            
-        file = files[curr_pos]
-        if curr_pos != len(files) - 1:
-            response = self.s3.head_object(
-                Bucket=self.bucket,
-                Key= file
-            )
-            length = response['ContentLength']
-            end = length
-        else:
-            end = self.channel_infos[mapper_id][2]
+            file, pos, prefix = state
+                    
+        end = self.file_sizes[file]
         
         def download(x):
             
@@ -691,15 +656,12 @@ class InputS3CSVDataset:
             return self.s3.get_object(Bucket=self.bucket, Key= file, Range='bytes={}-{}'.format(start_byte, end_byte))['Body'].read()
 
         future_to_url = {self.executor.submit(download, x): x for x in range(self.workers)}
-        #start = time.time()
         results = {}
         for future in concurrent.futures.as_completed(future_to_url):
             url = future_to_url[future] 
             data = future.result()
             results[url] = data
-        #print("download", time.time() - start)
 
-        #start = time.time()
         last_file = self.workers - 1
 
         for z in range(self.workers):
@@ -714,19 +676,8 @@ class InputS3CSVDataset:
 
         fake_file = FakeFile(results, last_newline, prefix, last_file)
         bump = csv.read_csv(fake_file, read_options=csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-        prefix = fake_file.get_end()
         del fake_file
 
         bump = bump.select(self.columns) if self.columns is not None else bump
 
-        if pos + self.workers * self.stride >= end:
-            prefix = b''
-            pos = 0
-            curr_pos += 1
-        else:
-            pos += self.workers * self.stride
-
-        if curr_pos < len(files):
-            return (curr_pos, pos, prefix), polars.from_arrow(bump)
-        else:
-            return None, polars.from_arrow(bump)
+        return None, polars.from_arrow(bump)

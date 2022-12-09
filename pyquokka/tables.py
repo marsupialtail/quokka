@@ -41,6 +41,10 @@ class ClientWrapper:
         keys = [self.wrap_key(key) for key in keys]
         return redis_client.mget(keys)
     
+    def mset(self, redis_client, vals):
+        vals = {self.wrap_key(key): vals[key] for key in vals}
+        return redis_client.mset(vals)
+    
     def delete(self, redis_client, key):
         key = self.wrap_key(key)
         return redis_client.delete(key)

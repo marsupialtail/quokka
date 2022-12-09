@@ -15,7 +15,7 @@ CHECKPOINT_INTERVAL = None
 HBQ_GC_INTERVAL = 2
 MAX_SEQ = 1000000000
 DEBUG = False
-PROFILE = False
+PROFILE = True
 FT = True
 
 def print_if_debug(*x):
@@ -384,18 +384,18 @@ class ExecTaskManager(TaskManager):
                 continue
 
             candidate_tasks = self.NTT.lrange(self.r, str(self.node_id), 0, -1)
-            exec_tape_task = False
-            for candidate_task in candidate_tasks:
-                task_type, tup = pickle.loads(candidate_task)
-                # prioritize recovery tasks
-                if task_type == "exectape":
-                    exec_tape_task = True
-                    break
-            if not exec_tape_task:
-                if self.index > length - 1:
-                    self.index = self.index % length
-                candidate_task = candidate_tasks[self.index]
-                task_type, tup = pickle.loads(candidate_task)
+            # exec_tape_task = False
+            # for candidate_task in candidate_tasks:
+            #     task_type, tup = pickle.loads(candidate_task)
+            #     # prioritize recovery tasks
+            #     if task_type == "exectape":
+            #         exec_tape_task = True
+            #         break
+            # if not exec_tape_task:
+            if self.index > length - 1:
+                self.index = self.index % length
+            candidate_task = candidate_tasks[self.index]
+            task_type, tup = pickle.loads(candidate_task)
         
             if task_type == "input" or task_type == "inputtape" or task_type == "replay":
                 raise Exception("unsupported task type", task_type)
@@ -675,16 +675,8 @@ class IOTaskManager(TaskManager):
                 continue 
 
             candidate_tasks = self.NTT.lrange(self.r, str(self.node_id), 0, -1)
-            input_tape_task = False
-            for candidate_task in candidate_tasks:
-                task_type, tup = pickle.loads(candidate_task)
-                # prioritize recovery tasks
-                if task_type == "inputtape":
-                    input_tape_task = True
-                    break
-            if not input_tape_task:
-                candidate_task = random.sample(candidate_tasks,1 )[0]
-                task_type, tup = pickle.loads(candidate_task)
+            candidate_task = random.sample(candidate_tasks,1 )[0]
+            task_type, tup = pickle.loads(candidate_task)
 
             if task_type == "input":
                 
@@ -711,15 +703,20 @@ class IOTaskManager(TaskManager):
                 candidate_task = TapedInputTask.from_tuple(tup)
                 actor_id = candidate_task.actor_id
                 channel_id = candidate_task.channel_id
-
+                
                 if (actor_id, channel_id) not in self.function_objects:
                     self.function_objects[actor_id, channel_id] = ray.cloudpickle.loads(self.FOT.get(self.r, actor_id))
+                
+                start = time.time()
 
                 functionObject = self.function_objects[actor_id, channel_id]
                 seq = candidate_task.tape[0]
                 input_object = pickle.loads(self.LT.get(self.r, pickle.dumps((actor_id, channel_id, seq))))
+                print_if_profile("lineage  time", time.time() - start)
+                start = time.time()
 
                 next_task, output, seq, lineage = candidate_task.execute(functionObject, input_object)
+                print_if_profile("read  time", time.time() - start)
             
             else:
                 raise Exception("unsupported task type", task_type)       

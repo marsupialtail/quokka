@@ -84,6 +84,8 @@ class TaskGraph:
         self.CLT = ChannelLocationTable()
         self.NTT = NodeTaskTable()
         self.IRT = InputRequirementsTable()
+        self.LT = LineageTable()
+        self.DST = DoneSeqTable()
 
     def get_total_channels_from_placement_strategy(self, placement_strategy, node_type):
 
@@ -108,8 +110,7 @@ class TaskGraph:
             placement_strategy = CustomChannelsStrategy(1)
         assert type(placement_strategy) == CustomChannelsStrategy
         
-        if hasattr(reader, "get_own_state"):
-            reader.get_own_state(self.get_total_channels_from_placement_strategy(placement_strategy, 'input'))
+        channel_info = reader.get_own_state(self.get_total_channels_from_placement_strategy(placement_strategy, 'input'))
                 
         self.FOT.set(self.r, self.current_actor, ray.cloudpickle.dumps(reader))
 
@@ -117,10 +118,20 @@ class TaskGraph:
         channel_locs = {}
         for node in self.io_nodes:
             for channel in range(placement_strategy.channels_per_node):
-                input_task = InputTask(self.current_actor, count, 0, None)
+
+                lineages = channel_info[count]
+
+                if len(lineages) > 0:
+                    vals = {pickle.dumps((self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
+
+                    input_task = TapedInputTask(self.current_actor, count, [i for i in range(len(lineages))])
+                    self.LT.mset(self.r, vals)
+                    self.NTT.rpush(self.r, node, input_task.reduce())
+
+                self.DST.set(self.r, pickle.dumps((self.current_actor, count)), len(lineages) - 1)
                 channel_locs[count] = node
                 count += 1
-                self.NTT.rpush(self.r, node, input_task.reduce())
+                
         
         ray.get(self.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
         
