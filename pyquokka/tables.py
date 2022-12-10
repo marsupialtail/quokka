@@ -10,7 +10,7 @@ class ClientWrapper:
         self.key_prefix = key_prefix.encode("utf-8")
     
     def wrap_key(self, key):
-        assert type(key) == str or type(key) == bytes or type(key) == int
+        assert type(key) == str or type(key) == bytes or type(key) == int, (key, type(key))
         if type(key) == str:
             key = key.encode("utf-8")
         elif type(key) == int:

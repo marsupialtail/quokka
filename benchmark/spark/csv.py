@@ -456,6 +456,6 @@ df_supplier.createOrReplaceTempView("supplier")
 import time, sys
 
 queries = [query1, query2,query3,query4,query5,query6,query7,query8,query9,query12]
-start = time.time(); result = spark.sql(query12).collect(); print("QUERY TOOK", time.time() - start)
+start = time.time(); result = spark.sql(query5).collect(); print("QUERY TOOK", time.time() - start)
 
 start = time.time(); result = spark.sql(queries[int(sys.argv[1])]).collect(); print("QUERY TOOK", time.time() - start)

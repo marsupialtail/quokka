@@ -8,6 +8,7 @@ import pyarrow.flight
 import polars
 import time
 import pandas as pd
+import math
 
 DEBUG =  True
 def print_if_debug(*x):
@@ -328,7 +329,8 @@ class Coordinator:
                         # input node
                         else:
                             git = self.GIT.smembers(self.r, pickle.dumps((source_actor_id, source_channel_id)))
-                            required_inputs[source_actor_id, source_channel_id] = [int(i) for i in git if int(i) >= min_seq]
+                            required_inputs[source_actor_id, source_channel_id] = range(min_seq, max([int(i) for i in git]) + 1)\
+                                 if len(git) > 0 else []
 
                     for source_actor_id, source_channel_id in required_inputs:
                         input_seqs = required_inputs[source_actor_id, source_channel_id]
@@ -446,34 +448,67 @@ class Coordinator:
             
             self.NTT.lpush(self.r, unlucky_one, InputTask(actor_id, channel_id, seq, input_object).reduce())
 
-        # ready for the next round?
-        ip_scores = {k: 0 for k in ip_scores}
-        
+        # now do the taped input tasks. This should pretty much be everything after the "Merge"
+
+        actor_ids = set()
         for actor_id, channel_id in new_input_requests:
+            if actor_id not in actor_ids:
+                actor_ids.add(actor_id)
+        
+        # you want to interleave the alive io nodes by IP address so things are evenly balanced. How good are you at Python anyways?
+        alive_io_nodes = [val for tup in zip(*list(ip_to_alive_io_nodes.values())) for val in tup]
+        if len(alive_io_nodes) == 0:
+            print("Ran out of IOTaskManagers to schedule work, fault recovery has failed most likely because of catastrophic number of server losses")
+            exit()
+        for actor_id in actor_ids:
+            partitions = []
+            for my_actor_id, channel_id in new_input_requests:
+                if my_actor_id != actor_id:
+                    continue
+                for seq in new_input_requests[actor_id, channel_id]:
+                    partitions.append((actor_id, channel_id, seq))
+            partitions_per_node = [math.floor(len(partitions) / len(alive_io_nodes))] * len(alive_io_nodes)
+            extras = len(partitions) - sum(partitions_per_node)
+            for i in range(extras):
+                partitions_per_node[i] += 1
+            start = 0
+            for k in range(len(alive_io_nodes)):
+                my_stuff = partitions[start : start + partitions_per_node[k]]
+                start += partitions_per_node[k]
+                my_stuff = pd.DataFrame(my_stuff, columns = ["actor", "channel", "seq"])
+                for tup, df in my_stuff.groupby(["actor", "channel"]):
+                    a, c = tup
+                    seqs = df.seq.to_list()
+                    self.NTT.lpush(self.r, alive_io_nodes[k], TapedInputTask(int(a), int(c), [int(i) for i in seqs]).reduce())
 
-            git = self.GIT.smembers(self.r, pickle.dumps((actor_id, channel_id)))
-            git = {int(i) for i in git}
-            seqs = sorted(list(new_input_requests[actor_id, channel_id]))
-            seqs = [i for i in seqs if i in git]
 
-            if len(seqs) == 0:
-                continue
+        # ip_scores = {k: 0 for k in ip_scores}
+        
+        # for actor_id, channel_id in new_input_requests:
 
-            alive_io_nodes = [k for k in alive_nodes if k in self.io_nodes]
-            if len(alive_io_nodes) == 0:
-                print("Ran out of IOTaskManagers to schedule work, fault recovery has failed most likely because of catastrophic number of server losses")
-                exit()
+        #     # git = self.GIT.smembers(self.r, pickle.dumps((actor_id, channel_id)))
+        #     # git = {int(i) for i in git}
+        #     seqs = sorted(list(new_input_requests[actor_id, channel_id]))
+        #     # seqs = [i for i in seqs if i in git]
 
-            # handle the rest
-            assert self.GIT.srem(self.r, pickle.dumps((actor_id, channel_id)), seqs) == len(seqs)
+        #     if len(seqs) == 0:
+        #         continue
 
-            ip = min(ip_scores, key=ip_scores.get)
-            ip_scores[ip] += len(seqs)
-            unlucky_one = random.choice(ip_to_alive_io_nodes[ip])
+        #     alive_io_nodes = [k for k in alive_nodes if k in self.io_nodes]
+        #     if len(alive_io_nodes) == 0:
+        #         print("Ran out of IOTaskManagers to schedule work, fault recovery has failed most likely because of catastrophic number of server losses")
+        #         exit()
 
-            assert unlucky_one is not None
+        #     # handle the rest
+        #     # assert self.GIT.srem(self.r, pickle.dumps((actor_id, channel_id)), seqs) == len(seqs)
 
-            self.NTT.lpush(self.r,unlucky_one, TapedInputTask(actor_id, channel_id, seqs).reduce())
+        #     ip = min(ip_scores, key=ip_scores.get)
+        #     ip_scores[ip] += len(seqs)
+        #     unlucky_one = random.choice(ip_to_alive_io_nodes[ip])
+
+        #     assert unlucky_one is not None
+
+        #     self.NTT.lpush(self.r,unlucky_one, TapedInputTask(actor_id, channel_id, seqs).reduce())
         
         replay_requests = pd.DataFrame(replay_requests, columns = ['source_actor_id','source_channel_id','location','seq', 'target_actor_id', 'target_channel_id'])
         for location, location_df in replay_requests.groupby('location'):

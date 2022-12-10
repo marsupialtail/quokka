@@ -40,7 +40,7 @@ class InputEC2ParquetDataset:
         self.filters = filters
 
         self.length = 0
-        self.workers = 8
+        self.workers = 4
 
         self.s3 = None
         self.iterator = None
@@ -59,6 +59,11 @@ class InputEC2ParquetDataset:
                               if i['Key'].endswith(".parquet")])
             self.length += sum([i['Size'] for i in z['Contents']
                               if i['Key'].endswith(".parquet")])
+        channel_infos = {}
+        for channel in range(num_channels):
+            my_files = [self.files[k] for k in range(channel, len(self.files), self.num_channels)]
+            channel_infos[channel] = list(range(0, len(my_files), self.workers))
+        return channel_infos
 
 
     def execute(self, mapper_id, pos=None):
@@ -82,7 +87,7 @@ class InputEC2ParquetDataset:
         # this will return things out of order, but that's ok!
 
         if pos is None:
-            pos = 0
+            raise Exception("dynamic lienage not supported anymore")
 
         files_to_do = my_files[pos: pos + self.workers]
         future_to_url = {self.executor.submit(download, file): file for file in files_to_do}
@@ -94,39 +99,6 @@ class InputEC2ParquetDataset:
             return None, polars.concat(dfs)
         else:
             return pos + self.workers, polars.concat(dfs)
-    # def get_next_batch(self, mapper_id, pos=None):
-
-    #     s3 = S3FileSystem()
-
-    #     def download(file):
-    #         with warnings.catch_warnings():
-    #             warnings.simplefilter("ignore")
-    #             return polars.from_arrow(pq.read_table(self.bucket + "/" +
-    #                           file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = s3))
-
-    #     assert self.num_channels is not None
-    #     executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
-    #     my_files = [self.files[k] for k in range(mapper_id, len(self.files), self.num_channels)]
-    #     if len(my_files) == 0:
-    #         yield None, None
-        
-    #     # this will return things out of order, but that's ok!
-
-    #     future_to_url = {executor.submit(download, file): file for file in my_files}
-    #     for future in concurrent.futures.as_completed(future_to_url):
-    #         yield future.result()
-    
-    # def execute(self, mapper_id, pos = None):
-
-    #     if self.iterator is None:
-    #         self.iterator = self.get_next_batch(mapper_id, None)
-    #     my_files = [self.files[k] for k in range(mapper_id, len(self.files), self.num_channels)]
-    #     self.count += 1
-
-    #     if self.count < len(my_files):
-    #         return self.count, next(self.iterator)
-    #     else:
-    #         return None, next(self.iterator)
 
 class InputParquetDataset:
 
@@ -530,7 +502,7 @@ class FakeFile:
 # this should work for 1 CSV up to multiple
 # this should work for 1 CSV up to multiple
 class InputS3CSVDataset:
-    def __init__(self, bucket, names = None, prefix = None, key = None, sep=",", stride=2e8, header = False, window = 1024 * 32, columns = None) -> None:
+    def __init__(self, bucket, names = None, prefix = None, key = None, sep=",", stride=2e8, header = False, window = 1024 * 4, columns = None) -> None:
         self.bucket = bucket
         self.prefix = prefix
         self.key = key
@@ -610,18 +582,31 @@ class InputS3CSVDataset:
                 partitions[curr_partition_num + i] = (curr_file, i * size_per_partition)
             curr_partition_num += num_partitions
         
+        @ray.remote(num_cpus=0.001)
+        def download_range(bucket, file, start_byte, end_byte):
+            s3 = boto3.client('s3')
+            resp = s3.get_object(Bucket=bucket, Key=file, Range='bytes={}-{}'.format(start_byte, end_byte))['Body'].read()
+            last_newline = resp.rfind(b'\n')
+            return resp[last_newline + 1:]
+
         # refinement
+        start = time.time()
         for partition in partitions:
             curr_file, start_byte = partitions[partition]
             if start_byte == 0:
                 partitions[partition] = (curr_file, start_byte, b'')
             else:
-                resp = s3.get_object(
-                    Bucket=self.bucket, Key=files[0], Range='bytes={}-{}'.format(start_byte - self.window, start_byte - 1))['Body'].read()
-                last_newline = resp.rfind(b'\n')
-                prefix = resp[last_newline + 1:]
-                partitions[partition] = (curr_file, start_byte, prefix)
-        
+                prefix_fut = download_range.remote(self.bucket, curr_file, start_byte - self.window, start_byte - 1)
+                partitions[partition] = (curr_file, start_byte, prefix_fut)
+        print("DISPATCH TIME", time.time() - start)
+        start = time.time()
+        for partition in partitions:
+            curr_file, start_byte, fut = partitions[partition]
+            if fut == b'':
+                partitions[partition] = (curr_file, start_byte, b'', size_per_partition)
+            else:
+                partitions[partition] = (curr_file, start_byte, ray.get(fut), size_per_partition)
+        print("GATHER TIME", time.time() - start)
         #assign partitions
         print(curr_partition_num)
         partitions_per_channel = math.ceil(curr_partition_num / num_channels) 
@@ -645,13 +630,13 @@ class InputS3CSVDataset:
         if state is None:
             raise Exception("Input lineage is now static.")
         else:
-            file, pos, prefix = state
+            file, pos, prefix, partition_size = state
                     
         end = self.file_sizes[file]
         
         def download(x):
             
-            end_byte = min(pos + x * self.stride + self.stride - 1, end - 1)
+            end_byte = min(pos + x * self.stride + self.stride - 1, end - 1, pos + partition_size - 1)
             start_byte = pos + x * self.stride
             if start_byte > end_byte:
                 return None

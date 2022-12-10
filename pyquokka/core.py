@@ -15,7 +15,7 @@ CHECKPOINT_INTERVAL = None
 HBQ_GC_INTERVAL = 2
 MAX_SEQ = 1000000000
 DEBUG = False
-PROFILE = True
+PROFILE = False
 FT = True
 
 def print_if_debug(*x):
@@ -728,8 +728,8 @@ class IOTaskManager(TaskManager):
                 self.output_commit(transaction, actor_id, channel_id, seq, lineage)
                 self.task_commit(transaction, candidate_task, next_task)
                 if not all(transaction.execute()):
-                    print("COMMITING TRANSACTION FAILED")
-                    raise Exception
+                   print("COMMITING TRANSACTION FAILED")
+                   # raise Exception
             
             # downstream failure detected, will start recovery soon, DO NOT COMMIT!
             else:
