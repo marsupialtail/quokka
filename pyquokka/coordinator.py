@@ -461,6 +461,14 @@ class Coordinator:
             print("Ran out of IOTaskManagers to schedule work, fault recovery has failed most likely because of catastrophic number of server losses")
             exit()
         for actor_id in actor_ids:
+            # rotate the list for every actor so the shit doesn't always end up on the first worker machine
+            # chunks = [ alive_io_nodes[k : k + 4] for k in range(0,len(alive_io_nodes), 4) ]
+            # chunks = [ chunk[1:] + [chunk[0]] for chunk in chunks ]
+            # chunks = chunks[1:] + [chunks[0]]
+            # alive_io_nodes = [item for sublist in chunks for item in sublist]
+
+            alive_io_nodes = alive_io_nodes[4:] + alive_io_nodes[:4]
+
             partitions = []
             for my_actor_id, channel_id in new_input_requests:
                 if my_actor_id != actor_id:

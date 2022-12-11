@@ -6,7 +6,7 @@ format = "csv"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
 s3_path_csv = "s3://tpc-h-csv/"
-s3_path_parquet = "s3://tpc-h-large-parquet/"
+s3_path_parquet = "s3://tpc-h-parquet/"
 
 import pyarrow as pa
 import pyarrow.compute as compute
@@ -375,5 +375,5 @@ print(do_5())
 # print(do_9())
 # print(do_12())
 
-#print(word_count())
+# print(word_count())
 # print(covariance())

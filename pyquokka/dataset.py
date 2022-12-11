@@ -40,7 +40,7 @@ class InputEC2ParquetDataset:
         self.filters = filters
 
         self.length = 0
-        self.workers = 4
+        self.workers = 8
 
         self.s3 = None
         self.iterator = None
@@ -62,11 +62,13 @@ class InputEC2ParquetDataset:
         channel_infos = {}
         for channel in range(num_channels):
             my_files = [self.files[k] for k in range(channel, len(self.files), self.num_channels)]
-            channel_infos[channel] = list(range(0, len(my_files), self.workers))
+            channel_infos[channel] = []
+            for pos in range(0, len(my_files), self.workers):
+                channel_infos[channel].append(my_files[pos : pos + self.workers])
         return channel_infos
 
 
-    def execute(self, mapper_id, pos=None):
+    def execute(self, mapper_id, files_to_do=None):
 
         if self.s3 is None:
             self.s3 = S3FileSystem()
@@ -79,26 +81,22 @@ class InputEC2ParquetDataset:
                               file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3))
 
         assert self.num_channels is not None
-        
-        my_files = [self.files[k] for k in range(mapper_id, len(self.files), self.num_channels)]
-        if len(my_files) == 0:
+
+        if files_to_do is None:
+            raise Exception("dynamic lienage not supported anymore")
+
+        if len(files_to_do) == 0:
             return None, None
         
         # this will return things out of order, but that's ok!
 
-        if pos is None:
-            raise Exception("dynamic lienage not supported anymore")
-
-        files_to_do = my_files[pos: pos + self.workers]
         future_to_url = {self.executor.submit(download, file): file for file in files_to_do}
         dfs = []
         for future in concurrent.futures.as_completed(future_to_url):
             dfs.append(future.result())
         
-        if pos + self.workers >= len(my_files):
-            return None, polars.concat(dfs)
-        else:
-            return pos + self.workers, polars.concat(dfs)
+        return None, polars.concat(dfs)
+        
 
 class InputParquetDataset:
 
