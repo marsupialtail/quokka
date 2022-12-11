@@ -45,14 +45,14 @@ if mode == "DISK":
         raise Exception
 elif mode == "S3":
     if format == "csv":
-        lineitem = qc.read_csv(s3_path_csv + "lineitem/lineitem.tbl.1", lineitem_scheme, sep="|")
-        orders = qc.read_csv(s3_path_csv + "orders/orders.tbl.1", order_scheme, sep="|")
-        customer = qc.read_csv(s3_path_csv + "customer/customer.tbl.1",customer_scheme, sep = "|")
-        part = qc.read_csv(s3_path_csv + "part/part.tbl.1", part_scheme, sep = "|")
-        supplier = qc.read_csv(s3_path_csv + "supplier/supplier.tbl.1", supplier_scheme, sep = "|")
-        partsupp = qc.read_csv(s3_path_csv + "partsupp/partsupp.tbl.1", partsupp_scheme, sep = "|")
-        nation = qc.read_csv(s3_path_csv + "nation/nation.tbl", nation_scheme, sep = "|")
-        region = qc.read_csv(s3_path_csv + "region/region.tbl", region_scheme, sep = "|")
+        lineitem = qc.read_csv(s3_path_csv + "lineitem/lineitem.tbl.1", lineitem_scheme, sep="|").drop(["null"])
+        orders = qc.read_csv(s3_path_csv + "orders/orders.tbl.1", order_scheme, sep="|").drop(["null"])
+        customer = qc.read_csv(s3_path_csv + "customer/customer.tbl.1",customer_scheme, sep = "|").drop(["null"])
+        part = qc.read_csv(s3_path_csv + "part/part.tbl.1", part_scheme, sep = "|").drop(["null"])
+        supplier = qc.read_csv(s3_path_csv + "supplier/supplier.tbl.1", supplier_scheme, sep = "|").drop(["null"])
+        partsupp = qc.read_csv(s3_path_csv + "partsupp/partsupp.tbl.1", partsupp_scheme, sep = "|").drop(["null"])
+        nation = qc.read_csv(s3_path_csv + "nation/nation.tbl", nation_scheme, sep = "|").drop(["null"])
+        region = qc.read_csv(s3_path_csv + "region/region.tbl", region_scheme, sep = "|").drop(["null"])
     elif format == "parquet":
         lineitem = qc.read_parquet(s3_path_parquet + "lineitem.parquet/*")
         #lineitem = qc.read_parquet("s3://yugan/tpc-h-out/*")
@@ -221,7 +221,7 @@ def do_8():
     american_customers = customer.join(american_nations, left_on="c_nationkey", right_on="n_nationkey")
     american_orders = orders.join(american_customers, left_on = "o_custkey", right_on="c_custkey")
     d = lineitem.join(part, left_on="l_partkey", right_on="p_partkey")
-    d = d.join(american_orders, left_on = "l_orderkey", right_on = "o_custkey")
+    d = d.join(american_orders, left_on = "l_orderkey", right_on = "o_orderkey")
     d = d.join(supplier, left_on="l_suppkey", right_on="s_suppkey")
     d = d.join(nation, left_on="s_nationkey", right_on = "n_nationkey")
     d = d.filter("""
@@ -329,13 +329,13 @@ def sort():
 # print(csv_to_csv_disk())
 # print(csv_to_parquet_s3())
 
-print(do_2())
+# print(do_2())
 
-print(do_1())
-print(do_3())
+# print(do_1())
+# print(do_3())
 
-print(do_4())
-print(do_5())
+# print(do_4())
+# print(do_5())
 print(do_6())
 print(do_12())
 print(do_7())
