@@ -1045,6 +1045,51 @@ class GroupedDataStream:
         self.source_data_stream = source_data_stream
         self.groupby = groupby if type(groupby) == list else [groupby]
         self.orderby = orderby
+    
+    def cogroup(self, right, executor: Executor, new_schema: list, required_cols_left = None, required_cols_right = None):
+        """
+        Purely Experimental API.
+        """
+
+        assert (type(right) == GroupedDataStream or type(right) == polars.internals.DataFrame) and issubclass(type(executor), Executor)
+        
+        assert len(self.groupby) == 1 and len(right.groupby) == 1, "we only support single key partition functions right now"
+        assert self.groupby[0] == right.groupby[0], "must be grouped by the same key"
+        copartitioner = self.groupby[0]
+
+        schema_mapping={col: (-1, col) for col in new_schema}
+
+        if required_cols_left is None:
+            required_cols_left = set(self.source_data_stream.schema)
+        else:
+            if type(required_cols_left) == list:
+                required_cols_left = set(required_cols_left)
+            assert type(required_cols_left) == set
+        
+        if required_cols_right is None:
+            required_cols_right = set(right.source_data_stream.schema)
+        else:
+            if type(required_cols_right) == list:
+                required_cols_right = set(required_cols_right)
+            assert type(required_cols_right) == set
+
+        if type(right) == GroupedDataStream:
+
+            return self.source_data_stream.quokka_context.new_stream(
+                sources={0: self.source_data_stream, 1: right.source_data_stream},
+                partitioners={0: HashPartitioner(
+                    copartitioner), 1: HashPartitioner(copartitioner)},
+                node=StatefulNode(
+                    schema=new_schema,
+                    schema_mapping=schema_mapping,
+                    required_columns={0: required_cols_left, 1: required_cols_right},
+                    operator= executor),
+                schema=new_schema,
+                ordering=None)
+
+        elif type(right) == polars.internals.DataFrame:
+            
+            raise NotImplementedError
 
     def agg(self, aggregations: dict):
 

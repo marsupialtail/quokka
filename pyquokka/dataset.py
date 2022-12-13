@@ -40,7 +40,7 @@ class InputEC2ParquetDataset:
         self.filters = filters
 
         self.length = 0
-        self.workers = 8
+        self.workers = 1
 
         self.s3 = None
         self.iterator = None
@@ -95,8 +95,8 @@ class InputEC2ParquetDataset:
         for future in concurrent.futures.as_completed(future_to_url):
             dfs.append(future.result())
         
-        return None, polars.concat(dfs)
         
+        return None, polars.concat(dfs)
 
 class InputParquetDataset:
 
