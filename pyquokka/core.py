@@ -16,7 +16,7 @@ HBQ_GC_INTERVAL = 2
 MAX_SEQ = 1000000000
 DEBUG = False
 PROFILE = True
-FT = True
+FT = False
 
 def print_if_debug(*x):
     if DEBUG:
@@ -230,6 +230,8 @@ class TaskManager:
 
             for target_channel_id in self.actor_flight_clients[target_actor_id]:
 
+                start = time.time()
+
                 if target_mask is not None and target_channel_id not in target_mask[target_actor_id]:
                     continue
 
@@ -266,6 +268,8 @@ class TaskManager:
                     return False
                 
                 print_if_debug("finished pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
+
+                print_if_profile("pushing to one channel time", time.time() - start)
 
         print_if_profile("push time", time.time() - start_push)
         return True

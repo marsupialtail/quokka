@@ -116,7 +116,7 @@ class TaskGraph:
 
         count = 0
         channel_locs = {}
-        for node in self.io_nodes:
+        for node in sorted(self.io_nodes):
             for channel in range(placement_strategy.channels_per_node):
 
                 lineages = channel_info[count]
@@ -195,9 +195,15 @@ class TaskGraph:
         
         def partition_fn(predicate_fn, partitioner_fn, batch_funcs, projection, num_target_channels, x, source_channel):
 
-            if predicate_fn != True:
+            start = time.time()
+            if predicate_fn != sqlglot.exp.TRUE:
                 x = x.filter(predicate_fn(x))
+            print("filter time", time.time() - start)
+
+            start = time.time()
             partitioned = partitioner_fn(x, source_channel, num_target_channels)
+            print("partition fn time", time.time() - start)
+
             results = {}
             for channel in partitioned:
                 payload = partitioned[channel]
@@ -208,10 +214,13 @@ class TaskGraph:
 
                 if payload is None:
                     continue
+
+                start = time.time()
                 if projection is not None:
                     results[channel] =  payload[sorted(list(projection))]
                 else:
                     results[channel] = payload
+                print("selection time", time.time() - start)
             return results
         
         mapping = {}
@@ -221,8 +230,9 @@ class TaskGraph:
             source = streams[key]
             mapping[source] = key
 
-            target_info = source_target_info[key]     
-            target_info.predicate = sql_utils.evaluate(target_info.predicate)
+            target_info = source_target_info[key] 
+            if target_info.predicate != sqlglot.exp.TRUE:
+                target_info.predicate = sql_utils.evaluate(target_info.predicate)
             target_info.projection = target_info.projection
 
             # this has been provided
@@ -287,7 +297,7 @@ class TaskGraph:
         elif type(placement_strategy) == CustomChannelsStrategy:
 
             count = 0
-            for node in self.compute_nodes:
+            for node in sorted(self.compute_nodes):
                 for channel in range(placement_strategy.channels_per_node):
                     exec_task = ExecutorTask(self.current_actor, count, 0, 0, input_reqs)
                     channel_locs[count] = node

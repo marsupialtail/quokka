@@ -325,6 +325,23 @@ class QuokkaContext:
 
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
+    
+    '''
+    This is expected to be internal for now. This is a pretty new API and people probably don't know how to use this.
+    '''
+    def mingle(self, sources: dict, operator, new_schema: list, required_cols: dict):
+
+        assert self.io_per_node == self.exec_per_node, "mingle currently only supports 1 to 1 mapping of IO to exec nodes, since we don't identify data sources"
+        return self.new_stream(
+                sources=sources,
+                partitioners={k: PassThroughPartitioner() for k in sources},
+                node=StatefulNode(
+                    schema=new_schema,
+                    schema_mapping={col: (-1, col) for col in new_schema},
+                    required_columns=required_cols,
+                    operator= operator),
+                schema=new_schema,
+                ordering=None)
 
     '''
     this is expected to be internal API, well internal as much as it can I guess until the syntactic sugar runs out.
