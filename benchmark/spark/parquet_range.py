@@ -55,3 +55,76 @@ result.count()
 print(time.time() - start)
 print("done")
 
+query = """
+
+-- this takes more than 10 minnutes
+select trades.time as trade_time, 
+       quotes.time as quote_time
+from trades,
+     quotes
+where trades.symbol == quotes.symbol
+    and trades.time > quotes.time
+    and trades.time < quotes.time + 1000
+
+"""
+
+query = """
+
+-- this takes 13 seconds.
+select trades.time as trade_time, 
+       quotes.time as quote_time
+from trades,
+     quotes
+where trades.symbol == "RPTP"
+    and quotes.symbol == "RPTP"
+    and trades.time == quotes.time
+
+"""
+
+query = """
+with binned_trades (bin, time, symbol) as (
+    select cast(time / 1000 as int),
+        time,
+        symbol
+    from trades
+    -- where symbol == "RPTP"
+), 
+binned_quotes (bin, time, symbol) as (
+    select cast(time / 1000 as int),
+        time,
+        symbol
+    from quotes
+    -- where symbol == "RPTP"
+),
+prev_join (symbol, trade_time, quote_time) as (
+    select  binned_trades.symbol,
+            binned_trades.time,
+            binned_quotes.time
+    from binned_trades,
+        binned_quotes
+    where binned_trades.bin == binned_quotes.bin + 1
+        and binned_trades.symbol == binned_quotes.symbol
+),
+curr_join (symbol, trade_time, quote_time) as (
+    select  binned_trades.symbol,
+            binned_trades.time,
+            binned_quotes.time
+    from binned_trades,
+        binned_quotes
+    where binned_trades.bin == binned_quotes.bin
+        and binned_trades.symbol == binned_quotes.symbol
+),
+unioned (symbol, trade_time, quote_time) as (
+    select symbol, trade_time, quote_time from prev_join
+    union all
+    select symbol, trade_time, quote_time from curr_join
+)
+select symbol,
+        trade_time,
+        count(*) as num_quotes
+from unioned
+where trade_time < quote_time + 1000
+group by symbol, trade_time
+"""
+
+start = time.time(); result = spark.sql(query).collect(); print("QUERY TOOK", time.time() - start)
