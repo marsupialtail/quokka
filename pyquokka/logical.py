@@ -201,7 +201,7 @@ class InputDiskParquetNode(SourceNode):
         if type(task_graph.cluster) ==  EC2Cluster:
             raise Exception
         elif type(task_graph.cluster) == LocalCluster:
-            parquet_reader = InputParquetDataset(self.filepath, mode = "local", columns = list(self.projection), filters = self.predicate)
+            parquet_reader = InputParquetDataset(self.filepath,  columns = list(self.projection), filters = self.predicate)
             node = task_graph.new_input_reader_node(parquet_reader, self.placement_strategy)
             return node
     

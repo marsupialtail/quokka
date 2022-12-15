@@ -119,7 +119,10 @@ class TaskGraph:
         for node in sorted(self.io_nodes):
             for channel in range(placement_strategy.channels_per_node):
 
-                lineages = channel_info[count]
+                if count in channel_info:
+                    lineages = channel_info[count]
+                else:
+                    lineages = []
 
                 if len(lineages) > 0:
                     vals = {pickle.dumps((self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}

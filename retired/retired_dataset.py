@@ -237,6 +237,76 @@ class InputSingleParquetDataset:
             curr_row_group += self.num_channels
             yield curr_row_group, a
 
+class InputParquetDataset:
+    def __init__(self, filepath, mode = "local", columns = None, filters = None) -> None:
+        
+        self.filepath = filepath
+        self.columns = columns
+        if filters is not None:
+            if type(filters) == list:
+                self.filters = filters_to_expression(filters)
+            elif type(filters) == ds.Expression:
+                self.filters = filters
+            else:
+                raise Exception("cannot understand filters format.")
+        else:
+            self.filters = None
+        self.mode = mode
+        self.num_channels = None
+
+    def get_own_state(self, num_channels):
+
+        self.num_channels = num_channels
+        if self.mode == "s3":
+            s3 = S3FileSystem()
+            dataset = ds.dataset(self.filepath, filesystem = s3)
+        else:
+            dataset = ds.dataset(self.filepath)
+
+        self.schema = dataset.schema
+        total_rows = dataset.count_rows()
+        print("Parquet dataset at ", self.filepath, " has total ", total_rows, " rows")
+        row_group_fragments = [fragment.split_by_row_group() for fragment in dataset.get_fragments()]
+        row_group_fragments_with_size = [(item.count_rows(), item) for sublist in row_group_fragments for item in sublist]
+        row_group_fragments_with_size.sort(key = lambda x: x[0])
+
+        self.channel_assigments = {i: [] for i in range(num_channels)}
+        channel_lengths = np.array([0] * num_channels)
+
+        '''
+        Hey we encounter the Partition Problem! We would like to evenly divide the row groups based on length.
+        We will use Greedy number partitioning. The easiest to implement approximate algorithm.
+        '''
+        
+        for size, fragment in row_group_fragments_with_size:
+            channel = np.argmin(channel_lengths)
+            self.channel_assigments[channel].append(fragment)
+            channel_lengths[channel] += size
+
+    def get_next_batch(self, mapper_id, pos=None):
+        assert self.num_channels is not None
+        if pos is None:
+            pos = 0
+
+        format = ParquetFileFormat()
+        filesystem = S3FileSystem() if self.mode == "s3" else LocalFileSystem()
+        # fragments = [
+        #     format.make_fragment(
+        #         file,
+        #         filesystem=filesystem,
+        #         partition_expression=part_expression,
+        #     )
+        #     for file, part_expression in self.channel_assigments[mapper_id]
+        # ]
+
+        if mapper_id not in self.channel_assigments:
+            yield None, None
+        else:
+            self.dataset = FileSystemDataset(self.channel_assigments[mapper_id][pos:], self.schema, format , filesystem)
+            for batch in self.dataset.to_batches(filter= self.filters,columns=self.columns ):
+                pos += 1
+                yield pos, batch
+
 class InputDiskHDF5Dataset:
 
     def __init__(self, filename, key) -> None:

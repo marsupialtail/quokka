@@ -64,7 +64,7 @@ class InputEC2ParquetDataset:
             my_files = [self.files[k] for k in range(channel, len(self.files), self.num_channels)]
             channel_infos[channel] = []
             for pos in range(0, len(my_files), self.workers):
-                channel_infos[channel].append(my_files[pos : pos + self.workers])
+                channel_infos[channel].append( my_files[pos : pos + self.workers])
         return channel_infos
 
 
@@ -77,13 +77,12 @@ class InputEC2ParquetDataset:
         def download(file):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                return polars.from_arrow(pq.read_table(self.bucket + "/" +
-                              file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3))
+                return polars.from_arrow(pq.read_table(self.bucket + "/" +file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3))
 
         assert self.num_channels is not None
 
         if files_to_do is None:
-            raise Exception("dynamic lienage not supported anymore")
+            raise Exception("dynamic lineage for inputs not supported anymore")
 
         if len(files_to_do) == 0:
             return None, None
@@ -95,6 +94,214 @@ class InputEC2ParquetDataset:
         for future in concurrent.futures.as_completed(future_to_url):
             dfs.append(future.result())
         
+        
+        return None, polars.concat(dfs)
+
+class InputSortedEC2ParquetDataset:
+
+    def __init__(self, bucket, prefix, partitioner, columns=None, filters=None) -> None:
+
+        self.bucket = bucket
+        self.prefix = prefix
+        self.partitioner = partitioner
+        assert self.prefix is not None
+
+        self.num_channels = None
+        self.columns = columns
+        self.filters = filters
+
+        self.length = 0
+        self.workers = 4
+
+        self.s3 = None
+        self.iterator = None
+        self.count = 0
+        self.bounds = None
+
+    def get_bounds(self, num_channels):
+
+        def overlap(a, b):
+            return max(-1, min(a[1], b[1]) - max(a[0], b[0]))
+        
+        channel_infos = {}
+        fragments = []
+        self.num_channels = num_channels
+        s3fs = S3FileSystem()
+        dataset = pq.ParquetDataset(self.bucket + "/" + self.prefix, filesystem=s3fs )
+        for fragment in dataset.fragments:
+            field_index = fragment.physical_schema.get_field_index(self.partitioner)
+            metadata = fragment.metadata
+            min_timestamp = None
+            max_timestamp = None
+            for row_group_index in range(metadata.num_row_groups):
+                stats = metadata.row_group(row_group_index).column(field_index).statistics
+                # Parquet files can be created without statistics
+                if stats is None:
+                    raise Exception("Copartitioned Parquet files must have statistics!")
+                row_group_max = stats.max
+                row_group_min = stats.min
+                if max_timestamp is None or row_group_max > max_timestamp:
+                    max_timestamp = row_group_max
+                if min_timestamp is None or row_group_min < min_timestamp:
+                    min_timestamp = row_group_min
+            assert min_timestamp is not None and max_timestamp is not None 
+            fragments.append((fragment.path, min_timestamp, max_timestamp))
+            
+        fragments = sorted(fragments, key = lambda x: x[1])
+        for k in range(1, len(fragments)):
+            assert overlap([fragments[k-1][1], fragments[k-1][2]], [fragments[k][1], fragments[k][2]]) <= 0, \
+                "positive overlap, data is not sorted!"
+
+        fragments_per_channel = math.ceil(len(fragments) / num_channels)
+        channel_bounds = {}
+        for channel in range(num_channels):
+            channel_infos[channel] = fragments[channel * fragments_per_channel : channel * fragments_per_channel + fragments_per_channel]
+            channel_bounds[channel] = (channel_infos[channel][0][1], channel_infos[channel][-1][-1])
+
+        self.bounds = channel_infos
+        return channel_bounds
+    
+    def get_own_state(self, num_channels):
+
+        assert self.bounds is not None
+        channel_infos = {}
+        for channel in self.bounds:
+            my_files = [k[0] for k in self.bounds[channel]]
+            channel_infos[channel] = []
+            for pos in range(0, len(my_files), self.workers):
+                channel_infos[channel].append( my_files[pos : pos + self.workers])
+        
+        del self.bounds
+        return channel_infos
+
+    def execute(self, mapper_id, files_to_do=None):
+
+        if self.s3 is None:
+            self.s3 = S3FileSystem()
+            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
+
+        def download(file):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return polars.from_arrow(pq.read_table(file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3))
+
+        assert self.num_channels is not None
+
+        if files_to_do is None:
+            raise Exception("dynamic lineage for inputs not supported anymore")
+
+        if len(files_to_do) == 0:
+            return None, None
+        
+        # this will return things out of order, but that's ok!
+
+        future_to_url = {self.executor.submit(download, file): file for file in files_to_do}
+        dfs = []
+        for future in concurrent.futures.as_completed(future_to_url):
+            dfs.append(future.result())
+        
+        return None, polars.concat(dfs)
+
+class InputEC2CoPartitionedSortedParquetDataset:
+
+    def __init__(self, bucket, prefix, partitioner, columns=None, filters=None) -> None:
+
+        self.bucket = bucket
+        self.prefix = prefix
+        self.partitioner = partitioner
+        assert self.prefix is not None
+
+        self.num_channels = None
+        self.columns = columns
+        self.filters = filters
+
+        self.length = 0
+        self.workers = 4
+
+        self.s3 = None
+        self.iterator = None
+        self.count = 0
+        self.bounds = None
+
+    def get_bounds(self, num_channels, channel_bounds):
+
+        def overlap(a, b):
+            return max(-1, min(a[1], b[1]) - max(a[0], b[0]))
+        
+        channel_infos = {channel: [] for channel in channel_bounds}
+        assert len(channel_bounds) == num_channels, "must provide bounds for all the channel"
+        self.num_channels = num_channels
+        s3fs = S3FileSystem()
+        dataset = pq.ParquetDataset(self.bucket + "/" + self.prefix, filesystem=s3fs )
+        for fragment in dataset.fragments:
+            field_index = fragment.physical_schema.get_field_index(self.partitioner)
+            metadata = fragment.metadata
+            min_timestamp = None
+            max_timestamp = None
+            for row_group_index in range(metadata.num_row_groups):
+                stats = metadata.row_group(row_group_index).column(field_index).statistics
+                # Parquet files can be created without statistics
+                if stats is None:
+                    raise Exception("Copartitioned Parquet files must have statistics!")
+                row_group_max = stats.max
+                row_group_min = stats.min
+                if max_timestamp is None or row_group_max > max_timestamp:
+                    max_timestamp = row_group_max
+                if min_timestamp is None or row_group_min < min_timestamp:
+                    min_timestamp = row_group_min
+            assert min_timestamp is not None and max_timestamp is not None 
+
+            # find which channel you belong. This is inclusive interval intersection.
+            for channel in channel_bounds:
+                if overlap([min_timestamp, max_timestamp], channel_bounds[channel]) >= 0:
+                    channel_infos[channel].append((fragment.path, min_timestamp, max_timestamp))
+            
+        for channel in channel_infos:
+            channel_infos[channel] = sorted(channel_infos[channel], key = lambda x : x[1])
+            for k in range(1, len(channel_infos[channel])):
+                assert overlap([channel_infos[channel][k-1][1], channel_infos[channel][k-1][2]], \
+                    [channel_infos[channel][k][1], channel_infos[channel][k][2]]) <= 0, "positive overlap, data is not sorted!"
+        
+        self.bounds = channel_infos
+    
+    def get_own_state(self, num_channels):
+
+        assert self.bounds is not None
+        channel_infos = {}
+        for channel in self.bounds:
+            my_files = [k[0] for k in self.bounds[channel]]
+            channel_infos[channel] = []
+            for pos in range(0, len(my_files), self.workers):
+                channel_infos[channel].append( my_files[pos : pos + self.workers])
+        
+        del self.bounds
+        return channel_infos
+    
+    def execute(self, mapper_id, files_to_do=None):
+
+        if self.s3 is None:
+            self.s3 = S3FileSystem()
+            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
+
+        def download(file):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return polars.from_arrow(pq.read_table(file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3))
+
+        assert self.num_channels is not None
+
+        if files_to_do is None:
+            raise Exception("dynamic lineage for inputs not supported anymore")
+
+        if len(files_to_do) == 0:
+            return None, None
+        
+        # this will return things out of order, but that's ok!
+
+        future_to_url = {self.executor.submit(download, file): file for file in files_to_do}
+        dfs = []
+        for future in concurrent.futures.as_completed(future_to_url):
+            dfs.append(future.result())
         
         return None, polars.concat(dfs)
 
@@ -114,101 +321,17 @@ class InputParquetDataset:
                 raise Exception("cannot understand filters format.")
         else:
             self.filters = None
+        
+        self.parquet_file = None
 
     def get_own_state(self, num_channels):
-
-        self.parquet_file = pq.ParquetFile(self.filename)
-        self.num_row_groups = self.parquet_file.num_row_groups
-        self.num_channels = num_channels
-
-    def get_next_batch(self, mapper_id, pos=None):
-        assert self.num_channels is not None
-        if pos is None:
-            curr_row_group = mapper_id
-        else:
-            curr_row_group = pos
-
-        a = self.parquet_file.read_row_group(
-            curr_row_group, columns=self.columns)
-        if self.filters is not None:
-            a = a.filter(self.filters)
-        curr_row_group += self.num_channels
         
-        if curr_row_group < len(self.num_row_groups):
-            return curr_row_group, a
-        else:
-            return None, a
+        return {0 : [self.filename]}
 
-
-# class InputParquetDataset:
-#     def __init__(self, filepath, mode = "local", columns = None, filters = None) -> None:
+    def execute(self, mapper_id, filename = None):
         
-#         self.filepath = filepath
-#         self.columns = columns
-#         if filters is not None:
-#             if type(filters) == list:
-#                 self.filters = filters_to_expression(filters)
-#             elif type(filters) == ds.Expression:
-#                 self.filters = filters
-#             else:
-#                 raise Exception("cannot understand filters format.")
-#         else:
-#             self.filters = None
-#         self.mode = mode
-#         self.num_channels = None
-
-#     def get_own_state(self, num_channels):
-
-#         self.num_channels = num_channels
-#         if self.mode == "s3":
-#             s3 = S3FileSystem()
-#             dataset = ds.dataset(self.filepath, filesystem = s3)
-#         else:
-#             dataset = ds.dataset(self.filepath)
-
-#         self.schema = dataset.schema
-#         total_rows = dataset.count_rows()
-#         print("Parquet dataset at ", self.filepath, " has total ", total_rows, " rows")
-#         row_group_fragments = [fragment.split_by_row_group() for fragment in dataset.get_fragments()]
-#         row_group_fragments_with_size = [(item.count_rows(), item) for sublist in row_group_fragments for item in sublist]
-#         row_group_fragments_with_size.sort(key = lambda x: x[0])
-
-#         self.channel_assigments = {i: [] for i in range(num_channels)}
-#         channel_lengths = np.array([0] * num_channels)
-
-#         '''
-#         Hey we encounter the Partition Problem! We would like to evenly divide the row groups based on length.
-#         We will use Greedy number partitioning. The easiest to implement approximate algorithm.
-#         '''
-        
-#         for size, fragment in row_group_fragments_with_size:
-#             channel = np.argmin(channel_lengths)
-#             self.channel_assigments[channel].append(fragment)
-#             channel_lengths[channel] += size
-
-#     def get_next_batch(self, mapper_id, pos=None):
-#         assert self.num_channels is not None
-#         if pos is None:
-#             pos = 0
-
-#         format = ParquetFileFormat()
-#         filesystem = S3FileSystem() if self.mode == "s3" else LocalFileSystem()
-#         # fragments = [
-#         #     format.make_fragment(
-#         #         file,
-#         #         filesystem=filesystem,
-#         #         partition_expression=part_expression,
-#         #     )
-#         #     for file, part_expression in self.channel_assigments[mapper_id]
-#         # ]
-
-#         if mapper_id not in self.channel_assigments:
-#             yield None, None
-#         else:
-#             self.dataset = FileSystemDataset(self.channel_assigments[mapper_id][pos:], self.schema, format , filesystem)
-#             for batch in self.dataset.to_batches(filter= self.filters,columns=self.columns ):
-#                 pos += 1
-#                 yield pos, batch
+        dataset = ds.dataset(filename)
+        return None, polars.from_arrow(dataset.to_table(filter= self.filters,columns=self.columns ))
 
 # this works for a directoy of objects.
 class InputS3FilesDataset:
@@ -293,19 +416,12 @@ class InputDiskCSVDataset:
         assert not (names is None and header is False), "if header is False, must supply column names"
 
         self.length = 0
+        self.file_sizes = None
         #self.sample = None
     
-    # we need to rethink this whole setting num channels business. For this operator we don't want each node to do redundant work!
+
     def get_own_state(self, num_channels):
         
-        #samples = []
-        print("Initializing Disk CSV dataset. This is currently done locally and serially, which might take a while.")
-        self.num_channels = num_channels
-
-        '''
-        Filepath can be either a single file or a directory. We need to figure out what is the case, and get our files and sizes list.
-        '''
-
         if os.path.isfile(self.filepath):
             files = deque([self.filepath])
             sizes = deque([os.path.getsize(self.filepath)])
@@ -329,126 +445,81 @@ class InputDiskCSVDataset:
                     print("Supplied", self.names)
 
         total_size = sum(sizes)
-        size_per_channel = total_size // num_channels
-        channel_infos = {}
+        assert total_size > 0
+        size_per_partition = min(int(self.stride), math.ceil(total_size / num_channels))
+        # size_per_partition = int(self.stride * workers)
+        print(size_per_partition)
 
-        start_byte = 0
-        real_off = 0
+        partitions = {}
+        curr_partition_num = 0
 
+        for curr_file, curr_size in zip(files, sizes):
+            num_partitions = math.ceil(curr_size / size_per_partition)
+            for i in range(num_partitions):
+                partitions[curr_partition_num + i] = (curr_file, i * size_per_partition)
+            curr_partition_num += num_partitions
+
+        # refinement
+        start = time.time()
+        for partition in partitions:
+            curr_file, start_byte = partitions[partition]
+            if start_byte == 0:
+                partitions[partition] = (curr_file, start_byte, b'', size_per_partition)
+            else:
+                f = open(curr_file, 'rb')
+                f.seek(start_byte - self.window)
+                window = f.read(self.window)
+                pos = window.rfind(b'\n')
+                prefix = window[pos + 1:]
+                partitions[partition] = (curr_file, start_byte, prefix, size_per_partition)
+
+        #assign partitions
+        print(curr_partition_num)
+        partitions_per_channel = math.ceil(curr_partition_num / num_channels) 
+        channel_info = {}
         for channel in range(num_channels):
-            my_file = []
-            curr_size = 0
-            done = False
-            while curr_size + sizes[0] <= size_per_channel:
-                my_file.append(files.popleft())
-                end_byte = sizes.popleft()
-                if len(sizes) == 0:
-                    done = True
-                    break # we are taking off a bit more work each time so the last channel might leave before filling up size per channel
-                curr_size += end_byte
-                real_off = 0
-        
-            if done:
-                channel_infos[channel] = (start_byte, my_file.copy(), real_off + end_byte)
-                break
+            channel_info[channel] = [partitions[channel * partitions_per_channel + i] for i in range(partitions_per_channel)\
+                if (channel * partitions_per_channel + i) in partitions]
 
-            #curr_size + size[0] > size_per_channel, the leftmost file has enough bytes to satisfy the channel
-            # this never gonna happen in real life
-            if curr_size == size_per_channel:
-                channel_infos[channel] = (start_byte, my_file.copy(), real_off + end_byte)
-                continue
-
-            my_file.append(files[0])
-            candidate = size_per_channel - curr_size
-
-            start = max(0, candidate - self.window)
-            end = min(candidate + self.window, sizes[0])
-
-            f = open(files[0],"rb")
-            f.seek(real_off + start)
-            resp = f.read(end - start)
-            
-            first_newline = resp.find(bytes('\n', 'utf-8'))
-            last_newline = resp.rfind(bytes('\n', 'utf-8'))
-            if last_newline == -1:
-                raise Exception
-            else:
-                bytes_to_take = start + last_newline + 1
-                #samples.append(csv.read_csv(BytesIO(resp[first_newline: last_newline]), read_options=csv.ReadOptions(
-                #    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep)))
-
-            sizes[0] -= bytes_to_take
-            end_byte = real_off + bytes_to_take
-            real_off += bytes_to_take
-            channel_infos[channel] = (start_byte, my_file.copy(), end_byte)
-            start_byte = real_off
-        
-        self.length = total_size
-        #self.sample = pa.concat_tables(samples)
-        self.channel_infos = channel_infos
+        self.file_sizes = {files[i] : sizes[i] for i in range(len(files))}
         print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
-
-
+        return channel_info
+    
     def execute(self, mapper_id, state = None):
-        assert self.num_channels is not None
+        assert self.file_sizes is not None
+        assert state is not None, "dynamic lineage for inputs deprecated"
 
-        if mapper_id not in self.channel_infos:
-            return None, None
+        file, start_byte, prefix, size_per_partition = state
+        end = self.file_sizes[file]
+
+        f = open(file, "rb")   
+        assert start_byte < end
+        f.seek(start_byte)         
+
+        bytes_to_read = min(min(start_byte + self.stride, end) - start_byte, size_per_partition)
+        resp = f.read(bytes_to_read)
+        
+        #print(pos, bytes_to_read)
+        
+        last_newline = resp.rfind(bytes('\n', 'utf-8'))
+        
+
+        if last_newline == -1:
+            raise Exception
         else:
-            files = self.channel_infos[mapper_id][1]
-            
-            if state is None:
-                curr_pos = 0
-                pos = self.channel_infos[mapper_id][0]
-            else:
-                curr_pos, pos = state
-                
-                
-            file = files[curr_pos]
-            if curr_pos != len(files) - 1:
-                end = os.path.getsize(file)
-            else:
-                end = self.channel_infos[mapper_id][2]
+            resp = prefix + resp[: last_newline]
 
-            f = open(file, "rb")   
-            assert pos < end
-            f.seek(pos)         
+            if self.header and start_byte == 0:
+                first_newline = resp.find(bytes('\n','utf-8'))
+                if first_newline == -1:
+                    raise Exception
+                resp = resp[first_newline + 1:]
 
-            bytes_to_read = min(pos+self.stride, end) - pos
-            resp = f.read(bytes_to_read)
-            
-            #print(pos, bytes_to_read)
-            
-            last_newline = resp.rfind(bytes('\n', 'utf-8'))
+            bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
+                column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+            bump = bump.select(self.columns) if self.columns is not None else bump
 
-            if last_newline == -1:
-                raise Exception
-            else:
-                resp = resp[:last_newline]
-
-                if self.header and pos == 0:
-                    first_newline = resp.find(bytes('\n','utf-8'))
-                    if first_newline == -1:
-                        raise Exception
-                    resp = resp[first_newline + 1:]
-
-                bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
-                    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-                bump = bump.select(self.columns) if self.columns is not None else bump
-                
-                # if random.random() > 0.9 and redis.Redis('localhost',port=6800).get("input_already_failed") is None:
-                #     redis.Redis('localhost',port=6800).set("input_already_failed", 1)
-                #     ray.actor.exit_actor()
-
-                pos += last_newline + 1
-                if pos >= end:
-                    curr_pos += 1
-                    pos = 0
-
-                if curr_pos < len(files):                
-                    return (curr_pos, pos) , polars.from_arrow(bump)
-                else:
-                    return None, polars.from_arrow(bump)
+            return None, polars.from_arrow(bump)
 
 
 class FakeFile:
