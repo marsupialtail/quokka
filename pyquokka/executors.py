@@ -372,7 +372,7 @@ class JoinExecutor(Executor):
             assert self.first_row_right is not None, "empty RHS"
             return self.left_null.join(self.first_row_right, left_on= self.left_on, right_on= self.right_on, how = "left", suffix = self.suffix)
 
-        print("DONE", executor_id)
+        # print("DONE", executor_id)
 
 
 class AntiJoinExecutor(Executor):
@@ -544,7 +544,7 @@ class AggExecutor(Executor):
 
     def done(self,executor_id):
 
-        print("done", time.time())
+        # print("done", time.time())
 
         if self.state is None:
             return None

@@ -15,7 +15,7 @@ CHECKPOINT_INTERVAL = None
 HBQ_GC_INTERVAL = 2
 MAX_SEQ = 1000000000
 DEBUG = False
-PROFILE = True
+PROFILE = False
 FT = False
 
 def print_if_debug(*x):

@@ -32,8 +32,6 @@ class ArrowDataset:
         self.done = False
 
     def added_object(self, channel, object_handle):
-
-        print(object_handle[0])
         self.objects[channel].append(object_handle[0])
     
     def get_objects(self):

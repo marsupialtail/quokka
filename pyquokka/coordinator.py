@@ -462,10 +462,6 @@ class Coordinator:
             exit()
         for actor_id in actor_ids:
             # rotate the list for every actor so the shit doesn't always end up on the first worker machine
-            # chunks = [ alive_io_nodes[k : k + 4] for k in range(0,len(alive_io_nodes), 4) ]
-            # chunks = [ chunk[1:] + [chunk[0]] for chunk in chunks ]
-            # chunks = chunks[1:] + [chunks[0]]
-            # alive_io_nodes = [item for sublist in chunks for item in sublist]
 
             alive_io_nodes = alive_io_nodes[4:] + alive_io_nodes[:4]
 
@@ -488,35 +484,6 @@ class Coordinator:
                     a, c = tup
                     seqs = df.seq.to_list()
                     self.NTT.lpush(self.r, alive_io_nodes[k], TapedInputTask(int(a), int(c), [int(i) for i in seqs]).reduce())
-
-
-        # ip_scores = {k: 0 for k in ip_scores}
-        
-        # for actor_id, channel_id in new_input_requests:
-
-        #     # git = self.GIT.smembers(self.r, pickle.dumps((actor_id, channel_id)))
-        #     # git = {int(i) for i in git}
-        #     seqs = sorted(list(new_input_requests[actor_id, channel_id]))
-        #     # seqs = [i for i in seqs if i in git]
-
-        #     if len(seqs) == 0:
-        #         continue
-
-        #     alive_io_nodes = [k for k in alive_nodes if k in self.io_nodes]
-        #     if len(alive_io_nodes) == 0:
-        #         print("Ran out of IOTaskManagers to schedule work, fault recovery has failed most likely because of catastrophic number of server losses")
-        #         exit()
-
-        #     # handle the rest
-        #     # assert self.GIT.srem(self.r, pickle.dumps((actor_id, channel_id)), seqs) == len(seqs)
-
-        #     ip = min(ip_scores, key=ip_scores.get)
-        #     ip_scores[ip] += len(seqs)
-        #     unlucky_one = random.choice(ip_to_alive_io_nodes[ip])
-
-        #     assert unlucky_one is not None
-
-        #     self.NTT.lpush(self.r,unlucky_one, TapedInputTask(actor_id, channel_id, seqs).reduce())
         
         replay_requests = pd.DataFrame(replay_requests, columns = ['source_actor_id','source_channel_id','location','seq', 'target_actor_id', 'target_channel_id'])
         for location, location_df in replay_requests.groupby('location'):

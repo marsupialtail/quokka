@@ -87,6 +87,9 @@ class TaskGraph:
         self.LT = LineageTable()
         self.DST = DoneSeqTable()
 
+        # progress tracking stuff
+        self.input_partitions = {}
+
     def get_total_channels_from_placement_strategy(self, placement_strategy, node_type):
 
         if type(placement_strategy) == SingleChannelStrategy:
@@ -112,6 +115,8 @@ class TaskGraph:
         
         channel_info = reader.get_own_state(self.get_total_channels_from_placement_strategy(placement_strategy, 'input'))
         # print(channel_info)
+        self.input_partitions[self.current_actor] = sum([len(channel_info[k]) for k in channel_info])
+
         self.FOT.set(self.r, self.current_actor, ray.cloudpickle.dumps(reader))
 
         count = 0
@@ -201,11 +206,11 @@ class TaskGraph:
             start = time.time()
             if predicate_fn != sqlglot.exp.TRUE:
                 x = x.filter(predicate_fn(x))
-            print("filter time", time.time() - start)
+            # print("filter time", time.time() - start)
 
             start = time.time()
             partitioned = partitioner_fn(x, source_channel, num_target_channels)
-            print("partition fn time", time.time() - start)
+            # print("partition fn time", time.time() - start)
 
             results = {}
             for channel in partitioned:
@@ -223,7 +228,7 @@ class TaskGraph:
                     results[channel] =  payload[sorted(list(projection))]
                 else:
                     results[channel] = payload
-                print("selection time", time.time() - start)
+                # print("selection time", time.time() - start)
             return results
         
         mapping = {}
@@ -339,8 +344,42 @@ class TaskGraph:
         # galaxy brain shit here -- the topological order is implicit given the way the API works. 
         topological_order = list(range(self.current_actor))[::-1]
         topological_order = [k for k in topological_order if self.actor_types[k] != 'input']
-        print("topological_order", topological_order)
+        # print("topological_order", topological_order)
         ray.get(self.coordinator.register_actor_topo.remote(topological_order))
         
     def run(self):
+
+        def progress():
+            from tqdm import tqdm
+
+            input_partitions = {}
+            pbars = {k: tqdm(total = self.input_partitions[k]) for k in self.input_partitions}
+            curr_source = 0
+            for k in pbars:
+                pbars[k].set_description("Processing input source " + str(curr_source))
+                input_partitions[k] = self.input_partitions[k]
+                curr_source += 1
+
+            while True:
+                time.sleep(0.5)
+                current_partitions = {k : 0 for k in input_partitions}
+                ntt = self.NTT.to_dict(self.r)
+                ios = {k: ntt[k] for k in ntt if 'input' in str(ntt[k])}
+                for node in ios:
+                    for task in ios[node]:
+                        actor_id = task[1][0]
+                        current_partitions[actor_id] += len(task[1][2])
+                for k in current_partitions:
+                    pbars[k].update(input_partitions[k] - current_partitions[k])
+                input_partitions = current_partitions
+                if not any(input_partitions.values()):
+                    break
+
+
+        import threading
+        if not PROFILE:
+            new_thread = threading.Thread(target = progress)
+            new_thread.start()
         ray.get(self.coordinator.execute.remote())
+        if not PROFILE:
+            new_thread.join()
