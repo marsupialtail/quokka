@@ -651,7 +651,7 @@ class InputS3CSVDataset:
                 partitions[curr_partition_num + i] = (curr_file, i * size_per_partition)
             curr_partition_num += num_partitions
         
-        @ray.remote(num_cpus=0.001)
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
         def download_range(bucket, file, start_byte, end_byte):
             s3 = boto3.client('s3')
             resp = s3.get_object(Bucket=bucket, Key=file, Range='bytes={}-{}'.format(start_byte, end_byte))['Body'].read()
@@ -665,7 +665,7 @@ class InputS3CSVDataset:
             if start_byte == 0:
                 partitions[partition] = (curr_file, start_byte, b'')
             else:
-                prefix_fut = download_range.remote(self.bucket, curr_file, start_byte - self.window, start_byte - 1)
+                prefix_fut = executor.submit(download_range, self.bucket, curr_file, start_byte - self.window, start_byte - 1)
                 partitions[partition] = (curr_file, start_byte, prefix_fut)
         print("DISPATCH TIME", time.time() - start)
         start = time.time()
@@ -674,7 +674,7 @@ class InputS3CSVDataset:
             if fut == b'':
                 partitions[partition] = (curr_file, start_byte, b'', size_per_partition)
             else:
-                partitions[partition] = (curr_file, start_byte, ray.get(fut), size_per_partition)
+                partitions[partition] = (curr_file, start_byte, fut.result(), size_per_partition)
         print("GATHER TIME", time.time() - start)
         #assign partitions
         print(curr_partition_num)

@@ -138,7 +138,7 @@ class InputS3CSVNode(SourceNode):
         self.projection = projection
 
     def lower(self, task_graph):
-        csv_reader = InputS3CSVDataset(self.bucket, self.schema, prefix = self.prefix, key = self.key, sep=self.sep, header = self.has_header, stride = 16 * 1024 * 1024, columns = self.projection)
+        csv_reader = InputS3CSVDataset(self.bucket, self.schema, prefix = self.prefix, key = self.key, sep=self.sep, header = self.has_header, stride = 128 * 1024 * 1024, columns = self.projection)
         node = task_graph.new_input_reader_node(csv_reader, self.placement_strategy)
         return node
 

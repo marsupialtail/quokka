@@ -117,10 +117,13 @@ class TaskGraph:
         # print(channel_info)
         self.input_partitions[self.current_actor] = sum([len(channel_info[k]) for k in channel_info])
 
-        self.FOT.set(self.r, self.current_actor, ray.cloudpickle.dumps(reader))
+        pipe = self.r.pipeline()
+        start = time.time()
+        self.FOT.set(pipe, self.current_actor, ray.cloudpickle.dumps(reader))
 
         count = 0
         channel_locs = {}
+        
         for node in sorted(self.io_nodes):
             for channel in range(placement_strategy.channels_per_node):
 
@@ -133,16 +136,15 @@ class TaskGraph:
                     vals = {pickle.dumps((self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
 
                     input_task = TapedInputTask(self.current_actor, count, [i for i in range(len(lineages))])
-                    self.LT.mset(self.r, vals)
-                    self.NTT.rpush(self.r, node, input_task.reduce())
+                    self.LT.mset(pipe, vals)
+                    self.NTT.rpush(pipe, node, input_task.reduce())
 
-                self.DST.set(self.r, pickle.dumps((self.current_actor, count)), len(lineages) - 1)
+                self.DST.set(pipe, pickle.dumps((self.current_actor, count)), len(lineages) - 1)
                 channel_locs[count] = node
                 count += 1
-                
-        
+        pipe.execute()
         ray.get(self.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
-        
+
         return self.epilogue(placement_strategy)
     
     def get_default_partition(self, source_node_id, target_placement_strategy):
@@ -286,8 +288,10 @@ class TaskGraph:
 
         if placement_strategy is None:
             placement_strategy = CustomChannelsStrategy(1)
+        
+        pipe = self.r.pipeline()
 
-        self.FOT.set(self.r, self.current_actor, ray.cloudpickle.dumps(functionObject))
+        self.FOT.set(pipe, self.current_actor, ray.cloudpickle.dumps(functionObject))
 
         input_reqs = self.prologue(streams, placement_strategy, source_target_info)
         # print("input_reqs",input_reqs)
@@ -298,9 +302,9 @@ class TaskGraph:
             node = self.leader_compute_nodes[0]
             exec_task = ExecutorTask(self.current_actor, 0, 0, 0, input_reqs)
             channel_locs[0] = node
-            self.NTT.rpush(self.r, node, exec_task.reduce())
-            self.CLT.set(self.r, pickle.dumps((self.current_actor, 0)), self.node_locs[node])
-            self.IRT.set(self.r, pickle.dumps((self.current_actor, 0, -1)), pickle.dumps(input_reqs))
+            self.NTT.rpush(pipe, node, exec_task.reduce())
+            self.CLT.set(pipe, pickle.dumps((self.current_actor, 0)), self.node_locs[node])
+            self.IRT.set(pipe, pickle.dumps((self.current_actor, 0, -1)), pickle.dumps(input_reqs))
 
         elif type(placement_strategy) == CustomChannelsStrategy:
 
@@ -309,13 +313,14 @@ class TaskGraph:
                 for channel in range(placement_strategy.channels_per_node):
                     exec_task = ExecutorTask(self.current_actor, count, 0, 0, input_reqs)
                     channel_locs[count] = node
-                    self.NTT.rpush(self.r, node, exec_task.reduce())
-                    self.CLT.set(self.r, pickle.dumps((self.current_actor, count)), self.node_locs[node])
-                    self.IRT.set(self.r, pickle.dumps((self.current_actor, count, -1)), pickle.dumps(input_reqs))
+                    self.NTT.rpush(pipe, node, exec_task.reduce())
+                    self.CLT.set(pipe, pickle.dumps((self.current_actor, count)), self.node_locs[node])
+                    self.IRT.set(pipe, pickle.dumps((self.current_actor, count, -1)), pickle.dumps(input_reqs))
                     count += 1
         else:
             raise Exception("placement strategy not supported")
         
+        pipe.execute()
         ray.get(self.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
         
         return self.epilogue(placement_strategy)

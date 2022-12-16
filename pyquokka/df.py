@@ -400,6 +400,7 @@ class QuokkaContext:
 
         start = time.time()
         task_graph = TaskGraph(self.cluster, self.io_per_node, self.exec_per_node)
+        print("setup time ", time.time() - start)
         node = self.execution_nodes[end_node_id]
         nodes = deque([node])
         reverse_sorted_nodes = [(end_node_id,node)]
