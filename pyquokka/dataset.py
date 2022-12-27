@@ -448,7 +448,7 @@ class InputDiskCSVDataset:
         assert total_size > 0
         size_per_partition = min(int(self.stride), math.ceil(total_size / num_channels))
         # size_per_partition = int(self.stride * workers)
-        print(size_per_partition)
+        # print(size_per_partition)
 
         partitions = {}
         curr_partition_num = 0
@@ -474,7 +474,7 @@ class InputDiskCSVDataset:
                 partitions[partition] = (curr_file, start_byte, prefix, size_per_partition)
 
         #assign partitions
-        print(curr_partition_num)
+        # print(curr_partition_num)
         partitions_per_channel = math.ceil(curr_partition_num / num_channels) 
         channel_info = {}
         for channel in range(num_channels):
@@ -523,7 +523,7 @@ class InputDiskCSVDataset:
 
 
 class FakeFile:
-    def __init__(self, buffers, last_newline, prefix, end_file):
+    def __init__(self, buffers, last_newline, prefix, end_file, skip_header = False):
         self.prefix = prefix
         self.buffers = buffers
         self.closed = False
@@ -533,6 +533,7 @@ class FakeFile:
         self.end = len(buffers[0]) if end_file != 0 else last_newline
         self.is_first_read = True
         self.end_file = end_file
+        self.skip_header = skip_header
 
     def read(self, length):
         if self.file_cursor + length < self.end:
@@ -542,6 +543,9 @@ class FakeFile:
                 buf = self.prefix + self.buffers[0][:self.file_cursor]
                 #print(self.prefix)
                 #print(buf[:100])
+                if self.skip_header:
+                    first_linebreak = buf.find(b'\n')
+                    buf = buf[first_linebreak + 1:]
                 return buf
             else:
                 self.file_cursor += length
@@ -640,7 +644,6 @@ class InputS3CSVDataset:
         assert total_size > 0
         size_per_partition = min(int(self.stride * self.workers), math.ceil(total_size / num_channels))
         # size_per_partition = int(self.stride * workers)
-        print(size_per_partition)
 
         partitions = {}
         curr_partition_num = 0
@@ -667,7 +670,7 @@ class InputS3CSVDataset:
             else:
                 prefix_fut = executor.submit(download_range, self.bucket, curr_file, start_byte - self.window, start_byte - 1)
                 partitions[partition] = (curr_file, start_byte, prefix_fut)
-        print("DISPATCH TIME", time.time() - start)
+        # print("DISPATCH TIME", time.time() - start)
         start = time.time()
         for partition in partitions:
             curr_file, start_byte, fut = partitions[partition]
@@ -675,9 +678,9 @@ class InputS3CSVDataset:
                 partitions[partition] = (curr_file, start_byte, b'', size_per_partition)
             else:
                 partitions[partition] = (curr_file, start_byte, fut.result(), size_per_partition)
-        print("GATHER TIME", time.time() - start)
+        # print("GATHER TIME", time.time() - start)
         #assign partitions
-        print(curr_partition_num)
+        # print(curr_partition_num)
         partitions_per_channel = math.ceil(curr_partition_num / num_channels) 
         channel_info = {}
         for channel in range(num_channels):
@@ -730,7 +733,9 @@ class InputS3CSVDataset:
 
         last_newline = results[last_file].rfind(bytes('\n', 'utf-8'))
 
-        fake_file = FakeFile(results, last_newline, prefix, last_file)
+        skip_header = self.header and pos == 0
+
+        fake_file = FakeFile(results, last_newline, prefix, last_file, skip_header)
         bump = csv.read_csv(fake_file, read_options=csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
         del fake_file
 

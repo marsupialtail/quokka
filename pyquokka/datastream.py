@@ -149,7 +149,7 @@ class DataStream:
 
         return name_stream.collect()
 
-    def write_parquet(self, table_location, output_line_limit=10000000):
+    def write_parquet(self, table_location, output_line_limit=5000000):
 
         """
         This will write out the entire contents of the DataStream to a list of Parquets. This is a blocking operation, and will

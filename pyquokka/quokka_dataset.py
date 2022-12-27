@@ -46,7 +46,6 @@ class ArrowDataset:
 
     def to_df(self):
         dfs = []
-        print(self.objects)
         for channel in self.objects:
             for object in self.objects[channel]:
                 dfs.append(ray.get(object))

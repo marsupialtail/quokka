@@ -88,7 +88,7 @@ class OutputExecutor(Executor):
 
     def execute(self,batches,stream_id, executor_id):
 
-        fs = LocalFileSystem() if self.mode == "local" else S3FileSystem()
+        fs = LocalFileSystem() if self.mode == "local" else S3FileSystem(region='us-west-1')
         self.my_batches.extend([i for i in batches if i is not None])
 
 
@@ -101,24 +101,22 @@ class OutputExecutor(Executor):
         lengths = [len(batch) for batch in self.my_batches]
         total_len = np.sum(lengths)
 
-        if total_len <= self.row_group_size:
-            return None
+        print(time.time(),[len(batch) for batch in self.my_batches], total_len)
 
-        print(time.time(), len(self.my_batches), total_len)
+        if total_len <= self.row_group_size:
+            return
 
         write_len = total_len // self.row_group_size * self.row_group_size
-        cum_sum = np.cumsum(lengths)
-    
-        batches_to_take = np.where(cum_sum > write_len)[0][0]
-        print(batches_to_take)
-        rows_remaining = cum_sum[batches_to_take] - write_len
-        rows_to_take = lengths[batches_to_take] - rows_remaining
+        full_batches_to_take = np.where(np.cumsum(lengths) >= write_len)[0][0]        
 
-        write_batch = polars.concat(self.my_batches[:batches_to_take])
-
-        self.my_batches = self.my_batches[batches_to_take:]
+        write_batch = polars.concat(self.my_batches[:full_batches_to_take]) if full_batches_to_take > 0 else None
+        rows_to_take = int(write_len - np.sum(lengths[:full_batches_to_take]))
+        self.my_batches = self.my_batches[full_batches_to_take:]
         if rows_to_take > 0:
-            write_batch.vstack(self.my_batches[0][:rows_to_take], in_place=True)
+            if write_batch is not None:
+                write_batch.vstack(self.my_batches[0][:rows_to_take], in_place=True)
+            else:
+                write_batch = self.my_batches[0][:rows_to_take]
             self.my_batches[0] = self.my_batches[0][rows_to_take:]
 
         write_batch = write_batch.to_arrow()
@@ -129,11 +127,12 @@ class OutputExecutor(Executor):
 
 
         assert len(write_batch) % self.row_group_size == 0
+        print("WRITING", self.filepath,self.mode )
         ds.write_dataset(write_batch,base_dir = self.filepath, 
             basename_template = self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-{i}." + self.format, format=self.format, filesystem = fs,
             existing_data_behavior='overwrite_or_ignore',
             max_rows_per_file=self.row_group_size,max_rows_per_group=self.row_group_size)
-        
+        print("wrote the dataset")
         return_df = polars.from_dict({"filename":[(self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-" + str(i) + "." + self.format) for i in range(len(write_batch) // self.row_group_size) ]})
         self.name += 1
         return return_df
@@ -141,7 +140,7 @@ class OutputExecutor(Executor):
     def done(self,executor_id):
         df = polars.concat(self.my_batches)
         #print(df)
-        fs = LocalFileSystem() if self.mode == "local" else S3FileSystem()
+        fs = LocalFileSystem() if self.mode == "local" else S3FileSystem(region='us-west-1')
         write_batch = df.to_arrow()
         if self.format == "csv":
             for i, (col_name, type_) in enumerate(zip(write_batch.schema.names, write_batch.schema.types)):

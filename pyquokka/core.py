@@ -26,9 +26,10 @@ def print_if_profile(*x):
     if PROFILE:
         print(*x, time.time())
 
-def record_batch_to_polars(batch):
-    aligned_batch = pyarrow.record_batch([pyarrow.concat_arrays([arr]) for arr in batch], schema=batch.schema)
-    return polars.from_arrow(pyarrow.Table.from_batches([aligned_batch]))
+def record_batches_to_polars(batches):
+
+    aligned_batches = [pyarrow.record_batch([pyarrow.concat_arrays([arr]) for arr in batch], schema=batch.schema) for batch in batches]
+    return polars.from_arrow(pyarrow.Table.from_batches(aligned_batches))
 
 class ConnectionError(Exception):
     pass
@@ -171,17 +172,6 @@ class TaskManager:
                             self.actor_flight_clients[actor] = {channel : self.flight_clients[ip]}
                     break
             print("exitted recovery loop", self.node_id)
-
-    def check_puttable(self, client):
-        while True:
-            buf = pyarrow.allocate_buffer(0)
-            action = pyarrow.flight.Action("check_puttable", buf)
-            result = next(client.do_action(action))
-            #print(result.body.to_pybytes().decode("utf-8"))
-            if result.body.to_pybytes().decode("utf-8") != "True":
-                time.sleep(1)
-            else:
-                break
     
     def clear_flights(self, client):
         buf = pyarrow.allocate_buffer(0)
@@ -256,10 +246,17 @@ class TaskManager:
                 print_if_debug("pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
 
                 try:
-                    # self.check_puttable(client)
+                    if not self.check_puttable(client):
+                        return False
                     upload_descriptor = pyarrow.flight.FlightDescriptor.for_command(pickle.dumps((True, name, my_format)))
-                    writer, _ = client.do_put(upload_descriptor, batches[0].schema)
-                    writer.write_batch(batches[0])
+                    batch = batches[0]
+                    writer, _ = client.do_put(upload_descriptor, batch.schema)
+                    # print("Attempting to write ", batch.nbytes, "bytes")
+                    if batch.nbytes >= 2e9:
+                        for k in range(0, len(batch), len(batch)//10):
+                            writer.write_batch(batch[k : k + len(batch) // 10])
+                    else:
+                        writer.write_batch(batch)
                     writer.close()
 
                 except pyarrow._flight.FlightUnavailableError:
@@ -327,6 +324,17 @@ class ExecTaskManager(TaskManager):
             bucket.objects.all().delete()
 
         self.tape_input_reqs = {}
+    
+    def check_puttable(self, client):
+        buf = pyarrow.allocate_buffer(0)
+        action = pyarrow.flight.Action("check_puttable", buf)
+        result = next(client.do_action(action))
+        #print(result.body.to_pybytes().decode("utf-8"))
+        if result.body.to_pybytes().decode("utf-8") != "True":
+            print("BACKPRESSURING!")
+            return False
+        else:
+            return True
     
     def output_commit(self, transaction, actor_id, channel_id, out_seq, lineage):
 
@@ -396,9 +404,9 @@ class ExecTaskManager(TaskManager):
             #         exec_tape_task = True
             #         break
             # if not exec_tape_task:
-            if self.index > length - 1:
-                self.index = self.index % length
-            candidate_task = candidate_tasks[self.index]
+            if count > length - 1:
+                count = count % length
+            candidate_task = candidate_tasks[count]
             task_type, tup = pickle.loads(candidate_task)
         
             if task_type == "input" or task_type == "inputtape" or task_type == "replay":
@@ -445,40 +453,49 @@ class ExecTaskManager(TaskManager):
 
                     # we are going to assume the Flight server gives us results sorted by source_actor_id
                     
-                    batches = []
-                    source_actor_ids = set()
-                    source_channel_ids = []
-                    source_channel_seqs = {}
+                    chunks_list = []
+                    names = []
                     while True:
                         try:
                             chunk, metadata = reader.read_chunk()
                             name, format = pickle.loads(metadata)
-                            source_actor_id, source_channel_id, seq, target_actor_id, partition_fn, target_channel_id = name
-
-                            # important bug fix: you must ignore objects whose names are not in LineageTable. This means they have not yet
-                            # been committed upstream, which means their lineage could potentially change upon reconstruction!
-                            #  we need to guarantee that the resulting batches are still contiguous in terms of their sequence numbers
-                            # this is true because only the last batch for every source channel can still be uncommitted.
-
-                            if FT and self.LT.get(self.r, pickle.dumps((source_actor_id, source_channel_id, seq))) is None:
-                                
-                                print_if_debug("SKIPPING UNCOMMITED STUFF ", source_actor_id, source_channel_id, seq)
-                                continue
-
-                            input_names.append(name)
-                            
-                            source_actor_ids.add(source_actor_id)
-                            if source_channel_id in source_channel_seqs:
-                                source_channel_seqs[source_channel_id].append(seq)
-                            else:
-                                source_channel_seqs[source_channel_id] = [seq]
                             assert format == "polars"
+                            if len(names) == 0 or name != names[-1]:
+                                chunks_list.append([chunk])
+                                names.append(name)
+                            else:
+                                chunks_list[-1].append(chunk)
+                                print("creating multi-chunk")
 
-                            batches.append(chunk)
                         except StopIteration:
                             break
-                    
 
+                    batches = []
+                    source_actor_ids = set()
+                    source_channel_ids = []
+                    source_channel_seqs = {}
+                    for chunks, name in zip(chunks_list, names):
+                        source_actor_id, source_channel_id, seq, target_actor_id, partition_fn, target_channel_id = name
+
+                        # important bug fix: you must ignore objects whose names are not in LineageTable. This means they have not yet
+                        # been committed upstream, which means their lineage could potentially change upon reconstruction!
+                        #  we need to guarantee that the resulting batches are still contiguous in terms of their sequence numbers
+                        # this is true because only the last batch for every source channel can still be uncommitted.
+
+                        if FT and self.LT.get(self.r, pickle.dumps((source_actor_id, source_channel_id, seq))) is None:
+                            print_if_debug("SKIPPING UNCOMMITED STUFF ", source_actor_id, source_channel_id, seq)
+                            continue
+
+                        input_names.append(name)
+                        
+                        source_actor_ids.add(source_actor_id)
+                        if source_channel_id in source_channel_seqs:
+                            source_channel_seqs[source_channel_id].append(seq)
+                        else:
+                            source_channel_seqs[source_channel_id] = [seq]
+
+                        batches.append(chunks)
+                    
                     if len(batches) == 0:
                         self.index += 1
                         continue
@@ -486,7 +503,7 @@ class ExecTaskManager(TaskManager):
                     assert len(source_actor_ids) == 1
                     source_actor_id = source_actor_ids.pop()
 
-                    input = [record_batch_to_polars(batch) for batch in batches if len(batch) > 0]
+                    input = [record_batches_to_polars(batch) for batch in batches if sum([len(b) for b in batch]) > 0]
 
                     start = time.time()
 
@@ -579,19 +596,26 @@ class ExecTaskManager(TaskManager):
                 request = ("cache", actor_id, channel_id, input_requirements, True)
                 reader = self.flight_client.do_get(pyarrow.flight.Ticket(pickle.dumps(request)))
 
-                # we are going to assume the Flight server gives us results sorted by source_actor_id
-                batches = []
-                input_names = []
-
+                chunks_list = []
+                names = []
                 while True:
                     try:
                         chunk, metadata = reader.read_chunk()
                         name, format = pickle.loads(metadata)
                         assert format == "polars"
-                        batches.append(chunk)
-                        input_names.append(name)
+                        if len(names) == 0 or name != names[-1]:
+                            chunks_list.append([chunk])
+                            names.append(name)
+                        else:
+                            chunks_list[-1].append(chunk)
+                            print("creating multi-chunk")
+
                     except StopIteration:
                         break
+
+                # we are going to assume the Flight server gives us results sorted by source_actor_id
+                batches = chunks_list
+                input_names = names
 
                 if len(batches) == 0:
                     self.index += 1
@@ -606,7 +630,7 @@ class ExecTaskManager(TaskManager):
                 new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
                 self.tape_input_reqs[actor_id, channel_id] = new_input_reqs.select(["source_actor_id", "source_channel_id","min_seq"])
 
-                input = [record_batch_to_polars(batch) for batch in batches if len(batch) > 0]
+                input = [record_batches_to_polars(batch) for batch in batches if sum([len(b) for b in batch]) > 0]
                 
                 if len(input) > 0:
                     output, state_seq, out_seq = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
@@ -649,6 +673,22 @@ class IOTaskManager(TaskManager):
         super().__init__(node_id, coordinator_ip, worker_ips)
         self.GIT = GeneratedInputTable()
     
+    # while the exectaskmanager should error out and proceed with the next task 
+    # if check puttable is not true to relieve pressure on itself, inputs should just be held up.
+    def check_puttable(self, client):
+        while True:
+            buf = pyarrow.allocate_buffer(0)
+            action = pyarrow.flight.Action("check_puttable", buf)
+            result = next(client.do_action(action))
+            #print(result.body.to_pybytes().decode("utf-8"))
+            if result.body.to_pybytes().decode("utf-8") != "True":
+                print("BACKPRESSURING!")
+                # be nice
+                time.sleep(1)
+                continue
+            else:
+                return True
+    
     def output_commit(self, transaction, actor_id, channel_id, out_seq, lineage):
 
         if FT:
@@ -671,6 +711,7 @@ class IOTaskManager(TaskManager):
         pyarrow.set_cpu_count(8)
         count = -1
         while True:
+            time.sleep(0.5)
             self.check_in_recovery()
 
             count += 1

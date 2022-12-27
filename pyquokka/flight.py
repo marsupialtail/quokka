@@ -46,7 +46,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
         self.hbq_lock = Lock()
 
         self.host = host
-        self.mem_limit = 1e9
+        self.mem_limit = 20e9
         self.process = psutil.Process(os.getpid())
         #self.log_file = open("/home/ubuntu/flight-log","w")
 
@@ -55,31 +55,31 @@ class FlightServer(pyarrow.flight.FlightServerBase):
         return (descriptor.descriptor_type.value, descriptor.command,
                 tuple(descriptor.path or tuple()))
 
-    def _make_flight_info(self, key, descriptor, table):
-        
-        location = pyarrow.flight.Location.for_grpc_tcp(
-            self.host, self.port)
-        endpoints = [pyarrow.flight.FlightEndpoint(repr(key), [location]), ]
-        # not going to try to get the size, just return 0. not using it anyways.
-        return pyarrow.flight.FlightInfo(table.schema,
-                                         descriptor, endpoints,
-                                         table.num_rows, 0)
+    # def _make_flight_info(self, key, descriptor, table):
+    # this is wrong, table.schema won't happen, table is a list!
+    #     location = pyarrow.flight.Location.for_grpc_tcp(
+    #         self.host, self.port)
+    #     endpoints = [pyarrow.flight.FlightEndpoint(repr(key), [location]), ]
+    #     # not going to try to get the size, just return 0. not using it anyways.
+    #     return pyarrow.flight.FlightInfo(table.schema,
+    #                                      descriptor, endpoints,
+    #                                      table.num_rows, 0)
 
-    def list_flights(self, context, criteria):
-        self.flights_lock.acquire()
-        for key, table in self.flights.items():
+    # def list_flights(self, context, criteria):
+    #     self.flights_lock.acquire()
+    #     for key, table in self.flights.items():
             
-            descriptor = \
-                pyarrow.flight.FlightDescriptor.for_command(key[1])
-            yield self._make_flight_info(key, descriptor, table)
-        self.flights_lock.release()
+    #         descriptor = \
+    #             pyarrow.flight.FlightDescriptor.for_command(key[1])
+    #         yield self._make_flight_info(key, descriptor, table)
+    #     self.flights_lock.release()
         
-    def get_flight_info(self, context, descriptor):
-        key = FlightServer.descriptor_to_key(descriptor)
-        if key in self.flights:
-            table = self.flights[key]
-            return self._make_flight_info(key, descriptor, table)
-        raise KeyError('Flight not found.')
+    # def get_flight_info(self, context, descriptor):
+    #     key = FlightServer.descriptor_to_key(descriptor)
+    #     if key in self.flights:
+    #         table = self.flights[key]
+    #         return self._make_flight_info(key, descriptor, table)
+    #     raise KeyError('Flight not found.')
 
     def _all_done(self, target_id, target_channel):
         if not all(k=="done" for k in self.latest_input_received[target_id, target_channel].values()):
@@ -100,7 +100,16 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             new_row = polars.from_dict({"source_actor_id": [source_actor_id], "source_channel_id":[source_channel_id], "seq":[seq], "target_actor_id":[target_actor_id],
                 "partition_fn":[partition_fn], "target_channel_id":[target_channel_id]})
 
-            data = reader.read_chunk().data
+            batches = []
+            while True:
+                try:
+                    batches.append(reader.read_chunk().data)
+                except StopIteration:
+                    break
+            
+            assert len(batches) > 0
+            data = batches
+
             print_if_debug('acquiring flight lock')
             self.flights_lock.acquire()
             if name in self.flights:
@@ -127,7 +136,15 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             source_actor_id, source_channel_id, seq = name
             new_row = polars.from_dict({"source_actor_id": [source_actor_id], "source_channel_id":[source_channel_id], "seq":[seq]})
 
-            data = reader.read_chunk().data
+            batches = []
+            while True:
+                try:
+                    batches.append(reader.read_chunk().data)
+                except StopIteration:
+                    break
+            assert len(batches) > 0
+            data = batches
+
             self.hbq_lock.acquire()
             if name in self.hbq:
                 print("duplicate data detected")
@@ -148,7 +165,8 @@ class FlightServer(pyarrow.flight.FlightServerBase):
     def number_batches(batches):
         for name, batch in batches:
             print_if_debug(batch[0])
-            yield batch[0] , pickle.dumps((name, batch[1]))
+            for b in batch[0]:
+                yield b , pickle.dumps((name, batch[1]))
 
     def do_get(self, context, ticket):
 
@@ -262,7 +280,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             raise Exception("mode not supported")
         
         print_if_debug(batches)
-        return pyarrow.flight.GeneratorStream(batches[0][1][0].schema, self.number_batches(batches))
+        return pyarrow.flight.GeneratorStream(batches[0][1][0][0].schema, self.number_batches(batches))
 
     def list_actions(self, context):
         return [
@@ -287,8 +305,8 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             yield pyarrow.flight.Result(pyarrow.py_buffer(b'Cleared!'))
         elif action.type == "check_puttable":
             # puts should now be blocking due to the DiskQueue!
-            cond = True #sum(self.flights[i].nbytes for i in self.flights) < self.mem_limit
-            #cond = self.process.memory_info().rss < self.mem_limit
+            # cond = True #sum(self.flights[i].nbytes for i in self.flights) < self.mem_limit
+            cond = psutil.virtual_memory().available > 10e9
             yield pyarrow.flight.Result(pyarrow.py_buffer(bytes(str(cond), "utf-8")))
     
         elif action.type == "get_hbq_info":
