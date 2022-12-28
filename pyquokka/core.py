@@ -12,11 +12,12 @@ import boto3
 import types
 
 CHECKPOINT_INTERVAL = None
-HBQ_GC_INTERVAL = 2
 MAX_SEQ = 1000000000
 DEBUG = False
 PROFILE = False
-FT = True
+FT = False
+MEM_LIMIT = 0.25
+MAX_BATCHES = 5
 
 def print_if_debug(*x):
     if DEBUG:
@@ -66,6 +67,7 @@ class TaskManager:
         # this defines how this object is going to push outputs
         self.flight_client = pyarrow.flight.connect("grpc://0.0.0.0:5005")
         self.clear_flights(self.flight_client)
+        self.set_flight_configs(self.flight_client)
         self.flight_clients = {i: pyarrow.flight.connect("grpc://" + str(i) + ":5005") for i in worker_ips}
 
         #  Bytedance can write this.
@@ -178,6 +180,14 @@ class TaskManager:
         action = pyarrow.flight.Action("clear", buf)
         result = next(client.do_action(action))
         #print(result.body.to_pybytes().decode("utf-8"))
+        if result.body.to_pybytes().decode("utf-8") != "True":
+            print(result.body.to_pybytes().decode("utf-8"))
+            raise Exception
+    
+    def set_flight_configs(self, client):
+        message = pyarrow.py_buffer(pickle.dumps({"mem_limit" : MEM_LIMIT, "max_batches" : MAX_BATCHES}))
+        action = pyarrow.flight.Action("set_configs", message)
+        result = next(client.do_action(action))
         if result.body.to_pybytes().decode("utf-8") != "True":
             print(result.body.to_pybytes().decode("utf-8"))
             raise Exception

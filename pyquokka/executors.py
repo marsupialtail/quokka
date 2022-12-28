@@ -8,6 +8,7 @@ import time
 import numpy as np
 import os, psutil
 import pyarrow.parquet as pq
+import pyarrow.csv as csv
 from collections import deque
 import pyarrow.compute as compute
 import random
@@ -79,6 +80,7 @@ class OutputExecutor(Executor):
         self.my_batches = []
         self.name = 0
         self.mode = mode
+        self.executor = None
 
     def serialize(self):
         return {}, "all"
@@ -128,10 +130,36 @@ class OutputExecutor(Executor):
 
         assert len(write_batch) % self.row_group_size == 0
         print("WRITING", self.filepath,self.mode )
-        ds.write_dataset(write_batch,base_dir = self.filepath, 
-            basename_template = self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-{i}." + self.format, format=self.format, filesystem = fs,
-            existing_data_behavior='overwrite_or_ignore',
-            max_rows_per_file=self.row_group_size,max_rows_per_group=self.row_group_size)
+
+        if self.executor is None:
+            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+
+        def upload_parquet(table, where):
+            pq.write_table(table, where, filesystem=fs)
+            return True
+        def upload_csv(table, where):
+            f = fs.open_output_stream(where)
+            csv.write_csv(table, f)
+            f.close()
+            return True
+
+        futures = []
+
+        for i in range(0, len(write_batch), self.row_group_size):
+            current_batch = write_batch[i * self.row_group_size : (i+1) * self.row_group_size]
+            basename_template = self.filepath + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.name)  + "." + self.format
+            self.name += 1
+            if self.format == "parquet":
+                futures.append(self.executor.submit(upload_parquet, current_batch, basename_template))
+            else:
+                futures.append(self.executor.submit(upload_csv, current_batch, basename_template))
+        
+        assert all([fut.result() for fut in futures])
+
+        # ds.write_dataset(write_batch,base_dir = self.filepath, 
+        #     basename_template = self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-{i}." + self.format, format=self.format, filesystem = fs,
+        #     existing_data_behavior='overwrite_or_ignore',
+        #     max_rows_per_file=self.row_group_size,max_rows_per_group=self.row_group_size)
         print("wrote the dataset")
         return_df = polars.from_dict({"filename":[(self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-" + str(i) + "." + self.format) for i in range(len(write_batch) // self.row_group_size) ]})
         self.name += 1

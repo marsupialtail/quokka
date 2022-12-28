@@ -46,7 +46,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
         self.hbq_lock = Lock()
 
         self.host = host
-        self.mem_limit = 20e9
+        self.config_dict = {"mem_limit" : 0.25, "max_batches": 10}
         self.process = psutil.Process(os.getpid())
         #self.log_file = open("/home/ubuntu/flight-log","w")
 
@@ -200,7 +200,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
 
                 exec_plan = self.flight_keys.lazy().filter((polars.col("target_actor_id") == actor_id) & (polars.col("target_channel_id") == channel_id))\
                                                 .join(input_requirements.lazy(), left_on= ["source_actor_id", "source_channel_id"], right_on=["source_actor_id", "source_channel_id"])\
-                                                .filter(polars.col("seq") >= polars.col("min_seq")).limit(5)\
+                                                .filter(polars.col("seq") >= polars.col("min_seq")).limit(self.config_dict["max_batches"])\
                                                 .select(["source_actor_id", "source_channel_id", "seq", "partition_fn", "min_seq"])\
                                                 .collect()
                 
@@ -300,13 +300,17 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             # clear out the datasets that you store, not implemented yet.
             cond = True
             yield pyarrow.flight.Result(pyarrow.py_buffer(bytes(str(cond), "utf-8")))
-        elif action.type == "clear_messages": # clears out messages but keeps all the data items.
-            self.flights.clear()
-            yield pyarrow.flight.Result(pyarrow.py_buffer(b'Cleared!'))
+        elif action.type == "set_configs":
+            config_dict = pickle.loads(action.body.to_pybytes())
+            for key in config_dict:
+                assert key in self.config_dict, "got an unrecognized Flight server config"
+                self.config_dict[key] = config_dict[key]
+            cond = True
+            yield pyarrow.flight.Result(pyarrow.py_buffer(bytes(str(cond), "utf-8")))
         elif action.type == "check_puttable":
             # puts should now be blocking due to the DiskQueue!
             # cond = True #sum(self.flights[i].nbytes for i in self.flights) < self.mem_limit
-            cond = psutil.virtual_memory().available > 10e9
+            cond = (psutil.virtual_memory().available / psutil.virtual_memory().total) > self.config_dict["mem_limit"]
             yield pyarrow.flight.Result(pyarrow.py_buffer(bytes(str(cond), "utf-8")))
     
         elif action.type == "get_hbq_info":
