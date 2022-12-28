@@ -654,31 +654,58 @@ class InputS3CSVDataset:
                 partitions[curr_partition_num + i] = (curr_file, i * size_per_partition)
             curr_partition_num += num_partitions
         
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=16)
-        def download_range(bucket, file, start_byte, end_byte):
-            s3 = boto3.client('s3')
-            resp = s3.get_object(Bucket=bucket, Key=file, Range='bytes={}-{}'.format(start_byte, end_byte))['Body'].read()
-            last_newline = resp.rfind(b'\n')
-            return resp[last_newline + 1:]
+        
+        @ray.remote
+        def download_ranges(inputs):
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+            boto3.client('s3')
+            def download_range(bucket, file, start_byte, end_byte):
+                s3 = boto3.client('s3')
+                resp = s3.get_object(Bucket=bucket, Key=file, Range='bytes={}-{}'.format(start_byte, end_byte))['Body'].read()
+                last_newline = resp.rfind(b'\n')
+                return resp[last_newline + 1:]
+            futures = {}
+            for partition in inputs:
+                bucket, file, start_byte, end_byte = inputs[partition]
+                futures[partition] = executor.submit(download_range, bucket, file, start_byte, end_byte)
+            return {partition:futures[partition].result() for partition in inputs}
 
         # refinement
         start = time.time()
+        inputs = {}
         for partition in partitions:
             curr_file, start_byte = partitions[partition]
             if start_byte == 0:
                 partitions[partition] = (curr_file, start_byte, b'')
             else:
-                prefix_fut = executor.submit(download_range, self.bucket, curr_file, start_byte - self.window, start_byte - 1)
-                partitions[partition] = (curr_file, start_byte, prefix_fut)
-        # print("DISPATCH TIME", time.time() - start)
+                inputs[partition] = (self.bucket, curr_file, start_byte - self.window, start_byte - 1)
+                partitions[partition] = (curr_file, start_byte, b'1')
+
+        ips = [k for k in ray.available_resources() if 'node' in k]
+        prefixes_per_ip = len(inputs) // len(ips) + 1
+        prefixes_futs = []
+        partition_list = list(inputs.keys())
+        for i in range(len(ips)):
+            ip = ips[i]
+            prefixes_futs.append(download_ranges.options(resources = {ip : 0.001}).\
+                remote({partition: inputs[partition] for partition in partition_list[i * prefixes_per_ip : (i + 1) * prefixes_per_ip ]}))
+
+        print("DISPATCH TIME", time.time() - start)
         start = time.time()
+        prefixes = {}
+        results = ray.get(prefixes_futs)
+        for result in results:
+            for key in result:
+                prefixes[key] = result[key]
+
         for partition in partitions:
             curr_file, start_byte, fut = partitions[partition]
             if fut == b'':
                 partitions[partition] = (curr_file, start_byte, b'', size_per_partition)
             else:
-                partitions[partition] = (curr_file, start_byte, fut.result(), size_per_partition)
-        # print("GATHER TIME", time.time() - start)
+                partitions[partition] = (curr_file, start_byte, prefixes[partition], size_per_partition)
+    
+        print("GATHER TIME", time.time() - start)
         #assign partitions
         # print(curr_partition_num)
         partitions_per_channel = math.ceil(curr_partition_num / num_channels) 

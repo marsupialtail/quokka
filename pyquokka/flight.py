@@ -200,7 +200,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
 
                 exec_plan = self.flight_keys.lazy().filter((polars.col("target_actor_id") == actor_id) & (polars.col("target_channel_id") == channel_id))\
                                                 .join(input_requirements.lazy(), left_on= ["source_actor_id", "source_channel_id"], right_on=["source_actor_id", "source_channel_id"])\
-                                                .filter(polars.col("seq") >= polars.col("min_seq"))\
+                                                .filter(polars.col("seq") >= polars.col("min_seq")).limit(5)\
                                                 .select(["source_actor_id", "source_channel_id", "seq", "partition_fn", "min_seq"])\
                                                 .collect()
                 

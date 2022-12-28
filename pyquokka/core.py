@@ -16,7 +16,7 @@ HBQ_GC_INTERVAL = 2
 MAX_SEQ = 1000000000
 DEBUG = False
 PROFILE = False
-FT = False
+FT = True
 
 def print_if_debug(*x):
     if DEBUG:
@@ -672,10 +672,12 @@ class IOTaskManager(TaskManager):
     def __init__(self, node_id: int, coordinator_ip: str, worker_ips: list) -> None:
         super().__init__(node_id, coordinator_ip, worker_ips)
         self.GIT = GeneratedInputTable()
-    
+        self.delay = 0.1
+
     # while the exectaskmanager should error out and proceed with the next task 
     # if check puttable is not true to relieve pressure on itself, inputs should just be held up.
     def check_puttable(self, client):
+        delayed = False
         while True:
             buf = pyarrow.allocate_buffer(0)
             action = pyarrow.flight.Action("check_puttable", buf)
@@ -684,7 +686,11 @@ class IOTaskManager(TaskManager):
             if result.body.to_pybytes().decode("utf-8") != "True":
                 print("BACKPRESSURING!")
                 # be nice
-                time.sleep(1)
+                if not delayed:
+                    self.delay += 1
+                    delayed = True
+                print(self.delay)
+                time.sleep(self.delay)
                 continue
             else:
                 return True
@@ -711,7 +717,9 @@ class IOTaskManager(TaskManager):
         pyarrow.set_cpu_count(8)
         count = -1
         while True:
-            time.sleep(0.5)
+            time.sleep(self.delay)
+            if self.delay - 0.1 > 0.1:
+                self.delay -= 0.1
             self.check_in_recovery()
 
             count += 1

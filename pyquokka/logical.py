@@ -151,7 +151,7 @@ class InputDiskCSVNode(SourceNode):
         self.projection = projection
 
     def lower(self, task_graph):
-        csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, header = self.has_header, stride = 128 * 1024 * 1024, columns = self.projection)
+        csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, header = self.has_header, stride = 16 * 1024 * 1024, columns = self.projection)
         node = task_graph.new_input_reader_node(csv_reader, self.placement_strategy)
         return node
 
