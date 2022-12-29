@@ -18,6 +18,19 @@ Quokka operates on DataStreams, which are basically Spark RDDs except data parti
 
 ## How?
 
+Quokka requires Redis > 6.2. You can install latest Redis using: 
+
+~~~bash
+curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list
+
+sudo apt-get update
+sudo apt-get install redis
+~~~
+
+Make sure to run `redis-server -v` to check the Redis Server version! The default `apt-get install` version is most likely wrong.
+
 ~~~python
 pip3 install pyquokka
 ~~~
