@@ -39,11 +39,7 @@ Yes, of course. Quokka currently supports a DataFrame-like API, documented [here
 SQL support is in the works and currently passes half of the TPC-H benchmark. Quokka's performance is similar to Trino at the moment on these queries for Parquet and a lot faster than everybody else if the input is in CSV format. 
 
 <p align="center">
-  <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/tpch-parquet.svg?raw=true" alt="Title"/>
-</p>
-
-<p align="center">
-  <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/tpch-csv.svg?raw=true" alt="Title"/>
+  <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/quokka-4-csv.svg?raw=true" alt="Title"/>
 </p>
 
 You can definitely try to see if you can run your SparkSQL or Trino workflows in Quokka right now. 
