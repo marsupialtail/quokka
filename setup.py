@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.1.2' 
+VERSION = '0.1.3' 
 DESCRIPTION = 'Quokka'
 LONG_DESCRIPTION = """
 Dope way to do cloud analytics\n
@@ -10,7 +10,6 @@ or https://marsupialtail.github.io/quokka/\n
 
 # Setting up
 setup(
-       # the name must match the folder name 'verysimplemodule'
         name="pyquokka", 
         version=VERSION,
         author="Tony Wang",
@@ -38,6 +37,6 @@ setup(
             "Development Status :: 3 - Alpha",
             "Programming Language :: Python :: 3",
             "Operating System :: MacOS :: MacOS X",
-            "Operating System :: Microsoft :: Windows",
+            "Operating System :: POSIX :: Linux",
         ]
 )

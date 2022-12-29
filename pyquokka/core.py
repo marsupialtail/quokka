@@ -521,6 +521,11 @@ class ExecTaskManager(TaskManager):
                         output, _ , _ = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
                     else:
                         output = None
+                    
+                    if hasattr(self.function_objects[actor_id, channel_id], 'update_sources'):
+                        remaining_source_actor_ids = input_requirements["source_actor_id"].unique().to_list()
+                        remaining_sources = set([self.mappings[actor_id][source_actor_id] for source_actor_id in remaining_source_actor_ids])
+                        self.function_objects[actor_id, channel_id].update_sources(remaining_sources)
 
                     print_if_profile("execute time", time.time() - start)
 

@@ -162,7 +162,6 @@ class OutputExecutor(Executor):
         #     max_rows_per_file=self.row_group_size,max_rows_per_group=self.row_group_size)
         print("wrote the dataset")
         return_df = polars.from_dict({"filename":[(self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-" + str(i) + "." + self.format) for i in range(len(write_batch) // self.row_group_size) ]})
-        self.name += 1
         return return_df
 
     def done(self,executor_id):
@@ -332,6 +331,7 @@ class JoinExecutor(Executor):
             print(self.state1)
         except:
             self.state1 = None
+
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
         # state compaction
@@ -391,6 +391,16 @@ class JoinExecutor(Executor):
 
         if result is not None and len(result) > 0:
             return result
+    
+    def update_sources(self, remaining_sources):
+        #print(remaining_sources)
+        if self.how == "inner":
+            if 0 not in remaining_sources:
+                #print("DROPPING STATE!")
+                self.state1 = None
+            if 1 not in remaining_sources:
+                #print("DROPPING STATE!")
+                self.state0 = None
     
     def done(self,executor_id):
         #print(len(self.state0),len(self.state1))

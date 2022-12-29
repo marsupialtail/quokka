@@ -482,7 +482,6 @@ class InputDiskCSVDataset:
                 if (channel * partitions_per_channel + i) in partitions]
 
         self.file_sizes = {files[i] : sizes[i] for i in range(len(files))}
-        print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
         return channel_info
     
     def execute(self, mapper_id, state = None):
@@ -599,7 +598,7 @@ class InputS3CSVDataset:
     def get_own_state(self, num_channels):
         
         samples = []
-        print("intializing CSV reading strategy. This is currently done locally, which might take a while.")
+        # print("intializing CSV reading strategy. This is currently done locally, which might take a while.")
         self.num_channels = num_channels
 
         s3 = boto3.client('s3')  # needs boto3 client, however it is transient and is not part of own state, so Ray can send this thing! 
@@ -690,7 +689,7 @@ class InputS3CSVDataset:
             prefixes_futs.append(download_ranges.options(resources = {ip : 0.001}).\
                 remote({partition: inputs[partition] for partition in partition_list[i * prefixes_per_ip : (i + 1) * prefixes_per_ip ]}))
 
-        print("DISPATCH TIME", time.time() - start)
+        # print("DISPATCH TIME", time.time() - start)
         start = time.time()
         prefixes = {}
         results = ray.get(prefixes_futs)
@@ -705,7 +704,7 @@ class InputS3CSVDataset:
             else:
                 partitions[partition] = (curr_file, start_byte, prefixes[partition], size_per_partition)
     
-        print("GATHER TIME", time.time() - start)
+        # print("GATHER TIME", time.time() - start)
         #assign partitions
         # print(curr_partition_num)
         partitions_per_channel = math.ceil(curr_partition_num / num_channels) 
@@ -715,7 +714,7 @@ class InputS3CSVDataset:
                 if (channel * partitions_per_channel + i) in partitions]
 
         self.file_sizes = {files[i] : sizes[i] for i in range(len(files))}
-        print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV")
+        print("initialized CSV reading strategy for ", total_size // 1024 // 1024 // 1024, " GB of CSV on S3")
         return channel_info
 
     def execute(self, mapper_id, state = None):
