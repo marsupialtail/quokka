@@ -34,3 +34,12 @@ Efficient fault handling in pipelined query execution is actually the main acade
 
 **OK enough talk! What's the state of Quokka right now, and can I use it?** 
 
+Yes, of course. Quokka currently supports a DataFrame-like API, documented [here](https://marsupialtail.github.io/quokka/simple/). It should work on local machine no problem (and should be a lot faster than Pandas!). Distributed setup is a bit more [involved](https://marsupialtail.github.io/quokka/cloud/) and only supports EC2 right now. 
+
+SQL support is in the works and currently passes half of the TPC-H benchmark. Quokka's performance is similar to Trino at the moment on these queries for Parquet and a lot faster than everybody else if the input is in CSV format. 
+
+<p align="center">
+  <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/quokka-4-csv.svg?raw=true" alt="Title"/>
+</p>
+
+You can definitely try to see if you can run your SparkSQL or Trino workflows in Quokka right now. 
