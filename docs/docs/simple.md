@@ -23,7 +23,7 @@ qc = QuokkaContext()
 
 Once we have the `QuokkaContext` object, we can start reading data to obtain DataStreams. Quokka can read data on disk and on the cloud (currently S3). For the purposes of this tutorial we will be reading data from disk. Quokka currently reads CSV and Parquet, with plans to add JSON soon. 
 
-Here is how you would read a CSV file if you know the schema:
+Here is how you would read a CSV file **if you know the schema**:
 
 ~~~python
 # the last column is called NULL, because the TPC-H data generator likes to put a | at the end of each row, making it appear as if there is a final column
@@ -35,8 +35,10 @@ lineitem = qc.read_csv(disk_path + "lineitem.tbl", lineitem_scheme, sep="|")
 And if you don't know the schema but there is a header row where column names are **separated with the same separator as the data**:
 
 ~~~python
-lineitem = qc.read_csv(disk_path + "lineitem.tbl.named", sep="|", has_header=True)
+lineitem = qc.read_csv(disk_path + "lineitem.tbl", sep="|", has_header=True)
 ~~~
+
+The test files you just downloaded are of this form. No need to specify the schema for those. In this case Quokka will just use the header row for the schema.
 
 You can also read a directory of CSV files:
 
@@ -78,7 +80,7 @@ Currently, `qc.read_csv` and `qc.read_parquet` will either return a DataStream o
 Now that we have read the data, let's do things with it. First, why don't we count how many rows there are in the `lineitem` table.
 
 ~~~python
->>> lineitem.aggregate({"*":"count"}).collect()
+>>> lineitem.count()
 ~~~
 
 If you don't see the number 6001215 after a while, something is very wrong. Please send me an email, I will help you fix things (and buy you a coffee): zihengw@stanford.edu.

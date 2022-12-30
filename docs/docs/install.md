@@ -7,6 +7,17 @@ Quokka can be installed as a pip package:
 pip3 install pyquokka
 ~~~
 
+You should also install the latest version of Redis if you are using Quokka locally: 
+
+~~~bash
+curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list
+
+sudo apt-get update
+sudo apt-get install redis
+~~~
+
 **Please note that Quokka has problems on Mac M1 laptops. It is tested to work on x86 Ubuntu environments.**
 
 If you only plan on running Quokka locally, you are done. Here is a [10 min lesson](simple.md) on how it works.
