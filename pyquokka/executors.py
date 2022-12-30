@@ -103,7 +103,7 @@ class OutputExecutor(Executor):
         lengths = [len(batch) for batch in self.my_batches]
         total_len = np.sum(lengths)
 
-        print(time.time(),[len(batch) for batch in self.my_batches], total_len)
+        # print(time.time(),[len(batch) for batch in self.my_batches], total_len)
 
         if total_len <= self.row_group_size:
             return
@@ -129,7 +129,7 @@ class OutputExecutor(Executor):
 
 
         assert len(write_batch) % self.row_group_size == 0
-        print("WRITING", self.filepath,self.mode )
+        # print("WRITING", self.filepath,self.mode )
 
         if self.executor is None:
             self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
@@ -160,7 +160,7 @@ class OutputExecutor(Executor):
         #     basename_template = self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-{i}." + self.format, format=self.format, filesystem = fs,
         #     existing_data_behavior='overwrite_or_ignore',
         #     max_rows_per_file=self.row_group_size,max_rows_per_group=self.row_group_size)
-        print("wrote the dataset")
+        # print("wrote the dataset")
         return_df = polars.from_dict({"filename":[(self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-" + str(i) + "." + self.format) for i in range(len(write_batch) // self.row_group_size) ]})
         return return_df
 
