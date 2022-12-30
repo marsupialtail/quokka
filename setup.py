@@ -17,7 +17,7 @@ setup(
         description=DESCRIPTION,
         long_description=LONG_DESCRIPTION,
         packages=find_packages(),
-        package_data = {"":["redis.conf"]},
+        package_data = {"":["redis.conf", "leader_startup.sh"]},
         install_requires=['pyarrow',
             'redis',
             'boto3',

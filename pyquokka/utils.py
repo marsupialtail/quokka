@@ -72,20 +72,19 @@ class LocalCluster:
 
 class QuokkaClusterManager:
 
-    def __init__(self, key_name = "oregon-neurodb", key_location = "/home/ziheng/Downloads/oregon-neurodb.pem", security_group= "sg-0770c1101ab26fba2") -> None:
+    def __init__(self, key_name = "oregon-neurodb", key_location = "/home/ziheng/Downloads/oregon-neurodb.pem", security_group= "sg-0f01d7c338d22dfa5") -> None:
         self.key_name = key_name
         self.key_location = key_location
         self.security_group = security_group
-        pass
 
     def str_key_to_int(self, d):
         return {int(i):d[i] for i in d}
 
-    def launch_all(self, command, ips, error = "Error"):
-        commands = ["ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + str(ip) + " " + command for ip in ips]
+    def launch_all(self, command, ips, error = "Error", ignore_error = False):
+        commands = ["ssh -oStrictHostKeyChecking=no -oConnectTimeout=4 -i " + self.key_location + " ubuntu@" + str(ip) + " " + command for ip in ips]
         processes = [subprocess.Popen(command, close_fds=True, shell=True) for command in commands]
         return_codes = [process.wait() for process in processes]
-        if sum(return_codes) != 0:
+        if sum(return_codes) != 0 and not ignore_error:
             raise Exception(error)
     
     def launch_all_t(self, command, ips, error = "Error"):
@@ -117,30 +116,19 @@ class QuokkaClusterManager:
         a = ec2.describe_instances(InstanceIds = instance_ids)
         public_ips = [k['PublicIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
         private_ips = [k['PrivateIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
-
-        count = 0
-        while True:
-            z = [os.system("ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + public_ip +" time") for public_ip in public_ips]
-            if sum(z) == 0:
-                break
-            else:
-                count += 1
-                if count == 6:
-                    raise Exception("Couldn't connect to new instance in 30 seconds.")
-                time.sleep(5)
         
-        self.launch_all("ulimit -c unlimited", public_ips, "Failed to set ulimit")
         leader_public_ip = public_ips[0]
         leader_private_ip = private_ips[0]
 
-        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + \
-            " redis-6.2.6/src/redis-server redis-6.2.6/redis.conf --port 6800 --protected-mode no&")
-        z = os.system("""ssh -oStrictHostKeyChecking=no -i """ + self.key_location + """ ubuntu@""" + leader_public_ip + """ -t "echo '* hard nofile 65536\n* soft nofile 65536\n* hard core unlimited\n* soft core unlimited' | sudo tee /etc/security/limits.conf" """)
         z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + 
-        " /home/ubuntu/.local/bin/ray start --head --port=6380")
-        if z != 0:
-            raise Exception("failed to start ray head node")
-        
+        " /home/ubuntu/.local/bin/ray start --disable-usage-stats --head --port=6380")
+        # this is a bug, it will only work with python3.8!
+        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + 
+        " redis-server /home/ubuntu/.local/lib/python3.8/site-packages/pyquokka/redis.conf --port 6800 --protected-mode no&")
+        # if z != 0:
+        #     raise Exception("failed to start ray head node")
+        print(leader_private_ip)
+        time.sleep(1)
         command ="/home/ubuntu/.local/bin/ray start --address='" + str(leader_private_ip) + ":6380' --redis-password='5241590000000000'"
         self.launch_all(command, public_ips, "ray workers failed to connect to ray head node")
 
@@ -154,7 +142,7 @@ class QuokkaClusterManager:
         #self.launch_all_t("nohup python3 -u flight.py >> /home/ubuntu/flight-log &", public_ips, "Failed to start flight servers on workers.")
         self.launch_all("python3 -u flight.py &", public_ips, "Failed to start flight servers on workers.")
 
-    def create_cluster(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", requirements = []):
+    def create_cluster(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = []):
 
         start_time = time.time()
         ec2 = boto3.client("ec2")
@@ -164,18 +152,34 @@ class QuokkaClusterManager:
         # important 2 things:
         # this instance needs to have all the things installed on it
         # this instance needs to have the right tcp permissions
-        res = ec2.run_instances(ImageId="ami-053b02db14020957b", InstanceType = instance_type, SecurityGroupIds = [self.security_group], KeyName=self.key_name ,MaxCount=num_instances, MinCount=num_instances)
+        # don't trust me with the AMI? https://cloud-images.ubuntu.com/locator/ This is amazon default ubuntu20.04. Needs 20.04 since python 3.8
+        res = ec2.run_instances(ImageId=ami, InstanceType = instance_type, SecurityGroupIds = [self.security_group], KeyName=self.key_name ,MaxCount=num_instances, MinCount=num_instances)
         instance_ids = [res['Instances'][i]['InstanceId'] for i in range(num_instances)] 
         waiter.wait(InstanceIds=instance_ids)
         a = ec2.describe_instances(InstanceIds = instance_ids)
         public_ips = [a['Reservations'][0]['Instances'][i]['PublicIpAddress'] for i in range(num_instances)]
         private_ips = [a['Reservations'][0]['Instances'][i]['PrivateIpAddress'] for i in range(num_instances)]
+        leader_public_ip = public_ips[0]
 
-        self._initialize_instances(instance_ids)
+        count = 0
+        while True:
+            z = [os.system("ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + public_ip +" time") for public_ip in public_ips]
+            if sum(z) == 0:
+                break
+            else:
+                count += 1
+                if count == 6:
+                    raise Exception("Couldn't connect to new instance in 30 seconds.")
+                time.sleep(5)
+
+        self.launch_all("sudo apt-get update", public_ips, "Failed to apt-get update")
+        self.launch_all("sudo apt install -y python3-pip", public_ips, "Failed to install pip", ignore_error=True)
+        self.launch_all("sudo apt install -y awscli", public_ips, "Failed to install awscli", ignore_error=True)
         self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
         self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
 
-        # requirements = ["pyquokka"] + requirements
+        # cluster must have same ray version as client.
+        requirements = ["ray==" + ray.__version__, "pyquokka"] + requirements
         for req in requirements:
             assert type(req) == str
             try:
@@ -183,6 +187,12 @@ class QuokkaClusterManager:
             except:
                 pass
 
+        pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
+        script = pyquokka_loc + "/leader_startup.sh"
+        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + " 'sudo bash -s' < " + script)
+
+        self._initialize_instances(instance_ids)
+        
         print("Trying to set up spill dir.")
         try:
             self.launch_all("sudo mkdir /data", public_ips, "failed to make temp spill directory")
