@@ -36,10 +36,14 @@ Efficient fault handling in pipelined query execution is actually the main acade
 
 Yes, of course. Quokka currently supports a DataFrame-like API, documented [here](https://marsupialtail.github.io/quokka/simple/). It should work on local machine no problem (and should be a lot faster than Pandas!). Distributed setup is a bit more [involved](https://marsupialtail.github.io/quokka/cloud/) and only supports EC2 right now. 
 
-SQL support is in the works and currently passes half of the TPC-H benchmark. Quokka's performance is similar to Trino at the moment on these queries for Parquet and a lot faster than everybody else if the input is in CSV format. 
+SQL support is in the works and currently passes half of the TPC-H benchmark. For a look at how to implement these queries in the DataFrame API, check [here](https://github.com/marsupialtail/quokka/blob/master/apps/tpc-h/tpch.py). Quokka's performance is similar to Trino at the moment on these queries for Parquet and a lot faster than everybody else if the input is in CSV format. 
 
 <p align="center">
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/quokka-4-csv.svg?raw=true" alt="Title"/>
 </p>
 
-You can definitely try to see if you can run your SparkSQL or Trino workflows in Quokka right now. 
+Quokka is under active development. In the new year, I hope to add a lot more functionality related to feature engineering, i.e. range joins, PIT joins, window functions etc. as well as improve upon the SQL execution engine's performance, potentially using SIMD kernels. I will also add some more data sources, like the Twitter API, Ethereum API, JSON files, and probably JDBC. Finally I plan to add support for connecting to an existing Ray/Kubernetes cluster, and GCP/Azure.
+
+Quokka's core execution engine is only 1000 lines of code. It is meant to be simple and easily extensible. I welcome any contributions on new data source [readers](https://github.com/marsupialtail/quokka/blob/master/pyquokka/dataset.py) or [executors](https://github.com/marsupialtail/quokka/blob/master/pyquokka/executors.py)! 
+
+If you think Quokka's cool, please join the [Discord](https://discord.gg/6ujVV9HAg3), raise a Github issue or shoot me an email: zihengw@stanford.edu.
