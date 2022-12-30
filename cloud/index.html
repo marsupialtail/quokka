@@ -55,6 +55,10 @@
               <ul class="current">
                 <li class="toctree-l1 current"><a class="reference internal current" href="./">Setting Up Cloud Cluster</a>
     <ul class="current">
+    <li class="toctree-l2"><a class="reference internal" href="#the-easy-way">The easy way</a>
+    </li>
+    <li class="toctree-l2"><a class="reference internal" href="#the-hard-way">The hard way</a>
+    </li>
     </ul>
                 </li>
               </ul>
@@ -101,16 +105,39 @@
             <div class="section" itemprop="articleBody">
               
                 <h1 id="setting-up-quokka-for-ec2">Setting up Quokka for EC2</h1>
-<p>To use Quokka for EC2, you need to (at minimum) have an AWS account with permissions to launch instances and create new security groups. You will definitely run into issues since everybody's AWS setup is a little bit different, so please email: zihengw@stanford.edu or <a href="https://discord.gg/6ujVV9HAg3">Discord</a>. </p>
-<p>Quokka requires a security group that allows inbound and outbound connections to ports 5005 (Flight), 6379 (Ray) and 6800 (Redis) from IP addresses within the cluster. For simplicity, you can just enable all inbound and outbound connections from all IP addresses. The easiest way to make this is to manually create an instance on EC2 through the dashboard, e.g. t2.micro, and manually add rules to the security group EC2 assigns that instance. Then you can either copy that security group to a new group, or keep using that modified security group for Quokka. There must be an automated way to do this in the AWS CLI, but I am too lazy to figure it out. If you want to tell me how to do it, I'll post the steps here and buy you a coffee.</p>
-<p>You also need to generate a pem key pair. The easiest way to do this, again, is to start a t2.micro in the console and using the dashboard. Save the pem key somewhere and write down the absolute path.</p>
-<p>After you have the security group and you can use the <code>QuokkaClusterManager</code> in <code>pyquokka.utils</code> to spin up a cluster. The code to do this:</p>
+<h2 id="the-easy-way">The easy way</h2>
+<p>To use Quokka for EC2, you need to <em>at minimum</em> have an AWS account with permissions to launch instances. You will probably run into issues since everybody's AWS setup is a little bit different, so please email: zihengw@stanford.edu or <a href="https://discord.gg/6ujVV9HAg3">Discord</a>. </p>
+<p>First if you haven't already, you must run <code>aws configure</code> on your local machine, i.e. the machine you are using to spin up a Quokka cluster and submit jobs to the cluster.</p>
+<p>Quokka requires a security group that allows inbound and outbound connections for Arrow Flight, Ray, Redis and SSH. For simplicity, you can just enable all inbound and outbound connections from all IP addresses. You can make a security group like this: </p>
+<pre><code class="language-bash">#!/bin/bash
+
+# Set the name and description of the security group
+GROUP_NAME=random-group
+GROUP_DESCRIPTION=&quot;Custom security group for Quokka&quot;
+
+# Create the security group
+aws ec2 create-security-group --group-name &quot;$GROUP_NAME&quot; --description &quot;$GROUP_DESCRIPTION&quot;
+
+# Get the ID of the security group
+GROUP_ID=$(aws ec2 describe-security-groups --group-names &quot;$GROUP_NAME&quot; --query &quot;SecurityGroups[0].GroupId&quot; --output text)
+echo $GROUP_ID # write this down!
+
+# Allow some inbound TCP traffic
+aws ec2 authorize-security-group-ingress --group-id &quot;$GROUP_ID&quot; --protocol tcp --port 0-65535 --cidr 0.0.0.0/0
+
+# Allow all outbound TCP traffic
+aws ec2 authorize-security-group-egress --group-id &quot;$GROUP_ID&quot; --protocol tcp --port 0-65535 --cidr 0.0.0.0/0
+</code></pre>
+<p>You also need to generate a pem key pair. The easiest way to do this is if you don't already have one, is to start a t2.micro instance in the AWS console and create a new keypair. Remember the name of the key pair and where it lives on your computer.</p>
+<p>After you have the security group ID (sg-XXXXXX), you can use the <code>QuokkaClusterManager</code> in <code>pyquokka.utils</code> to spin up a cluster. You can optionally specify an AMI_ID as the base AMI for the machines in the cluster. The first requirement is that it's running Ubuntu. The <strong>second</strong> requirement for this AMI is that the Python version on it must match the Python version on your laptop, or whatever machine that will be running Quokka code and submitting jobs to this cluster. If you don't specify anything, the default will be AWS Ubuntu Server 20.04 AMI, which assume you have Python3.8. </p>
+<p>Now you can spin up a cluster with four lines of code:</p>
 <pre><code class="language-python">from pyquokka.utils import QuokkaClusterManager
 manager = QuokkaClusterManager(key_name = YOUR_KEY, key_location = ABSOLUTE_PATH_TO_KEY, security_group= SECURITY_GROUP_ID)
-cluster = manager.create_cluster(aws_access_key, aws_access_id, num_instances = 4, instance_type = &quot;i3.2xlarge&quot;, requirements = [&quot;pytorch&quot;])
+cluster = manager.create_cluster(aws_access_secret_key, aws_access_id, num_instances = 4, instance_type = &quot;i3.2xlarge&quot;, ami=AMI_ID, requirements = [&quot;sklearn&quot;])
 cluster.to_json(&quot;config.json&quot;)
 </code></pre>
-<p>This would spin up four <code>i3.2xlarge</code> instances and install pytorch on each of them. The <code>QuokkaClusterManager</code> also has other utilities such as <code>launch_all</code>, <code>terminate_cluster</code> and <code>get_cluster_from_json</code>. Importantly, currently only on-demand instances are supported. This will change in the near future. The most interesting utility is probably <code>manager.launch_all(command)</code>, which basically runs a custom command on each machine. You can use this command to massage your cluster into your desired state. In general, all of the machines in your cluster must have all the Python packages you need installed with <code>pip</code>.</p>
+<p>This would spin up four <code>i3.2xlarge</code> instances and install Sklearn on each of them. This takes around three minutes for me.</p>
+<p>The <code>QuokkaClusterManager</code> also has other utilities such as <code>launch_all</code>, <code>terminate_cluster</code> and <code>get_cluster_from_json</code>. Importantly, currently only on-demand instances are supported. This will change in the near future. The most interesting utility is probably <code>manager.launch_all(command)</code>, which basically runs a custom command on each machine. You can use this command to massage your cluster into your desired state. In general, all of the machines in your cluster must have all the Python packages you need installed with <code>pip</code>.</p>
 <p>Importantly, if you are using on demand instances, creating a cluster only needs to happen once. Once you have saved the cluster configs to a json, the next time you want to run a job and use this cluster, you can just do: </p>
 <pre><code class="language-python">from pyquokka.utils import QuokkaClusterManager
 manager = QuokkaClusterManager(key_name = YOUR_KEY, key_location = ABSOLUTE_PATH_TO_KEY, security_group= SECURITY_GROUP_ID)
@@ -118,6 +145,34 @@ cluster = manager.get_cluster_from_json(&quot;config.json&quot;)
 </code></pre>
 <p>This will work if the cluster is either fully stopped or fully running, i.e. every machine must be in either stopped or running state. If the cluster is running, this assumes it was started by running the <code>get_cluster_from_json</code> command! <strong>Please do not manually start the instances and try to use <code>get_cluster_from_json</code> to connect to a cluster.</strong></p>
 <p>Quokka also plans to extend support to Docker/Kubernetes based deployments based on KubeRay. (Contributions welcome!) Of course, there are plans to support GCP and Azure. The best way to make sure that happens is by sending me a message on email or <a href="https://discord.gg/YKbK2TVk">Discord</a>. </p>
+<h2 id="the-hard-way">The hard way</h2>
+<p>Of course, you might wonder if you can set up the cluster yourself without using <code>pyquokka.utils</code>. Indeed you might not trust my setup -- am I stealing your data? Apart from reassuring you that I have little interest in your data, you can also try to manually setup the cluster yourself.</p>
+<p>Well it shouldn't be so hard to do this. These are the steps you have to follow: </p>
+<ul>
+<li>I assume you have your own security group and AMI image that abide by the requirements listed above. Feel free to open only specific ports, but Quokka might not work if you do. A telling sign there's a firewall problem is if Quokka hangs at launch.</li>
+<li>Please do make sure the Python version across the cluster is the same as the Python version on your laptop or whatever machine that will be submitting jobs to this cluster. </li>
+<li>Now launch a Ray cluster with the security group and AMI image. It's quite simple. Just install Ray on each machine in the cluster, and run <code>ray start</code> on the machine you choose to be the master. Now it will spit out a command you should run on the remaining machines. Go run that command on each remaining machine to setup the workers. <strong>Important: the Ray version across the cluster must also match the Ray version on your laptop.</strong></li>
+<li>You must install Redis server on the master machine. </li>
+</ul>
+<pre><code class="language-bash">curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+
+echo &quot;deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main&quot; | sudo tee /etc/apt/sources.list.d/redis.list
+
+sudo apt-get update
+sudo apt-get install redis
+</code></pre>
+<ul>
+<li>Now <code>pip install pyquokka</code> on all the machines in your cluster. That should automatically install all the dependencies you need. Of course if your workflow requires other packages like <code>PyTorch</code>, you need to pip install those as well.</li>
+<li>Now start the Redis server on the master. Quokka requires some interesting configs for this, which is in Quokka's github repo under pyquokka folder, redis.conf. Copy that file onto the master and start the Redis server: <code>redis-server redis.conf --port 6800 --protected-mode no&amp;</code> </li>
+<li>You also need to copy the Flight Server file to each worker machine. You can find flight.py in pyquokka folder and copy that to each worker machine in the home directory.</li>
+<li>Now run <code>aws configure</code> on each of the machines across the cluster assuming you will be reading data from S3.</li>
+<li>If your instance comes with NVME SSDs, mount the NVME SSD onto <code>/data</code>: <code>sudo mkfs.ext4 -E nodiscard /dev/nvme0n1; sudo mount /dev/nvme0n1 /data;</code> Otherwise just make a directory called <code>/data</code>. Give read and write privleges to this folder: <code>sudo chmod -R a+rw /data/</code>.</li>
+<li>You should be done. You should now make a json file that describes the cluster:</li>
+</ul>
+<pre><code class="language-json">{&quot;instance_ids&quot;: {&quot;0&quot;: &quot;i-0cb3e260d80acf9e1&quot;, &quot;1&quot;: &quot;i-02f307f57aa9217aa&quot;, &quot;2&quot;: &quot;i-09a5a93e7726b2eee&quot;, &quot;3&quot;: &quot;i-0af7018eba5c4bf17&quot;}, &quot;cpu_count_per_instance&quot;: 8}
+</code></pre>
+<p>Now you can use this Json file to get a Quokka cluster as described above. </p>
+<p>The hard way is not expected to work right away. In fact I would expect it not: definitely send me a message on <a href="https://discord.gg/6ujVV9HAg3">Discord</a> or email me if this doesn't work. </p>
               
             </div>
           </div><footer>
