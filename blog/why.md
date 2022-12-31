@@ -13,7 +13,7 @@ The first two objectives strongly scream **Python** as the language of choice fo
 
 I had pushback on this -- I know major tech players who maintain UDF libraries in Scala/Java, and senior engineers who claim Java is not so bad and all serious engineers should know it anyways. My argument:
 * I got a CS degree at MIT without writing a single line of Java. I know many who did the same. 
-* I want to empower data scientists without a formal CS education, and it's unlikely their first lanugage of choice is Java based on the number of tutorial videos available on YouTube. 
+* I want to empower data scientists without a formal CS education, and it's unlikely their first language of choice is Java based on the number of tutorial videos available on YouTube. 
 * Ever wondered why Tensorflow4j exists? Do you even want to learn how to use it instead of just writing PyTorch? 
 
 But how do you build a distributed engine on top of Python? After all Python is not known for its distributed prowess... Until [Ray](https://github.com/ray-project/ray) came about. Not going to waste space here describing how amazing it is -- but it's basically Akka in Python that actually works. It allows you to easily instantiate a custom Python class object on a remote worker machine and call its functions, which is pretty much all you need to build a distributed query engine. Ray also let's you easily spin up remote clusters with a few lines of code and manage arbitrary Python dependencies programmatically, which easily satisfied my first two objectives.
