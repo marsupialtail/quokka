@@ -728,6 +728,7 @@ class DataStream:
         else:
             right_table_id = 1
 
+        rename_dict = {}
         for col in right.schema:
             if col == right_on:
                 continue
@@ -736,7 +737,8 @@ class DataStream:
                     suffix not in new_schema, (
                         "the suffix was not enough to guarantee unique col names", col + suffix, new_schema)
                 new_schema.append(col + suffix)
-                schema_mapping[col+suffix] = (right_table_id, col)
+                schema_mapping[col+suffix] = (right_table_id, col + suffix)
+                rename_dict[col] = col + suffix
             else:
                 new_schema.append(col)
                 schema_mapping[col] = (right_table_id, col)
@@ -744,6 +746,9 @@ class DataStream:
         # you only need the key column on the RHS! select overloads in DataStream or Polars DataFrame runtime polymorphic
         if how == "semi" or how == "anti":
             right = right.select([right_on])
+        
+        if len(rename_dict) > 0:
+            right = right.rename(rename_dict)
 
         if issubclass(type(right), DataStream):
 
