@@ -10,9 +10,9 @@ Now that I have paid homage to my forebearers, let me say that Quokka and Spark 
 
 Quokka's DataStream API resembles Spark's DataFrame API, however is not feature complete yet. Importantly, Quokka doesn't yet support SQL input, though it will in the near future. Like Spark, Quokka's API is lazy. Like Spark, Quokka has a logical plan optimizer, though it is truly a baby compared to the gorilla-sized Spark Catalyst Optimizer.
 
-Quokka is written in Python completely on top of Ray, and integrates with Ray Data. I am collaborating with Ray Data team. If you are **running complicated Python UDFs, your SQL-ish pipeline doesn't fit Spark well (e.g. time series/feature engineering workloads) or already use Ray**, Quokka might be worth keeping on your radar. 
+Quokka is written in Python completely on top of Ray, and integrates with Ray Data. I am collaborating with Ray Data team. If you are **running complicated Python UDFs, your SQL-ish pipeline doesn't fit Spark well (e.g. time series/feature engineering workloads) or already use Ray**, Quokka might be worth keeping on your radar.
 
-Quokka is not fault tolerant, though it will be by the end of 2022. This is how I intend to be collecting my PhD, so you can be pretty darn sure it will happen.
+Like Spark, Quokka is fault tolerant and can handle worker failures, but not coordinator failures.  
 
 Finally, Quokka is written by one Stanford PhD student, while Spark has billions of dollars behind it. Obviously Quokka in its current state doesn't seek to displace Spark.
 
