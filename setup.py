@@ -29,7 +29,8 @@ setup(
             'h5py',
             'polars==0.14.*', # latest version,0.13 has some breaking APIs
             'sqlglot',
-            'graphviz'
+            'graphviz',
+            'tqdm'
             ], # add any additional packages that 
         license='http://www.apache.org/licenses/LICENSE-2.0',
         keywords=['python'],
