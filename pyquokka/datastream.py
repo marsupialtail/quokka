@@ -554,6 +554,67 @@ class DataStream:
             schema=self.schema + [new_column],
             ordering=None)
 
+
+    def with_columns(self, column_udfs : dict, required_columns=None, foldable=True):
+
+        """
+        You can specify a dictionary of UDFs to create multiple columns at once. This is a convenience function that is equivalent to calling
+        `with_column` multiple times. See `with_column` for more details.
+
+        Args:
+            column_udfs (dict): A dictionary of column names to UDFs. The UDFs must take as input a Polars DataFrame and output a Polars DataFrame.
+                The UDFs must not have expectations on the length of its input. The output must have the same length as the input.
+            reqired_columns (list or set): The names of the columns that are required for all your function. If this is not specified then Quokka assumes
+                all the columns are required for your function. Early projection past this function becomes impossible. Long story short, if you can
+            foldable (bool): Whether or not the function can be executed as part of the batch post-processing of the previous operation in the
+                execution graph. This is set to True by default. Correctly setting this flag requires some insight into how Quokka works. Lightweight
+
+        Return:
+            A new DataStream with new columns made by the user defined functions.
+        
+        Examples:
+            
+            ~~~python
+
+            >>> f = qc.read_csv("lineitem.csv")
+
+            # people who care about speed of execution make full use of Polars columnar APIs.
+
+            >>> d = d.with_columns({"high": lambda x:(x["o_orderpriority"] == "1-URGENT") | (x["o_orderpriority"] == "2-HIGH"), 
+                \"low": lambda x:(x["o_orderpriority"] == "5-LOW") | (x["o_orderpriority"] == "4-NOT SPECIFIED")}, 
+                \required_columns = {"o_orderpriority"})
+        """
+
+        if required_columns is None:
+            required_columns = set(self.schema)
+
+        assert type(required_columns) == set
+
+        # fix the new column ordering
+        new_columns = list(column_udfs.keys())
+
+        for new_column in column_udfs:
+            assert new_column not in self.schema, "For now new columns cannot have same names as existing columns"
+
+        def polars_func(batch):
+            for column_name in new_columns:
+                func = column_udfs[column_name]
+                batch = batch.with_column(polars.Series(name=column_name, values=func(batch)))
+            return batch
+
+        return self.quokka_context.new_stream(
+            sources={0: self},
+            partitioners={0: PassThroughPartitioner()},
+            node=MapNode(
+                schema=self.schema+ new_columns,
+                schema_mapping={
+                    **{new_column: (-1, new_column) for new_column in new_columns}, **{col: (0, col) for col in self.schema}},
+                required_columns={0: required_columns},
+                function=polars_func,
+                foldable=foldable),
+            schema=self.schema + new_columns,
+            ordering=None)
+
     def stateful_transform(self, executor: Executor, new_schema: list, required_columns: set,
                            partitioner=PassThroughPartitioner(), placement_strategy = CustomChannelsStrategy(1)):
 

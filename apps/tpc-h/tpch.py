@@ -1,7 +1,7 @@
 from pyquokka.df import * 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
-mode = "S3"
+mode = "DISK"
 format = "csv"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
@@ -18,7 +18,7 @@ if mode == "DISK":
     cluster = LocalCluster()
 elif mode == "S3":
     manager = QuokkaClusterManager()
-    cluster = manager.get_cluster_from_json("config.json")
+    cluster = manager.get_cluster_from_json("new.json")
 else:
     raise Exception
 
@@ -281,6 +281,20 @@ def do_12():
     f = d.groupby("l_shipmode").aggregate(aggregations={'high':['sum'], 'low':['sum']})
     return f.collect()
 
+def do_12_alternate():
+
+    d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
+
+    d = d.filter("l_shipmode IN ('MAIL','SHIP') and l_commitdate < l_receiptdate and l_shipdate < l_commitdate and \
+        l_receiptdate >= date '1994-01-01' and l_receiptdate < date '1995-01-01'")
+
+    d = d.with_columns({"high": lambda x: (x["o_orderpriority"] == "1-URGENT") | (x["o_orderpriority"] == "2-HIGH"), \
+        "low": lambda x: (x["o_orderpriority"] != "1-URGENT") & (x["o_orderpriority"] != "2-HIGH")}, \
+        required_columns={"o_orderpriority"})
+
+    f = d.groupby("l_shipmode").aggregate(aggregations={'high':['sum'], 'low':['sum']})
+    return f.collect()
+
 def count():
 
     return lineitem.aggregate({"*":"count"}).collect()
@@ -368,12 +382,14 @@ def sort():
 # print(do_3())
 
 # print(do_4())
-print(do_5())
+# print(do_5())
 # print(do_6())
 # print(do_7())
 # print(do_8())
 # print(do_9())
 # print(do_12())
+
+print(do_12_alternate())
 
 # print(word_count())
 # print(covariance())
