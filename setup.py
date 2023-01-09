@@ -27,11 +27,14 @@ setup(
             'ray',
             'psutil',
             'h5py',
-            'polars==0.14.*', # latest version,0.13 has some breaking APIs
+            'polars>=0.15.11', # latest version to make use of the merge sorted
             'sqlglot',
             'graphviz',
             'tqdm'
             ], # add any additional packages that 
+        extra_requires = {
+                "datalake" : ["pyiceberg", "deltalake"]
+            }
         license='http://www.apache.org/licenses/LICENSE-2.0',
         keywords=['python'],
         classifiers= [

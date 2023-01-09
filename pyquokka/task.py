@@ -46,6 +46,8 @@ class Task:
 
 class InputTask(Task):
     def __init__(self, actor_id, channel_id, seq, input_object) -> None:
+
+        print("Initializing InputTask, this is odd as its use should be discontinued.")
         super().__init__(actor_id, channel_id)
         self.input_object = input_object
         self.seq = seq

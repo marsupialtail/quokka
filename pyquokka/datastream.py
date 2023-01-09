@@ -31,10 +31,27 @@ class DataStream:
 
     """
 
-    def __init__(self, quokka_context, schema: list, source_node_id: int) -> None:
+    def __init__(self, quokka_context, schema: list, source_node_id: int, sorted = None) -> None:
         self.quokka_context = quokka_context
         self.schema = schema
         self.source_node_id = source_node_id
+        if sorted is not None:
+            if type(sorted) == str:
+                sorted = [sorted]
+            for col in sorted:
+                assert col in schema
+        self.sorted = sorted
+
+    def set_sorted(self, sorted):
+        """
+        This is used to set the sorted attribute of this DataStream.
+        Use with care! If the thing isn't actually sorted, shit will blow up.
+        """
+        if type(sorted) == str:
+            sorted = [sorted]
+        for col in sorted:
+            assert col in self.schema
+        self.sorted = sorted
 
     def __str__(self):
         return "DataStream[" + ",".join(self.schema) + "]"
@@ -144,7 +161,7 @@ class DataStream:
                 operator=executor
             ),
             schema=["filename"],
-            ordering=None
+            
         )
 
         return name_stream.collect()
@@ -207,7 +224,7 @@ class DataStream:
                 operator=executor
             ),
             schema=["filename"],
-            ordering=None
+            
         )
 
         return name_stream.collect()
@@ -265,7 +282,7 @@ class DataStream:
             assert column in self.schema, "Tried to filter on a column not in the schema"
 
         return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=FilterNode(self.schema, predicate),
-                                              schema=self.schema, ordering=None)
+                                              schema=self.schema, )
 
     def select(self, columns: list):
 
@@ -309,7 +326,7 @@ class DataStream:
             partitioners={0: PassThroughPartitioner()},
             node=ProjectionNode(set(columns)),
             schema=columns,
-            ordering=None)
+            )
 
     def drop(self, cols_to_drop: list):
 
@@ -385,7 +402,7 @@ class DataStream:
                 foldable=True
             ),
             schema=new_schema,
-            ordering=None
+            
         )
 
     def transform(self, f, new_schema: list, required_columns: set, foldable=True):
@@ -468,7 +485,7 @@ class DataStream:
                 foldable=foldable
             ),
             schema=new_schema,
-            ordering=None
+            
         )
 
     def with_column(self, new_column, f, required_columns=None, foldable=True):
@@ -552,7 +569,7 @@ class DataStream:
                 function=partial(polars_func, f),
                 foldable=foldable),
             schema=self.schema + [new_column],
-            ordering=None)
+            )
 
 
     def with_columns(self, column_udfs : dict, required_columns=None, foldable=True):
@@ -613,7 +630,7 @@ class DataStream:
                 function=polars_func,
                 foldable=foldable),
             schema=self.schema + new_columns,
-            ordering=None)
+            )
 
     def stateful_transform(self, executor: Executor, new_schema: list, required_columns: set,
                            partitioner=PassThroughPartitioner(), placement_strategy = CustomChannelsStrategy(1)):
@@ -669,7 +686,7 @@ class DataStream:
             partitioners={0: partitioner},
             node=custom_node,
             schema=new_schema,
-            ordering=None
+            
         )
     
     def distinct(self, key: str):
@@ -717,10 +734,10 @@ class DataStream:
                 operator=DistinctExecutor([key])
             ),
             schema=[key],
-            ordering=None
+            
         )
 
-    def join(self, right, on=None, left_on=None, right_on=None, suffix="_2", how="inner"):
+    def join(self, right, on=None, left_on=None, right_on=None, suffix="_2", how="inner", maintain_sort_order=None):
 
         """
         Join a DataStream with another DataStream or a **small** Polars DataFrame (<10MB). If you have a Polars DataFrame bigger
@@ -760,6 +777,24 @@ class DataStream:
         assert how in {"inner", "left", "semi", "anti"}
         assert type(right) == polars.internals.DataFrame or issubclass(
             type(right), DataStream)
+
+        if maintain_sort_order is not None:
+
+            assert how in {"inner", "left"}
+
+            # our broadcast join strategy should automatically satisfy this, no need to do anything special
+            if type(right) == polars.internals.DataFrame:
+                assert maintain_sort_order == "left"
+                assert self.sorted is not None
+            
+            else:
+                assert maintain_sort_order in {"left", "right"}
+                if maintain_sort_order == "left":
+                    assert self.sorted is not None
+                else:
+                    assert right.sorted is not None
+                if how == "left":
+                    assert maintain_sort_order == "right", "in a left join, can only maintain order of the right table"
         
         #if type(right) == polars.internals.DataFrame and right.to_arrow().nbytes > 10485760:
         #    raise Exception("You cannot join a DataStream against a Polars DataFrame more than 10MB in size. Sorry.")
@@ -813,19 +848,57 @@ class DataStream:
 
         if issubclass(type(right), DataStream):
 
-            operator = JoinExecutor(on, left_on, right_on, suffix=suffix, how=how) if how != "anti" else AntiJoinExecutor(on , left_on, right_on, suffix = suffix)
+            if maintain_sort_order is None:
 
-            return self.quokka_context.new_stream(
-                sources={0: self, 1: right},
-                partitioners={0: HashPartitioner(
-                    left_on), 1: HashPartitioner(right_on)},
-                node=StatefulNode(
+                operator = JoinExecutor(on, left_on, right_on, suffix=suffix, how=how) if how != "anti" else AntiJoinExecutor(on , left_on, right_on, suffix = suffix)
+
+                return self.quokka_context.new_stream(
+                    sources={0: self, 1: right},
+                    partitioners={0: HashPartitioner(
+                        left_on), 1: HashPartitioner(right_on)},
+                    node=StatefulNode(
+                        schema=new_schema,
+                        schema_mapping=schema_mapping,
+                        required_columns={0: {left_on}, 1: {right_on}},
+                        operator= operator),
                     schema=new_schema,
-                    schema_mapping=schema_mapping,
-                    required_columns={0: {left_on}, 1: {right_on}},
-                    operator= operator),
-                schema=new_schema,
-                ordering=None)
+                    )
+            
+            elif maintain_sort_order == "right":
+
+                operator = BuildProbeJoinExecutor(on, left_on, right_on, suffix=suffix, how=how)
+
+                return self.quokka_context.new_stream(
+                    sources={0: self, 1: right},
+                    partitioners={0: HashPartitioner(
+                        left_on), 1: HashPartitioner(right_on)},
+                    node=StatefulNode(
+                        schema=new_schema,
+                        schema_mapping=schema_mapping,
+                        required_columns={0: {left_on}, 1: {right_on}},
+                        operator= operator),
+                    schema=new_schema,
+                    )
+
+            elif maintain_sort_order == "left":
+
+                operator = BuildProbeJoinExecutor(on, right_on, left_on, suffix = suffix, how = how)
+
+                return self.quokka_context.new_stream(
+                    sources={0: right, 1: self},
+                    partitioners={0: HashPartitioner(
+                        right_on), 1: HashPartitioner(left_on)},
+                    node=StatefulNode(
+                        schema=new_schema,
+                        schema_mapping=schema_mapping,
+                        required_columns={0: {right_on}, 1: {left_on}},
+                        operator= operator),
+                    schema=new_schema,
+                    )
+            
+            else:
+                raise Exception
+
 
         elif type(right) == polars.internals.DataFrame:
             
@@ -840,7 +913,7 @@ class DataStream:
                         right, small_on=right_on, big_on=left_on, suffix=suffix, how=how)
                 ),
                 schema=new_schema,
-                ordering=None)
+                )
 
     def groupby(self, groupby: list, orderby=None):
 
@@ -994,7 +1067,7 @@ class DataStream:
             partitioners={0: BroadcastPartitioner()},
             node=agg_node,
             schema=new_schema,
-            ordering=None
+            
         )
 
         return aggregated_stream
@@ -1151,7 +1224,7 @@ class GroupedDataStream:
                     required_columns={0: required_cols_left, 1: required_cols_right},
                     operator= executor),
                 schema=new_schema,
-                ordering=None)
+                )
 
         elif type(right) == polars.internals.DataFrame:
             

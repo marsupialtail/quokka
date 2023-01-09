@@ -238,15 +238,16 @@ operator required columns (aka required columns) is a dict, which records which 
 
 '''
 class TaskNode(Node):
-    def __init__(self, schema: list, schema_mapping: dict, required_columns: set) -> None:
+    def __init__(self, schema: list, schema_mapping: dict, required_columns: set, ordering = None) -> None:
         super().__init__(schema)
         self.schema_mapping = schema_mapping
         self.required_columns = required_columns
+        self.ordering = ordering
         
 
 class StatefulNode(TaskNode):
-    def __init__(self, schema, schema_mapping, required_columns, operator) -> None:
-        super().__init__(schema, schema_mapping, required_columns)
+    def __init__(self, schema, schema_mapping, required_columns, operator, ordering = None) -> None:
+        super().__init__(schema, schema_mapping, required_columns, ordering)
         self.operator = operator
     
     def lower(self, task_graph, parent_nodes, parent_source_info ):

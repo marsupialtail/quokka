@@ -258,6 +258,77 @@ class BroadcastJoinExecutor(Executor):
             if self.how == "anti":
                 return self.left_null
 
+# this is an inner join executor that must return outputs in a sorted order based on sorted_col
+# the operator will maintain the sortedness of the probe side
+# 0/left is build, 1/right is probe.
+class BuildProbeJoinExecutor(Executor):
+
+    def __init__(self, on = None, left_on = None, right_on = None, suffix="_right", how = "inner"):
+
+        self.state0 = None
+        self.state1 = None
+        self.suffix = suffix
+        self.cached_results = None
+
+        if on is not None:
+            assert left_on is None and right_on is None
+            self.left_on = on
+            self.right_on = on
+        else:
+            assert left_on is not None and right_on is not None
+            self.left_on = left_on
+            self.right_on = right_on
+        
+        self.phase = "build"
+        assert how == "inner" or "left"
+        self.how = how
+
+    def execute(self,batches, stream_id, executor_id):
+        # state compaction
+        batches = [i for i in batches if i is not None and len(i) > 0]
+        if len(batches) == 0:
+            return
+        batch = polars.concat(batches)
+
+        # build
+        if stream_id == 0:
+            if self.state0 is None:
+                self.state0 = batch
+            else:
+                self.state0.vstack(batch, in_place = True)
+        
+        # probe
+        elif stream_id == 1:
+
+            if self.phase == "build":
+                if self.state1 is None:
+                    self.state1 = batch
+                else:
+                    self.state1.vstack(batch, in_place = True)
+            elif self.phase == "probe":
+                assert self.state1 is None
+                if self.cached_results is not None:                    
+                    result = polars.concat([self.cached_results, self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how= self.how, suffix=self.suffix)])
+                    self.cached_results = None
+                else:
+                    result = self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how= self.how, suffix=self.suffix)
+                return result
+
+    def update_sources(self, remaining_sources):
+        # build side depleted, must drain probe state
+        if 0 not in remaining_sources:
+            self.phase = "probe"
+            self.cached_results = self.state0.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how= self.how, suffix=self.suffix)
+            self.state1 = None
+
+        # probe side depleted
+        if 1 not in remaining_sources:
+            pass
+    
+    def done(self,executor_id):
+        self.update_sources({})
+        if self.cached_results is not None:
+            return self.cached_results
 
 class JoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
@@ -403,6 +474,7 @@ class JoinExecutor(Executor):
                 self.state0 = None
     
     def done(self,executor_id):
+        self.update_sources({})
         #print(len(self.state0),len(self.state1))
         #print("done join ", executor_id)
         if self.how == "left" and self.left_null is not None and len(self.left_null) > 0:
@@ -665,13 +737,13 @@ class SuperFastSortExecutor(Executor):
         self.executor = None
 
     def write_out_df_to_disk(self, target_filepath, input_mem_table):
-        # arrow_table = input_mem_table.to_arrow()
-        # batches = arrow_table.to_batches(1000000)
-        # writer =  pa.ipc.new_file(pa.OSFile(target_filepath, 'wb'), arrow_table.schema)
-        # for batch in batches:
-        #     writer.write(batch)
-        # writer.close()
-        input_mem_table.write_parquet(target_filepath, row_group_size = self.record_batch_rows, use_pyarrow =True)
+        arrow_table = input_mem_table.to_arrow()
+        batches = arrow_table.to_batches(1000000)
+        writer =  pa.ipc.new_file(pa.OSFile(target_filepath, 'wb'), arrow_table.schema)
+        for batch in batches:
+            writer.write(batch)
+        writer.close()
+        # input_mem_table.write_parquet(target_filepath, row_group_size = self.record_batch_rows, use_pyarrow =True)
 
         return True
 

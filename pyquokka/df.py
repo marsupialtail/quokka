@@ -340,8 +340,7 @@ class QuokkaContext:
                     schema_mapping={col: (-1, col) for col in new_schema},
                     required_columns=required_cols,
                     operator= operator),
-                schema=new_schema,
-                ordering=None)
+                schema=new_schema)
 
     '''
     this is expected to be internal API, well internal as much as it can I guess until the syntactic sugar runs out.
@@ -357,7 +356,7 @@ class QuokkaContext:
         is entirely drained by this node before the other input stream starts to be processed. This can be used to implement build-probe join, e.g.
         implementing this is a priority.
     '''
-    def new_stream(self, sources: dict, partitioners: dict, node: Node, schema: list, ordering=None):
+    def new_stream(self, sources: dict, partitioners: dict, node: Node, schema: list, sorted = None):
         self.nodes[self.latest_node_id] = node
         for source in sources:
             source_datastream = sources[source]
@@ -368,14 +367,14 @@ class QuokkaContext:
 
         self.latest_node_id += 1
 
-        return DataStream(self, schema, self.latest_node_id - 1)
+        return DataStream(self, schema, self.latest_node_id - 1, sorted)
 
     '''
     This defines a dataset object which is used by the optimizer. 
     '''
     def new_dataset(self, source, schema: list):
         stream = self.new_stream(sources={0: source}, partitioners={
-                                 0: PassThroughPartitioner()}, node=DataSetNode(schema), schema=schema, ordering=None)
+                                 0: PassThroughPartitioner()}, node=DataSetNode(schema), schema=schema)
         return DataSet(self, schema, stream.source_node_id)
 
     def optimize(self, node_id):
@@ -761,6 +760,7 @@ class QuokkaContext:
                     self.__fold_map__(parent_id)
                 return
 
+                
 
 class DataSet:
     def __init__(self, quokka_context: QuokkaContext, schema: dict, source_node_id: int) -> None:
