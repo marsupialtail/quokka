@@ -77,7 +77,7 @@ class InputEC2ParquetDataset:
         def download(file):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                return polars.from_arrow(pq.read_table(self.bucket + "/" +file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3))
+                return pq.read_table(self.bucket + "/" +file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3)
 
         assert self.num_channels is not None
 
@@ -94,7 +94,7 @@ class InputEC2ParquetDataset:
         for future in concurrent.futures.as_completed(future_to_url):
             dfs.append(future.result())
         
-        return None, polars.concat(dfs)
+        return None, pa.concat_tables(dfs)
 
 
 class InputSortedEC2ParquetDataset:
@@ -183,7 +183,7 @@ class InputSortedEC2ParquetDataset:
         def download(file):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                return polars.from_arrow(pq.read_table(file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3))
+                return pq.read_table(file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3)
 
         assert self.num_channels is not None
 
@@ -200,7 +200,7 @@ class InputSortedEC2ParquetDataset:
         for future in concurrent.futures.as_completed(future_to_url):
             dfs.append(future.result())
         
-        return None, polars.concat(dfs)
+        return None, pa.concat_tables(dfs)
 
 class InputEC2CoPartitionedSortedParquetDataset:
 
@@ -286,7 +286,7 @@ class InputEC2CoPartitionedSortedParquetDataset:
         def download(file):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                return polars.from_arrow(pq.read_table(file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3))
+                return pq.read_table(file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3)
 
         assert self.num_channels is not None
 
@@ -303,7 +303,7 @@ class InputEC2CoPartitionedSortedParquetDataset:
         for future in concurrent.futures.as_completed(future_to_url):
             dfs.append(future.result())
         
-        return None, polars.concat(dfs)
+        return None, pa.concat_tables(dfs)
 
 class InputParquetDataset:
 
@@ -331,7 +331,7 @@ class InputParquetDataset:
     def execute(self, mapper_id, filename = None):
         
         dataset = ds.dataset(filename)
-        return None, polars.from_arrow(dataset.to_table(filter= self.filters,columns=self.columns ))
+        return None, dataset.to_table(filter= self.filters,columns=self.columns )
 
 # this works for a directoy of objects.
 class InputS3FilesDataset:
@@ -369,7 +369,7 @@ class InputS3FilesDataset:
         while curr_pos < len(self.files):
             #print("input batch", (curr_pos - mapper_id) / self.num_channels)
             # since these are arbitrary byte files (most likely some image format), it is probably useful to keep the filename around or you can't tell these things apart
-            a = polars.from_dict({"filename" : [self.files[curr_pos]], "object": [s3.get_object(Bucket=self.bucket, Key=self.files[curr_pos])['Body'].read()]})
+            a = pa.Table.from_pydict({"filename" : [self.files[curr_pos]], "object": [s3.get_object(Bucket=self.bucket, Key=self.files[curr_pos])['Body'].read()]})
             #print("ending reading ",time.time())
             curr_pos += self.num_channels
             yield curr_pos, a
@@ -396,7 +396,7 @@ class InputDiskFilesDataset:
         else:
             curr_pos = pos
         while curr_pos < len(self.files):
-            a = polars.from_dict({"filename" : [self.files[curr_pos]], "object": [open(self.directory + "/" + self.files[curr_pos],"rb").read()]})
+            a = pa.Table.from_pydict({"filename" : [self.files[curr_pos]], "object": [open(self.directory + "/" + self.files[curr_pos],"rb").read()]})
             curr_pos += self.num_channels
             yield curr_pos, a
        
@@ -518,7 +518,7 @@ class InputDiskCSVDataset:
                 column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
             bump = bump.select(self.columns) if self.columns is not None else bump
 
-            return None, polars.from_arrow(bump)
+            return None, bump
 
 
 class FakeFile:
@@ -767,4 +767,4 @@ class InputS3CSVDataset:
 
         bump = bump.select(self.columns) if self.columns is not None else bump
 
-        return None, polars.from_arrow(bump)
+        return None, bump

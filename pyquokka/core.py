@@ -27,10 +27,10 @@ def print_if_profile(*x):
     if PROFILE:
         print(*x, time.time())
 
-def record_batches_to_polars(batches):
+def record_batches_to_table(batches):
 
     aligned_batches = [pyarrow.record_batch([pyarrow.concat_arrays([arr]) for arr in batch], schema=batch.schema) for batch in batches]
-    return polars.from_arrow(pyarrow.Table.from_batches(aligned_batches))
+    return pyarrow.Table.from_batches(aligned_batches)
 
 class ConnectionError(Exception):
     pass
@@ -192,7 +192,7 @@ class TaskManager:
             print(result.body.to_pybytes().decode("utf-8"))
             raise Exception
 
-    def push(self, source_actor_id: int, source_channel_id: int, seq: int, output: polars.internals.DataFrame, target_mask = None, from_local = False):
+    def push(self, source_actor_id: int, source_channel_id: int, seq: int, output: pyarrow.Table, target_mask = None, from_local = False):
         
         start_push = time.time()
 
@@ -202,6 +202,13 @@ class TaskManager:
             print_if_debug("TARGET_MASK", target_mask)
         
         partition_fns = self.partition_fns[source_actor_id]
+
+        if type(output) == pyarrow.Table:
+            output = polars.from_arrow(output)
+        elif type(output) == polars.internals.DataFrame:
+            pass
+        else:
+            raise Exception("push data type not understood")
 
         for target_actor_id in partition_fns:
 
@@ -513,7 +520,7 @@ class ExecTaskManager(TaskManager):
                     assert len(source_actor_ids) == 1
                     source_actor_id = source_actor_ids.pop()
 
-                    input = [record_batches_to_polars(batch) for batch in batches if sum([len(b) for b in batch]) > 0]
+                    input = [record_batches_to_table(batch) for batch in batches if sum([len(b) for b in batch]) > 0]
 
                     start = time.time()
 
@@ -645,7 +652,7 @@ class ExecTaskManager(TaskManager):
                 new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
                 self.tape_input_reqs[actor_id, channel_id] = new_input_reqs.select(["source_actor_id", "source_channel_id","min_seq"])
 
-                input = [record_batches_to_polars(batch) for batch in batches if sum([len(b) for b in batch]) > 0]
+                input = [record_batches_to_table(batch) for batch in batches if sum([len(b) for b in batch]) > 0]
                 
                 if len(input) > 0:
                     output, state_seq, out_seq = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)

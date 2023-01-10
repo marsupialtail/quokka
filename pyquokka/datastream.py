@@ -967,6 +967,9 @@ class DataStream:
         '''
 
         # do some checks first
+
+        do_count = False
+
         for key in aggregations:
             assert (key == "*" and (aggregations[key] == ['count'] or aggregations[key] == 'count')) or (
                 key in self.schema and key not in groupby)
@@ -977,31 +980,35 @@ class DataStream:
                     aggregations[key][i] = "mean"
                     assert aggregations[key][i] in {
                         "max", "min", "mean", "sum"}, "only support max, min, mean and sum for now"
+                if aggregations[key][i] == "mean":
+                    do_count = True
         for key in groupby:
             assert key in self.schema
 
-        count_col = "__count"
-
         if "*" in aggregations:
+            do_count = True
             emit_count = True
             del aggregations["*"]
-            assert count_col not in self.schema, "schema conflict with column name count"
+            assert "__count_sum" not in self.schema, "schema conflict with column name count"
         else:
             emit_count = False
 
-        # make all single aggregation specs into a list of one.
 
-        # first insert the select node.
         required_columns = groupby + list(aggregations.keys())
         # this can happen if you just do .count()
         if len(required_columns) == 0:
+            # you need to pull a column from the source currently else the engine won't work.
             # this is an extremely dirty hack to optimize specifically for TPCH. So we don't end up pulling the l_comment column when you just count all the rows.
             # we should solve this in the future, either by doing count separately or have schema types
             required_columns = [self.schema[1] if len(self.schema) > 1 else self.schema[0]]
 
-        new_schema = groupby + \
-            [count_col +
-                "_sum"] if len(groupby) > 0 else [count_col, count_col + "_sum"]
+        transformed_schema = ["__count_sum"] if do_count else []
+        for key in groupby:
+            transformed_schema.append(key)
+
+        new_schema = ["__count_sum"] if emit_count else []
+        for key in groupby:
+            new_schema.append(key)
 
         '''
         We need to do two things here. The groupby-aggregation will be pushed down as a transformation.
@@ -1010,7 +1017,10 @@ class DataStream:
         that each of those aggregations gets its own column in the transformed schema, so the AggExecutor doesn't have to deal with this.
         '''
 
-        pyarrow_agg_list = [(count_col, "sum")]
+        agg_clause = "select\n\tcount(*) as __count_sum," if do_count else "select"
+        for key in groupby:
+            agg_clause += "\n\t" + key + ","
+
         agg_executor_dict = {}
         # key is column name, value is Boolean to indicate if you should keep around the sum column.
         mean_cols = {}
@@ -1018,48 +1028,53 @@ class DataStream:
             for agg_spec in aggregations[key]:
                 if agg_spec == "mean":
 
+                    new_schema.append(key + "_mean")
+
                     if "sum" in aggregations[key]:
                         mean_cols[key] = True
 
                     else:
-                        new_col = key + "_sum"
-                        assert new_col not in new_schema, "duplicate column names detected, most likely caused by a groupby column with suffix _max etc."
-                        new_schema.append(new_col)
-                        pyarrow_agg_list.append((key, "sum"))
-                        agg_executor_dict[new_col] = "sum"
+                        transformed_schema.append(key)
+                        agg_executor_dict[key] = "sum"
                         mean_cols[key] = False
+                        agg_clause += "\n\tsum(" + key + ") as " + key + ","
 
                 else:
-                    new_col = key + "_" + agg_spec
-                    assert new_col not in new_schema, "duplicate column names detected, most likely caused by a groupby column with suffix _max etc."
-                    new_schema.append(new_col)
-                    pyarrow_agg_list.append((key, agg_spec))
-                    agg_executor_dict[new_col] = agg_spec
+                    transformed_schema.append(key)
+                    new_schema.append(key + "_" + agg_spec)
+                    agg_executor_dict[key] = agg_spec
+                    agg_clause += "\n\t" + agg_spec + "(" + key + ") as " + key + ","
 
         # now insert the transform node.
         # this function needs to be fast since it's executed at every batch in the actual runtime.
-
-        def f(keys, agg_list, batch):
-            enhanced_batch = batch.with_column(
-                polars.lit(1).cast(polars.Int64).alias(count_col))
-            return polars.from_arrow(enhanced_batch.to_arrow().group_by(keys).aggregate(agg_list))
-
+        agg_clause += "\nfrom\n\tbatch_arrow\n"
         if len(groupby) > 0:
-            map_func = partial(f, groupby, pyarrow_agg_list)
-        else:
-            map_func = partial(f, [count_col], pyarrow_agg_list)
+            agg_clause += "group by "
+            for key in groupby:
+                agg_clause += key + ","
+            agg_clause = agg_clause[:-1]
+
+        def f(query, batch):
+            batch_arrow = batch.to_arrow()
+            # duckdb cannot sum bools
+            for i, (col_name, type_) in enumerate(zip(batch_arrow.schema.names, batch_arrow.schema.types)):
+                if pa.types.is_boolean(type_):
+                    batch_arrow = batch_arrow.set_column(i, col_name, compute.cast(batch_arrow.column(col_name), pa.int32()))
+            con = duckdb.connect().execute('PRAGMA threads=%d' % multiprocessing.cpu_count())
+            return polars.from_arrow(con.execute(query).arrow())
+
+        map_func = partial(f, agg_clause)
 
         transformed_stream = self.transform(map_func,
-                                            new_schema=new_schema,
+                                            new_schema=transformed_schema,
                                             # it shouldn't matter too much for the required columns, since no predicates or projections will ever be pushed through this map node.
                                             # even if this map node gets fused with prior map nodes, no predicates should ever be pushed through those map nodes either.
                                             required_columns=set(required_columns))
         agg_node = StatefulNode(
             schema=new_schema,
             schema_mapping={col: (-1, col) for col in new_schema},
-            required_columns={0: set(new_schema)},
-            operator=AggExecutor(groupby if len(groupby) > 0 else [
-                                 count_col], orderby, agg_executor_dict, mean_cols, emit_count)
+            required_columns={0: set(transformed_schema)},
+            operator=DuckAggExecutor(groupby, orderby, agg_executor_dict, mean_cols, emit_count)
         )
         agg_node.set_placement_strategy(SingleChannelStrategy())
         aggregated_stream = self.quokka_context.new_stream(

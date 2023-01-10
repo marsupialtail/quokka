@@ -16,9 +16,10 @@ import sys
 from pyarrow.fs import S3FileSystem, LocalFileSystem
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
-import ray
 import pickle
 import concurrent.futures
+import duckdb
+import multiprocessing
 
 class Executor:
     def __init__(self) -> None:
@@ -162,7 +163,7 @@ class OutputExecutor(Executor):
         #     max_rows_per_file=self.row_group_size,max_rows_per_group=self.row_group_size)
         # print("wrote the dataset")
         return_df = polars.from_dict({"filename":[(self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-" + str(i) + "." + self.format) for i in range(len(write_batch) // self.row_group_size) ]})
-        return return_df
+        return return_df.to_arrow()
 
     def done(self,executor_id):
         df = polars.concat(self.my_batches)
@@ -180,7 +181,7 @@ class OutputExecutor(Executor):
             max_rows_per_file=self.row_group_size,max_rows_per_group=self.row_group_size)
         
         return_df = polars.from_dict({"filename":[(self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-" + str(i) + "." + self.format) for i in range((len(write_batch) -1) // self.row_group_size + 1) ]})
-        return return_df
+        return return_df.to_arrow()
 
 class BroadcastJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
@@ -224,7 +225,7 @@ class BroadcastJoinExecutor(Executor):
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
         # state compaction
-        batches = [i for i in batches if i is not None and len(i) > 0]
+        batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
         if len(batches) == 0:
             return
         batch = polars.concat(batches)
@@ -285,7 +286,7 @@ class BuildProbeJoinExecutor(Executor):
 
     def execute(self,batches, stream_id, executor_id):
         # state compaction
-        batches = [i for i in batches if i is not None and len(i) > 0]
+        batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
         if len(batches) == 0:
             return
         batch = polars.concat(batches)
@@ -406,7 +407,7 @@ class JoinExecutor(Executor):
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
         # state compaction
-        batches = [i for i in batches if i is not None and len(i) > 0]
+        batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
         if len(batches) == 0:
             return
         batch = polars.concat(batches)
@@ -511,7 +512,7 @@ class AntiJoinExecutor(Executor):
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
         # state compaction
-        batches = [i for i in batches if i is not None and len(i) > 0]
+        batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
         if len(batches) == 0:
             return
         batch = polars.concat(batches)
@@ -560,7 +561,7 @@ class DistinctExecutor(Executor):
 
     def execute(self, batches, stream_id, executor_id):
         
-        batches = [i for i in batches if i is not None and len(i) > 0]
+        batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
         if len(batches) == 0:
             return
         batch = polars.concat(batches)
@@ -584,6 +585,97 @@ class DistinctExecutor(Executor):
     
     def done(self, executor_id):
         return
+
+
+class DuckAggExecutor(Executor):
+
+    def __init__(self, groupby_keys, orderby_keys, aggregation_dict, mean_cols, count):
+
+        self.state = None
+        self.emit_count = count
+        self.do_count = count
+        assert type(groupby_keys) == list
+        self.groupby_keys = groupby_keys
+        self.mean_cols = mean_cols
+        self.length_limit = 1000000
+        self.con = None        
+        self.count_col = "__count_sum"
+        
+        # we could use SQLGlot here but that's overkill.
+        self.agg_clause = "select"
+        for key in groupby_keys:
+            self.agg_clause += "\n\t" + key + ","
+        
+        for key in aggregation_dict:
+            agg_type = aggregation_dict[key]
+            assert agg_type in {
+                    "max", "min", "mean", "sum"}, "only support max, min, mean and sum for now"
+            if agg_type == "mean":
+                self.do_count = True
+                self.agg_clause += "\n\tsum(" + key + ") as " + key + "_sum,"
+            else:
+                self.agg_clause += "\n\t" + agg_type + "(" + key + ") as " + key + "_" + agg_type + ","
+        
+        if self.do_count:
+            self.agg_clause += "\n\tsum(__count_sum) as __count_sum,"
+        
+        # remove trailing comma
+        self.agg_clause = self.agg_clause[:-1]
+        self.agg_clause += "\nfrom\n\tbatch_arrow\n"
+        if len(groupby_keys) > 0:
+            self.agg_clause += "group by "
+            for key in groupby_keys:
+                self.agg_clause += key + ","
+            self.agg_clause = self.agg_clause[:-1]
+
+        if orderby_keys is not None:
+            self.agg_clause += "\norder by "
+            for key, dir in orderby_keys:
+                if dir == "desc":
+                    self.agg_clause += key + " desc,"
+                else:
+                    self.agg_clause += key + ","
+            self.agg_clause = self.agg_clause[:-1]
+        # print(self.agg_clause)
+
+    def checkpoint(self, conn, actor_id, channel_id, seq):
+        pass
+    
+    def restore(self, conn, actor_id, channel_id, seq):
+        pass
+    
+    def execute(self,batches, stream_id, executor_id):
+
+        if self.con is None:
+            self.con = duckdb.connect().execute('PRAGMA threads=%d' % multiprocessing.cpu_count())
+
+        batch = pa.concat_tables(batches)
+        if self.state is None:
+            self.state = batch
+        else:
+            self.state = pa.concat_tables([self.state, batch])
+        if len(self.state) > self.length_limit:
+            batch_arrow = self.state
+            self.state = self.con.execute(self.agg_clause).arrow()
+            del batch_arrow
+    
+    def done(self, executor_id):
+        if self.state is None:
+            return None
+        batch_arrow = self.state
+        self.state = polars.from_arrow(self.con.execute(self.agg_clause).arrow())
+        del batch_arrow
+
+        for key in self.mean_cols:
+            keep_sum = self.mean_cols[key]
+            self.state = self.state.with_column(polars.Series(key + "_mean", self.state[key + "_sum"]/ self.state[self.count_col]))
+            if not keep_sum:
+                self.state = self.state.drop(key + "_sum")
+        
+        if self.do_count and not self.emit_count:
+            self.state = self.state.drop(self.count_col)
+        
+        return self.state
 
 class AggExecutor(Executor):
     '''
@@ -625,19 +717,11 @@ class AggExecutor(Executor):
     
     def restore(self, conn, actor_id, channel_id, seq):
         pass
-
-    def serialize(self):
-        return {0:self.state}, "all"
-    
-    def deserialize(self, s):
-        # the default is to get a list of dictionaries.
-        assert type(s) == list and len(s) == 1
-        self.state = s[0][0]
     
     # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
     def execute(self,batches, stream_id, executor_id):
 
-        batches = [i for i in batches if i is not None]
+        batches = [polars.from_arrow(i) for i in batches if i is not None]
         batch = polars.concat(batches)
         assert type(batch) == polars.internals.DataFrame, batch # polars add has no index, will have wierd behavior
         if self.state is None:
@@ -679,23 +763,6 @@ class AggExecutor(Executor):
             return self.state.sort(self.order_list, self.reverse_list)
         else:
             return self.state
-
-
-class LimitExecutor(Executor):
-    def __init__(self, limit) -> None:
-        self.limit = limit
-        self.state = []
-
-    def execute(self, batches, stream_id, executor_id):
-
-        batch = pd.concat(batches)
-        self.state.append(batch)
-        length = sum([len(i) for i in self.state])
-        if length > self.limit:
-            self.set_early_termination()
-    
-    def done(self):
-        return pd.concat(self.state)[:self.limit]
 
 class CountExecutor(Executor):
     def __init__(self) -> None:
@@ -755,7 +822,7 @@ class SuperFastSortExecutor(Executor):
         # we are going to update the in memory index and flush out the sorted stuff
         
         flush_file_name = self.data_dir + self.prefix + "-" + str(executor_id) + "-" + str(self.fileno) + ".arrow"
-        batches = [i for i in batches if i is not None and len(i) > 0]
+        batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
         if len(batches) == 0:
             return None
         

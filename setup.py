@@ -19,6 +19,7 @@ setup(
         packages=find_packages(),
         package_data = {"":["redis.conf", "leader_startup.sh"]},
         install_requires=['pyarrow',
+            'duckdb>=0.6.0',
             'redis',
             'boto3',
             'pandas',
@@ -34,7 +35,7 @@ setup(
             ], # add any additional packages that 
         extra_requires = {
                 "datalake" : ["pyiceberg", "deltalake"]
-            }
+            },
         license='http://www.apache.org/licenses/LICENSE-2.0',
         keywords=['python'],
         classifiers= [
