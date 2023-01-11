@@ -17,7 +17,7 @@ DEBUG = False
 PROFILE = False
 FT = False
 MEM_LIMIT = 0.25
-MAX_BATCHES = 5
+MAX_BATCHES = 10
 
 def print_if_debug(*x):
     if DEBUG:

@@ -447,7 +447,7 @@ class JoinExecutor(Executor):
 
             if self.state0 is not None and self.how != "semi":
                 result = self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how=self.batch_how, suffix=self.suffix)
-            
+                
             if self.how == "semi" and self.left_null is not None:
                 result = self.left_null.join(batch, left_on = self.left_on, right_on = self.right_on, how = "semi", suffix = self.suffix)
             
@@ -460,6 +460,8 @@ class JoinExecutor(Executor):
                 self.state1 = batch
             else:
                 self.state1.vstack(batch, in_place = True)
+        
+        
 
         if result is not None and len(result) > 0:
             return result
@@ -484,6 +486,131 @@ class JoinExecutor(Executor):
 
         # print("DONE", executor_id)
 
+class DuckJoinExecutor(Executor):
+    # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
+    # batch func must return a list of dfs too
+    # no need for suffix because we will already insert a rename node before the join node
+    def __init__(self, on = None, left_on = None, right_on = None, how = "inner"):
+
+        self.state0 = None
+        self.state1 = None
+
+        if on is not None:
+            assert left_on is None and right_on is None
+            self.left_on = on
+            self.right_on = on
+        else:
+            assert left_on is not None and right_on is not None
+            self.left_on = left_on
+            self.right_on = right_on
+        
+        assert how in {"inner"}
+        self.how = how
+        self.batch_how = how
+
+        # keys that will never be seen again, safe to delete from the state on the other side
+
+        self.state0_last_ckpt = 0
+        self.state1_last_ckpt = 0
+        self.s3fs = None
+        self.con = None
+    
+    def checkpoint(self, bucket, actor_id, channel_id, seq):
+        # redis.Redis('localhost',port=6800).set(pickle.dumps(("ckpt", actor_id, channel_id, seq)), pickle.dumps((self.state0, self.state1)))
+        
+        if self.s3fs is None:
+            self.s3fs = S3FileSystem()
+
+        if self.state0 is not None:
+            state0_to_ckpt = self.state0[self.state0_last_ckpt : ]
+            self.state0_last_ckpt += len(state0_to_ckpt)
+            pq.write_table(self.state0.to_arrow(), bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-0.parquet", filesystem=self.s3fs)
+
+        if self.state1 is not None:
+            state1_to_ckpt = self.state1[self.state1_last_ckpt : ]
+            self.state1_last_ckpt += len(state1_to_ckpt)
+            pq.write_table(self.state1.to_arrow(), bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-1.parquet", filesystem=self.s3fs)
+        
+    
+    def restore(self, bucket, actor_id, channel_id, seq):
+        # self.state0, self.state1 = pickle.loads(redis.Redis('localhost',port=6800).get(pickle.dumps(("ckpt", actor_id, channel_id, seq))))
+        
+        if self.s3fs is None:
+            self.s3fs = S3FileSystem()
+        try:
+            print(bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-0.parquet")
+            self.state0 = polars.from_arrow(pq.read_table(bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-0.parquet", filesystem=self.s3fs))
+            print(self.state0)
+        except:
+            self.state0 = None
+        try:
+            print(bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-1.parquet")
+            self.state1 = polars.from_arrow(pq.read_table(bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-1.parquet", filesystem=self.s3fs))
+            print(self.state1)
+        except:
+            self.state1 = None
+
+    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
+    def execute(self,batches, stream_id, executor_id):
+        # state compaction
+        batches = [i for i in batches if i is not None and len(i) > 0]
+        if len(batches) == 0:
+            return
+
+        batch = pa.concat_tables(batches)
+
+        if self.con is None:
+            self.con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
+
+        result = None
+
+        if stream_id == 0:
+            query = "select * from batch inner join state_arrow on batch." + self.left_on + " = state_arrow." + self.right_on
+            if self.state1 is not None:
+                state_arrow = self.state1
+                # polars conversion will automatically take care of the duplicate join column emitted. 
+                start = time.time()
+                result = self.con.execute(query).arrow()
+                print("duckdb time", time.time() - start)
+                result = polars.from_arrow(result)
+
+            if self.state0 is None:
+                self.state0 = batch
+            else:
+                self.state0 = pa.concat_tables([self.state0, batch])
+
+        elif stream_id == 1:
+            query = "select * from batch inner join state_arrow on batch." + self.right_on + " = state_arrow." + self.left_on
+            if self.state0 is not None:
+                
+                state_arrow = self.state0
+                
+                start = time.time()
+                result = self.con.execute(query).arrow()
+                print("duckdb time", time.time() - start)
+                result = polars.from_arrow(result)
+            
+            if self.state1 is None:
+                self.state1 = batch
+            else:
+                self.state1 = pa.concat_tables([self.state1, batch])
+
+        if result is not None and len(result) > 0:
+            return result
+    
+    def update_sources(self, remaining_sources):
+        #print(remaining_sources)
+        if self.how == "inner":
+            if 0 not in remaining_sources:
+                #print("DROPPING STATE!")
+                self.state1 = None
+            if 1 not in remaining_sources:
+                #print("DROPPING STATE!")
+                self.state0 = None
+    
+    def done(self,executor_id):
+        self.update_sources({})
+        # print("DONE", executor_id)
 
 class AntiJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
@@ -676,93 +803,6 @@ class DuckAggExecutor(Executor):
             self.state = self.state.drop(self.count_col)
         
         return self.state
-
-class AggExecutor(Executor):
-    '''
-    aggregation_dict will define what you are going to do for
-    '''
-    def __init__(self, groupby_keys, orderby_keys, aggregation_dict, mean_cols, count):
-
-
-        self.state = None
-        self.emit_count = count
-        assert type(groupby_keys) == list and len(groupby_keys) > 0
-        self.groupby_keys = groupby_keys
-        self.aggregation_dict = aggregation_dict
-        self.mean_cols = mean_cols
-        self.length_limit = 1000000
-        # hope and pray there is no column called __&&count__
-        self.pyarrow_agg_list = [("__count_sum", "sum")]
-        self.count_col = "__count_sum"
-        self.rename_dict = {"__count_sum_sum": self.count_col}
-        for key in aggregation_dict:
-            assert aggregation_dict[key] in {
-                    "max", "min", "mean", "sum"}, "only support max, min, mean and sum for now"
-            if aggregation_dict[key] == "mean":
-                self.pyarrow_agg_list.append((key, "sum"))
-                self.rename_dict[key + "_sum"] = key
-            else:
-                self.pyarrow_agg_list.append((key, aggregation_dict[key]))
-                self.rename_dict[key + "_" + aggregation_dict[key]] = key
-        
-        self.order_list = []
-        self.reverse_list = []
-        if orderby_keys is not None:
-            for key, dir in orderby_keys:
-                self.order_list.append(key)
-                self.reverse_list.append(True if dir == "desc" else False)
-
-    def checkpoint(self, conn, actor_id, channel_id, seq):
-        pass
-    
-    def restore(self, conn, actor_id, channel_id, seq):
-        pass
-    
-    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
-    def execute(self,batches, stream_id, executor_id):
-
-        batches = [polars.from_arrow(i) for i in batches if i is not None]
-        batch = polars.concat(batches)
-        assert type(batch) == polars.internals.DataFrame, batch # polars add has no index, will have wierd behavior
-        if self.state is None:
-            self.state = batch
-        else:
-            self.state = self.state.vstack(batch)
-        if len(self.state) > self.length_limit:
-            arrow_state = self.state.to_arrow()
-            arrow_state = arrow_state.group_by(self.groupby_keys).aggregate(self.pyarrow_agg_list)
-            self.state = polars.from_arrow(arrow_state).rename(self.rename_dict)
-            self.state = self.state.select(sorted(self.state.columns))
-
-
-    def done(self,executor_id):
-
-        # print("done", time.time())
-
-        if self.state is None:
-            return None
-        
-        arrow_state = self.state.to_arrow()
-        arrow_state = arrow_state.group_by(self.groupby_keys).aggregate(self.pyarrow_agg_list)
-        self.state = polars.from_arrow(arrow_state).rename(self.rename_dict)
-
-        for key in self.aggregation_dict:
-            if self.aggregation_dict[key] == "mean":
-                self.state = self.state.with_column(polars.Series(key, self.state[key]/ self.state[self.count_col]))
-        
-        for key in self.mean_cols:
-            keep_sum = self.mean_cols[key]
-            self.state = self.state.with_column(polars.Series(key + "_mean", self.state[key + "_sum"]/ self.state[self.count_col]))
-            if not keep_sum:
-                self.state = self.state.drop(key + "_sum")
-        
-        if not self.emit_count:
-            self.state = self.state.drop(self.count_col)
-        
-        if len(self.order_list) > 0:
-            return self.state.sort(self.order_list, self.reverse_list)
-        else:
-            return self.state
 
 class CountExecutor(Executor):
     def __init__(self) -> None:
