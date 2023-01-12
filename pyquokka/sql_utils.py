@@ -5,6 +5,7 @@ from datetime import datetime
 from pyarrow import compute
 from functools import partial, reduce
 import operator
+import polars as pl
 
 
 def is_cast_to_date(x):
@@ -120,8 +121,7 @@ def evaluate(node):
         when = node.args["ifs"][0]
         predicate = evaluate(when.this)
         if_true = evaluate(when.args['true'])
-        return lambda x: predicate(x) * if_true(x) + (~predicate(x)) * default(x)
-        
+        return lambda x: x.select(pl.when(predicate(x)).then(if_true(x)).otherwise(default(x))).to_series()
     elif type(node) == sqlglot.expressions.In:
         if all([type(i) == exp.Literal for i in node.args["expressions"]]):
             lf = evaluate(node.this)
@@ -156,6 +156,16 @@ def evaluate(node):
             return lambda x: [True] * len(x)
         else:
             return lambda x: [False] * len(x)
+    elif type(node) == sqlglot.expressions.Extract:
+        feature = node.this.name; from_date = evaluate(node.expression)
+        if feature == 'year':
+            return lambda x: from_date(x).dt.year()
+        elif feature == 'month':
+            return lambda x: from_date(x).dt.month()
+        elif feature == 'day':
+            return lambda x: from_date(x).dt.day()
+        else:
+            raise Exception("failed to parse extract")
     else:
         print(node)
         print(type(node))
