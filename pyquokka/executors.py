@@ -65,7 +65,7 @@ class StorageExecutor(Executor):
             if type(batches[0]) == polars.internals.DataFrame:
                 return polars.concat(batches)
             else:
-                return pd.vstack(batches)
+                return polars.concat([polars.from_arrow(batch) for batch in batches])
 
     def done(self,executor_id):
         return
