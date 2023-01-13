@@ -162,11 +162,15 @@ class FlightServer(pyarrow.flight.FlightServerBase):
         
 
     @staticmethod
-    def number_batches(batches):
+    def number_batches(batches, fake_row = None):
+        
         for name, batch in batches:
-            print_if_debug(batch[0])
             for b in batch[0]:
-                yield b , pickle.dumps((name, batch[1]))
+                if "__empty__" in b.schema.names:
+                    # print("YIELDING FAKE ROW!")
+                    yield fake_row, pickle.dumps((name, batch[1]))
+                else:
+                    yield b, pickle.dumps((name, batch[1]))
 
     def do_get(self, context, ticket):
 
@@ -195,7 +199,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                 if self.flight_keys is None or len(self.flight_keys) == 0:
                     print_if_debug("flights empty!")
                     self.flights_lock.release()
-                    return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches(batches))
+                    return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches([]))
 
 
                 exec_plan = self.flight_keys.lazy().filter((polars.col("target_actor_id") == actor_id) & (polars.col("target_channel_id") == channel_id))\
@@ -204,11 +208,9 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                                                 .select(["source_actor_id", "source_channel_id", "seq", "partition_fn", "min_seq"])\
                                                 .collect()
                 
-                print_if_debug(self.flight_keys, input_requirements, exec_plan)
-
                 if len(exec_plan) == 0:
                     self.flights_lock.release()
-                    return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches(batches))
+                    return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches([]))
 
                 # pick the source with the most batches to give.
                 source_actor_id = exec_plan.lazy().groupby("source_actor_id").agg(polars.count()).sort("count",reverse=True).limit(1).collect().to_dicts()[0]["source_actor_id"]
@@ -248,7 +250,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                 
                 if len(batches) == 0:
                     self.flights_lock.release()
-                    return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches(batches))
+                    return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches([]))
 
             else:
 
@@ -271,7 +273,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                 print_if_debug("current flights", self.flight_keys)
                 if len(batches) == 0:
                     self.flights_lock.release()
-                    return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches(batches))
+                    return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches([]))
 
             self.flights_lock.release()
             
@@ -280,7 +282,20 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             raise Exception("mode not supported")
         
         print_if_debug(batches)
-        return pyarrow.flight.GeneratorStream(batches[0][1][0][0].schema, self.number_batches(batches))
+        # print(batches)
+        fake_row = None
+        schema = None
+        for name, batch in batches:
+            for b in batch[0]:
+                if "__empty__" not in b.schema.names:
+                    schema = b.schema
+                    fake_row = b[:0]
+        # this means that all the batches are actually empty!
+        # we need to send some actual data back or else arrow flight will complain
+        if fake_row is None:
+            fake_row = pyarrow.RecordBatch.from_pydict({"__empty__":[]})
+            schema = fake_row.schema
+        return pyarrow.flight.GeneratorStream(schema, self.number_batches(batches, fake_row = fake_row))
 
     def list_actions(self, context):
         return [

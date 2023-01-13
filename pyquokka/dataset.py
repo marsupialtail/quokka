@@ -763,6 +763,7 @@ class InputS3CSVDataset:
 
         fake_file = FakeFile(results, last_newline, prefix, last_file, skip_header)
         bump = csv.read_csv(fake_file, read_options=csv.ReadOptions(column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+        # bump = polars.read_csv(fake_file, columns = self.names, sep = self.sep)
         del fake_file
 
         bump = bump.select(self.columns) if self.columns is not None else bump

@@ -210,6 +210,8 @@ class TaskManager:
         else:
             raise Exception("push data type not understood")
 
+        
+
         for target_actor_id in partition_fns:
 
             if target_mask is not None and target_actor_id not in target_mask:
@@ -232,8 +234,8 @@ class TaskManager:
             # wrap all the outputs with their actual names and by default persist all outputs
 
             # print(outputs)
-            fake_row = outputs[list(outputs.keys())[0]][:0]
-            expected_schema = outputs[list(outputs.keys())[0]].to_arrow().schema
+            
+            # print(source_actor_id, source_channel_id, seq)
 
             for target_channel_id in self.actor_flight_clients[target_actor_id]:
 
@@ -251,7 +253,7 @@ class TaskManager:
                 else:
                     name = (source_actor_id, source_channel_id, seq, target_actor_id, 0, target_channel_id)
                    
-                    batches = [pyarrow.RecordBatch.from_pandas(fake_row.to_pandas(), schema = expected_schema)]
+                    batches = [pyarrow.RecordBatch.from_pydict({"__empty__":[]})]
                     # print(fake_row.schema, fake_row.to_pandas(), batches[0].schema)
                     # print(name, batches, fake_row.to_pandas())
 
@@ -281,7 +283,7 @@ class TaskManager:
                     print("downstream unavailable")
                     return False
                 
-                print_if_debug("finished pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
+                # print("finished pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
 
                 print_if_profile("pushing to one channel time", time.time() - start)
 
@@ -384,6 +386,8 @@ class ExecTaskManager(TaskManager):
             for data in output:
                 if actor_id not in self.blocking_nodes:
                     pushed = self.push(actor_id, channel_id, out_seq, data)
+                    # after a while we realized this output is actually none.
+
                     if not pushed:
                         # you failed to push downstream, most likely due to node failure. wait a bit for coordinator recovery and continue, most like will be choked on barrier.
                         time.sleep(0.2)
@@ -472,10 +476,12 @@ class ExecTaskManager(TaskManager):
                     
                     chunks_list = []
                     names = []
+                    # print("=============")
                     while True:
                         try:
                             chunk, metadata = reader.read_chunk()
                             name, format = pickle.loads(metadata)
+                            # print(name, len(chunk))
                             assert format == "polars"
                             if len(names) == 0 or name != names[-1]:
                                 chunks_list.append([chunk])
@@ -486,6 +492,7 @@ class ExecTaskManager(TaskManager):
 
                         except StopIteration:
                             break
+                    # print("=============")
 
                     batches = []
                     source_actor_ids = set()
@@ -500,7 +507,7 @@ class ExecTaskManager(TaskManager):
                         # this is true because only the last batch for every source channel can still be uncommitted.
 
                         if FT and self.LT.get(self.r, pickle.dumps((source_actor_id, source_channel_id, seq))) is None:
-                            print_if_debug("SKIPPING UNCOMMITED STUFF ", source_actor_id, source_channel_id, seq)
+                            # print("SKIPPING UNCOMMITED STUFF ", source_actor_id, source_channel_id, seq)
                             continue
 
                         input_names.append(name)
@@ -514,6 +521,7 @@ class ExecTaskManager(TaskManager):
                         batches.append(chunks)
                     
                     if len(batches) == 0:
+                        # print("returned zero batches")
                         self.index += 1
                         continue
 
@@ -541,7 +549,7 @@ class ExecTaskManager(TaskManager):
                     progress = polars.from_dict({"source_actor_id": [source_actor_id] * len(source_channel_ids) , "source_channel_id": source_channel_ids, "progress": source_channel_progress})
                     # progress is guaranteed to have something since len(batches) > 0
                     
-                    print_if_debug("progress", progress)
+                    # print_if_debug("progress", progress)
                     
                     new_input_reqs = input_requirements.join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
                     new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
@@ -653,7 +661,7 @@ class ExecTaskManager(TaskManager):
                 self.tape_input_reqs[actor_id, channel_id] = new_input_reqs.select(["source_actor_id", "source_channel_id","min_seq"])
 
                 input = [record_batches_to_table(batch) for batch in batches if sum([len(b) for b in batch]) > 0]
-                
+
                 if len(input) > 0:
                     output, state_seq, out_seq = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
                 else:
