@@ -174,7 +174,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
 
     def do_get(self, context, ticket):
 
-        mode, actor_id, channel_id, input_requirements, exact = pickle.loads(ticket.ticket)
+        mode, actor_id, channel_id, input_requirements, exact, sorted_reqs = pickle.loads(ticket.ticket)
 
         if mode == "hbq":
 
@@ -204,7 +204,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
 
                 exec_plan = self.flight_keys.lazy().filter((polars.col("target_actor_id") == actor_id) & (polars.col("target_channel_id") == channel_id))\
                                                 .join(input_requirements.lazy(), left_on= ["source_actor_id", "source_channel_id"], right_on=["source_actor_id", "source_channel_id"])\
-                                                .filter(polars.col("seq") >= polars.col("min_seq")).limit(self.config_dict["max_batches"])\
+                                                .filter(polars.col("seq") >= polars.col("min_seq")).sort("seq").limit(self.config_dict["max_batches"])\
                                                 .select(["source_actor_id", "source_channel_id", "seq", "partition_fn", "min_seq"])\
                                                 .collect()
                 
@@ -220,34 +220,59 @@ class FlightServer(pyarrow.flight.FlightServerBase):
 
                 exec_plan_candidate = exec_plan.filter(polars.col("source_actor_id") == source_actor_id)
 
-                for df in exec_plan_candidate.groupby("source_channel_id"):
-                    source_channel_id = df["source_channel_id"][0]
-                    seqs = sorted(df["seq"].to_list())
-                    min_seq = df["min_seq"][0]
-                    last_seq = min_seq
-                    for seq in seqs:
-                        if seq == last_seq:
-                            name = (source_actor_id, source_channel_id, seq, actor_id, 0, channel_id)
-                            assert name in self.flights
-                            batches.append((name, self.flights[name]))
-                            last_seq += 1
-                        else:
+                if sorted_reqs is None or source_actor_id not in sorted_reqs:
+
+                    # we are going to return batches channel contiguous, i.e. 1-2, 1-3, 1-4, 2-1, 2-2, etc.
+                    for df in exec_plan_candidate.groupby("source_channel_id"):
+                        source_channel_id = df["source_channel_id"][0]
+                        seqs = sorted(df["seq"].to_list())
+                        min_seq = df["min_seq"][0]
+                        last_seq = min_seq
+                        for seq in seqs:
+                            if seq == last_seq:
+                                name = (source_actor_id, source_channel_id, seq, actor_id, 0, channel_id)
+                                assert name in self.flights
+                                batches.append((name, self.flights[name]))
+                                last_seq += 1
+                            else:
+                                break
+                    
+                else:
+                    # we have to return batches strided:  2-1, 3-1, 1-2, 2-2, ...
+                    # first we need to figure out which channel we need to start from from the input reqs
+                    # print(input_requirements, source_actor_id)
+                    input_requirements = input_requirements.filter(polars.col("source_actor_id") == source_actor_id)
+                    stuff = input_requirements.sort("source_channel_id")\
+                                         .with_column((input_requirements["min_seq"] - input_requirements["min_seq"].shift(1)).alias("lag"))\
+                                         .filter(polars.col("lag") == -1)
+                    if len(stuff) == 0:
+                        # we are starting from the beginning
+                        start_channel_id = input_requirements.sort("source_channel_id").to_dicts()[0]["source_channel_id"]
+                        # assert start_channel_id == 0, "start channel id must be zero"
+                        curr_seq_no = input_requirements.sort("source_channel_id").to_dicts()[0]["min_seq"]
+                    else:
+                        assert len(stuff) == 1, "must have only one row on the edge"
+                        start_channel_id = stuff.to_dicts()[0]["source_channel_id"]
+                        curr_seq_no = stuff.to_dicts()[0]["min_seq"]
+
+                    total_source_channels = sorted_reqs[source_actor_id]
+                    # now we are going to go up the required batches until we hit one that's not in the flight_keys
+
+                    while True:
+                        leave = False
+                        for curr_channel in range(start_channel_id, total_source_channels):
+                            name = (source_actor_id, curr_channel, curr_seq_no, actor_id, 0, channel_id)
+                            if name in self.flights:
+                                # print(name)
+                                batches.append((name, self.flights[name]))
+                            else:
+                                leave = True
+                                break
+                        if leave:
                             break
-
-                # print_if_debug("exec plan", exec_plan)
-                # print_if_debug("current flights", self.flight_keys)
-
-                # # do a check here that the returned input batches are contiguous. there could be failure cases but this check should handle most of it.
-                # z = exec_plan.groupby("source_channel_id").agg([polars.max("seq"), polars.count(), polars.max("min_seq")])
-                # print_if_debug(z)
-                # assert (z["seq"] == z["min_seq"] + z["count"] - 1).all(), "Failed check, returned sequence numbers likely not contiguous"
-                                                
-                # for name_dict in exec_plan.to_dicts():
-                #     name = (name_dict["source_actor_id"], name_dict["source_channel_id"], name_dict["seq"], actor_id, name_dict["partition_fn"], channel_id)
-                #     print_if_debug(self.flights)
-                #     assert name in self.flights , "exec plan name not in flights"
-                #     batches.append((name, self.flights[name]))
-                
+                        curr_seq_no += 1
+                        start_channel_id = 0
+                    
                 if len(batches) == 0:
                     self.flights_lock.release()
                     return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches([]))
@@ -262,14 +287,29 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                 partition_fn = 0 # TODO: only support 1 partition fn right now
                 source_actor_id, source_channel_seqs = pickle.loads(input_requirements)
 
-                for source_channel_id in source_channel_seqs:
-                    for seq in source_channel_seqs[source_channel_id]:
-                        name = (source_actor_id, source_channel_id, seq, actor_id, partition_fn, channel_id)
-                        if name not in self.flights:
-                            self.flights_lock.release()
-                            return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches([]))
+                if source_actor_id not in sorted_reqs:
+                    for source_channel_id in source_channel_seqs:
+                        for seq in source_channel_seqs[source_channel_id]:
+                            name = (source_actor_id, source_channel_id, seq, actor_id, partition_fn, channel_id)
+                            if name not in self.flights:
+                                self.flights_lock.release()
+                                return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches([]))
+                            batches.append((name, self.flights[name]))
+                else:
+                    name_list = []
+                    for source_channel_id in source_channel_seqs:
+                        for seq in source_channel_seqs[source_channel_id]:
+                            name = (source_actor_id, source_channel_id, seq, actor_id, partition_fn, channel_id)
+                            if name not in self.flights:
+                                self.flights_lock.release()
+                                return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches([]))
+                            name_list.append(name)
+                    name_list = polars.DataFrame(name_list, columns = ["source_actor_id", "source_channel_id", "seq", "actor_id", "partition_fn", "channel_id"], orient="row")
+                    name_list = name_list.sort(["seq","source_channel_id"])
+                    for name in name_list.to_dicts():
+                        name = (name["source_actor_id"], name["source_channel_id"], name["seq"], name["actor_id"], name["partition_fn"], name["channel_id"])
                         batches.append((name, self.flights[name]))
- 
+
                 print_if_debug("current flights", self.flight_keys)
                 if len(batches) == 0:
                     self.flights_lock.release()
@@ -282,7 +322,6 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             raise Exception("mode not supported")
         
         print_if_debug(batches)
-        # print(batches)
         fake_row = None
         schema = None
         for name, batch in batches:

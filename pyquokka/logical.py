@@ -238,17 +238,17 @@ operator required columns (aka required columns) is a dict, which records which 
 
 '''
 class TaskNode(Node):
-    def __init__(self, schema: list, schema_mapping: dict, required_columns: set, ordering = None) -> None:
+    def __init__(self, schema: list, schema_mapping: dict, required_columns: set) -> None:
         super().__init__(schema)
         self.schema_mapping = schema_mapping
         self.required_columns = required_columns
-        self.ordering = ordering
         
 
 class StatefulNode(TaskNode):
-    def __init__(self, schema, schema_mapping, required_columns, operator, ordering = None) -> None:
-        super().__init__(schema, schema_mapping, required_columns, ordering)
+    def __init__(self, schema, schema_mapping, required_columns, operator, assume_sorted = {}) -> None:
+        super().__init__(schema, schema_mapping, required_columns)
         self.operator = operator
+        self.assume_sorted = assume_sorted
     
     def lower(self, task_graph, parent_nodes, parent_source_info ):
         if self.blocking:
@@ -256,9 +256,9 @@ class StatefulNode(TaskNode):
             target_info = self.targets[list(self.targets.keys())[0]]
             transform_func = target_info_to_transform_func(target_info)          
             
-            return task_graph.new_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info, transform_fn = transform_func)
+            return task_graph.new_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info, transform_fn = transform_func, assume_sorted = self.assume_sorted)
         else:
-            return task_graph.new_non_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info)
+            return task_graph.new_non_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info, assume_sorted = self.assume_sorted)
         
 '''
 We need a separate MapNode from StatefulNode since we can compact UDFs

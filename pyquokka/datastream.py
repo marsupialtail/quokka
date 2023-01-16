@@ -860,7 +860,8 @@ class DataStream:
                         schema=new_schema,
                         schema_mapping=schema_mapping,
                         required_columns={0: {left_on}, 1: {right_on}},
-                        operator= operator),
+                        operator= operator,
+                        assume_sorted= {0: True,1: True}),
                     schema=new_schema,
                     )
             

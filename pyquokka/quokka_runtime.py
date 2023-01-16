@@ -86,6 +86,7 @@ class TaskGraph:
         self.IRT = InputRequirementsTable()
         self.LT = LineageTable()
         self.DST = DoneSeqTable()
+        self.SAT = SortedActorsTable()
 
         # progress tracking stuff
         self.input_partitions = {}
@@ -281,7 +282,7 @@ class TaskGraph:
 
         return input_reqs
 
-    def new_non_blocking_node(self, streams, functionObject, placement_strategy = CustomChannelsStrategy(1), source_target_info = {}):
+    def new_non_blocking_node(self, streams, functionObject, placement_strategy = CustomChannelsStrategy(1), source_target_info = {}, assume_sorted = {}):
 
         assert len(source_target_info) == len(streams)
         self.actor_types[self.current_actor] = 'exec'
@@ -295,7 +296,15 @@ class TaskGraph:
 
         input_reqs = self.prologue(streams, placement_strategy, source_target_info)
         # print("input_reqs",input_reqs)
+
+        for key in assume_sorted:
+            # first find how many channels that key has in input_reqs
+            sorted_source_channels = len(input_reqs.filter(polars.col("source_actor_id") == key))
+            assume_sorted[key] = sorted_source_channels
         
+        if len(assume_sorted) > 0:
+            self.SAT.set(pipe, self.current_actor, pickle.dumps(assume_sorted))
+
         channel_locs = {}
         if type(placement_strategy) == SingleChannelStrategy:
 
@@ -325,12 +334,12 @@ class TaskGraph:
         
         return self.epilogue(placement_strategy)
 
-    def new_blocking_node(self, streams, functionObject, placement_strategy = CustomChannelsStrategy(1), source_target_info = {}, transform_fn = None):
+    def new_blocking_node(self, streams, functionObject, placement_strategy = CustomChannelsStrategy(1), source_target_info = {}, transform_fn = None, assume_sorted = {}):
 
         if placement_strategy is None:
             placement_strategy = CustomChannelsStrategy(1)
 
-        current_actor = self.new_non_blocking_node(streams, functionObject, placement_strategy, source_target_info)
+        current_actor = self.new_non_blocking_node(streams, functionObject, placement_strategy, source_target_info, assume_sorted)
         self.actor_types[current_actor] = 'exec'
         total_channels = self.get_total_channels_from_placement_strategy(placement_strategy, 'exec')
 

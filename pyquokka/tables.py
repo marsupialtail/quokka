@@ -271,3 +271,15 @@ class InputRequirementsTable(ClientWrapper):
         keys = self.keys(redis_client)
         values = self.mget(redis_client, keys)
         return {pickle.loads(key): pickle.loads(value) for key, value in zip(keys, values)}
+
+'''
+- Sorted Actors Table (SAT): this stores the information corresponding to actors that are supposedly sorted
+'''
+class SortedActorsTable(ClientWrapper):
+    def __init__(self) -> None:
+        super().__init__("SAT")
+    
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        values = self.mget(redis_client, keys)
+        return {int(key): pickle.loads(value) for key, value in zip(keys, values)}

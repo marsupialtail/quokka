@@ -20,6 +20,7 @@ import pickle
 import concurrent.futures
 import duckdb
 import multiprocessing
+from pyquokka.windowtypes import *
 
 class Executor:
     def __init__(self) -> None:
@@ -69,6 +70,95 @@ class StorageExecutor(Executor):
 
     def done(self,executor_id):
         return
+
+"""
+We are going to support four kinds of windows:
+- hopping (defined by window length, hop size)
+- sliding (defined by window length)
+- session (defined by gap length)
+
+We will expect the batches to come in sorted order.
+"""
+class WindowExecutor(Executor):
+    def __init__(self, time_col, by_col, window, aggregations) -> None:
+        self.time_col = time_col
+        self.by_col = by_col
+        self.state = None
+        assert issubclass(type(window), Window)
+        self.window = window
+        # a list of polars aggregation expressions
+        self.aggregations = aggregations
+
+    def execute(self, batches, stream_id, executor_id):
+
+        batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
+        batch = polars.concat(batches)
+
+        # current polars implementation cannot support floating point groupby dynamic and rolling operations.
+        assert (batch[self.time_col].dtype in {polars.Int32, polars.Int64, polars.Datetime, polars.Date} )
+
+        if issubclass(type(self.window), HoppingWindow):
+            # we are going to use polars groupby dynamic
+            size = self.window.size_polars
+            hop = self.window.hop_polars            
+
+            # for a hopping window, we want to make sure that we delegate all the rows in uncompleted windows to the next execute call.
+            # therefore we need to compute the end time of the last completed window. 
+            timestamp_of_last_row = batch[self.time_col][-1]
+            if type(timestamp_of_last_row) == datetime.datetime:
+                last_start = (timestamp_of_last_row - self.window.size).timestamp() // self.window.hop.total_seconds() * self.window.hop.total_seconds()
+                last_end = last_start + self.window.size.total_seconds()
+                new_state = batch.filter(polars.col(self.time_col) > datetime.datetime.fromtimestamp(last_end))
+                batch = batch.filter(polars.col(self.time_col) <= datetime.datetime.fromtimestamp(last_end))
+                
+            elif type(timestamp_of_last_row) == int:
+                last_start = (timestamp_of_last_row - self.window.size) // self.window.hop * self.window.hop
+                last_end = last_start + self.window.size
+                new_state = batch.filter(polars.col(self.time_col) > last_end)
+                batch = batch.filter(polars.col(self.time_col) <= last_end)
+            else:
+                raise NotImplementedError
+            
+            if self.state is not None:
+                batch = polars.concat([self.state, batch])
+            self.state = new_state
+            result = batch.groupby_dynamic(self.time_col, every = hop, period= size, by = self.by_col).agg(self.aggregations).sort(self.time_col)
+
+        elif issubclass(type(self.window), SlidingWindow):
+            size = self.window.size
+            if self.state is not None:
+                batch = polars.concat([self.state, batch])
+
+            timestamp_of_last_row = batch[self.time_col][-1]
+            # python dynamic typing -- this will work for both timedelta window size and int window size
+            self.state = batch.filter(polars.col(self.time_col) > timestamp_of_last_row - self.window.size)
+            result = batch.groupby_rolling(self.time_col, period= size, by = self.by_col).agg(self.aggregations).sort(self.time_col)
+
+        elif issubclass(type(self.window), SessionWindow):
+
+            # we are going to do some wizardry here! 
+
+            pass
+
+        return result
+    
+    def done(self, executor_id):
+        if issubclass(type(self.window), HoppingWindow):
+            size = self.window.size_polars
+            hop = self.window.hop_polars
+            if self.state is not None and len(self.state) > 0:
+                result = self.state.groupby_dynamic(self.time_col, every = hop, period= size, by = self.by_col).agg(self.aggregations).sort(self.time_col)
+            else:
+                result = None
+
+        elif issubclass(type(self.window), SlidingWindow):
+            size = self.window.size
+            result = batch.groupby_rolling(self.time_col, period= size, by = self.by_col).agg(self.aggregations).sort(self.time_col)
+
+        elif issubclass(type(self.window), SessionWindow):
+            pass
+        
+        return result
 
 class OutputExecutor(Executor):
     def __init__(self, filepath, format, prefix = "part", mode = "local", row_group_size = 5500000) -> None:

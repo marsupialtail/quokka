@@ -420,7 +420,92 @@ class GroupAsOfJoinExecutor():
         print("done asof join ", executor_id)
         return polars.concat(ret_vals).drop_nulls()
 
+class AggExecutor(Executor):
+    '''
+    aggregation_dict will define what you are going to do for
+    '''
+    def __init__(self, groupby_keys, orderby_keys, aggregation_dict, mean_cols, count):
 
+
+        self.state = None
+        self.emit_count = count
+        assert type(groupby_keys) == list and len(groupby_keys) > 0
+        self.groupby_keys = groupby_keys
+        self.aggregation_dict = aggregation_dict
+        self.mean_cols = mean_cols
+        self.length_limit = 1000000
+        # hope and pray there is no column called __&&count__
+        self.pyarrow_agg_list = [("__count_sum", "sum")]
+        self.count_col = "__count_sum"
+        self.rename_dict = {"__count_sum_sum": self.count_col}
+        for key in aggregation_dict:
+            assert aggregation_dict[key] in {
+                    "max", "min", "mean", "sum"}, "only support max, min, mean and sum for now"
+            if aggregation_dict[key] == "mean":
+                self.pyarrow_agg_list.append((key, "sum"))
+                self.rename_dict[key + "_sum"] = key
+            else:
+                self.pyarrow_agg_list.append((key, aggregation_dict[key]))
+                self.rename_dict[key + "_" + aggregation_dict[key]] = key
+        
+        self.order_list = []
+        self.reverse_list = []
+        if orderby_keys is not None:
+            for key, dir in orderby_keys:
+                self.order_list.append(key)
+                self.reverse_list.append(True if dir == "desc" else False)
+
+    def checkpoint(self, conn, actor_id, channel_id, seq):
+        pass
+    
+    def restore(self, conn, actor_id, channel_id, seq):
+        pass
+    
+    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
+    def execute(self,batches, stream_id, executor_id):
+
+        batches = [polars.from_arrow(i) for i in batches if i is not None]
+        batch = polars.concat(batches)
+        assert type(batch) == polars.internals.DataFrame, batch # polars add has no index, will have wierd behavior
+        if self.state is None:
+            self.state = batch
+        else:
+            self.state = self.state.vstack(batch)
+        if len(self.state) > self.length_limit:
+            arrow_state = self.state.to_arrow()
+            arrow_state = arrow_state.group_by(self.groupby_keys).aggregate(self.pyarrow_agg_list)
+            self.state = polars.from_arrow(arrow_state).rename(self.rename_dict)
+            self.state = self.state.select(sorted(self.state.columns))
+
+
+    def done(self,executor_id):
+
+        # print("done", time.time())
+
+        if self.state is None:
+            return None
+        
+        arrow_state = self.state.to_arrow()
+        arrow_state = arrow_state.group_by(self.groupby_keys).aggregate(self.pyarrow_agg_list)
+        self.state = polars.from_arrow(arrow_state).rename(self.rename_dict)
+
+        for key in self.aggregation_dict:
+            if self.aggregation_dict[key] == "mean":
+                self.state = self.state.with_column(polars.Series(key, self.state[key]/ self.state[self.count_col]))
+        
+        for key in self.mean_cols:
+            keep_sum = self.mean_cols[key]
+            self.state = self.state.with_column(polars.Series(key + "_mean", self.state[key + "_sum"]/ self.state[self.count_col]))
+            if not keep_sum:
+                self.state = self.state.drop(key + "_sum")
+        
+        if not self.emit_count:
+            self.state = self.state.drop(self.count_col)
+        
+        if len(self.order_list) > 0:
+            return self.state.sort(self.order_list, self.reverse_list)
+        else:
+            return self.state
 
 class MergeSortedExecutor(Executor):
     def __init__(self, key, record_batch_rows = None, length_limit = 5000, file_prefix = "mergesort") -> None:

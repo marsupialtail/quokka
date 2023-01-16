@@ -66,6 +66,8 @@ class TaskManager:
 
         # this defines how this object is going to push outputs
         self.flight_client = pyarrow.flight.connect("grpc://0.0.0.0:5005")
+        self.r = redis.Redis(coordinator_ip, 6800, db = 0)
+
         self.clear_flights(self.flight_client)
         self.set_flight_configs(self.flight_client)
         self.flight_clients = {i: pyarrow.flight.connect("grpc://" + str(i) + ":5005") for i in worker_ips}
@@ -83,7 +85,6 @@ class TaskManager:
         if coordinator_ip == "localhost":
             print("Warning: coordinator_ip set to localhost. This only makes sense for local deployment.")
 
-        self.r = redis.Redis(coordinator_ip, 6800, db = 0)
         self.CT = CemetaryTable()
         self.NOT = NodeObjectTable()
         self.PT = PresentObjectTable()
@@ -92,6 +93,7 @@ class TaskManager:
         self.DST = DoneSeqTable()
         self.CLT = ChannelLocationTable()
         self.FOT = FunctionObjectTable()
+        self.SAT = SortedActorsTable()
 
         # populate this dictionary from the initial assignment 
             
@@ -113,7 +115,7 @@ class TaskManager:
         return True
 
     def alive(self):
-        return True
+        return True        
 
     def update_dst(self):
         # you only ever need the actor, channel pairs that have been registered in self.actor_flight_clients
@@ -185,6 +187,7 @@ class TaskManager:
             raise Exception
     
     def set_flight_configs(self, client):
+
         message = pyarrow.py_buffer(pickle.dumps({"mem_limit" : MEM_LIMIT, "max_batches" : MAX_BATCHES}))
         action = pyarrow.flight.Action("set_configs", message)
         result = next(client.do_action(action))
@@ -335,6 +338,7 @@ class ExecTaskManager(TaskManager):
         self.LCT = LastCheckpointTable()
         self.EST = ExecutorStateTable()
         self.IRT = InputRequirementsTable()
+        self.SAT = SortedActorsTable()
 
         if checkpoint_bucket is not None:
             self.checkpoint_bucket = checkpoint_bucket
@@ -407,6 +411,8 @@ class ExecTaskManager(TaskManager):
         pyarrow.set_cpu_count(8)
         count = -1
         self.index = 0
+        self.sat = self.SAT.to_dict(self.r)
+
         while True:
 
             self.check_in_recovery()
@@ -466,7 +472,10 @@ class ExecTaskManager(TaskManager):
                 input_names = []
                 if len(input_requirements) > 0:
 
-                    request = ("cache", actor_id, channel_id, input_requirements, False)
+                    if actor_id in self.sat:
+                        request = ("cache", actor_id, channel_id, input_requirements, False, self.sat[actor_id])
+                    else:
+                        request = ("cache", actor_id, channel_id, input_requirements, False, None)
 
                     # if we can bake logic inside the the flight server we probably should, because that will be baked into C++ at some point.
 
@@ -623,7 +632,11 @@ class ExecTaskManager(TaskManager):
                 input_requirements = self.LT.get(self.r, name_prefix)
                 assert input_requirements is not None, pickle.loads(name_prefix)
                 
-                request = ("cache", actor_id, channel_id, input_requirements, True)
+                if actor_id in self.sat:
+                    request = ("cache", actor_id, channel_id, input_requirements, True, self.sat[actor_id])
+                else:
+                    request = ("cache", actor_id, channel_id, input_requirements, True, None)
+                    
                 reader = self.flight_client.do_get(pyarrow.flight.Ticket(pickle.dumps(request)))
 
                 chunks_list = []
