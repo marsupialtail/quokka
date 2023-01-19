@@ -457,6 +457,7 @@ class ExecTaskManager(TaskManager):
                 self.update_dst()
                 
                 if self.dst is not None:
+                    
                     input_requirements = input_requirements.join(self.dst, on = ["source_actor_id", "source_channel_id"], how = "left")\
                                                     .fill_null(MAX_SEQ)\
                                                     .filter(polars.col("min_seq") <= polars.col("done_seq"))\
@@ -520,6 +521,7 @@ class ExecTaskManager(TaskManager):
                             continue
 
                         input_names.append(name)
+                        # print(name)
                         
                         source_actor_ids.add(source_actor_id)
                         if source_channel_id in source_channel_seqs:
@@ -636,7 +638,7 @@ class ExecTaskManager(TaskManager):
                     request = ("cache", actor_id, channel_id, input_requirements, True, self.sat[actor_id])
                 else:
                     request = ("cache", actor_id, channel_id, input_requirements, True, None)
-                    
+
                 reader = self.flight_client.do_get(pyarrow.flight.Ticket(pickle.dumps(request)))
 
                 chunks_list = []

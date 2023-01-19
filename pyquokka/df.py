@@ -326,6 +326,19 @@ class QuokkaContext:
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
     
+
+    def read_sorted_parquet(self, table_location: str, sorted_by: str, schema = None):
+        assert type(sorted_by) == str
+        stream = self.read_parquet(table_location, schema)
+        stream._set_sorted({sorted_by : "stride"})
+        return stream
+    
+    def read_sorted_csv(self, table_location: str,sorted_by: str, schema = None, has_header = False, sep=","):
+        assert type(sorted_by) == str
+        stream = self.read_csv(table_location, schema, has_header, sep)
+        stream._set_sorted({sorted_by : "stride"})
+        return stream
+
     '''
     This is expected to be internal for now. This is a pretty new API and people probably don't know how to use this.
     '''

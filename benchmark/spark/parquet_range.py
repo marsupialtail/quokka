@@ -14,6 +14,10 @@ df_quotes = spark.read.parquet("s3://quokka-asof-parquet/quotes/")
 df_trades.createOrReplaceTempView("trades")
 df_quotes.createOrReplaceTempView("quotes")
 
+test = """
+WITH k as (SELECT symbol, time, avg(bid) OVER (PARTITION BY symbol ORDER BY time RANGE 1000 preceding) AS rank FROM quotes WHERE ask > 0.5)
+select max(rank) from k
+"""
 
 
 # def udf2(l, r):

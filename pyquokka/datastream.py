@@ -31,27 +31,20 @@ class DataStream:
 
     """
 
-    def __init__(self, quokka_context, schema: list, source_node_id: int, sorted = None) -> None:
+    def __init__(self, quokka_context, schema: list, source_node_id: int, sorted_reqs = None) -> None:
         self.quokka_context = quokka_context
         self.schema = schema
         self.source_node_id = source_node_id
-        if sorted is not None:
-            if type(sorted) == str:
-                sorted = [sorted]
-            for col in sorted:
-                assert col in schema
-        self.sorted = sorted
+        self.sorted = sorted_reqs
 
-    def set_sorted(self, sorted):
+    def _set_sorted(self, sorted_reqs):
         """
         This is used to set the sorted attribute of this DataStream.
         Use with care! If the thing isn't actually sorted, shit will blow up.
         """
-        if type(sorted) == str:
-            sorted = [sorted]
-        for col in sorted:
-            assert col in self.schema
-        self.sorted = sorted
+        assert type(sorted_reqs) == dict
+        self.quokka_context.nodes[self.source_node_id].set_output_sorted_reqs(sorted_reqs)
+        self.sorted = sorted_reqs
 
     def __str__(self):
         return "DataStream[" + ",".join(self.schema) + "]"
@@ -282,7 +275,7 @@ class DataStream:
             assert column in self.schema, "Tried to filter on a column not in the schema"
 
         return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=FilterNode(self.schema, predicate),
-                                              schema=self.schema, )
+                                              schema=self.schema, sorted = self.sorted)
 
     def select(self, columns: list):
 
@@ -326,6 +319,7 @@ class DataStream:
             partitioners={0: PassThroughPartitioner()},
             node=ProjectionNode(set(columns)),
             schema=columns,
+            sorted = self.sorted
             )
 
     def drop(self, cols_to_drop: list):
@@ -351,9 +345,10 @@ class DataStream:
             >>> f = f.select(["l_orderdate"])
             ~~~
         """
-
+        
         for col in cols_to_drop:
             assert col in self.schema, "col to drop not found in schema"
+            assert col not in self.sorted, "cannot drop a sort key!"
         return self.select([col for col in self.schema if col not in cols_to_drop])
 
     def rename(self, rename_dict):
@@ -373,11 +368,14 @@ class DataStream:
             A DataStream with new schema according to rename. 
         """
 
+        new_sorted = {}
         assert type(
             rename_dict) == dict, "must specify a dictionary like Polars"
         for key in rename_dict:
             assert key in self.schema, "key in rename dict must be in schema"
             assert rename_dict[key] not in self.schema, "new name must not be in current schema"
+            if key in self.sorted:
+                new_sorted[rename_dict[key]] = self.sorted[key]
 
         # the fact you can write this in one line is why I love Python
         new_schema = [col if col not in rename_dict else rename_dict[col]
@@ -402,6 +400,7 @@ class DataStream:
                 foldable=True
             ),
             schema=new_schema,
+            sorted = new_sorted if len(new_sorted) > 0 else None
             
         )
 
@@ -569,6 +568,7 @@ class DataStream:
                 function=partial(polars_func, f),
                 foldable=foldable),
             schema=self.schema + [new_column],
+            sorted = self.sorted
             )
 
 
@@ -860,8 +860,7 @@ class DataStream:
                         schema=new_schema,
                         schema_mapping=schema_mapping,
                         required_columns={0: {left_on}, 1: {right_on}},
-                        operator= operator,
-                        assume_sorted= {0: True,1: True}),
+                        operator= operator),
                     schema=new_schema,
                     )
             
@@ -958,6 +957,40 @@ class DataStream:
                     raise Exception("don't understand orderby format")
 
         return GroupedDataStream(self, groupby=groupby, orderby=orderby)
+    
+    def _windowed_aggregate(self, time_col: str, by_col: str, window: Window, new_schema: list, required_columns: set, aggregations):
+
+        """
+        This is a helper function for `windowed_aggregate` and `windowed_aggregate_with_state`. It is not meant to be used directly.
+        aggregations should be a list of polars expressions.
+        """
+
+        assert self.sorted is not None, "DataStream must be sorted before windowed aggregation."
+        assert time_col in self.sorted and self.sorted[time_col] == "stride"
+
+        assert type(required_columns) == set
+
+        required_columns.add(time_col)
+        required_columns.add(by_col)
+        select_stream = self.select(required_columns)
+
+        node = StatefulNode(
+                schema=new_schema,
+                # cannot push through any predicates or projections!
+                schema_mapping={col: (-1, col) for col in new_schema},
+                required_columns={0: required_columns},
+                operator=WindowExecutor(time_col, by_col, window, aggregations),
+                assume_sorted={0:True}
+            )
+        
+        node.set_output_sorted_reqs({time_col: ("sorted_within_key", by_col)})
+
+        return self.quokka_context.new_stream(
+            sources={0: select_stream},
+            partitioners={0: HashPartitioner(by_col)},
+            node=node,
+            schema=new_schema,
+        )
 
     def _grouped_aggregate(self, groupby: list, aggregations: dict, orderby=None):
         '''

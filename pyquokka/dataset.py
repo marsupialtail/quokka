@@ -22,6 +22,10 @@ import random
 import ray
 import math
 
+# computes the overlap of two intervals (a1, a2) and (b1, b2)
+def overlap(a, b):
+    return max(-1, min(a[1], b[1]) - max(a[0], b[0]))
+
 class InputEC2ParquetDataset:
 
     # filter pushdown could be profitable in the future, especially when you can skip entire Parquet files
@@ -99,7 +103,7 @@ class InputEC2ParquetDataset:
 
 class InputSortedEC2ParquetDataset:
 
-    def __init__(self, bucket, prefix, partitioner, columns=None, filters=None) -> None:
+    def __init__(self, bucket, prefix, partitioner, columns=None, filters=None, mode = "stride") -> None:
 
         self.bucket = bucket
         self.prefix = prefix
@@ -111,17 +115,17 @@ class InputSortedEC2ParquetDataset:
         self.filters = filters
 
         self.length = 0
-        self.workers = 4
+        self.workers = 1
 
         self.s3 = None
         self.iterator = None
         self.count = 0
         self.bounds = None
 
-    def get_bounds(self, num_channels):
+        assert mode in ["stride", "range"]
+        self.mode = mode
 
-        def overlap(a, b):
-            return max(-1, min(a[1], b[1]) - max(a[0], b[0]))
+    def _get_bounds(self, num_channels):
         
         channel_infos = {}
         fragments = []
@@ -153,15 +157,29 @@ class InputSortedEC2ParquetDataset:
                 "positive overlap, data is not sorted!"
 
         fragments_per_channel = math.ceil(len(fragments) / num_channels)
-        channel_bounds = {}
-        for channel in range(num_channels):
-            channel_infos[channel] = fragments[channel * fragments_per_channel : channel * fragments_per_channel + fragments_per_channel]
-            channel_bounds[channel] = (channel_infos[channel][0][1], channel_infos[channel][-1][-1])
 
-        self.bounds = channel_infos
-        return channel_bounds
+        if self.mode == "range":
+            channel_bounds = {}
+            for channel in range(num_channels):
+                channel_infos[channel] = fragments[channel * fragments_per_channel : channel * fragments_per_channel + fragments_per_channel]
+                channel_bounds[channel] = (channel_infos[channel][0][1], channel_infos[channel][-1][-1])
+
+            self.bounds = channel_infos
+            return channel_bounds
+        elif self.mode == "stride":
+            for channel in range(num_channels):
+                channel_infos[channel] = []
+                for k in range(channel * self.workers, len(fragments), num_channels * self.workers):
+                    for j in range(self.workers):
+                        if k + j < len(fragments):
+                            channel_infos[channel].append(fragments[k + j])
+            self.bounds = channel_infos
+            return {}
     
     def get_own_state(self, num_channels):
+
+        channel_bounds = self._get_bounds(num_channels)
+        self.channel_bounds = channel_bounds
 
         assert self.bounds is not None
         channel_infos = {}
@@ -193,14 +211,16 @@ class InputSortedEC2ParquetDataset:
         if len(files_to_do) == 0:
             return None, None
         
-        # this will return things out of order, but that's ok!
+        # we must not return things out of order
 
-        future_to_url = {self.executor.submit(download, file): file for file in files_to_do}
+        future_to_url = {self.executor.submit(download, files_to_do[i]): i for i in range(len(files_to_do))}
         dfs = []
         for future in concurrent.futures.as_completed(future_to_url):
-            dfs.append(future.result())
+            dfs.append((future.result(), future_to_url[future]))
         
-        return None, pa.concat_tables(dfs)
+        sorted_dfs = sorted(dfs, key = lambda x: x[1])
+        
+        return None, pa.concat_tables([k[0] for k in sorted_dfs])
 
 class InputEC2CoPartitionedSortedParquetDataset:
 
@@ -402,7 +422,7 @@ class InputDiskFilesDataset:
        
 # this should work for 1 CSV up to multiple
 class InputDiskCSVDataset:
-    def __init__(self, filepath , names = None , sep=",", stride=16 * 1024 * 1024, header = False, window = 1024 * 4, columns = None) -> None:
+    def __init__(self, filepath , names = None , sep=",", stride=16 * 1024 * 1024, header = False, window = 1024 * 4, columns = None, sort_info = None) -> None:
         self.filepath = filepath
 
         self.num_channels = None
@@ -417,11 +437,19 @@ class InputDiskCSVDataset:
 
         self.length = 0
         self.file_sizes = None
+        if sort_info is not None:
+            self.sort_key = sort_info[0]
+            self.sort_mode = sort_info[1]
+            assert self.sort_mode in {"stride", "range"}
+        else:
+            self.sort_key = None
+            self.sort_mode = None
         #self.sample = None
     
 
     def get_own_state(self, num_channels):
         
+        # figure out what you have to read
         if os.path.isfile(self.filepath):
             files = deque([self.filepath])
             sizes = deque([os.path.getsize(self.filepath)])
@@ -430,6 +458,8 @@ class InputDiskCSVDataset:
             files = deque([self.filepath + "/" + file for file in os.listdir(self.filepath)])
             sizes = deque([os.path.getsize(file) for file in files])
 
+        # if there is a header row then we need to read the first line to get the column names
+        # if the user supplied column names, we should check that they match
         if self.header:
             resp = open(files[0],"r").read(self.window)
             first_newline = resp.find("\n")
@@ -443,6 +473,35 @@ class InputDiskCSVDataset:
                     print("Warning, detected column names from header row not the same as supplied column names!")
                     print("Detected", detected_names)
                     print("Supplied", self.names)
+        
+        # if the sort info is not None, we should reorder the files based on the sort key
+        if self.sort_key is not None:
+            file_stats = []
+            for file, size in zip(files, sizes):
+                # for each file, read the first line and the last line to figure out what is the min and max of the sort key
+                # then we can sort the files based on the min and max of the sort key
+                resp = open(file, "rb").read(self.window)
+                if self.header:
+                    first_newline = resp.find(bytes('\n','utf-8'))
+                    resp = resp[first_newline + 1:]
+                first_newline = resp.find(bytes('\n','utf-8'))
+                resp = resp[:first_newline]
+                min_key = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
+                    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))[self.sort_key][0].as_py()
+                f = open(file, "rb")
+                f.seek(size - self.window)
+                resp = f.read(self.window)
+                first_newline = resp.find(bytes('\n','utf-8'))
+                resp = resp[first_newline + 1:]
+                max_key = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
+                    column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))[self.sort_key][-1].as_py()
+                file_stats.append((file, min_key, max_key, size))
+            
+            file_stats = sorted(file_stats, key=lambda x: x[1])
+            for i in range(1, len(file_stats)):
+                assert overlap([file_stats[i-1][1], file_stats[i-1][2]], [file_stats[i][1], file_stats[i][2]]) <= 0, "data is not sorted!"
+            files = deque([file[0] for file in file_stats])
+            sizes = deque([file[3] for file in file_stats])
 
         total_size = sum(sizes)
         assert total_size > 0
@@ -475,11 +534,21 @@ class InputDiskCSVDataset:
 
         #assign partitions
         # print(curr_partition_num)
-        partitions_per_channel = math.ceil(curr_partition_num / num_channels) 
+        
         channel_info = {}
-        for channel in range(num_channels):
-            channel_info[channel] = [partitions[channel * partitions_per_channel + i] for i in range(partitions_per_channel)\
-                if (channel * partitions_per_channel + i) in partitions]
+        if self.sort_key is None:
+            # if there is no sort key we should assign partitions in a contiguous manner
+            # for cache friendliness
+            partitions_per_channel = math.ceil(curr_partition_num / num_channels) 
+            for channel in range(num_channels):
+                channel_info[channel] = [partitions[channel * partitions_per_channel + i] for i in range(partitions_per_channel)\
+                    if (channel * partitions_per_channel + i) in partitions]
+        else:
+            # if there is a sort key, we should assign partitions based on the sort key
+            # we have to round robin the partitions
+            for channel in range(num_channels):
+                channel_info[channel] = [partitions[i] for i in range(channel, len(partitions), num_channels)\
+                    if i in partitions]
 
         self.file_sizes = {files[i] : sizes[i] for i in range(len(files))}
         return channel_info
@@ -574,7 +643,7 @@ class FakeFile:
 # this should work for 1 CSV up to multiple
 # this should work for 1 CSV up to multiple
 class InputS3CSVDataset:
-    def __init__(self, bucket, names = None, prefix = None, key = None, sep=",", stride=2e8, header = False, window = 1024 * 4, columns = None) -> None:
+    def __init__(self, bucket, names = None, prefix = None, key = None, sep=",", stride=2e8, header = False, window = 1024 * 4, columns = None, sort_info = None) -> None:
         self.bucket = bucket
         self.prefix = prefix
         self.key = key
@@ -593,6 +662,10 @@ class InputS3CSVDataset:
 
         self.workers = 8
         self.s3 = None
+        if sort_info is not None:
+            self.sort_key = sort_info[0]
+            self.sort_mode = sort_info[1]
+        assert self.sort_mode in {"stride", "range"}
     
     # we need to rethink this whole setting num channels business. For this operator we don't want each node to do redundant work!
     def get_own_state(self, num_channels):
@@ -638,6 +711,10 @@ class InputS3CSVDataset:
                     print("Warning, detected column names from header row not the same as supplied column names!")
                     print("Detected", detected_names)
                     print("Supplied", self.names)
+
+         # if the sort info is not None, we should reorder the files based on the sort key
+        if self.sort_key is not None:
+            raise NotImplementedError
 
         total_size = sum(sizes)
         assert total_size > 0

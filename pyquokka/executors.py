@@ -87,9 +87,11 @@ class WindowExecutor(Executor):
         assert issubclass(type(window), Window)
         self.window = window
         # a list of polars aggregation expressions
-        self.aggregations = aggregations
+        
 
     def execute(self, batches, stream_id, executor_id):
+
+        self.aggregations = [polars.col("bid").mean()]
 
         batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
         batch = polars.concat(batches)
@@ -125,14 +127,21 @@ class WindowExecutor(Executor):
             result = batch.groupby_dynamic(self.time_col, every = hop, period= size, by = self.by_col).agg(self.aggregations).sort(self.time_col)
 
         elif issubclass(type(self.window), SlidingWindow):
-            size = self.window.size
-            if self.state is not None:
-                batch = polars.concat([self.state, batch])
+            size = self.window.size_before_polars
+            # if self.state is not None:
+            #     batch = polars.concat([self.state, batch], rechunk=True)
 
             timestamp_of_last_row = batch[self.time_col][-1]
             # python dynamic typing -- this will work for both timedelta window size and int window size
-            self.state = batch.filter(polars.col(self.time_col) > timestamp_of_last_row - self.window.size)
-            result = batch.groupby_rolling(self.time_col, period= size, by = self.by_col).agg(self.aggregations).sort(self.time_col)
+            # self.state = batch.filter(polars.col(self.time_col) > timestamp_of_last_row - self.window.size_before)
+            # print(len(self.state))
+            partitions = batch.partition_by(self.by_col)
+            # results = []
+            # for partition in partitions:
+            #     results.append(partition.groupby_rolling(self.time_col, size).agg(self.aggregations))
+            # result = polars.concat(results)
+            result = None
+            # result = batch.groupby_rolling(self.time_col, period= size, by = self.by_col).agg(self.aggregations)#.sort(self.time_col)
 
         elif issubclass(type(self.window), SessionWindow):
 
@@ -152,8 +161,15 @@ class WindowExecutor(Executor):
                 result = None
 
         elif issubclass(type(self.window), SlidingWindow):
-            size = self.window.size
-            result = batch.groupby_rolling(self.time_col, period= size, by = self.by_col).agg(self.aggregations).sort(self.time_col)
+            size = self.window.size_before_polars
+            if self.state is not None and len(self.state) > 0:
+                partitions = self.state.partition_by(self.by_col)
+                results = []
+                for partition in partitions:
+                    results.append(partition.groupby_rolling(self.time_col, size).agg(self.aggregations))
+                result = polars.concat(results)
+            else:
+                result = None
 
         elif issubclass(type(self.window), SessionWindow):
             pass

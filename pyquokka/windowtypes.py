@@ -25,11 +25,10 @@ class TumblingWindow(HoppingWindow):
         super.__init__(size, size)
 
 class SlidingWindow(Window):
-    def __init__(self, size_before, size_after) -> None:
+    def __init__(self, size_before) -> None:
+        # we are not going to support size_after for now
         self.size_before = size_before
-        self.size_after = size_after
         self.size_before_polars = self.val_to_polars(size_before)
-        self.size_after_polars = self.val_to_polars(size_after)
 
 class SessionWindow(Window):
     def __init__(self, timeout) -> None:

@@ -83,10 +83,16 @@ class Node:
 
         self.blocking = False
         self.placement_strategy = None
+
+        # this will be a dictionary of 
+        self.output_sorted_reqs = None
     
     def lower(self, task_graph):
         raise NotImplementedError
-    
+
+    def set_output_sorted_reqs(self, reqs):
+        self.output_sorted_reqs = reqs
+
     def set_placement_strategy(self, strategy):
         self.placement_strategy = strategy
     
@@ -151,7 +157,13 @@ class InputDiskCSVNode(SourceNode):
         self.projection = projection
 
     def lower(self, task_graph):
-        csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, header = self.has_header, stride = 16 * 1024 * 1024, columns = self.projection)
+        if self.output_sorted_reqs is not None:
+            assert len(self.output_sorted_reqs) == 1
+            key = list(self.output_sorted_reqs.keys())[0]
+            val = self.output_sorted_reqs[key]
+            csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, header = self.has_header, stride = 16 * 1024 * 1024, columns = self.projection, sort_info = (key, val))
+        else:
+            csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, header = self.has_header, stride = 16 * 1024 * 1024, columns = self.projection)
         node = task_graph.new_input_reader_node(csv_reader, self.placement_strategy)
         return node
 
@@ -167,21 +179,18 @@ class InputS3ParquetNode(SourceNode):
     
     def lower(self, task_graph):
 
-        if type(task_graph.cluster) ==  EC2Cluster:
-            if self.key is None:
-                parquet_reader = InputEC2ParquetDataset(self.bucket, self.prefix, columns = list(self.projection), filters = self.predicate)
+        if self.key is None:
+            if self.output_sorted_reqs is not None:
+                assert len(self.output_sorted_reqs) == 1
+                key = list(self.output_sorted_reqs.keys())[0]
+                val = self.output_sorted_reqs[key]
+                parquet_reader = InputSortedEC2ParquetDataset(self.bucket, self.prefix, key, columns = list(self.projection), filters = self.predicate, mode=val)
             else:
-                parquet_reader = InputParquetDataset(self.bucket + "/" + self.key, mode = "s3", columns = list(self.projection), filters = self.predicate)
-            node = task_graph.new_input_reader_node(parquet_reader, self.placement_strategy)
-            return node
-        elif type(task_graph.cluster) == LocalCluster:
-            if self.key is None:
                 parquet_reader = InputEC2ParquetDataset(self.bucket, self.prefix, columns = list(self.projection), filters = self.predicate)
-            else:
-                parquet_reader = InputParquetDataset(self.bucket + "/" + self.key, mode = "s3", columns = list(self.projection), filters = self.predicate)
-            node = task_graph.new_input_reader_node(parquet_reader, self.placement_strategy)
-            return node
-
+        else:
+            parquet_reader = InputParquetDataset(self.bucket + "/" + self.key, mode = "s3", columns = list(self.projection), filters = self.predicate)
+        node = task_graph.new_input_reader_node(parquet_reader, self.placement_strategy)
+        return node
     
     def __str__(self):
         result = str(type(self)) + '\nPredicate: ' + str(self.predicate) + '\nProjection: ' + str(self.projection) + '\nTargets:' 
