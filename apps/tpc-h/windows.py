@@ -15,12 +15,11 @@ qc = QuokkaContext(cluster,4, 2)
 quotes = qc.read_sorted_csv("/home/ziheng/tpc-h/quotes.csv", "time", has_header = True)
 # trades = qc.read_sorted_csv("/home/ziheng/tpc-h/trades.csv", "time", has_header = True)
 
-window = SlidingWindow(size_before=100000)
-window.add_aggregation_dict({"avg_bid":"AVG(bid)"})
+window = SlidingWindow("time", "symbol", size_before=100000, aggregation_dict={"avg_bid":"AVG(bid)"})
 trigger = OnEventTrigger()
 
 quotes = quotes.filter("ask > 1")
-windowed_quotes = quotes._windowed_aggregate("time", "symbol", window, trigger, ["time","symbol","avg_bid"], {"bid"})
+windowed_quotes = quotes.windowed_transform(window, trigger)
 result = windowed_quotes.collect()
 ref = polars.read_csv("/home/ziheng/tpc-h/quotes.csv").filter(polars.col("ask") > 1).\
     groupby_rolling("time", period ="100000i", by = "symbol").agg(polars.col("bid").mean())

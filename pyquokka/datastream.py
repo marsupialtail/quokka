@@ -959,15 +959,21 @@ class DataStream:
 
         return GroupedDataStream(self, groupby=groupby, orderby=orderby)
     
-    def _windowed_aggregate(self, time_col: str, by_col: str, window: Window, trigger: Trigger, new_schema: list, required_columns: set):
+    def windowed_transform(self, window: Window, trigger: Trigger):
 
         """
         This is a helper function for `windowed_aggregate` and `windowed_aggregate_with_state`. It is not meant to be used directly.
         aggregations should be a list of polars expressions.
         """
 
+        time_col = window.order_by
+        by_col = window.partition_by
+
         assert self.sorted is not None, "DataStream must be sorted before windowed aggregation."
         assert time_col in self.sorted and self.sorted[time_col] == "stride"
+
+        required_columns = window.get_required_cols()
+        new_schema = [time_col, by_col] + list(window.get_new_cols())
 
         assert type(required_columns) == set
 
