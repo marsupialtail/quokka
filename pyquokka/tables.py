@@ -283,3 +283,17 @@ class SortedActorsTable(ClientWrapper):
         keys = self.keys(redis_client)
         values = self.mget(redis_client, keys)
         return {int(key): pickle.loads(value) for key, value in zip(keys, values)}
+
+
+'''
+- Partition Function Table (PFT): this stores the partition functions for source - target pairs
+'''
+
+class PartitionFunctionTable(ClientWrapper):
+    def __init__(self) -> None:
+        super().__init__("PFT")
+    
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        values = self.mget(redis_client, keys)
+        return {pickle.loads(key): value for key, value in zip(keys, values)}

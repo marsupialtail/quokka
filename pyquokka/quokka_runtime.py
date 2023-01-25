@@ -87,6 +87,7 @@ class TaskGraph:
         self.LT = LineageTable()
         self.DST = DoneSeqTable()
         self.SAT = SortedActorsTable()
+        self.PFT = PartitionFunctionTable()
 
         # progress tracking stuff
         self.input_partitions = {}
@@ -204,35 +205,6 @@ class TaskGraph:
         def broadcast(data, source_channel, num_target_channels):
             return {i: data for i in range(num_target_channels)}
         
-        def partition_fn(predicate_fn, partitioner_fn, batch_funcs, projection, num_target_channels, x, source_channel):
-
-            start = time.time()
-            # print(predicate_fn)
-            x = x.filter(predicate_fn)
-            # print("filter time", time.time() - start)
-
-            start = time.time()
-            partitioned = partitioner_fn(x, source_channel, num_target_channels)
-            # print("partition fn time", time.time() - start)
-
-            results = {}
-            for channel in partitioned:
-                payload = partitioned[channel]
-                for func in batch_funcs:
-                    if payload is None:
-                        break
-                    payload = func(payload)
-
-                if payload is None:
-                    continue
-
-                start = time.time()
-                if projection is not None:
-                    results[channel] =  payload[sorted(list(projection))]
-                else:
-                    results[channel] = payload
-                # print("selection time", time.time() - start)
-            return results
         
         mapping = {}
 
@@ -242,7 +214,6 @@ class TaskGraph:
             mapping[source] = key
 
             target_info = source_target_info[key] 
-            target_info.predicate = sql_utils.evaluate(target_info.predicate)
             target_info.projection = target_info.projection
 
             # this has been provided
@@ -261,8 +232,10 @@ class TaskGraph:
             
             target_info.lowered = True
 
-            func = partial(partition_fn, target_info.predicate, target_info.partitioner, target_info.batch_funcs, target_info.projection, self.get_total_channels_from_placement_strategy(placement_strategy, 'exec'))
-            registered = ray.get([node.register_partition_function.remote(source, self.current_actor, self.get_total_channels_from_placement_strategy(placement_strategy, 'exec'), func) for node in (self.nodes.values())])
+            self.PFT.set(self.r, pickle.dumps((source, self.current_actor)), ray.cloudpickle.dumps(target_info))
+            self.PFT.get(self.r, pickle.dumps((source, self.current_actor)))
+            
+            registered = ray.get([node.register_partition_function.remote(source, self.current_actor, self.get_total_channels_from_placement_strategy(placement_strategy, 'exec')) for node in (self.nodes.values())])
             assert all(registered)
 
         

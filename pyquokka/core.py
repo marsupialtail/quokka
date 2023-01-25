@@ -6,10 +6,12 @@ import redis
 from pyquokka.hbq import * 
 from pyquokka.task import * 
 from pyquokka.tables import * 
+import pyquokka.sql_utils as sql_utils
 import polars
 import time
 import boto3
 import types
+from functools import partial
 
 CHECKPOINT_INTERVAL = None
 MAX_SEQ = 1000000000
@@ -94,6 +96,7 @@ class TaskManager:
         self.CLT = ChannelLocationTable()
         self.FOT = FunctionObjectTable()
         self.SAT = SortedActorsTable()
+        self.PFT = PartitionFunctionTable()
 
         # populate this dictionary from the initial assignment 
             
@@ -129,10 +132,44 @@ class TaskManager:
             self.dst = polars.from_dict({"source_actor_id": actor_ids, "source_channel_id": channel_ids, "done_seq": seqs})
 
     
-    def register_partition_function(self, source_actor_id, target_actor_id, number_target_channels, partition_function):
+    def register_partition_function(self, source_actor_id, target_actor_id, number_target_channels):
+
+        def partition_fn(predicate_fn, partitioner_fn, batch_funcs, projection, num_target_channels, x, source_channel):
+
+            start = time.time()
+            # print(predicate_fn)
+            x = x.filter(predicate_fn)
+            # print("filter time", time.time() - start)
+
+            start = time.time()
+            partitioned = partitioner_fn(x, source_channel, num_target_channels)
+            # print("partition fn time", time.time() - start)
+
+            results = {}
+            for channel in partitioned:
+                payload = partitioned[channel]
+                for func in batch_funcs:
+                    if payload is None:
+                        break
+                    payload = func(payload)
+
+                if payload is None:
+                    continue
+
+                start = time.time()
+                if projection is not None:
+                    results[channel] =  payload[sorted(list(projection))]
+                else:
+                    results[channel] = payload
+                # print("selection time", time.time() - start)
+            return results
 
         # this will include the predicate and the projection before the actual partition function, and all the batch functions afterwards.
         # for the moment let's assume that no autoscaling happens and this doesn't change.
+
+        target_info = ray.cloudpickle.loads(self.PFT.get(self.r, pickle.dumps((source_actor_id, target_actor_id))))
+        target_info.predicate = sql_utils.evaluate(target_info.predicate)
+        partition_function = partial(partition_fn, target_info.predicate, target_info.partitioner, target_info.batch_funcs, target_info.projection, number_target_channels)
 
         if source_actor_id not in self.partition_fns:
             self.partition_fns[source_actor_id] = {target_actor_id: partition_function}
