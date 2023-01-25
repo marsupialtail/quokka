@@ -207,8 +207,8 @@ class TaskGraph:
         def partition_fn(predicate_fn, partitioner_fn, batch_funcs, projection, num_target_channels, x, source_channel):
 
             start = time.time()
-            if predicate_fn != sqlglot.exp.TRUE:
-                x = x.filter(predicate_fn(x))
+            # print(predicate_fn)
+            x = x.filter(predicate_fn)
             # print("filter time", time.time() - start)
 
             start = time.time()
@@ -242,8 +242,7 @@ class TaskGraph:
             mapping[source] = key
 
             target_info = source_target_info[key] 
-            if target_info.predicate != sqlglot.exp.TRUE:
-                target_info.predicate = sql_utils.evaluate(target_info.predicate)
+            target_info.predicate = sql_utils.evaluate(target_info.predicate)
             target_info.projection = target_info.projection
 
             # this has been provided

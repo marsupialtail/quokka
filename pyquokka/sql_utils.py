@@ -5,6 +5,7 @@ from datetime import datetime
 from pyarrow import compute
 from functools import partial, reduce
 import operator
+import polars
 
 
 def is_cast_to_date(x):
@@ -62,57 +63,76 @@ def filters_to_expression(filters):
 
 def evaluate(node):
     node = node.unnest()
-    if issubclass(type(node) , sqlglot.expressions.Binary) and not issubclass(type(node), sqlglot.expressions.Connector):
+    if issubclass(type(node), sqlglot.expressions.AggFunc):
+        arg = evaluate(node.this)
+        if type(node) == sqlglot.expressions.Sum:
+            return arg.sum()
+        elif type(node) == sqlglot.expressions.Count:
+            return polars.count()
+        elif type(node) == sqlglot.expressions.Avg:
+            return arg.mean()
+        elif type(node) == sqlglot.expressions.Min:
+            return arg.min()
+        elif type(node) == sqlglot.expressions.Max:
+            return arg.max()
+        elif type(node) == sqlglot.expressions.Std:
+            return arg.std()
+        elif type(node) == sqlglot.expressions.Variance:
+            return arg.var()
+        else:
+            raise Exception("Unsupported aggregation function")
+            
+    elif issubclass(type(node) , sqlglot.expressions.Binary) and not issubclass(type(node), sqlglot.expressions.Connector):
         lf = evaluate(node.left)
         rf = evaluate(node.right)
         if type(node) == sqlglot.expressions.Div:    
-            return lambda x: lf(x) / rf(x)
+            return lf / rf
         elif type(node) == sqlglot.expressions.Mul:
-            return lambda x: lf(x) * rf(x)
+            return lf * rf
         elif type(node) == sqlglot.expressions.Add:
-            return lambda x: lf(x) + rf(x)
+            return lf + rf
         elif type(node) == sqlglot.expressions.Sub:
-            return lambda x: lf(x) - rf(x)
+            return lf - rf
         elif type(node) == sqlglot.expressions.EQ:
-            return lambda x: lf(x) == rf(x)
+            return lf == rf
         elif type(node) == sqlglot.expressions.NEQ:
-            return lambda x: lf(x) != rf(x)
+            return lf != rf
         elif type(node) == sqlglot.expressions.GT:
-            return lambda x: lf(x) > rf(x)
+            return lf > rf
         elif type(node) == sqlglot.expressions.GTE:
-            return lambda x: lf(x) >= rf(x)
+            return lf >= rf
         elif type(node) == sqlglot.expressions.LT:
-            return lambda x: lf(x) < rf(x)
+            return lf < rf
         elif type(node) == sqlglot.expressions.LTE:
-            return lambda x: lf(x) <= rf(x)
+            return lf <= rf
         elif type(node) == sqlglot.expressions.Like:
             assert node.expression.is_string
             filter = node.expression.this
             if filter[0] == '%' and filter[-1] == '%':
                 filter = filter[1:-1]
-                return lambda x: lf(x).str.contains(filter)
+                return lf.str.contains(filter)
             elif filter[0] != '%' and filter[-1] == '%':
                 filter = filter[:-1]
-                return lambda x: lf(x).str.starts_with(filter)
+                return lf.str.starts_with(filter)
             elif filter[0] == '%' and filter[-1] != '%':
                 filter = filter[1:]
-                return lambda x: lf(x).str.ends_with(filter)
+                return lf.str.ends_with(filter)
             elif filter[0] != '%' and filter[-1] != '%':
-                return lambda x: lf(x) == filter
+                return lf == filter
         else:
             print(type(node))
             raise Exception("making predicate failed")
     elif type(node) == sqlglot.expressions.And:   
         lf = evaluate(node.left)
         rf = evaluate(node.right)
-        return lambda x: lf(x) & rf(x)
+        return lf & rf
     elif type(node) == sqlglot.expressions.Or: 
         lf = evaluate(node.left)
         rf = evaluate(node.right)
-        return lambda x: lf(x) | rf(x)
+        return lf | rf
     elif type(node) == sqlglot.expressions.Not: 
         lf = evaluate(node.this)
-        return lambda x: ~lf(x)
+        return ~ lf
     elif type(node) == sqlglot.expressions.Case:
         default = evaluate(node.args["default"])
         if len(node.args["ifs"]) > 1:
@@ -120,42 +140,45 @@ def evaluate(node):
         when = node.args["ifs"][0]
         predicate = evaluate(when.this)
         if_true = evaluate(when.args['true'])
-        return lambda x: predicate(x) * if_true(x) + (~predicate(x)) * default(x)
+        return predicate * if_true + (~predicate) * default
         
     elif type(node) == sqlglot.expressions.In:
         if all([type(i) == exp.Literal for i in node.args["expressions"]]):
             lf = evaluate(node.this)
-            return lambda x: lf(x).is_in([i.name for i in node.args["expressions"]])
+            # unfortunately we cannot use polars built-in isin function because it will fail to serialize 
+            # when you want to send to Ray
+            expr = (lf == node.args["expressions"][0].name)
+            for i in node.args["expressions"][1:]:
+                expr = expr | (lf == i.name)
+            return expr
         else:
             raise Exception(" we can only generate kernels for in keyword if the set is a list of literals")
     elif type(node) == sqlglot.expressions.Between:
         pred = evaluate(node.this)
         low = evaluate(node.args['low'])
         high = evaluate(node.args['high'])
-        return lambda x: (pred(x) >= low(x)) & (pred(x) <= high(x))
+        return ((pred >= low) & (pred <= high))
     elif type(node) == sqlglot.expressions.Literal:
         if node.is_string:
-            return lambda x: node.this
+            return node.this
         else:
             if "." in node.this:
-                return lambda x: float(node.this)
+                return float(node.this)
             else:
-                return lambda x: int(node.this)
+                return int(node.this)
     elif type(node) == sqlglot.expressions.Column:
-        return lambda x: x[node.name]
-    elif type(node) == sqlglot.expressions.Star:
-        return lambda x: 1
+        return polars.col(node.name)
     elif is_cast_to_date(node):
         try:
             d = datetime.strptime(node.name, "%Y-%m-%d")
         except:
             raise Exception("failed to parse date object, currently only accept strs of YY-mm-dd")
-        return lambda x: d
+        return d
     elif type(node) == sqlglot.exp.Boolean:
         if node.this:
-            return lambda x: [True] * len(x)
+            return True
         else:
-            return lambda x: [False] * len(x)
+            return False
     else:
         print(node)
         print(type(node))

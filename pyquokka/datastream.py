@@ -348,7 +348,8 @@ class DataStream:
         
         for col in cols_to_drop:
             assert col in self.schema, "col to drop not found in schema"
-            assert col not in self.sorted, "cannot drop a sort key!"
+            if self.sorted is not None:
+                assert col not in self.sorted, "cannot drop a sort key!"
         return self.select([col for col in self.schema if col not in cols_to_drop])
 
     def rename(self, rename_dict):
@@ -374,7 +375,7 @@ class DataStream:
         for key in rename_dict:
             assert key in self.schema, "key in rename dict must be in schema"
             assert rename_dict[key] not in self.schema, "new name must not be in current schema"
-            if key in self.sorted:
+            if self.sorted is not None and key in self.sorted:
                 new_sorted[rename_dict[key]] = self.sorted[key]
 
         # the fact you can write this in one line is why I love Python
@@ -958,7 +959,7 @@ class DataStream:
 
         return GroupedDataStream(self, groupby=groupby, orderby=orderby)
     
-    def _windowed_aggregate(self, time_col: str, by_col: str, window: Window, new_schema: list, required_columns: set, aggregations):
+    def _windowed_aggregate(self, time_col: str, by_col: str, window: Window, trigger: Trigger, new_schema: list, required_columns: set):
 
         """
         This is a helper function for `windowed_aggregate` and `windowed_aggregate_with_state`. It is not meant to be used directly.
@@ -974,12 +975,24 @@ class DataStream:
         required_columns.add(by_col)
         select_stream = self.select(required_columns)
 
+        if issubclass(type(window), HoppingWindow):
+            operator = HoppingWindowExecutor(
+                time_col, by_col, window, trigger)
+        elif issubclass(type(window), SlidingWindow):
+            operator = SlidingWindowExecutor(
+                time_col, by_col, window, trigger)
+        elif issubclass(type(window), SessionWindow):
+            operator = SessionWindowExecutor(
+                time_col, by_col, window, trigger)
+        else:
+            raise Exception
+
         node = StatefulNode(
                 schema=new_schema,
                 # cannot push through any predicates or projections!
                 schema_mapping={col: (-1, col) for col in new_schema},
                 required_columns={0: required_columns},
-                operator=WindowExecutor(time_col, by_col, window, aggregations),
+                operator=operator,
                 assume_sorted={0:True}
             )
         

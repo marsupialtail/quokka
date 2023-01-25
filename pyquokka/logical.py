@@ -32,7 +32,7 @@ def target_info_to_transform_func(target_info):
         print("false predicate detected, entire subtree is useless. We should cut the entire subtree!")
         predicate = sql_utils.evaluate(target_info.predicate) 
     else:    
-       predicate = sql_utils.evaluate(target_info.predicate) 
+        predicate = sql_utils.evaluate(target_info.predicate) 
     
     return partial(transform_fn, predicate, target_info.batch_funcs, target_info.projection)
 

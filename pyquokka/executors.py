@@ -79,19 +79,158 @@ We are going to support four kinds of windows:
 
 We will expect the batches to come in sorted order.
 """
-class WindowExecutor(Executor):
-    def __init__(self, time_col, by_col, window, aggregations) -> None:
+
+class HoppingWindowExecutor(Executor):
+    def __init__(self, time_col, by_col, window,  trigger) -> None:
         self.time_col = time_col
         self.by_col = by_col
         self.state = None
-        assert issubclass(type(window), Window)
+        assert issubclass(type(window), HoppingWindow)
+        assert issubclass(type(trigger), Trigger)
         self.window = window
-        # a list of polars aggregation expressions
+        self.trigger = trigger
+
+        # hopping window - event trigger is not supported. It is very complicated and probably not worth it.
+        if type(trigger) == OnEventTrigger and type(window) == HoppingWindow:
+            raise Exception("OnEventTrigger is not supported for hopping windows")
+
+    def execute(self, batches, stream_id, executor_id):
+        
+        batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
+        batch = polars.concat(batches)
+
+        # current polars implementation cannot support floating point groupby dynamic and rolling operations.
+        assert (batch[self.time_col].dtype in {polars.Int32, polars.Int64, polars.Datetime, polars.Date} )
+
+        size = self.window.size_polars
+        hop = self.window.hop_polars            
+        result = None
+
+        # for a hopping window, we want to make sure that we delegate all the rows in uncompleted windows to the next execute call.
+        # therefore we need to compute the end time of the last completed window. 
+        timestamp_of_last_row = batch[self.time_col][-1]
+        if type(timestamp_of_last_row) == datetime.datetime:
+            last_start = (timestamp_of_last_row - self.window.size).timestamp() // self.window.hop.total_seconds() * self.window.hop.total_seconds()
+            last_end = last_start + self.window.size.total_seconds()
+            new_state = batch.filter(polars.col(self.time_col) > datetime.datetime.fromtimestamp(last_end))
+            batch = batch.filter(polars.col(self.time_col) <= datetime.datetime.fromtimestamp(last_end))
+            
+        elif type(timestamp_of_last_row) == int:
+            last_start = (timestamp_of_last_row - self.window.size) // self.window.hop * self.window.hop
+            last_end = last_start + self.window.size
+            new_state = batch.filter(polars.col(self.time_col) > last_end)
+            batch = batch.filter(polars.col(self.time_col) <= last_end)
+        else:
+            raise NotImplementedError
+        
+        if self.state is not None:
+            batch = polars.concat([self.state, batch])
+        self.state = new_state
+
+        if type(self.trigger) == OnCompletionTrigger:
+            # we are going to use polars groupby dynamic
+            result = batch.groupby_dynamic(self.time_col, every = hop, period= size, by = self.by_col).agg(self.window.polars_aggregations()).sort(self.time_col)
+
+        elif type(self.trigger) == OnEventTrigger:
+        
+            # we will assign a window id to each row, then use DuckDB's SQL window functions.
+            # this is not the most efficient way to do this, but it is the easiest.
+
+            assert type(self.window) == TumblingWindow
+            if timestamp_of_last_row == datetime.datetime:
+                batch = batch.with_column((polars.col(self.time_col).cast(polars.Int64) // self.window.size.total_seconds()).alias("__window_id"))
+            else:
+                batch = batch.with_column((polars.col(self.time_col) // self.window.size).alias("__window_id"))
+
+            batch_arrow = batch.to_arrow()
+
+            aggregations = self.window.sql_aggregations()
+            con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
+
+            result = con.execute("""
+                SELECT 
+                    BY_COL,
+                    TIME_COL,
+                    AGG_FUNCS
+                FROM batch_arrow
+                WINDOW win AS (
+                    PARTITION BY BY_COL, __window_id
+                    ORDER BY TIME_COL
+                    RANGE unbounded preceding
+                )
+            """.replace("TIME_COL", self.time_col).replace("BY_COL", self.by_col).replace("AGG_FUNCS", aggregations)).arrow()
+
+            result = polars.from_arrow(result)
+    
+        else:
+            raise NotImplementedError("unrecognized trigger type")
+        
+        return result
+
+    def done(self, executor_id):
+
+        if type(self.trigger) == OnCompletionTrigger:
+            size = self.window.size_polars
+            hop = self.window.hop_polars
+            if self.state is not None and len(self.state) > 0:
+                result = self.state.groupby_dynamic(self.time_col, every = hop, period= size, by = self.by_col).agg(self.aggregations).sort(self.time_col)
+            else:
+                result = None
+        elif type(self.trigger) == OnEventTrigger:
+            assert type(self.window) == TumblingWindow
+            if self.state is not None and len(self.state) > 0:
+                batch = self.state
+                timestamp_of_last_row = batch[self.time_col][-1]
+                if timestamp_of_last_row == datetime.datetime:
+                    batch = batch.with_column((polars.col(self.time_col).cast(polars.Int64) // self.window.size.total_seconds()).alias("__window_id"))
+                else:
+                    batch = batch.with_column((polars.col(self.time_col) // self.window.size).alias("__window_id"))
+
+                batch_arrow = batch.to_arrow()
+
+                aggregations = self.window.sql_aggregations()
+                con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
+
+                result = con.execute("""
+                    SELECT 
+                        BY_COL,
+                        TIME_COL,
+                        AGG_FUNCS
+                    FROM batch_arrow
+                    WINDOW win AS (
+                        PARTITION BY BY_COL, __window_id
+                        ORDER BY TIME_COL
+                        RANGE unbounded preceding
+                    )
+                """.replace("TIME_COL", self.time_col).replace("BY_COL", self.by_col).replace("AGG_FUNCS", aggregations)).arrow()
+
+                result = polars.from_arrow(result)
+            else:
+                result = None
+
+        else:
+            raise NotImplementedError("unrecognized trigger type")
+        
+        self.state = None
+        return result
+
+class SlidingWindowExecutor(Executor):
+    def __init__(self, time_col, by_col, window,  trigger) -> None:
+        self.time_col = time_col
+        self.by_col = by_col
+        self.state = None
+        assert issubclass(type(window), SlidingWindow)
+        assert issubclass(type(trigger), Trigger)
+        self.window = window
+        self.trigger = trigger
+
+        # hopping window - event trigger is not supported. It is very complicated and probably not worth it.
+        if type(trigger) == OnCompletionTrigger:
+            print("Trying to use completion trigger with sliding window. This will result in the same behavior as an OnEventTrigger.")
+            print("The completion time of a sliding window is when the last event comes, so they are the same. Timeout for completion trigger is ignored currently.")
         
 
     def execute(self, batches, stream_id, executor_id):
-
-        self.aggregations = [polars.col("bid").mean()]
 
         batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
         batch = polars.concat(batches)
@@ -99,83 +238,123 @@ class WindowExecutor(Executor):
         # current polars implementation cannot support floating point groupby dynamic and rolling operations.
         assert (batch[self.time_col].dtype in {polars.Int32, polars.Int64, polars.Datetime, polars.Date} )
 
-        if issubclass(type(self.window), HoppingWindow):
-            # we are going to use polars groupby dynamic
-            size = self.window.size_polars
-            hop = self.window.hop_polars            
+        size = self.window.size_before_polars
+        to_discard = None
+        if self.state is not None:
+            batch = polars.concat([self.state, batch], rechunk=True)
+            to_discard = len(self.state)
 
-            # for a hopping window, we want to make sure that we delegate all the rows in uncompleted windows to the next execute call.
-            # therefore we need to compute the end time of the last completed window. 
-            timestamp_of_last_row = batch[self.time_col][-1]
-            if type(timestamp_of_last_row) == datetime.datetime:
-                last_start = (timestamp_of_last_row - self.window.size).timestamp() // self.window.hop.total_seconds() * self.window.hop.total_seconds()
-                last_end = last_start + self.window.size.total_seconds()
-                new_state = batch.filter(polars.col(self.time_col) > datetime.datetime.fromtimestamp(last_end))
-                batch = batch.filter(polars.col(self.time_col) <= datetime.datetime.fromtimestamp(last_end))
-                
-            elif type(timestamp_of_last_row) == int:
-                last_start = (timestamp_of_last_row - self.window.size) // self.window.hop * self.window.hop
-                last_end = last_start + self.window.size
-                new_state = batch.filter(polars.col(self.time_col) > last_end)
-                batch = batch.filter(polars.col(self.time_col) <= last_end)
-            else:
-                raise NotImplementedError
-            
-            if self.state is not None:
-                batch = polars.concat([self.state, batch])
-            self.state = new_state
-            result = batch.groupby_dynamic(self.time_col, every = hop, period= size, by = self.by_col).agg(self.aggregations).sort(self.time_col)
-
-        elif issubclass(type(self.window), SlidingWindow):
-            size = self.window.size_before_polars
-            # if self.state is not None:
-            #     batch = polars.concat([self.state, batch], rechunk=True)
-
-            timestamp_of_last_row = batch[self.time_col][-1]
-            # python dynamic typing -- this will work for both timedelta window size and int window size
-            # self.state = batch.filter(polars.col(self.time_col) > timestamp_of_last_row - self.window.size_before)
-            # print(len(self.state))
-            partitions = batch.partition_by(self.by_col)
-            # results = []
-            # for partition in partitions:
-            #     results.append(partition.groupby_rolling(self.time_col, size).agg(self.aggregations))
-            # result = polars.concat(results)
-            result = None
-            # result = batch.groupby_rolling(self.time_col, period= size, by = self.by_col).agg(self.aggregations)#.sort(self.time_col)
-
-        elif issubclass(type(self.window), SessionWindow):
-
-            # we are going to do some wizardry here! 
-
-            pass
+        timestamp_of_last_row = batch[self.time_col][-1]
+        # python dynamic typing -- this will work for both timedelta window size and int window size
+        self.state = batch.filter(polars.col(self.time_col) > timestamp_of_last_row - self.window.size_before)
+        # print(len(self.state))
+        # partitions = batch.partition_by(self.by_col)
+        # results = []
+        # for partition in partitions:
+        #     results.append(partition.groupby_rolling(self.time_col, period = size).agg(self.window.polars_aggregations()))
+        # result = polars.concat(results)
+        result = batch.groupby_rolling(self.time_col, period= size, by = self.by_col).agg(self.window.polars_aggregations())#.sort(self.time_col)
+        if to_discard is not None:
+            result = result[to_discard:]
 
         return result
     
     def done(self, executor_id):
-        if issubclass(type(self.window), HoppingWindow):
-            size = self.window.size_polars
-            hop = self.window.hop_polars
-            if self.state is not None and len(self.state) > 0:
-                result = self.state.groupby_dynamic(self.time_col, every = hop, period= size, by = self.by_col).agg(self.aggregations).sort(self.time_col)
-            else:
-                result = None
+        return None
 
-        elif issubclass(type(self.window), SlidingWindow):
-            size = self.window.size_before_polars
-            if self.state is not None and len(self.state) > 0:
-                partitions = self.state.partition_by(self.by_col)
-                results = []
-                for partition in partitions:
-                    results.append(partition.groupby_rolling(self.time_col, size).agg(self.aggregations))
-                result = polars.concat(results)
-            else:
-                result = None
 
-        elif issubclass(type(self.window), SessionWindow):
-            pass
-        
+class SessionWindowExecutor(Executor):
+    def __init__(self, time_col, by_col, window,  trigger) -> None:
+        self.time_col = time_col
+        self.by_col = by_col
+        self.state = None
+        assert issubclass(type(window), SessionWindow)
+        assert issubclass(type(trigger), Trigger)
+        self.window = window
+        self.trigger = trigger
+
+        # hopping window - event trigger is not supported. It is very complicated and probably not worth it.
+        if type(trigger) == OnCompletionTrigger:
+            print("Trying to use completion trigger with sliding window. This will result in the same behavior as an OnEventTrigger.")
+            print("The completion time of a sliding window is when the last event comes, so they are the same. Timeout for completion trigger is ignored currently.")
+    
+    def execute(self, batches, stream_id, executor_id):
+        batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
+        batch = polars.concat(batches)
+
+        # current polars implementation cannot support floating point groupby dynamic and rolling operations.
+        assert (batch[self.time_col].dtype in {polars.Int32, polars.Int64, polars.Datetime, polars.Date} )
+        timeout = self.window.timeout
+
+        if self.state is not None:
+            batch = polars.concat([self.state, batch])
+
+        lazy_batch = batch.lazy()
+        windowed_batch = lazy_batch.select([self.time_col, self.by_col]).groupby(self.by_col).agg(
+            [
+                polars.col(self.time_col),
+                (polars.col("ts") - polars.col("ts").shift(1) > timeout).cumsum().alias("__window_id"),
+            ]
+        ).explode([self.time_col, "__window_id"]).fill_null(0).join(lazy_batch, on = [self.by_col, self.time_col]).collect()
+
+        # you will need to collect rows corresponding to the last window id for each of the elements in by_col
+
+        last_window_id = windowed_batch.groupby(self.by_col).agg(polars.max("__window_id"))
+        # now collect the rows in windowed batch with last_window_id
+        self.state = windowed_batch.join(last_window_id, on = [self.by_col, "__window_id"]).drop("__window_id")
+        windowed_batch = windowed_batch.join(last_window_id, on = [self.by_col, "__window_id"], how = "anti")        
+
+        if type(self.trigger) == OnCompletionTrigger:
+            result = windowed_batch.groupby([self.by_col, "__window_id"]).agg(self.window.polars_aggregations())
+        elif type(self.trigger) == OnEventTrigger:
+            batch_arrow = windowed_batch.to_arrow()
+
+            aggregations = self.window.sql_aggregations()
+            con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
+
+            result = con.execute("""
+                SELECT 
+                    BY_COL,
+                    TIME_COL,
+                    AGG_FUNCS
+                FROM batch_arrow
+                WINDOW win AS (
+                    PARTITION BY BY_COL, __window_id
+                    ORDER BY TIME_COL
+                    RANGE unbounded preceding
+                )
+            """.replace("TIME_COL", self.time_col).replace("BY_COL", self.by_col).replace("AGG_FUNCS", aggregations)).arrow()
+
         return result
 
+    def done(self, executor_id):
+        
+        if self.state is None or len(self.state) == 0:
+            return 
+        else:
+            if type(self.trigger) == OnCompletionTrigger:
+                result = self.state.with_column(polars.lit(1).alias("__window_id")).groupby("__window_id").agg(self.window.polars_aggregations())
+            elif type(self.trigger) == OnEventTrigger:
+                batch_arrow = self.state.to_arrow()
+
+                aggregations = self.window.sql_aggregations()
+                con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
+
+                result = con.execute("""
+                    SELECT 
+                        BY_COL,
+                        TIME_COL,
+                        AGG_FUNCS
+                    FROM batch_arrow
+                    WINDOW win AS (
+                        PARTITION BY BY_COL, __window_id
+                        ORDER BY TIME_COL
+                        RANGE unbounded preceding
+                    )
+                """.replace("TIME_COL", self.time_col).replace("BY_COL", self.by_col).replace("AGG_FUNCS", aggregations)).arrow()
+        
+            return result
+        
 class OutputExecutor(Executor):
     def __init__(self, filepath, format, prefix = "part", mode = "local", row_group_size = 5500000) -> None:
         self.num = 0

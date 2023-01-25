@@ -19,6 +19,76 @@ WITH k as (SELECT symbol, time, avg(bid) OVER (PARTITION BY symbol ORDER BY time
 select max(rank) from k
 """
 
+session = """
+WITH k as (
+SELECT symbol,
+  sessionId,
+  MIN(time) as sessionStart,
+  MAX(time) as sessionEnd,
+  max(bid) as maxBid
+FROM(
+      SELECT time,
+        symbol,
+        bid,
+          sum(is_new_session) over (
+              partition by symbol
+              order by time rows between UNBOUNDED PRECEDING and current row
+          ) as sessionId
+      FROM (
+              SELECT *,
+                  CASE
+                      WHEN prev_time IS NULL
+                      OR time - prev_time > 3600 THEN 1
+                      ELSE 0
+                  END AS is_new_session
+              FROM (
+                      SELECT time, symbol, bid, LAG(time) OVER (
+                            PARTITION BY symbol
+                            ORDER BY time 
+                        ) AS prev_time
+                    FROM quotes
+                  )
+          )
+  )
+GROUP BY symbol, sessionId
+)
+select max(maxBid) from k
+"""
+
+session_event = """
+WITH k as (
+SELECT symbol,
+  sessionId,
+  max(bid) 
+OVER (partition by symbol, sessionId order by time rows between unbounded preceding and current row) as maxBid
+FROM(
+      SELECT time,
+        symbol,
+        bid,
+          sum(is_new_session) over (
+              partition by symbol
+              order by time rows between UNBOUNDED PRECEDING and current row
+          ) as sessionId
+      FROM (
+              SELECT *,
+                  CASE
+                      WHEN prev_time IS NULL
+                      OR time - prev_time > 3600 THEN 1
+                      ELSE 0
+                  END AS is_new_session
+              FROM (
+                      SELECT time, symbol, bid, LAG(time) OVER (
+                            PARTITION BY symbol
+                            ORDER BY time 
+                        ) AS prev_time
+                    FROM quotes
+                  )
+          )
+  )
+)
+select count(*) from k
+"""
+
 
 # def udf2(l, r):
 #     x = pyarrow.Table.from_pandas(l)
