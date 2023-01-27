@@ -857,7 +857,7 @@ class DataStream:
                     sources={0: self, 1: right},
                     partitioners={0: HashPartitioner(
                         left_on), 1: HashPartitioner(right_on)},
-                    node=StatefulNode(
+                    node=JoinNode(
                         schema=new_schema,
                         schema_mapping=schema_mapping,
                         required_columns={0: {left_on}, 1: {right_on}},
@@ -873,7 +873,7 @@ class DataStream:
                     sources={0: self, 1: right},
                     partitioners={0: HashPartitioner(
                         left_on), 1: HashPartitioner(right_on)},
-                    node=StatefulNode(
+                    node=JoinNode(
                         schema=new_schema,
                         schema_mapping=schema_mapping,
                         required_columns={0: {left_on}, 1: {right_on}},
@@ -889,7 +889,7 @@ class DataStream:
                     sources={0: right, 1: self},
                     partitioners={0: HashPartitioner(
                         right_on), 1: HashPartitioner(left_on)},
-                    node=StatefulNode(
+                    node=JoinNode(
                         schema=new_schema,
                         schema_mapping=schema_mapping,
                         required_columns={0: {right_on}, 1: {left_on}},

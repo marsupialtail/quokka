@@ -233,6 +233,8 @@ class TaskGraph:
             target_info.lowered = True
 
             self.PFT.set(self.r, pickle.dumps((source, self.current_actor)), ray.cloudpickle.dumps(target_info))
+
+            # TODO: figure out why you need to do this to make it work
             self.PFT.get(self.r, pickle.dumps((source, self.current_actor)))
             
             registered = ray.get([node.register_partition_function.remote(source, self.current_actor, self.get_total_channels_from_placement_strategy(placement_strategy, 'exec')) for node in (self.nodes.values())])

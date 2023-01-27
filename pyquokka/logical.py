@@ -268,7 +268,16 @@ class StatefulNode(TaskNode):
             return task_graph.new_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info, transform_fn = transform_func, assume_sorted = self.assume_sorted)
         else:
             return task_graph.new_non_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info, assume_sorted = self.assume_sorted)
-        
+
+class JoinNode(StatefulNode):
+    def __init__(self, schema, schema_mapping, required_columns, operator, assume_sorted = {}) -> None:
+        super().__init__(schema, schema_mapping, required_columns, operator, assume_sorted)
+
+    def lower(self, task_graph, parent_nodes, parent_source_info):
+        if len(self.parents) > 2:
+            raise Exception("JoinNode can only have two parents! You didn't finish the join re-org in the optimization pass.")
+        return super().lower(task_graph, parent_nodes, parent_source_info)
+
 '''
 We need a separate MapNode from StatefulNode since we can compact UDFs
 

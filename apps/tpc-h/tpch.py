@@ -18,7 +18,7 @@ if mode == "DISK":
     cluster = LocalCluster()
 elif mode == "S3":
     manager = QuokkaClusterManager()
-    cluster = manager.get_cluster_from_json("new.json")
+    cluster = manager.get_cluster_from_json("config.json")
 else:
     raise Exception
 
@@ -170,7 +170,7 @@ def do_5():
     d = d.with_column("revenue", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
     #f = d.groupby("n_name", orderby=[("revenue",'desc')]).agg({"revenue":["sum"]})
     f = d.groupby("n_name").agg({"revenue":["sum"]})
-
+    f.explain()
     return f.collect()
 
 # def do_5():
@@ -382,14 +382,14 @@ def sort():
 # print(do_3())
 
 # print(do_4())
-# print(do_5())
+print(do_5())
 # print(do_6())
 # print(do_7())
 # print(do_8())
 # print(do_9())
 # print(do_12())
 
-print(do_12_alternate())
+# print(do_12_alternate())
 
 # print(word_count())
 # print(covariance())
