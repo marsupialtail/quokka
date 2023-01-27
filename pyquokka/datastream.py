@@ -5,6 +5,7 @@ from pyquokka.logical import *
 from pyquokka.target_info import *
 from pyquokka.quokka_runtime import *
 from pyquokka.utils import EC2Cluster, LocalCluster
+from pyquokka.sql_utils import required_columns_from_exp
 from functools import partial
 import pyarrow as pa
 
@@ -487,6 +488,51 @@ class DataStream:
             schema=new_schema,
             
         )
+    
+    def with_column_sql(self, sql_expression, foldable = True):
+
+        """
+        Example sql expression:
+            "
+            sum(l_quantity) as sum_qty,
+            sum(l_extendedprice) as sum_base_price,
+            sum(l_extendedprice * (1 - l_discount)) as sum_disc_price,
+            sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge"
+        
+        """
+
+        enhanced_exp = "select " + sql_expression + " from batch_arrow"
+
+        sqlglot_node = sqlglot.parse_one(enhanced_exp)
+        if required_columns is None:
+            required_columns = required_columns_from_exp(sqlglot_node)
+        
+        new_columns = [i.alias for i in enhanced_exp.selects]
+
+        assert type(required_columns) == set
+        for column in new_columns:
+            assert column not in self.schema, "For now new columns cannot have same names as existing columns"
+
+        def duckdb_func(func, batch):
+            batch_arrow = batch.to_arrow()
+            con = duckdb.connect().execute('PRAGMA threads=%d' % multiprocessing.cpu_count())
+            return con.execute(func, batch=batch).arrow()
+
+        return self.quokka_context.new_stream(
+            sources={0: self},
+            partitioners={0: PassThroughPartitioner()},
+            node=MapNode(
+                schema=self.schema+new_columns,
+                schema_mapping={
+                    **{new_column: (-1, new_column) for new_column in new_columns}, **{col: (0, col) for col in self.schema}},
+                required_columns={0: required_columns},
+                function=partial(duckdb_func, enhanced_exp),
+                foldable=foldable),
+            schema=self.schema + new_columns,
+            sorted = self.sorted
+            )
+
+
 
     def with_column(self, new_column, f, required_columns=None, foldable=True):
 
