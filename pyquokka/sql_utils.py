@@ -265,3 +265,37 @@ def csv_condition_decomp(condition):
         batch_funcs.append(evaluate(node))
     
     return partial(apply_conditions_to_batch, batch_funcs),  required_columns_from_exp(condition)
+
+def parse_aggregations(expr):
+    """
+    For parsing complex aggregation expressions.
+
+    Args:
+        e (sqlglot expression): Expression representing aggregation
+
+    Returns: 
+        agg_list (list): List of strings representing simple aggregations (root node is sum, count, etc).
+        expr (sqlglot expression): Original expression written in terms of aggs.
+        If there is no aggregation, return ([], e).
+
+    Examples:
+        Input: 2 * COUNT(*)
+        Output: (["COUNT(*) as agg_0"], 2*agg_0)
+
+        Input: SUM(l_partkey + 1) / SUM(l_orderkey)
+        Output: (['SUM(l_partkey + 1) as agg_0', 'SUM(l_orderkey) as agg_1'], agg_0 / agg_1)
+
+        Intput: 1/(MIN(l_orderkey) * SUM(l_partkey) + COUNT(*))
+        Output: (['COUNT(*) as agg_0', 'MIN(l_orderkey) as agg_1', 'SUM(l_partkey) as agg_2'], 1/(agg_1 * agg_2 + agg_0))
+    """
+    e = expr.copy()
+    aggregations = [i for i in e.find_all(exp.AggFunc)]
+    if len(aggregations) == 0: return [], e
+
+    agg_list = []
+    for i, a in enumerate(aggregations):
+        new_name = "agg_" + str(i)
+        agg_list.append(a.sql() + " as " + new_name)
+        if a == e: e = e.replace(sqlglot.parse_one(new_name))
+        else: a.replace(sqlglot.parse_one(new_name))
+    return agg_list, e
