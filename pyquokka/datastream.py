@@ -516,7 +516,7 @@ class DataStream:
         def duckdb_func(func, batch):
             batch_arrow = batch.to_arrow()
             con = duckdb.connect().execute('PRAGMA threads=%d' % multiprocessing.cpu_count())
-            return con.execute(func, batch=batch).arrow()
+            return polars.from_arrow(con.execute(func, batch=batch).arrow())
 
         return self.quokka_context.new_stream(
             sources={0: self},
