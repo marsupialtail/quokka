@@ -1,8 +1,9 @@
 import sqlglot
 from pyquokka.dataset import *
-from pyquokka.executors import StorageExecutor, UDFExecutor 
+from pyquokka.executors import *
 from pyquokka.utils import EC2Cluster, LocalCluster
 import pyquokka.sql_utils as sql_utils
+from pyquokka.target_info import * 
 from functools import partial
 
 import textwrap
@@ -251,15 +252,79 @@ class TaskNode(Node):
         super().__init__(schema)
         self.schema_mapping = schema_mapping
         self.required_columns = required_columns
+    
+    def lower(self, task_graph, parent_nodes, parent_source_info ):
+        raise Exception("Abstract class TaskNode cannot be lowered")
+
+class JoinNode(TaskNode):
+    def __init__(self, schema, schema_mapping, required_columns, join_spec, assume_sorted = {}) -> None:
+        # you are not going to have an associated operator
+        super().__init__(schema, schema_mapping, required_columns)
+        self.assume_sorted = assume_sorted
+        self.join_specs = [join_spec] # (join_type, {parent_idx: join_key} )
+
+    def add_join_spec(self, join_spec):
+        self.join_specs.append(join_spec)
+    
+    def __str__(self):
+        result = 'Join Node with joins: ' + str(self.join_specs) + '\nParents:' + str(self.parents) + '\nTargets:' 
+        for target in self.targets:
+            result += "\n\t" + str(target) + " " + textwrap.fill(str(self.targets[target]))
+        return result
+
+    def lower(self, task_graph, parent_nodes, parent_source_info):
+
+        if self.blocking:
+            assert len(self.targets) == 1
+            target_info = self.targets[list(self.targets.keys())[0]]
+            transform_func = target_info_to_transform_func(target_info)
         
+        print("lowering join node with ", len(self.join_specs), " join specs. Random join order used right now.")
+        # import pdb;pdb.set_trace()
+        joined_parents = set()
+
+        for i in range(len(self.join_specs)):
+            join_spec = self.join_specs[i]
+            join_type, join_keys = join_spec
+            assert len(join_keys) == 2
+            left = list(join_keys.keys())[0]
+            right = list(join_keys.keys())[1]
+
+            operator = JoinExecutor(None, join_keys[left], join_keys[right], join_type)
+
+            if parent_nodes[left] in joined_parents and parent_nodes[right] in joined_parents:
+                raise Exception("Redundant join? Should be mapped to a filter")
+            elif parent_nodes[left] in joined_parents:
+                intermediate_target_info = TargetInfo(HashPartitioner(join_keys[left]), sqlglot.exp.TRUE, None, [])
+                parent_target_info = parent_source_info[right]
+                intermediate_node = task_graph.new_non_blocking_node({0: intermediate_node, 1: parent_nodes[right]}, operator, self.placement_strategy, source_target_info={0: intermediate_target_info, 1: parent_target_info})
+                joined_parents.add(parent_nodes[right])
+            elif parent_nodes[right] in joined_parents:
+                intermediate_target_info = TargetInfo(HashPartitioner(join_keys[right]), sqlglot.exp.TRUE, None, [])
+                parent_target_info = parent_source_info[left]
+                intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left], 1: intermediate_node}, operator, self.placement_strategy, source_target_info={0: parent_target_info, 1: intermediate_target_info})
+                joined_parents.add(parent_nodes[left])
+            else:
+                intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left], 1: parent_nodes[right]}, operator, self.placement_strategy, source_target_info={0: parent_source_info[left], 1: parent_source_info[right]})
+                joined_parents.add(parent_nodes[left])
+                joined_parents.add(parent_nodes[right])
+        
+        return intermediate_node
 
 class StatefulNode(TaskNode):
     def __init__(self, schema, schema_mapping, required_columns, operator, assume_sorted = {}) -> None:
+        """
+        Args:
+            schema: the schema after the operator
+            schema_mapping: a dict from column name to a tuple (i, name), where i is the index in self.parents of the parent
+            assume_sorted: a dict from source index to True or False, indicating whether the node expects if the source is sorted
+        """
         super().__init__(schema, schema_mapping, required_columns)
         self.operator = operator
         self.assume_sorted = assume_sorted
     
     def lower(self, task_graph, parent_nodes, parent_source_info ):
+        
         if self.blocking:
             assert len(self.targets) == 1
             target_info = self.targets[list(self.targets.keys())[0]]
@@ -268,15 +333,6 @@ class StatefulNode(TaskNode):
             return task_graph.new_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info, transform_fn = transform_func, assume_sorted = self.assume_sorted)
         else:
             return task_graph.new_non_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info, assume_sorted = self.assume_sorted)
-
-class JoinNode(StatefulNode):
-    def __init__(self, schema, schema_mapping, required_columns, operator, assume_sorted = {}) -> None:
-        super().__init__(schema, schema_mapping, required_columns, operator, assume_sorted)
-
-    def lower(self, task_graph, parent_nodes, parent_source_info):
-        if len(self.parents) > 2:
-            raise Exception("JoinNode can only have two parents! You didn't finish the join re-org in the optimization pass.")
-        return super().lower(task_graph, parent_nodes, parent_source_info)
 
 '''
 We need a separate MapNode from StatefulNode since we can compact UDFs

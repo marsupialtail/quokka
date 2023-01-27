@@ -850,56 +850,24 @@ class DataStream:
         if issubclass(type(right), DataStream):
 
             if maintain_sort_order is None:
-
-                operator = JoinExecutor(on, left_on, right_on, suffix=suffix, how=how) if how != "anti" else AntiJoinExecutor(on , left_on, right_on, suffix = suffix)
-
-                return self.quokka_context.new_stream(
-                    sources={0: self, 1: right},
-                    partitioners={0: HashPartitioner(
-                        left_on), 1: HashPartitioner(right_on)},
-                    node=JoinNode(
-                        schema=new_schema,
-                        schema_mapping=schema_mapping,
-                        required_columns={0: {left_on}, 1: {right_on}},
-                        operator= operator),
-                    schema=new_schema,
-                    )
-            
-            elif maintain_sort_order == "right":
-
-                operator = BuildProbeJoinExecutor(on, left_on, right_on, suffix=suffix, how=how)
-
-                return self.quokka_context.new_stream(
-                    sources={0: self, 1: right},
-                    partitioners={0: HashPartitioner(
-                        left_on), 1: HashPartitioner(right_on)},
-                    node=JoinNode(
-                        schema=new_schema,
-                        schema_mapping=schema_mapping,
-                        required_columns={0: {left_on}, 1: {right_on}},
-                        operator= operator),
-                    schema=new_schema,
-                    )
-
+                assume_sorted = {}
             elif maintain_sort_order == "left":
-
-                operator = BuildProbeJoinExecutor(on, right_on, left_on, suffix = suffix, how = how)
-
-                return self.quokka_context.new_stream(
-                    sources={0: right, 1: self},
-                    partitioners={0: HashPartitioner(
-                        right_on), 1: HashPartitioner(left_on)},
-                    node=JoinNode(
-                        schema=new_schema,
-                        schema_mapping=schema_mapping,
-                        required_columns={0: {right_on}, 1: {left_on}},
-                        operator= operator),
-                    schema=new_schema,
-                    )
-            
+                assume_sorted = {0: True}
             else:
-                raise Exception
-
+                assume_sorted = {1: True}
+            
+            return self.quokka_context.new_stream(
+                sources={0: self, 1: right},
+                partitioners={0: HashPartitioner(
+                    left_on), 1: HashPartitioner(right_on)},
+                node=JoinNode(
+                    schema=new_schema,
+                    schema_mapping=schema_mapping,
+                    required_columns={0: {left_on}, 1: {right_on}},
+                    join_spec=(how, {0: left_on, 1: right_on}),
+                    assume_sorted=assume_sorted),
+                schema=new_schema,
+                )
 
         elif type(right) == polars.internals.DataFrame:
             

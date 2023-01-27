@@ -814,15 +814,23 @@ class QuokkaContext:
                     for parent in parents:
                         parent_node = self.execution_nodes[parents[parent]]
                         if issubclass(type(parent_node), JoinNode):
-                            if len(parent_node.targets) == 1:
+                            # we can only do join fusion if the parent didn't have any kind of batch functions
+                            if len(parent_node.targets) == 1 and len(parent_node.targets[node_id].batch_funcs) == 0:
                                 not_done = True
+                                assert len(parent_node.join_specs) == 1
+                                # you are now responsible for your parent's join spec
+                                new_join_spec = {}
+                                new_join_type = parent_node.join_specs[0][0]
                                 # get rid of this parent and absorb it into yourself
                                 for key in parent_node.parents:
-                                    new_parents[max(new_parents.keys()) + 1] = parent_node.parents[key]
+                                    new_key = max(new_parents.keys()) + 1
+                                    new_parents[new_key] = parent_node.parents[key]
+                                    new_join_spec[new_key] = parent_node.join_specs[0][1][key]
                                     # now we have to remove the parent node_id from the parent's parents' targets and replace it with this node's id
                                     self.execution_nodes[parent_node.parents[key]].targets[node_id] = self.execution_nodes[parent_node.parents[key]].targets[parents[parent]]
                                     del self.execution_nodes[parent_node.parents[key]].targets[parents[parent]]
 
+                                node.add_join_spec((new_join_type,new_join_spec))
                                 # did the parent have predicates?
                                 if parent_node.targets[node_id].predicate is not None:
                                     if node.targets[target_id].predicate is None:
@@ -830,8 +838,8 @@ class QuokkaContext:
                                     else:
                                         node.targets[target_id].predicate = optimizer.simplify.simplify(sqlglot.exp.and_(
                                             node.targets[target_id].predicate, parent_node.targets[node_id].predicate))
-                                if len(parent_node.targets[node_id].batch_funcs) > 0:
-                                    node.targets[node_id].batch_funcs += parent_node.targets[node_id].batch_funcs
+                                
+                                del self.execution_nodes[parents[parent]]
                                 # don't have to worry about the parent's projections. You only care about your projections, 
                                 # i.e. the one you need at the very end.
                         else:
@@ -844,6 +852,21 @@ class QuokkaContext:
                         break
                 
                 node.parents = parents
+
+                # now update your join_specs by looking at your parents' projections. This should be correct
+                new_join_specs = []
+                for join_spec in node.join_specs:
+                    join_type = join_spec[0]
+                    join_dict = {}
+                    for key, col in join_spec[1].items():
+                        # now look for the parent this col belongs to 
+                        for parent in parents:
+                            if col in self.execution_nodes[parents[parent]].targets[node_id].projection:
+                                join_dict[parent] = col
+                                break
+                    new_join_specs.append((join_type, join_dict))
+                node.join_specs = new_join_specs
+
                 for parent in parents:
                     self.__merge_joins__(parents[parent])
                 return
@@ -853,37 +876,6 @@ class QuokkaContext:
                     parent_id = node.parents[parent_idx]
                     self.__merge_joins__(parent_id)
                 return
-
-
-    def __relower_joins__(self, node_id):
-        # find all of the join nodes that have more than two parents and lower them into a sequence of join nodes with two parents
-        # this is done after the merge joins pass
-        node = self.execution_nodes[node_id]
-        targets = node.targets
-        parents = node.parents # this is going to be a dictionary of things
-
-        if issubclass(type(node), SourceNode):
-            return
-        # you are the one that triggered execution, you must be a SinkNode!
-        elif len(targets) == 0:
-            for parent in node.parents:
-                self.__relower_joins__(node.parents[parent])
-            return
-        else:
-            if issubclass(type(node), JoinNode) and len(parents) > 2:
-                # ok do it. Decide on a random join order for now.
-                # we are going to do a left deep join for now.
-
-                random_join_order = list(parents.keys())
-                
-                
-
-            else:
-                for parent_idx in node.parents:
-                    parent_id = node.parents[parent_idx]
-                    self.__relower_joins__(parent_id)
-                return
-
                 
                 
 
