@@ -88,6 +88,7 @@ class TaskGraph:
         self.DST = DoneSeqTable()
         self.SAT = SortedActorsTable()
         self.PFT = PartitionFunctionTable()
+        self.AST = ActorStageTable()
 
         # progress tracking stuff
         self.input_partitions = {}
@@ -103,12 +104,13 @@ class TaskGraph:
             import pdb; pdb.set_trace()
             raise Exception("strategy not supported")
 
-    def epilogue(self, placement_strategy):
+    def epilogue(self, stage, placement_strategy):
+        self.AST.set(self.r, self.current_actor, stage)
         self.actor_placement_strategy[self.current_actor] = placement_strategy
         self.current_actor += 1
         return self.current_actor - 1
 
-    def new_input_reader_node(self, reader, placement_strategy = None):
+    def new_input_reader_node(self, reader, stage = 0, placement_strategy = None):
 
         self.actor_types[self.current_actor] = 'input'
         if placement_strategy is None:
@@ -141,13 +143,12 @@ class TaskGraph:
                     self.LT.mset(pipe, vals)
                     self.NTT.rpush(pipe, node, input_task.reduce())
 
-                self.DST.set(pipe, pickle.dumps((self.current_actor, count)), len(lineages) - 1)
                 channel_locs[count] = node
                 count += 1
         pipe.execute()
         ray.get(self.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
 
-        return self.epilogue(placement_strategy)
+        return self.epilogue(stage, placement_strategy)
     
     def get_default_partition(self, source_node_id, target_placement_strategy):
         # this can get more sophisticated in the future. For now it's super dumb.
@@ -256,7 +257,7 @@ class TaskGraph:
 
         return input_reqs
 
-    def new_non_blocking_node(self, streams, functionObject, placement_strategy = CustomChannelsStrategy(1), source_target_info = {}, assume_sorted = {}):
+    def new_non_blocking_node(self, streams, functionObject, stage = 0, placement_strategy = CustomChannelsStrategy(1), source_target_info = {}, assume_sorted = {}):
 
         assert len(source_target_info) == len(streams)
         self.actor_types[self.current_actor] = 'exec'
@@ -306,14 +307,14 @@ class TaskGraph:
         pipe.execute()
         ray.get(self.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
         
-        return self.epilogue(placement_strategy)
+        return self.epilogue(stage, placement_strategy)
 
-    def new_blocking_node(self, streams, functionObject, placement_strategy = CustomChannelsStrategy(1), source_target_info = {}, transform_fn = None, assume_sorted = {}):
+    def new_blocking_node(self, streams, functionObject, stage = 0, placement_strategy = CustomChannelsStrategy(1), source_target_info = {}, transform_fn = None, assume_sorted = {}):
 
         if placement_strategy is None:
             placement_strategy = CustomChannelsStrategy(1)
 
-        current_actor = self.new_non_blocking_node(streams, functionObject, placement_strategy, source_target_info, assume_sorted)
+        current_actor = self.new_non_blocking_node(streams, functionObject, stage, placement_strategy, source_target_info, assume_sorted)
         self.actor_types[current_actor] = 'exec'
         total_channels = self.get_total_channels_from_placement_strategy(placement_strategy, 'exec')
 

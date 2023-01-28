@@ -124,7 +124,7 @@ class InputS3FilesNode(SourceNode):
     
     def lower(self, task_graph):
         file_reader = InputS3FilesDataset(self.bucket,self.prefix)
-        node = task_graph.new_input_reader_node(file_reader, self.placement_strategy)
+        node = task_graph.new_input_reader_node(file_reader, self.stage, self.placement_strategy)
         return node
 
 class InputDiskFilesNode(SourceNode):
@@ -134,7 +134,7 @@ class InputDiskFilesNode(SourceNode):
     
     def lower(self, task_graph):
         file_reader = InputDiskFilesDataset(self.directory)
-        node = task_graph.new_input_reader_node(file_reader, self.placement_strategy)
+        node = task_graph.new_input_reader_node(file_reader, self.stage, self.placement_strategy)
         return node
 
 class InputS3CSVNode(SourceNode):
@@ -149,7 +149,7 @@ class InputS3CSVNode(SourceNode):
 
     def lower(self, task_graph):
         csv_reader = InputS3CSVDataset(self.bucket, self.schema, prefix = self.prefix, key = self.key, sep=self.sep, header = self.has_header, stride = 16 * 1024 * 1024, columns = self.projection)
-        node = task_graph.new_input_reader_node(csv_reader, self.placement_strategy)
+        node = task_graph.new_input_reader_node(csv_reader, self.stage, self.placement_strategy)
         return node
 
 class InputDiskCSVNode(SourceNode):
@@ -168,7 +168,7 @@ class InputDiskCSVNode(SourceNode):
             csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, header = self.has_header, stride = 16 * 1024 * 1024, columns = self.projection, sort_info = (key, val))
         else:
             csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, header = self.has_header, stride = 16 * 1024 * 1024, columns = self.projection)
-        node = task_graph.new_input_reader_node(csv_reader, self.placement_strategy)
+        node = task_graph.new_input_reader_node(csv_reader, self.stage, self.placement_strategy)
         return node
 
 class InputS3ParquetNode(SourceNode):
@@ -193,7 +193,7 @@ class InputS3ParquetNode(SourceNode):
                 parquet_reader = InputEC2ParquetDataset(self.bucket, self.prefix, columns = list(self.projection), filters = self.predicate)
         else:
             parquet_reader = InputParquetDataset(self.bucket + "/" + self.key, mode = "s3", columns = list(self.projection), filters = self.predicate)
-        node = task_graph.new_input_reader_node(parquet_reader, self.placement_strategy)
+        node = task_graph.new_input_reader_node(parquet_reader, self.stage, self.placement_strategy)
         return node
     
     def __str__(self):
@@ -215,7 +215,7 @@ class InputDiskParquetNode(SourceNode):
             raise Exception
         elif type(task_graph.cluster) == LocalCluster:
             parquet_reader = InputParquetDataset(self.filepath,  columns = list(self.projection), filters = self.predicate)
-            node = task_graph.new_input_reader_node(parquet_reader, self.placement_strategy)
+            node = task_graph.new_input_reader_node(parquet_reader, self.stage, self.placement_strategy)
             return node
     
     def __str__(self):
@@ -234,7 +234,7 @@ class DataSetNode(SinkNode):
     
     def lower(self, task_graph, parent_nodes, parent_source_info ):
         assert self.blocking
-        return task_graph.new_blocking_node(parent_nodes,StorageExecutor(), self.placement_strategy, source_target_info=parent_source_info)
+        return task_graph.new_blocking_node(parent_nodes,StorageExecutor(), self.stage, self.placement_strategy, source_target_info=parent_source_info)
         
 '''
 We need to keep a schema mapping to map the node's schema, aka the schema after the operator, to the schema of its parents to conduct
@@ -297,7 +297,11 @@ class JoinNode(TaskNode):
         right_parent_target_info = parent_source_info[right]
         left_parent_target_info.partitioner = HashPartitioner(join_keys[left])
         right_parent_target_info.partitioner = HashPartitioner(join_keys[right])
-        intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left], 1: parent_nodes[right]}, operator, self.placement_strategy, source_target_info={0: left_parent_target_info, 1: right_parent_target_info})
+
+        if len(self.join_specs) == 1 and self.blocking:
+            return task_graph.new_blocking_node({0: parent_nodes[left], 1: parent_nodes[right]}, operator, self.stage, self.placement_strategy, source_target_info={0: left_parent_target_info, 1: right_parent_target_info}, transform_func=transform_func)
+        else:
+            intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left], 1: parent_nodes[right]}, operator, self.stage, self.placement_strategy, source_target_info={0: left_parent_target_info, 1: right_parent_target_info})
         joined_parents.add(parent_nodes[left])
         joined_parents.add(parent_nodes[right])
 
@@ -317,14 +321,20 @@ class JoinNode(TaskNode):
                 parent_target_info = parent_source_info[right]
                 parent_target_info.partitioner = HashPartitioner(join_keys[right])
                 # print("adding node", intermediate_node, parent_nodes[right], {0: str(intermediate_target_info), 1: str(parent_target_info)})
-                intermediate_node = task_graph.new_non_blocking_node({0: intermediate_node, 1: parent_nodes[right]}, operator, self.placement_strategy, source_target_info={0: intermediate_target_info, 1: parent_target_info})
+                if i == len(self.join_specs) - 1 and self.blocking:
+                    return task_graph.new_blocking_node({0: intermediate_node, 1: parent_nodes[right]}, operator, self.stage, self.placement_strategy, source_target_info={0: intermediate_target_info, 1: parent_target_info}, transform_func=transform_func)
+                else:
+                    intermediate_node = task_graph.new_non_blocking_node({0: intermediate_node, 1: parent_nodes[right]}, operator, self.stage, self.placement_strategy, source_target_info={0: intermediate_target_info, 1: parent_target_info})
                 joined_parents.add(parent_nodes[right])
             elif parent_nodes[right] in joined_parents:
                 intermediate_target_info = TargetInfo(HashPartitioner(join_keys[right]), sqlglot.exp.TRUE, None, [])
                 parent_target_info = parent_source_info[left]
                 parent_target_info.partitioner = HashPartitioner(join_keys[left])
                 # print("adding node", parent_nodes[left], intermediate_node, {0: str(parent_target_info), 1: str(intermediate_target_info)})
-                intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left], 1: intermediate_node}, operator, self.placement_strategy, source_target_info={0: parent_target_info, 1: intermediate_target_info})
+                if i == len(self.join_specs) - 1 and self.blocking:
+                    return task_graph.new_blocking_node({0: parent_nodes[left], 1: intermediate_node}, operator, self.stage, self.placement_strategy, source_target_info={0: parent_target_info, 1: intermediate_target_info}, transform_func=transform_func)
+                else:
+                    intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left], 1: intermediate_node}, operator, self.stage, self.placement_strategy, source_target_info={0: parent_target_info, 1: intermediate_target_info})
                 joined_parents.add(parent_nodes[left])
             else:
                 raise Exception("Should not happen")
@@ -350,9 +360,9 @@ class StatefulNode(TaskNode):
             target_info = self.targets[list(self.targets.keys())[0]]
             transform_func = target_info_to_transform_func(target_info)          
             
-            return task_graph.new_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info, transform_fn = transform_func, assume_sorted = self.assume_sorted)
+            return task_graph.new_blocking_node(parent_nodes,self.operator, self.stage, self.placement_strategy, source_target_info=parent_source_info, transform_fn = transform_func, assume_sorted = self.assume_sorted)
         else:
-            return task_graph.new_non_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info, assume_sorted = self.assume_sorted)
+            return task_graph.new_non_blocking_node(parent_nodes,self.operator, self.stage, self.placement_strategy, source_target_info=parent_source_info, assume_sorted = self.assume_sorted)
 
 '''
 We need a separate MapNode from StatefulNode since we can compact UDFs
@@ -383,9 +393,9 @@ class MapNode(TaskNode):
             target_info = self.targets[list(self.targets.keys())[0]]
             transform_func = target_info_to_transform_func(target_info)     
 
-            return task_graph.new_blocking_node(parent_nodes,UDFExecutor(self.function), self.placement_strategy, source_target_info=parent_source_info, transform_fn = transform_func)
+            return task_graph.new_blocking_node(parent_nodes,UDFExecutor(self.function), self.stage, self.placement_strategy, source_target_info=parent_source_info, transform_fn = transform_func)
         else:
-            return task_graph.new_non_blocking_node(parent_nodes,UDFExecutor(self.function), self.placement_strategy, source_target_info=parent_source_info)
+            return task_graph.new_non_blocking_node(parent_nodes,UDFExecutor(self.function), self.stage, self.placement_strategy, source_target_info=parent_source_info)
 
 class FilterNode(TaskNode):
 
