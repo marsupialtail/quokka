@@ -46,7 +46,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
         self.hbq_lock = Lock()
 
         self.host = host
-        self.config_dict = {"mem_limit" : 0.25, "max_batches": 10}
+        self.config_dict = {"mem_limit" : 0.25, "max_batches": 10, "actor_stages": None}
         self.process = psutil.Process(os.getpid())
         #self.log_file = open("/home/ubuntu/flight-log","w")
 
@@ -204,7 +204,17 @@ class FlightServer(pyarrow.flight.FlightServerBase):
 
                 exec_plan = self.flight_keys.lazy().filter((polars.col("target_actor_id") == actor_id) & (polars.col("target_channel_id") == channel_id))\
                                                 .join(input_requirements.lazy(), left_on= ["source_actor_id", "source_channel_id"], right_on=["source_actor_id", "source_channel_id"])\
-                                                .filter(polars.col("seq") >= polars.col("min_seq")).sort("seq").limit(self.config_dict["max_batches"])\
+                                                .join(self.config_dict["actor_stages"].lazy(), left_on="source_actor_id", right_on="actor_id")\
+                                                .filter(polars.col("seq") >= polars.col("min_seq")).collect()
+
+                # picking the minimum stage in the flight server should be sufficient to ensure that we don't process things out of stage order
+                # since the global stage variable only increases in normal operation IF all the outputs of a particular stage have been 
+                # successfully received at their target flight servers. Since the lineage is determined in normal operation, this should ensure that 
+                # the determined lineage is correct. Of course upon recovery we assume this lineage is correct and don't bother checking stages.
+                # there could be some subtle bugs here but we can worry about that once we raise $50M from Sequoia. Spark still has fault tolerance bugs, right?
+
+                min_stage = exec_plan["stage"].min()
+                exec_plan = exec_plan.lazy().filter(polars.col("stage") == min_stage).sort("seq").limit(self.config_dict["max_batches"])\
                                                 .select(["source_actor_id", "source_channel_id", "seq", "partition_fn", "min_seq"])\
                                                 .collect()
                 
@@ -358,7 +368,11 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             config_dict = pickle.loads(action.body.to_pybytes())
             for key in config_dict:
                 assert key in self.config_dict, "got an unrecognized Flight server config"
-                self.config_dict[key] = config_dict[key]
+                if key == "actor_stages":
+                    self.config_dict[key] = polars.DataFrame(list(config_dict[key].items()), orient = "row", columns = ["actor_id","stage"])
+                else:
+                    self.config_dict[key] = config_dict[key]
+
             cond = True
             yield pyarrow.flight.Result(pyarrow.py_buffer(bytes(str(cond), "utf-8")))
         elif action.type == "check_puttable":
