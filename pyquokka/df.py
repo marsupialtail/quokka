@@ -395,6 +395,7 @@ class QuokkaContext:
         self.__early_projection__(node_id)
         self.__fold_map__(node_id)
         self.__merge_joins__(node_id)
+        self.__determine_stages__(node_id)
         
         assert len(self.execution_nodes[node_id].parents) == 1
         parent_idx = list(self.execution_nodes[node_id].parents)[0]
@@ -428,7 +429,6 @@ class QuokkaContext:
         for node_id, node in reverse_sorted_nodes:
             if issubclass(type(node), SourceNode):
                 task_graph_nodes[node_id] = node.lower(task_graph)
-
             else:
                 parent_nodes = {parent_idx: task_graph_nodes[node.parents[parent_idx]] for parent_idx in node.parents}
                 target_info = {parent_idx: self.execution_nodes[node.parents[parent_idx]].targets[node_id] for parent_idx in node.parents}
@@ -842,8 +842,9 @@ class QuokkaContext:
                                 del self.execution_nodes[parents[parent]]
                                 # don't have to worry about the parent's projections. You only care about your projections, 
                                 # i.e. the one you need at the very end.
+                            else:
+                                new_parents[max(new_parents.keys()) + 1] = parents[parent]
                         else:
-                            print(parent, parents[parent])
                             new_parents[max(new_parents.keys()) + 1] = parents[parent]
                     
                     del new_parents[-1]
@@ -877,7 +878,55 @@ class QuokkaContext:
                     self.__merge_joins__(parent_id)
                 return
                 
+    def __determine_stages__(self, node_id):
+
+        node = self.execution_nodes[node_id]
+        targets = node.targets
+        parents = node.parents # this is going to be a dictionary of things
+
+        # the main logic assumes that the node at node_id has been already assigned a stage
+        # and is in charge of assigning stages to its parents. If you are the sink node this won't be true
+        # so you have to assign yourself a stage of 0
+        if len(targets) == 0:
+            node.assign_stage(0)
+
+        if issubclass(type(node), SourceNode):
+            # you should already have been assigned by your target
+            return
+        else:
+            # you should have the required_columns attribute
+            if issubclass(type(node), JoinNode):
+                # pick a random thing to be probe side and all others be build side for now
+                probe = list(parents.keys())[0]
+                self.execution_nodes[parents[probe]].assign_stage(node.stage)
+                for parent in parents:
+                    if parent != probe:
+                        self.execution_nodes[parents[parent]].assign_stage(node.stage - 1)
                 
+                # you are now responsible for arranging the joinspec in the right order!
+                # you should have a join_specs attribute
+                new_join_specs = []
+                old_join_specs = set(range(len(node.join_specs)))
+                existing_tables = {probe}
+                while len(old_join_specs) > 0:
+                    for index in old_join_specs:
+                        join_spec = node.join_specs[index]
+                        if len(set(join_spec[1].keys()).intersection(existing_tables)) > 0:
+                            new_join_specs.append(join_spec)
+                            old_join_specs.remove(index)
+                            existing_tables = existing_tables.union(set(join_spec[1].keys()))
+                            break
+                node.join_specs = new_join_specs
+                # print(new_join_specs)
+
+            
+            else:
+                # for other nodes we currently don't do anything
+                for parent in parents:
+                    self.execution_nodes[parents[parent]].assign_stage(node.stage)
+        
+        for parent in parents:
+            self.__determine_stages__(parents[parent])
 
 class DataSet:
     def __init__(self, quokka_context: QuokkaContext, schema: dict, source_node_id: int) -> None:

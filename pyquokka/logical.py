@@ -88,6 +88,9 @@ class Node:
         # this will be a dictionary of 
         self.output_sorted_reqs = None
     
+    def assign_stage(self, stage):
+        self.stage = stage
+    
     def lower(self, task_graph):
         raise NotImplementedError
 
@@ -98,7 +101,7 @@ class Node:
         self.placement_strategy = strategy
     
     def __str__(self):
-        result = str(type(self)) + '\nParents:' + str(self.parents) + '\nTargets:' 
+        result = str(type(self)) + '\n' + str(self.stage) + '\nParents:' + str(self.parents) + '\nTargets:' 
         for target in self.targets:
             result += "\n\t" + str(target) + " " + textwrap.fill(str(self.targets[target]))
         return result
@@ -108,7 +111,7 @@ class SourceNode(Node):
         super().__init__(schema)
     
     def __str__(self):
-        result = str(type(self)) + '\nTargets:' 
+        result = str(type(self)) + '\n' + str(self.stage) + '\nTargets:' 
         for target in self.targets:
             result += "\n\t" + str(target) + " " + str(self.targets[target])
         return result
@@ -267,7 +270,7 @@ class JoinNode(TaskNode):
         self.join_specs.append(join_spec)
     
     def __str__(self):
-        result = 'Join Node with joins: ' + str(self.join_specs) + '\nParents:' + str(self.parents) + '\nTargets:' 
+        result = 'Join Node with joins: ' + str(self.join_specs) + '\n' + str(self.stage) + '\nParents:' + str(self.parents) + '\nTargets:' 
         for target in self.targets:
             result += "\n\t" + str(target) + " " + textwrap.fill(str(self.targets[target]))
         return result
@@ -280,10 +283,25 @@ class JoinNode(TaskNode):
             transform_func = target_info_to_transform_func(target_info)
         
         print("lowering join node with ", len(self.join_specs), " join specs. Random join order used right now.")
-        # import pdb;pdb.set_trace()
         joined_parents = set()
 
-        for i in range(len(self.join_specs)):
+        # self.join_specs = [self.join_specs[1]] + [self.join_specs[0]]
+
+        join_spec = self.join_specs[0]
+        join_type, join_keys = join_spec
+        assert len(join_keys) == 2
+        left = list(join_keys.keys())[0]
+        right = list(join_keys.keys())[1]
+        operator = JoinExecutor(None, join_keys[left], join_keys[right], join_type)
+        left_parent_target_info = parent_source_info[left]
+        right_parent_target_info = parent_source_info[right]
+        left_parent_target_info.partitioner = HashPartitioner(join_keys[left])
+        right_parent_target_info.partitioner = HashPartitioner(join_keys[right])
+        intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left], 1: parent_nodes[right]}, operator, self.placement_strategy, source_target_info={0: left_parent_target_info, 1: right_parent_target_info})
+        joined_parents.add(parent_nodes[left])
+        joined_parents.add(parent_nodes[right])
+
+        for i in range(1, len(self.join_specs)):
             join_spec = self.join_specs[i]
             join_type, join_keys = join_spec
             assert len(join_keys) == 2
@@ -297,17 +315,19 @@ class JoinNode(TaskNode):
             elif parent_nodes[left] in joined_parents:
                 intermediate_target_info = TargetInfo(HashPartitioner(join_keys[left]), sqlglot.exp.TRUE, None, [])
                 parent_target_info = parent_source_info[right]
+                parent_target_info.partitioner = HashPartitioner(join_keys[right])
+                # print("adding node", intermediate_node, parent_nodes[right], {0: str(intermediate_target_info), 1: str(parent_target_info)})
                 intermediate_node = task_graph.new_non_blocking_node({0: intermediate_node, 1: parent_nodes[right]}, operator, self.placement_strategy, source_target_info={0: intermediate_target_info, 1: parent_target_info})
                 joined_parents.add(parent_nodes[right])
             elif parent_nodes[right] in joined_parents:
                 intermediate_target_info = TargetInfo(HashPartitioner(join_keys[right]), sqlglot.exp.TRUE, None, [])
                 parent_target_info = parent_source_info[left]
+                parent_target_info.partitioner = HashPartitioner(join_keys[left])
+                # print("adding node", parent_nodes[left], intermediate_node, {0: str(parent_target_info), 1: str(intermediate_target_info)})
                 intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left], 1: intermediate_node}, operator, self.placement_strategy, source_target_info={0: parent_target_info, 1: intermediate_target_info})
                 joined_parents.add(parent_nodes[left])
             else:
-                intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left], 1: parent_nodes[right]}, operator, self.placement_strategy, source_target_info={0: parent_source_info[left], 1: parent_source_info[right]})
-                joined_parents.add(parent_nodes[left])
-                joined_parents.add(parent_nodes[right])
+                raise Exception("Should not happen")
         
         return intermediate_node
 
