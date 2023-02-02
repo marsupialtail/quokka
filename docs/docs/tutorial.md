@@ -1,8 +1,8 @@
 #Advanced Tutorials
 
-This section is for learning how to use Quokka's graph level API. This is expected for use cases where the dataframe API cannot satisfy your needs. Most users are not expected to program at this level. You should contact me: zihengw@stanford.edu if you want to do this.
+This section is for learning how to use Quokka's graph level API. This is expected for use cases where the DataStream API cannot satisfy your needs. Most users are not expected to program at this level. You should contact me: zihengw@stanford.edu or hit me up on Discord if you want to do this.
 
-You should probably stop reading now, unless you are a Stanford undergrad or masters student (or somebody else) who somehow decided to work with me on Quokka. 
+You should probably stop reading now, unless you are a Stanford undergrad or masters student (or somebody else) who somehow decided to work with me on Quokka. **You should read this tutorial if you want to add a new executor or input reader into Quokka.** You should probably read up on the [Cartoons](started.md) section first, and then come back here. You probably should also first run the [DataStream Tutorial](simple.md) to make sure Quokka actually works on your machine.
 
 The code for the tutorials can be found under `apps/tutorials`. They might perform meaningless tasks or perform tasks which you shoudn't necessarily use Quokka for, but they will showcase how Quokka works. 
 
@@ -10,152 +10,145 @@ I wrote Quokka. As a result I might take some things for granted that you might 
 
 ## Lesson 0: Addition
 
-Let's walk through our first Quokka program. This first example defines an input reader which produces a stream of numbers, and a stateful operator which adds them up. Please read the comments in the code. Let's first look at the import section. 
+Let's walk through our first Quokka program. This first example defines an input reader which produces a stream of numbers, and a stateful operator which adds them up. Let's first look at the import section. In general when you are writing a Quokka program, you will need to import `TaskGraph`, `LocalCluster` and `Executor`. `TaskGraph` is the main object that you will use to define your program. `LocalCluster` is the execution context for the program, which you can replace with an `EC2Cluster` made from `QuokkaClusterManager`. `Executor` is an abstract class which you should extend to implement your own executors. Quokka also provides canned executors which you call import from `pyquokka.executors` such as `join`.
 
 ~~~python
-# we need to import Quokka specific objects. A TaskGraph is always needed in a program 
-# that uses the DAG runtime API. We will define a TaskGraph by defining input readers 
-# and stateful operators and adding them to the TaskGraph. Then we will execute the TaskGraph.
 from pyquokka.quokka_runtime import TaskGraph
-# Quokka also needs a notion of the compute substrate the TaskGraph is executing on. 
-# LocalCluster is meant for single-machine execution. For distributed execution, 
-# you would need to import QuokkaClusterManager and create a new cluster or initialize 
-# one from a json config. 
 from pyquokka.utils import LocalCluster
-# Executor is an abstract class which you should extend to implement your own executors. 
-# Quokka also provides canned executors which you call import from pyquokka.executors such 
-# as joins, sort and asof_join.
 from pyquokka.executors import Executor
+from pyquokka.target_info import TargetInfo, PassThroughPartitioner
+from pyquokka.placement_strategy import SingleChannelStrategy
+import sqlglot
 import time
-
-# define a LocalCluster execution context. This will make a cluster object with information
-# such as local core count etc.
-cluster = LocalCluster()
+import polars
 ~~~
 
-Quokka provides many optimized input readers for different input data formats. However, in this tutorial we are going to define a custom input reader class to showcase how the input reader works. The mindset here is that there will be many channels of this input reader (by default equal to the number of cores in the cluster), and each channel will have its own copy of an object of this class. They will all be initialized in the same way, but when each channel calls the `get_next_batch` method of its own object, the `channel` argument supplied will be different. 
+Quokka provides many optimized input readers for different input data formats. However, in this tutorial we are going to define a custom input reader class to showcase how the input reader works. The mindset here is that there will be many **channels** of this input reader spread across your cluster, and each channel will have its own copy of an object of this class. They will all be initialized in the same way, but each channel can produce its own data. An input reader object can be initialized with arbitrary arguments. The initialization will be performed locally before shipping the object over the network to the executors (in your code), so you need to make sure that the object can be pickled. This means that you can't initialize the object with a socket or a file descriptor.
 
 ~~~python
-
 class SimpleDataset:
-    # the object will be initialized once locally. You can define whatever attributes you want.
-    # You can also set attributes to None if they will be supplied later by the framework
-    # in set_num_channels method
+    # we define limit here, which is the max number we will generate
     def __init__(self, limit) -> None:
         self.limit = limit
         self.num_channels = None
-
-    # this is an optional method that will be called by the runtime on this object during
-    # TaskGraph construction, if the method exists. This mainly updates the num_channel
-    # attribute of the object. For some input readers what a channel produces is independent
-    # of the total number of channels, and they don't have to implement this method. Other
-    # input readers might need to perform additional computation upon learning the total
-    # number of channels, such as byte ranges to read in a CSV file. 
-    # 
-    # This method can be used to set additional class attributes. The programmer could 
-    # do that in the __init__ method too, if she knows the total number of channels 
-    # and does not want to rely on Quokka's default behavior etc.
-
-    def set_num_channels(self, num_channels):
-        self.num_channels = num_channels
-
-    # the get_next_batch method defines an iterator. Each channel will iterate through
-    # its own copy of the object's get_next_batch method, with the channel argument 
-    # set to its own channel id. In this example, if there are N channels, channel k 
-    # will yield numbers k, k + N, k + 2N, all the way up to the limit. 
-
-    # Note that the get_next_batch method takes an optional parameter pos, and yields
-    # two objects, with the first being None here. Let's not worry about these things
-    # for the time being. They are used for Quokka's parallelized fault recovery.
-
-    def get_next_batch(self, channel, pos=None):
-        assert self.num_channels is not None
-        curr_number =  channel
-        while curr_number < self.limit:
-            yield None, curr_number
-            curr_number += self.num_channels
-
 ~~~
 
-Now that we defined the input reader, we are going to define the stateful operator. Similar to the input reader, we define a Python class. All channels of the stateful operator will have a copy of an object of this class. The stateful operator exposes two important methods, `execute` and `done`, which might produce outputs for more downstream stateful operators. `execute` is called whenever upstream input reader channels have produced some input batches for the stateful operator channel to process. `done` is called when the stateful operator channel knows it will no longer receive any more inputs and has already processed all the inputs it has. Our stateful operator here adds up all the elements in an input stream and returns the sum. 
+The key to implementing an input reader object lies in the `get_own_state` method implementation. This method will be called by the runtime once it decided how many channels this input reader will have. Armed with this information as well as the arguments passed to the object's constructor, the method should return a dictionary which maps channel ids to *what the channel is assigned to produce*. In this example, we will have N channels, and each channel will produce numbers k, k + N, k + 2N, all the way up to the limit. The `get_own_state` method will be called locally by the runtime after the object is initialized (not in your code though). If the method adds some state variables to the object, then they should be picklable too.
+
+Now what does "*what the channel is assigned to produce*" even mean? It is supposed to be a list of arbitrary picklable objects, though I'd recommend to keep it simple and stick to primitive types and at most tuples. What should these objects be? They are going to be fed as input arguments to the `execute` method, which will be executed by the channels across the cluster on their own copy of the input reader object. In this dead simple example, the list just contains the numbers a channel is supposed to produce, and the `execute` method simply wraps the number in a Polars DataFrame and spits it out. In more complicated examples, such as a CSV reader, the list typically contains the file names and offsets of the CSV files the channel is supposed to read. The `execute` method then reads the correct portion of the correct CSV file and returns the data.
+
+The mental model should be that the `get_own_state` method, executed once locally on the client, determines what each channel is supposed to produce, and the `execute` method, executed on each channel across the cluster, actually produces the data. On channel *x*, the execute method is called `len(channel_info[x])` times, once for each of the values in the list, in order. The return value of the `execute` method is always None followed by the data item, which can be a **Pyarrow table of Polars Dataframe**. If you really want to know why the None is required, email me and I'll explain over coffee.
 
 ~~~python
 
+    def get_own_state(self, num_channels):
+        channel_info = {}
+        for channel in range(num_channels):
+            channel_info[channel] = [i for i in range(channel, self.limit, num_channels)]
+        return channel_info
+
+    def execute(self, channel, state = None):
+        curr_number = state
+        return None, polars.DataFrame({"number": [curr_number]})
+
+~~~
+
+Oh and by the way, remember we said you can't have unpicklable class attributes like sockets and file descriptors in the constructor and `get_own_state`? The right way to initialize these things is to set the attribute to None in the constructor and assign an actual value in the `execute` method. But since that method will be called more than once, you should put a guard to see if it has already been initialized, like this:
+
+~~~python
+    def __init__():
+        ...
+        self.s3 = None
+
+    def execute():
+        if self.s3 is None:
+            self.s3 = s3.client(...)
+        ...
+~~~
+
+Now that we defined the input reader, we are going to define the executor. Similar to the input reader, we define a Python class. There will be multiple channels of this executor, each holding its own copy of this object. The executor exposes two important methods, `execute` and `done`, which might produce outputs for more downstream executors. `execute` is called whenever upstream input reader channels have produced some input batches for the channel to process. `done` is called when the channel knows it will no longer receive any more inputs and has already processed all the inputs it has. Our executor here adds up all the elements in an input stream and returns the sum. 
+
+The execute method takes three arguments. Before we talk about what they are let's (re)visit this excellent cartoon. 
+
+<p style="text-align:center;"><img src="../quokkas-channel.svg" width=800></p>
+
+In Quokka we have executors and input readers, which we refer to as **actors**. Each actor can have multiple channels, e.g. we have bushes and trees as own input readers, each with two channels. The execute method on an executor is called when an upstream actor has batches for the executor to process.
+
+The first argument `batches`, is a list of **Apache Arrow Tables** from the upstream actor. **The items in the batch could have come from one channel, several, or all of them of this actor!** However it could not contain mixed batches from multiple actors. If we take the perspective of one of the quokka channels, this list could contain either acorns or leaves, but not both.
+
+The second argument `stream_id` is used to identify which source input reader/executor the batches came from. In this example we only have one input source so we can ignore this argument. Each upstream actor source is identified by an integer, which you can specify when hooking up the TaskGraph.
+
+The third argument `channel` denotes the channel id of the channel executing the object. Similar to the argument for the input reader. Here we also don't use this argument. This could be useful, e.g. when each channel writes output data to a shared file system and you want to ensure the written files have unique names.
+
+The code for our executor is pretty simple. We initialize a sum variable to None in the constructor. In the execute method, we add up the batches and store the result in the sum variable. In the done method, we print the sum and return it. Note that both `execute` and `done` methods can optionally return data to downstream actors. In this example it doesn't make sense for the `execute` to return anything as you don't know the sum until the last batch has been processed. However, the `done` method can return the sum.
+
+**The return type for the `execute` and `done` methods must be Pyarrow Table of Polars Dataframe. **
+
+~~~python
 class AddExecutor(Executor):
-    # initialize state. This will be done locally. This initial state will be copied
-    # along with the object to all the channels.
     def __init__(self) -> None:
-        self.sum = 0
-    
-    # the execute method takes three arguments. The first argument batches, is a list of 
-    # batches from an input QStream, which could be the output of an input reader or another
-    # stateful operator. The items in the batch could have come from one channel, several, 
-    # or all of them! it is best practice that the stateful operator doesn't make 
-    # any assumptions on where these batches originated, except that they belong
-    # to the same QStream. 
-
-    # the second argument, stream_id, is used to identify the QStream the batches came from.
-    # in this example we only have one input QStream so we can ignore this argument.
-
-    # the third argument, channel, denotes the channel id of the channel executing the object
-    # similar to the argument for the input reader. Here we also don't use this argument.
-
+        self.sum = None
     def execute(self,batches,stream_id, channel):
         for batch in batches:
-            assert type(batch) == int
-            self.sum += batch
-    # note that we can't return anything in our execute method. We don't know what the sum is
-    # until we have seen all of the elements in the input QStream.
-    
-    # done only has one argument, which is the channel. It can return an element or an iterator
-    # of elements.
-    
+            self.sum = polars.from_arrow(batch) if self.sum is None else self.sum + polars.from_arrow(batch)
+
     def done(self,channel):
         print("I am executor ", channel, " my sum is ", self.sum)
         return self.sum
 ~~~
 
-Now that we have defined our input reader and stateful operator, we can hook them up together in a TaskGraph. Defining the TaskGraph requires a cluster object, which is LocalCluster here but can be an S3Cluster or AzureCluster for cloud deployments. 
+Now that we have defined our input reader and stateful operator, we can hook them up together in a TaskGraph. Defining the TaskGraph requires a cluster object, which is `LocalCluster` here but can be an `EC2Cluster` for cloud deployments. 
 
-We will then initialize the objects for the input reader and stateful operators. Again, we initialize one object, which will be copied to each channel. We can now add the input reader and stateful operator to our TaskGraph. 
+Now let's hook up the TaskGraph. This programming model should remind you strongly of Tensorflow, if you had the good fortune of trying to use Tensorflow 1.0. The TaskGraph exposes `new_input_reader_node`, `new_non_blocking_node` and `new_blocking_node` APIs. The first one is used to define an input reader, the second one is used to define a "normal" executor, and the third one is used to define the last executor in the TaskGraph (i.e. the grey/gold quokka in the cartoon). Whereas the return values of `non_blocking_node` will be pushed to downstream executors, the return values of `blocking_node` will be collected in a Dataset object.
+
+In our example, the sum executor is the last executor, so we just use `new_blocking_node`, like this:
 
 ~~~python
-
+cluster = LocalCluster()
 task_graph = TaskGraph(cluster)
 reader = SimpleDataset(80)
-
-# define a new input reader in our TaskGraph. numbers is a QStream.
 numbers = task_graph.new_input_reader_node(reader)
 
 executor = AddExecutor()
+sum = task_graph.new_blocking_node({0:numbers},executor, placement_strategy = SingleChannelStrategy(), 
+    source_target_info={0:TargetInfo(partitioner = PassThroughPartitioner(), 
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = None,
+                                    batch_funcs = [])})
 
-# define a new blocking node. A blocking node writes out its results in a materialized Dataset 
-# object instead of producing a QStream. Note the first argument is a dictionary. This assigns
-# each input stream an internal name, which corresponds to the stream_id field in the execute 
-# method. Since we called the numbers QStream 0, when execute is called on batches from this QStream,
-# the stream_id argument will be 0.
-sum = task_graph.new_blocking_node({0:numbers},executor)
-
-# create() must be called before run()
 task_graph.create()
 
 start = time.time()
 task_graph.run()
 print("total time ", time.time() - start)
 
-# we can call to_list() on a Dataset object to collect its elements, which will simply be all 
-# the objects returned by the blocking node's execute and done methods.
-print(sum.to_list())
-
+print(sum.to_df())
 ~~~
 
-Here we used `new_blocking_node` to define the stateful operator in the TaskGraph. The TaskGraph exposes two different APIs: `new_nonblocking_node` and `new_blocking node`. The former will put their outputs in a QStream, which could be consumed by downstream operators immediately, while the latter will materialize the outputs into a Dataset object. Downstream operators cannot read a Dataset until it's complete. This is intimately related to the idea of nonblocking vs blocking stateful operators. Some operators such as streaming join can emit valid outputs as soon as they have seen partial inputs, while other operators like aggregation must wait until seeing all of the input before emitting any partial output. However, you could define a nonblocking operator as a `new_blocking_node`, if you want to materialize its outputs instead of streaming them forward, e.g. to limit pipeline depth. You could also define a blocking operator as a `new_nonblocking_node`, the QStream will just consist of the elements returned during the `done` method (which could return an iterator).
+Let's talk about the arguments to `new_blocking_node` one by one.
 
-The TaskGraph also exposes an API to define stateless operators: `new_task`. This defines a stateless transform on a QStream and is very similar to Spark's `map`. We will cover this in a later tutorial to showcase deep learning inference. 
+- The first argument to `new_blocking_node` is a dictionary. The values are the upstream actors you'd like the executor to receive data from. The keys are arbitrary integers, which you can use to identify the source actor in the `execute` method. Those integers will be passed as the `stream_id` argument to the `execute` method. In our example, we only have one upstream actor, so we just use `0` as the key.
+- The second argument is the executor object.
+- The third argument is the placement strategy of the executor, which determines how many channels the executor will have. In our example, we use `SingleChannelStrategy`, which means the executor will have one channel. If we use `CustomChannelsStrategy(n)`, the executor will have n channels on each TaskManager.
 
-Note that we covered most of the important concepts covered in the getting started cartoons. However the astute reader would notice that we didn't define a partition function here, nor did we specify how many channels of the input reader or the stateful operator to launch. The answer is that Quokka tries to provide suitable defaults for these things. Quokka currently launches one channel per core for input readers, and one channel per machine for stateful operators. These defaults are subject to change and you shouldn't rely on them. Quokka's default partition function is to send all the outputs generated by a channel to the channel of the target on the same machine. 
+    What is a TaskManager? It can be interpretted as a thread pool. Each TaskManager holds channels from different actors and decide how to schedule their execution. There are separate TaskManagers for input readers and executors. The number of TaskManagers is determined by the `io_per_node` and `exec_per_node` keyword arugments to the `TaskGraph()` constructor.
 
+- What is the `source_target_info`? It's time for another schematic. 
 
+<p style="text-align:center;"><img src="../targetinfo.svg" width=800></p>
+
+The `execute` method for both input readers and executors could produce a PyArrow Table of Polars Dataframe to be pushed to downstream actors. How does Quokka generate separate messages for the different channels in a downstream actor? Please look at the schematic ^.
+
+First, filters are applied, specified by a [SQLGlot](https://github.com/tobymao/sqlglot) predicate. In our example, we use `sqlglot.exp.TRUE`, which means no filter is applied. Then a partitioner is applied to split the filtered data into data for each channel. In our example, we use `PassThroughPartitioner`, which means a channel in the target actor gets all the data from a range of channels in the source actor, assuming the source actor has more channels. Other partitioners include BroadcastPartitioner and HashPartitioner. 
+
+<p style="text-align:center;"><img src="../partitioners.svg" width=800></p>
+
+After the partitioner is applied, a series of functions (`batch_funcs`) are applied to each message destined for a downstream channel. In our example, we use `[]`, which means no functions are applied. You can supply any arbitrary list of Python functions with Polars Dataframe input and Polars Dataframe output, though you have to make sure that the columns you need in a later function must be in the executor output or generated by a previous function.
+
+Finally, a projection is applied to the data. In our example, we use `None`, which means no projection is applied. You can supply a list of column names.
+
+`new_blocking_node` returns `sum`, a Quokka Dataset object. It has a `to_df` method which returns a Polars Dataframe, once the TaskGraph has been run. To run the TaskGraph, we call `task_graph.create()` to initialize it, and then `task_graph.run()`.
+ 
 ## Lesson 1: Joins
 
 If you think the first lesson was too complicated, it proably was. This is because we had to define custom input readers and stateful operators. Hopefully in the process you learned a few things about how Quokka works.
@@ -164,51 +157,66 @@ In most scenarios, it is my hope that you don't have to define custom objects, a
 
 Here, we are going to take two CSVs on Disk, join them, and count the number of records in the result: `select count(*) from a and b where a.key = b.key`. You can use the a.csv and b.csv provided in the apps/tutorials folder, or you can supply your own and change the CSV input reader arguments appropriately.
 
-Without further ado, here's the code with comments:
+Without further ado, here's the code:
 
 ~~~python
 import time
 from pyquokka.quokka_runtime import TaskGraph
-from pyquokka.executors import PolarJoinExecutor, CountExecutor
+from pyquokka.executors import JoinExecutor, CountExecutor
+from pyquokka.target_info import TargetInfo, PassThroughPartitioner, HashPartitioner
+from pyquokka.placement_strategy import SingleChannelStrategy
 from pyquokka.dataset import InputDiskCSVDataset
+import sqlglot
+import pandas as pd
 
-from pyquokka.utils import LocalCluster
+from pyquokka.utils import LocalCluster, QuokkaClusterManager
 
+manager = QuokkaClusterManager()
 cluster = LocalCluster()
 
 task_graph = TaskGraph(cluster)
 
-# the arguments are: filename, column names, how many bytes to read in a batch
-a_reader = InputDiskCSVDataset("a.csv", ["key","val1","val2"] , stride =  1024)
-b_reader = InputDiskCSVDataset("b.csv",  ["key","val1","val2"] ,  stride =  1024)
+a_reader = InputDiskCSVDataset("a.csv", header = True, stride =  1024)
+b_reader = InputDiskCSVDataset("b.csv", header = True ,  stride =  1024)
 a = task_graph.new_input_reader_node(a_reader)
 b = task_graph.new_input_reader_node(b_reader)
 
-# define a streaming join operator using the Polars library for internal join implementation. 
-join_executor = PolarJoinExecutor(on="key")
-# the default partition strategy will not work for join! We need to specify
-# an alternative partition function. Quokka has the notion of "keyed" QStreams,
-# which are QStreams where the batch elements are Pandas or Polars DataFrames 
-# or Pyarrow tables. In this case, we can provide a column name as partition key.
-
-joined = task_graph.new_non_blocking_node({0:a,1:b},join_executor,partition_key_supplied={0:"key", 1:"key"})
+join_executor = JoinExecutor(left_on="key_a", right_on = "key_b")
+joined = task_graph.new_non_blocking_node({0:a,1:b},join_executor,
+    source_target_info={0:TargetInfo(partitioner = HashPartitioner("key_a"), 
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = ["key_a"],
+                                    batch_funcs = []), 
+                        1:TargetInfo(partitioner = HashPartitioner("key_b"),
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = ["key_b"],
+                                    batch_funcs = [])})
 count_executor = CountExecutor()
-count = task_graph.new_blocking_node({0:joined},count_executor)
+count = task_graph.new_blocking_node({0:joined},count_executor, placement_strategy= SingleChannelStrategy(),
+    source_target_info={0:TargetInfo(partitioner = PassThroughPartitioner(),
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = None,
+                                    batch_funcs = [])})
 
 task_graph.create()
 start = time.time()
 task_graph.run()
 print("total time ", time.time() - start)
 
-print(count.to_list())
+print(count.to_df())
+
+a = pd.read_csv("a.csv",names=["key","val1","val2"])
+b = pd.read_csv("b.csv",names=["key","val1","val2"])
+print(len(a.merge(b,on="key",how="inner")))
+
 ~~~
 
-Note here we defined a `new_nonblocking_node` for the join operator and a `new_blocking_node` for the count operator. This means that Quokka will execute the join in a pipelined parallel fashion with the count. As a result, the input reader, join and count actors are all executing concurrently in the system. The count operator will return the count as a single number which will be stored in a Dataset object.
+Note here we defined a `new_nonblocking_node` for the join operator and a `new_blocking_node` for the count operator. We see that `new_nonblocking_node` takes in pretty much the same arguments as `new_blocking_node`, with the difference being it returns an executor that can be used as sources for downstream actors. 
 
-About benchmarking Quokka programs. Quokka programs do a bit of processing locally. For example, when an input reader is added to the TaskGraph with an `InputDiskCSVDataset` object, Quokka performs `set_num_channels` on the object, and compute byte offsets for each channel to start reading from. This could be expensive for large CSV files, especially if we are using blob storage input sources. In pratice this completes in a few seconds for datasets TBs in size. This is quite similar to what Spark's dataframe API does.
+Quokka by default will execute the join in a pipelined parallel fashion with the count. As a result, the input reader, join and count actors are all executing concurrently in the system. The count operator will return the count as a single number which will be stored in a Dataset object.
 
-The TaskGraph also needs to be initialized by calling `task_graph.create()`. This actually spawns the Ray actors executing the channels, and could take a while when you have a lot of channels. However, the time of both the input reader initialization and the TaskGraph initialization do not strongly scale with the input data size, unlike the actual execution time of the TaskGraph! As a result, while on trivial input sizes one might find the initialization times to be longer than the actual execution time, on real programs it is best practice to just time the `task_graph.run()` call. 
+You can try to play around with this example to test out what the `predicate`, `projection` and `batch_funcs` do. For example, try to set a predicate which filters out rows with `val1 > 0.5`: `sqlglot.parse_one("val1 > 0.5")`. You can also try to set a projection on one of the TargetInfos which only returns the `key_a` column: `["key_a"]`. 
 
-This example showed how to execute a simple SQL query by describing its physical plan. You can execute much mroe complex SQL queries with Quokka (check out the TPC-H implementations under quokka/apps). Quokka can currently typically achieve around 3x speedup compared to SparkSQL (EMR 6.5.0). If you have an expensive query you have to periodically run and would like to try writing out its physical plan in Quokka API, give it a shot! Again, contact me at zihengw@stanford.edu if you run into any problems.
+This is it for now. I unfortunately can't find too much time to write tutorials, but I hope this is enough to get you started. If you have any questions, feel free to reach out to me on the Quokka Discord server. 
 
-We are working very hard to add a dataframe and SQL API to Quokka, targeting release Sep/Oct 2022. Keep tuned for more information.
+You can always check out how the Quokka canned executors and input readers work, in `pyquokka/executors.py` and `pyquokka/dataset.py`. If you are feeling particularly audacious, you can try implementing a JSON reader! I have even included some example json files for you in this folder.

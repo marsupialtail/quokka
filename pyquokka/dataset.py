@@ -506,6 +506,7 @@ class InputDiskCSVDataset:
         total_size = sum(sizes)
         assert total_size > 0
         size_per_partition = min(int(self.stride), math.ceil(total_size / num_channels))
+        self.window = min(self.window, size_per_partition)
         # size_per_partition = int(self.stride * workers)
         # print(size_per_partition)
 

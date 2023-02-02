@@ -13,8 +13,8 @@ import polars
 import sqlglot
 
 manager = QuokkaClusterManager()
-cluster = manager.get_cluster_from_json("config.json")
-#cluster = LocalCluster()
+# cluster = manager.get_cluster_from_json("config.json")
+cluster = LocalCluster()
 
 task_graph = TaskGraph(cluster)
 

@@ -162,9 +162,14 @@ class TaskGraph:
 
         source_placement_strategy = self.actor_placement_strategy[source_node_id]
         
-        assert type(source_placement_strategy) == CustomChannelsStrategy and type(target_placement_strategy) == CustomChannelsStrategy
+        assert type(source_placement_strategy) == CustomChannelsStrategy
         source_total_channels = self.get_total_channels_from_placement_strategy(source_placement_strategy, self.actor_types[source_node_id])
-        target_total_channels = self.get_total_channels_from_placement_strategy(target_placement_strategy, "exec")
+        if type(target_placement_strategy) == CustomChannelsStrategy:
+            target_total_channels = self.get_total_channels_from_placement_strategy(target_placement_strategy, "exec")
+        elif type(target_placement_strategy) == SingleChannelStrategy:
+            target_total_channels = 1
+        else:
+            raise Exception("strategy not supported")
         
         if source_total_channels >= target_total_channels:
             assert source_total_channels % target_total_channels == 0

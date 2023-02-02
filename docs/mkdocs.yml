@@ -8,8 +8,8 @@ nav:
         - Setting Up Cloud Cluster: cloud.md
         - How is Quokka different from ...?: different.md
         - Tutorials: 
-                - DataStream API: simple.md
-                - TaskGraph API: tutorial.md
+                - DataStream API (Use Quokka): simple.md
+                - TaskGraph API (Contribute to Quokka): tutorial.md
         - Dataframe API reference: 
                 - QuokkaContext: quokka_context.md
                 - DataStream: datastream.md

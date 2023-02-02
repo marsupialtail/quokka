@@ -420,6 +420,8 @@ class ExecTaskManager(TaskManager):
 
     def process_output(self, actor_id, channel_id, output, transaction, state_seq, out_seq):
         if output is not None:
+            if type(output) == pyarrow.Table:
+                output = polars.from_arrow(output)
             assert type(output) == polars.internals.DataFrame or type(output) == types.GeneratorType
             if type(output) == polars.internals.DataFrame:
                 output = [output]
