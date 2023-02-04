@@ -223,8 +223,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                 if sorted_reqs is None or source_actor_id not in sorted_reqs:
 
                     # we are going to return batches channel contiguous, i.e. 1-2, 1-3, 1-4, 2-1, 2-2, etc.
-                    for df in exec_plan_candidate.groupby("source_channel_id"):
-                        source_channel_id = df["source_channel_id"][0]
+                    for source_channel_id, df in exec_plan_candidate.groupby("source_channel_id"):
                         seqs = sorted(df["seq"].to_list())
                         min_seq = df["min_seq"][0]
                         last_seq = min_seq
@@ -384,7 +383,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                 assert tup in self.flights, "tuple not in flights"
                 del self.flights[tup]
 
-            gcable = polars.DataFrame( gcable, columns= ["source_actor_id", "source_channel_id", "seq", "target_actor_id",\
+            gcable = polars.DataFrame( gcable, schema= ["source_actor_id", "source_channel_id", "seq", "target_actor_id",\
                  "partition_fn", "target_channel_id"], orient='row')
             self.flight_keys = self.flight_keys.join(gcable, on = ["source_actor_id", "source_channel_id", "seq", "target_actor_id",\
                  "partition_fn", "target_channel_id"], how = "anti")

@@ -28,7 +28,7 @@ setup(
             'ray',
             'psutil',
             'h5py',
-            'polars>=0.15.11', # latest version to make use of the merge sorted
+            'polars>=0.16.0', # latest version for groupby semantics
             'sqlglot',
             'graphviz',
             'tqdm'

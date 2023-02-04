@@ -29,7 +29,7 @@ class TaskGraph:
             try:
                 _ = self.r.keys()
                 break
-            except redis.exceptions.BusyLoadingError:
+            except:
                 time.sleep(0.01)
         
         self.r.flushall()
