@@ -466,14 +466,7 @@ class ExecTaskManager(TaskManager):
             length = len(candidate_tasks)
             if length == 0:
                 continue
-            # exec_tape_task = False
-            # for candidate_task in candidate_tasks:
-            #     task_type, tup = pickle.loads(candidate_task)
-            #     # prioritize recovery tasks
-            #     if task_type == "exectape":
-            #         exec_tape_task = True
-            #         break
-            # if not exec_tape_task:
+
             if count > length - 1:
                 count = count % length
             candidate_task = candidate_tasks[count]
@@ -505,6 +498,11 @@ class ExecTaskManager(TaskManager):
                                                     .fill_null(MAX_SEQ)\
                                                     .filter(polars.col("min_seq") <= polars.col("done_seq"))\
                                                     .drop("done_seq")
+                
+                if hasattr(self.function_objects[actor_id, channel_id], 'update_sources'):
+                    remaining_source_actor_ids = input_requirements["source_actor_id"].unique().to_list()
+                    remaining_sources = set([self.mappings[actor_id][source_actor_id] for source_actor_id in remaining_source_actor_ids])
+                    self.function_objects[actor_id, channel_id].update_sources(remaining_sources)
                 
                 # print(input_requirements)
                 
@@ -590,11 +588,6 @@ class ExecTaskManager(TaskManager):
                         output, _ , _ = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
                     else:
                         output = None
-                    
-                    if hasattr(self.function_objects[actor_id, channel_id], 'update_sources'):
-                        remaining_source_actor_ids = input_requirements["source_actor_id"].unique().to_list()
-                        remaining_sources = set([self.mappings[actor_id][source_actor_id] for source_actor_id in remaining_source_actor_ids])
-                        self.function_objects[actor_id, channel_id].update_sources(remaining_sources)
 
                     print_if_profile("execute time", time.time() - start)
 
@@ -677,6 +670,11 @@ class ExecTaskManager(TaskManager):
                 name_prefix = pickle.dumps(('s', actor_id, channel_id, state_seq))
                 input_requirements = self.LT.get(self.r, name_prefix)
                 assert input_requirements is not None, pickle.loads(name_prefix)
+
+                if hasattr(self.function_objects[actor_id, channel_id], 'update_sources'):
+                    remaining_source_actor_ids = input_requirements["source_actor_id"].unique().to_list()
+                    remaining_sources = set([self.mappings[actor_id][source_actor_id] for source_actor_id in remaining_source_actor_ids])
+                    self.function_objects[actor_id, channel_id].update_sources(remaining_sources)
                 
                 if actor_id in self.sat:
                     request = ("cache", actor_id, channel_id, input_requirements, True, self.sat[actor_id])

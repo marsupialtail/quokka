@@ -91,6 +91,9 @@ class Node:
     def assign_stage(self, stage):
         self.stage = stage
     
+    def get_cardinality(self):
+        return None
+    
     def lower(self, task_graph):
         raise NotImplementedError
 
@@ -270,7 +273,7 @@ class JoinNode(TaskNode):
         self.join_specs.append(join_spec)
     
     def __str__(self):
-        result = 'Join Node with joins: ' + str(self.join_specs) + '\n' + str(self.stage) + '\nParents:' + str(self.parents) + '\nTargets:' 
+        result = 'Join Node with joins: ' + str(self.join_specs) + '\n' + str(self.schema) + '\n' + str(self.stage) + '\nParents:' + str(self.parents) + '\nTargets:' 
         for target in self.targets:
             result += "\n\t" + str(target) + " " + textwrap.fill(str(self.targets[target]))
         return result
@@ -287,57 +290,48 @@ class JoinNode(TaskNode):
 
         # self.join_specs = [self.join_specs[1]] + [self.join_specs[0]]
 
-        join_spec = self.join_specs[0]
-        join_type, join_keys = join_spec
-        assert len(join_keys) == 2
-        left = list(join_keys.keys())[0]
-        right = list(join_keys.keys())[1]
-        operator = JoinExecutor(None, join_keys[left], join_keys[right], join_type)
-        left_parent_target_info = parent_source_info[left]
-        right_parent_target_info = parent_source_info[right]
-        left_parent_target_info.partitioner = HashPartitioner(join_keys[left])
-        right_parent_target_info.partitioner = HashPartitioner(join_keys[right])
+        join_type, join_info = self.join_specs[0]
+        assert len(join_info) == 2
+        [(left_parent, left_key), (right_parent, right_key)] = join_info
+
+        key_to_keep = "left" if left_key in self.schema else "right"
+        operator = BuildProbeJoinExecutor(None, left_key, right_key, join_type, key_to_keep)
+
+        left_parent_target_info = parent_source_info[left_parent]
+        right_parent_target_info = parent_source_info[right_parent]
+        left_parent_target_info.partitioner = HashPartitioner(left_key)
+        right_parent_target_info.partitioner = HashPartitioner(right_key)
 
         if len(self.join_specs) == 1 and self.blocking:
-            return task_graph.new_blocking_node({0: parent_nodes[left], 1: parent_nodes[right]}, operator, self.stage, self.placement_strategy, source_target_info={0: left_parent_target_info, 1: right_parent_target_info}, transform_func=transform_func)
+            return task_graph.new_blocking_node({0: parent_nodes[left_parent], 1: parent_nodes[right_parent]}, 
+                        operator, self.stage, self.placement_strategy, source_target_info={0: left_parent_target_info, 1: right_parent_target_info}, transform_func=transform_func)
         else:
-            intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left], 1: parent_nodes[right]}, operator, self.stage, self.placement_strategy, source_target_info={0: left_parent_target_info, 1: right_parent_target_info})
-        joined_parents.add(parent_nodes[left])
-        joined_parents.add(parent_nodes[right])
+            intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left_parent], 1: parent_nodes[right_parent]},
+                         operator, self.stage, self.placement_strategy, source_target_info={0: left_parent_target_info, 1: right_parent_target_info})
+        joined_parents.add(parent_nodes[left_parent])
+        joined_parents.add(parent_nodes[right_parent])
 
         for i in range(1, len(self.join_specs)):
-            join_spec = self.join_specs[i]
-            join_type, join_keys = join_spec
-            assert len(join_keys) == 2
-            left = list(join_keys.keys())[0]
-            right = list(join_keys.keys())[1]
+            join_type, join_info = self.join_specs[i]
+            assert len(join_info) == 2
+            [(left_parent, left_key), (right_parent, right_key)] = join_info
 
-            operator = JoinExecutor(None, join_keys[left], join_keys[right], join_type)
+            # left parent is always the probe. right parent is always the build
+            key_to_keep = "left" if left_key in self.schema else "right"
+            operator = BuildProbeJoinExecutor(None, left_key, right_key, join_type, key_to_keep)
 
-            if parent_nodes[left] in joined_parents and parent_nodes[right] in joined_parents:
-                raise Exception("Redundant join? Should be mapped to a filter")
-            elif parent_nodes[left] in joined_parents:
-                intermediate_target_info = TargetInfo(HashPartitioner(join_keys[left]), sqlglot.exp.TRUE, None, [])
-                parent_target_info = parent_source_info[right]
-                parent_target_info.partitioner = HashPartitioner(join_keys[right])
-                # print("adding node", intermediate_node, parent_nodes[right], {0: str(intermediate_target_info), 1: str(parent_target_info)})
-                if i == len(self.join_specs) - 1 and self.blocking:
-                    return task_graph.new_blocking_node({0: intermediate_node, 1: parent_nodes[right]}, operator, self.stage, self.placement_strategy, source_target_info={0: intermediate_target_info, 1: parent_target_info}, transform_func=transform_func)
-                else:
-                    intermediate_node = task_graph.new_non_blocking_node({0: intermediate_node, 1: parent_nodes[right]}, operator, self.stage, self.placement_strategy, source_target_info={0: intermediate_target_info, 1: parent_target_info})
-                joined_parents.add(parent_nodes[right])
-            elif parent_nodes[right] in joined_parents:
-                intermediate_target_info = TargetInfo(HashPartitioner(join_keys[right]), sqlglot.exp.TRUE, None, [])
-                parent_target_info = parent_source_info[left]
-                parent_target_info.partitioner = HashPartitioner(join_keys[left])
-                # print("adding node", parent_nodes[left], intermediate_node, {0: str(parent_target_info), 1: str(intermediate_target_info)})
-                if i == len(self.join_specs) - 1 and self.blocking:
-                    return task_graph.new_blocking_node({0: parent_nodes[left], 1: intermediate_node}, operator, self.stage, self.placement_strategy, source_target_info={0: parent_target_info, 1: intermediate_target_info}, transform_func=transform_func)
-                else:
-                    intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left], 1: intermediate_node}, operator, self.stage, self.placement_strategy, source_target_info={0: parent_target_info, 1: intermediate_target_info})
-                joined_parents.add(parent_nodes[left])
+            assert  parent_nodes[left_parent] in joined_parents
+            intermediate_target_info = TargetInfo(HashPartitioner(left_key), sqlglot.exp.TRUE, None, [])
+            parent_target_info = parent_source_info[right_parent]
+            parent_target_info.partitioner = HashPartitioner(right_key)
+            # print("adding node", intermediate_node, parent_nodes[right], {0: str(intermediate_target_info), 1: str(parent_target_info)})
+            if i == len(self.join_specs) - 1 and self.blocking:
+                return task_graph.new_blocking_node({0: intermediate_node, 1: parent_nodes[right_parent]}, 
+                        operator, self.stage, self.placement_strategy, source_target_info={0: intermediate_target_info, 1: parent_target_info}, transform_func=transform_func)
             else:
-                raise Exception("Should not happen")
+                intermediate_node = task_graph.new_non_blocking_node({0: intermediate_node, 1: parent_nodes[right_parent]}, 
+                        operator, self.stage, self.placement_strategy, source_target_info={0: intermediate_target_info, 1: parent_target_info})
+            joined_parents.add(parent_nodes[right_parent])
         
         return intermediate_node
 

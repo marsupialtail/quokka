@@ -549,7 +549,7 @@ class BroadcastJoinExecutor(Executor):
 # 0/left is probe, 1/right is build.
 class BuildProbeJoinExecutor(Executor):
 
-    def __init__(self, on = None, left_on = None, right_on = None, how = "inner"):
+    def __init__(self, on = None, left_on = None, right_on = None, how = "inner", key_to_keep = "left"):
 
         self.state = None
 
@@ -565,6 +565,7 @@ class BuildProbeJoinExecutor(Executor):
         self.phase = "build"
         assert how in {"inner", "left", "semi", "anti"}
         self.how = how
+        self.key_to_keep = key_to_keep
 
     def execute(self,batches, stream_id, executor_id):
         # state compaction
@@ -582,6 +583,8 @@ class BuildProbeJoinExecutor(Executor):
         elif stream_id == 0:
             assert self.phase == "probe"
             result = batch.join(self.state,left_on = self.left_on, right_on = self.right_on ,how= self.how)
+            if self.key_to_keep == "right":
+                result = result.rename({self.left_on: self.right_on})
             return result
 
     def update_sources(self, remaining_sources):

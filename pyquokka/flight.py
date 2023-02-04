@@ -368,7 +368,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
             for key in config_dict:
                 assert key in self.config_dict, "got an unrecognized Flight server config"
                 if key == "actor_stages":
-                    self.config_dict[key] = polars.DataFrame(list(config_dict[key].items()), orient = "row", columns = ["actor_id","stage"])
+                    self.config_dict[key] = polars.DataFrame(list(config_dict[key].items()), orient = "row", schema = ["actor_id","stage"])
                 else:
                     self.config_dict[key] = config_dict[key]
 

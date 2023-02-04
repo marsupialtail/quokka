@@ -878,6 +878,7 @@ class QuokkaContext:
                     self.__merge_joins__(parent_id)
                 return
                 
+    # this is the pass that fixes the join order. Arguably the MOST important pass
     def __determine_stages__(self, node_id):
 
         node = self.execution_nodes[node_id]
@@ -911,8 +912,15 @@ class QuokkaContext:
                 while len(old_join_specs) > 0:
                     for index in old_join_specs:
                         join_spec = node.join_specs[index]
-                        if len(set(join_spec[1].keys()).intersection(existing_tables)) > 0:
-                            new_join_specs.append(join_spec)
+                        intersected_tables = set(join_spec[1].keys()).intersection(existing_tables)
+                        if len(intersected_tables) > 0:
+                            
+                            assert len(intersected_tables) == 1, "There is a duplicate join condition, blowing up"
+                            intersected_table = intersected_tables.pop()
+                            other_table = list(set(join_spec[1].keys()).difference(existing_tables))[0]
+
+                            new_join_spec = (join_spec[0], [(intersected_table, join_spec[1][intersected_table]), (other_table, join_spec[1][other_table])])
+                            new_join_specs.append(new_join_spec)
                             old_join_specs.remove(index)
                             existing_tables = existing_tables.union(set(join_spec[1].keys()))
                             break

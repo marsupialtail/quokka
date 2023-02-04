@@ -135,6 +135,7 @@ def do_3():
 
     #f = d.groupby(["l_orderkey","o_orderdate","o_shippriority"], orderby=[('revenue','desc'),('o_orderdate','asc')]).agg({"revenue":["sum"]})
     f = d.groupby(["l_orderkey","o_orderdate","o_shippriority"]).agg({"revenue":["sum"]})
+    f.explain()
     return f.collect()
 
 def do_4():
@@ -381,13 +382,13 @@ def sort():
 # print(do_1())
 # print(do_3())
 
-# print(do_4())
+print(do_4())
 print(do_5())
-# print(do_6())
-# print(do_7())
-# print(do_8())
-# print(do_9())
-# print(do_12())
+print(do_6())
+print(do_7())
+print(do_8())
+print(do_9())
+print(do_12())
 
 # print(do_12_alternate())
 
