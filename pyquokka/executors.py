@@ -546,15 +546,12 @@ class BroadcastJoinExecutor(Executor):
 
 # this is an inner join executor that must return outputs in a sorted order based on sorted_col
 # the operator will maintain the sortedness of the probe side
-# 0/left is build, 1/right is probe.
+# 0/left is probe, 1/right is build.
 class BuildProbeJoinExecutor(Executor):
 
-    def __init__(self, on = None, left_on = None, right_on = None, suffix="_right", how = "inner"):
+    def __init__(self, on = None, left_on = None, right_on = None, how = "inner"):
 
-        self.state0 = None
-        self.state1 = None
-        self.suffix = suffix
-        self.cached_results = None
+        self.state = None
 
         if on is not None:
             assert left_on is None and right_on is None
@@ -566,7 +563,7 @@ class BuildProbeJoinExecutor(Executor):
             self.right_on = right_on
         
         self.phase = "build"
-        assert how == "inner" or "left"
+        assert how in {"inner", "left", "semi", "anti"}
         self.how = how
 
     def execute(self,batches, stream_id, executor_id):
@@ -577,44 +574,27 @@ class BuildProbeJoinExecutor(Executor):
         batch = polars.concat(batches)
 
         # build
-        if stream_id == 0:
-            if self.state0 is None:
-                self.state0 = batch
-            else:
-                self.state0.vstack(batch, in_place = True)
-        
+        if stream_id == 1:
+            assert self.phase == "build"
+            self.state = batch if self.state is None else self.state.vstack(batch, in_place = True)
+               
         # probe
-        elif stream_id == 1:
-
-            if self.phase == "build":
-                if self.state1 is None:
-                    self.state1 = batch
-                else:
-                    self.state1.vstack(batch, in_place = True)
-            elif self.phase == "probe":
-                assert self.state1 is None
-                if self.cached_results is not None:                    
-                    result = polars.concat([self.cached_results, self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how= self.how, suffix=self.suffix)])
-                    self.cached_results = None
-                else:
-                    result = self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how= self.how, suffix=self.suffix)
-                return result
+        elif stream_id == 0:
+            assert self.phase == "probe"
+            result = batch.join(self.state,left_on = self.left_on, right_on = self.right_on ,how= self.how)
+            return result
 
     def update_sources(self, remaining_sources):
         # build side depleted, must drain probe state
-        if 0 not in remaining_sources:
+        if 1 not in remaining_sources:
             self.phase = "probe"
-            self.cached_results = self.state0.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how= self.how, suffix=self.suffix)
-            self.state1 = None
 
         # probe side depleted
-        if 1 not in remaining_sources:
+        if 0 not in remaining_sources:
             pass
     
     def done(self,executor_id):
         self.update_sources({})
-        if self.cached_results is not None:
-            return self.cached_results
 
 class JoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.

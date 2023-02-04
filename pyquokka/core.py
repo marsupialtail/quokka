@@ -19,7 +19,7 @@ DEBUG = False
 PROFILE = False
 FT = False
 MEM_LIMIT = 0.25
-MAX_BATCHES = 10
+MAX_BATCHES = 30
 
 def print_if_debug(*x):
     if DEBUG:
@@ -71,7 +71,6 @@ class TaskManager:
         self.r = redis.Redis(coordinator_ip, 6800, db = 0)
 
         self.clear_flights(self.flight_client)
-        self.set_flight_configs(self.flight_client)
         self.flight_clients = {i: pyarrow.flight.connect("grpc://" + str(i) + ":5005") for i in worker_ips}
 
         #  Bytedance can write this.
@@ -226,7 +225,7 @@ class TaskManager:
     
     def set_flight_configs(self, client):
 
-        message = pyarrow.py_buffer(pickle.dumps({"mem_limit" : MEM_LIMIT, "max_batches" : MAX_BATCHES}))
+        message = pyarrow.py_buffer(pickle.dumps({"mem_limit" : MEM_LIMIT, "max_batches" : MAX_BATCHES, "actor_stages": self.ast}))
         action = pyarrow.flight.Action("set_configs", message)
         result = next(client.do_action(action))
         if result.body.to_pybytes().decode("utf-8") != "True":
@@ -453,6 +452,7 @@ class ExecTaskManager(TaskManager):
         self.index = 0
         self.sat = self.SAT.to_dict(self.r)
         self.ast = self.AST.to_dict(self.r)
+        self.set_flight_configs(self.flight_client)
 
         while True:
 
@@ -803,6 +803,8 @@ class IOTaskManager(TaskManager):
         This might need to duplicated data etc. future optimization.
         """
         self.ast = self.AST.to_dict(self.r)
+        self.set_flight_configs(self.flight_client)
+
         pyarrow.set_cpu_count(8)
         count = -1
         while True:
