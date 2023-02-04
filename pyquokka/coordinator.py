@@ -31,8 +31,9 @@ class Coordinator:
         self.LCT = LastCheckpointTable()
         self.CLT = ChannelLocationTable()
         self.IRT = InputRequirementsTable()
+        self.AST = ActorStageTable()
 
-        self.undone = set()
+        self.undone = {}
 
         # input channel locations don't have to be tracked
         self.actor_channel_locations = {}
@@ -77,26 +78,61 @@ class Coordinator:
 
     def register_actor_location(self, actor_id, channel_to_node_id):
         self.actor_channel_locations[actor_id] = {}
+        self.undone[actor_id] = set()
         for channel_id in channel_to_node_id:
             node_id = channel_to_node_id[channel_id]
             self.actor_channel_locations[actor_id][channel_id] = node_id
-            self.undone.add((actor_id, channel_id))
+            self.undone[actor_id].add(channel_id)
 
     def update_undone(self):
         # you only ever need the actor, channel pairs that have been registered in self.actor_flight_clients
         
-        interested_pairs = [k for k in self.undone]
+        to_remove = set()
+        for actor_id in self.undone:
+            interested_channels = list(self.undone[actor_id])
+            for channel_id in interested_channels:
+                seq = self.DST.get(self.r, pickle.dumps((actor_id, channel_id)))
+                if seq is None:
+                    continue
+                # print("done seq", seq)
+                self.undone[actor_id].remove(channel_id)
+            
+            if len(self.undone[actor_id]) == 0:
+                to_remove.add(actor_id)
         
-        for actor_id, channel_id in interested_pairs:
-            seq = self.DST.get(self.r, pickle.dumps((actor_id, channel_id)))
-            if seq is None:
-                continue
-            # print("done seq", seq)
-            self.undone.remove((actor_id, channel_id))
+        for actor_id in to_remove:
+            del self.undone[actor_id]
+
+    def update_execution_stage(self):
+        
+        # based on self.ast and self.undone, compute what execution stage you are in right now
+        # and update the execution stage in redis
+        # basically you need to check if any undone actors have the current stage, if so you cannot progress
+        # otherwise you can increment the stage
+
+        # print("update execution stage", actor_id, channel_id, stage)
+        if len(self.undone) == 0:
+            raise Exception
+        else:
+            current_stage = self.r.get("current-execution-stage")
+            current_stage = int(current_stage)
+            # print("current stage", current_stage)
+            for actor_id in self.undone:
+                stage = self.ast[actor_id]
+                if stage < current_stage:
+                    raise Exception
+                if stage == current_stage:
+                    return
+            
+            print("PROGRESSING STAGE TO ", current_stage + 1)
+            self.r.set("current-execution-stage", current_stage + 1)
 
 
     def execute(self):
 
+        # you need to figure out what is the first stage to execute
+        self.ast = self.AST.to_dict(self.r)
+        self.r.set("current-execution-stage", min(self.ast.values()))
         execute_handles = {worker : self.node_handles[worker].execute.remote() for worker in self.node_handles}
         execute_handles_list = list(execute_handles.values())
         
@@ -113,6 +149,7 @@ class Coordinator:
                     for worker in self.node_handles:
                         ray.kill(self.node_handles[worker])
                     break
+                self.update_execution_stage()
 
             except ray.exceptions.RayActorError:
                 print("detected failure")

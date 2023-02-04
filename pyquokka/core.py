@@ -97,6 +97,7 @@ class TaskManager:
         self.FOT = FunctionObjectTable()
         self.SAT = SortedActorsTable()
         self.PFT = PartitionFunctionTable()
+        self.AST = ActorStageTable()
 
         # populate this dictionary from the initial assignment 
             
@@ -190,7 +191,7 @@ class TaskManager:
     def register_blocking(self, actor_id, transform_fn, dataset_object):
         self.blocking_nodes[actor_id] = (transform_fn, dataset_object)
         return True
-    
+
     def check_in_recovery(self):
         if self.r.get("recovery-lock") == b'1':
             print("Recovery request detected, I am going to wait ", self.node_id)
@@ -451,17 +452,20 @@ class ExecTaskManager(TaskManager):
         count = -1
         self.index = 0
         self.sat = self.SAT.to_dict(self.r)
+        self.ast = self.AST.to_dict(self.r)
 
         while True:
 
             self.check_in_recovery()
+            self.current_stage = int(self.r.get("current-execution-stage"))
 
             count += 1
-            length = self.NTT.llen(self.r, str(self.node_id))
-            if length == 0:
-                continue
 
             candidate_tasks = self.NTT.lrange(self.r, str(self.node_id), 0, -1)
+            candidate_tasks = [candidate_task for candidate_task in candidate_tasks if self.ast[pickle.loads(candidate_task)[1][0]] <= self.current_stage]
+            length = len(candidate_tasks)
+            if length == 0:
+                continue
             # exec_tape_task = False
             # for candidate_task in candidate_tasks:
             #     task_type, tup = pickle.loads(candidate_task)
@@ -609,6 +613,7 @@ class ExecTaskManager(TaskManager):
 
                     out_seq = self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq)
                     if out_seq == -1:
+                        # this aborts the transaction automatically
                         continue
                         
                     next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, new_input_reqs)
@@ -621,7 +626,7 @@ class ExecTaskManager(TaskManager):
                         continue
                     last_output_seq = out_seq - 1
                     # print("DONE", actor_id, channel_id)
-                    self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), last_output_seq)
+                    self.DST.set(transaction, pickle.dumps((actor_id, channel_id)), last_output_seq)
                             
                     next_task = None
 
@@ -797,7 +802,7 @@ class IOTaskManager(TaskManager):
         Let's start with having one functionObject object for each channel.
         This might need to duplicated data etc. future optimization.
         """
-    
+        self.ast = self.AST.to_dict(self.r)
         pyarrow.set_cpu_count(8)
         count = -1
         while True:
@@ -805,13 +810,15 @@ class IOTaskManager(TaskManager):
             if self.delay - 0.1 > 0.1:
                 self.delay -= 0.1
             self.check_in_recovery()
+            self.current_stage = int(self.r.get("current-execution-stage"))
 
             count += 1
-            length = self.NTT.llen(self.r, str(self.node_id))
-            if length == 0:
-                continue 
 
             candidate_tasks = self.NTT.lrange(self.r, str(self.node_id), 0, -1)
+            candidate_tasks = [candidate_task for candidate_task in candidate_tasks if self.ast[pickle.loads(candidate_task)[1][0]] <= self.current_stage]
+            if len(candidate_tasks) == 0:
+                continue
+            
             candidate_task = random.sample(candidate_tasks,1 )[0]
             task_type, tup = pickle.loads(candidate_task)
 
@@ -831,10 +838,6 @@ class IOTaskManager(TaskManager):
                 next_task, output, seq, lineage = candidate_task.execute(functionObject)
 
                 print_if_profile("read time", time.time() - start)
-
-                if next_task is None:
-                    # print("DONE", actor_id, channel_id)
-                    self.DST.set(self.r, pickle.dumps((actor_id, channel_id)), seq)
             
             elif task_type == "inputtape":
                 candidate_task = TapedInputTask.from_tuple(tup)
@@ -864,6 +867,9 @@ class IOTaskManager(TaskManager):
                 transaction = self.r.pipeline()
                 self.output_commit(transaction, actor_id, channel_id, seq, lineage)
                 self.task_commit(transaction, candidate_task, next_task)
+                if next_task is None:
+                    # print("DONE", actor_id, channel_id)
+                    self.DST.set(transaction, pickle.dumps((actor_id, channel_id)), seq)
                 if not all(transaction.execute()):
                    print("COMMITING TRANSACTION FAILED")
                    # raise Exception
@@ -910,6 +916,7 @@ class ReplayTaskManager(TaskManager):
         count = -1
         while True:
             self.check_in_recovery()
+            # you don't need to check your execution stage since replay tasks can happen whenever.
 
             count += 1
             length = self.NTT.llen(self.r, str(self.node_id))

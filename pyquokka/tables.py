@@ -297,3 +297,16 @@ class PartitionFunctionTable(ClientWrapper):
         keys = self.keys(redis_client)
         values = self.mget(redis_client, keys)
         return {pickle.loads(key): value for key, value in zip(keys, values)}
+
+'''
+- Actor Stage Table (AST): this stores the stage of each actor
+'''
+
+class ActorStageTable(ClientWrapper):
+    def __init__(self) -> None:
+        super().__init__("AST")
+    
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        values = self.mget(redis_client, keys)
+        return {int(key): int(value) for key, value in zip(keys, values)}

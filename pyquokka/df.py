@@ -167,7 +167,7 @@ class QuokkaContext:
                 assert len(files) > 0
                 if len(files) == 1:
                     size = os.path.getsize(table_location + files[0])
-                    if size < 10 * 1048576:
+                    if size < 1 * 1048576:
                         return polars.read_csv(table_location + files[0], new_columns=schema, has_header=has_header, sep = sep)
                 
                 if schema is None:
@@ -180,7 +180,7 @@ class QuokkaContext:
                 self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep, has_header)
             else:
                 size = os.path.getsize(table_location)
-                if size < 10 * 1048576:
+                if size < 1 * 1048576:
                     return polars.read_csv(table_location, new_columns = schema, has_header = has_header,sep = sep)
                 else:
                     
@@ -394,6 +394,8 @@ class QuokkaContext:
         self.__push_filter__(node_id)
         self.__early_projection__(node_id)
         self.__fold_map__(node_id)
+        self.__merge_joins__(node_id)
+        self.__determine_stages__(node_id)
         
         assert len(self.execution_nodes[node_id].parents) == 1
         parent_idx = list(self.execution_nodes[node_id].parents)[0]
@@ -427,7 +429,6 @@ class QuokkaContext:
         for node_id, node in reverse_sorted_nodes:
             if issubclass(type(node), SourceNode):
                 task_graph_nodes[node_id] = node.lower(task_graph)
-
             else:
                 parent_nodes = {parent_idx: task_graph_nodes[node.parents[parent_idx]] for parent_idx in node.parents}
                 target_info = {parent_idx: self.execution_nodes[node.parents[parent_idx]].targets[node_id] for parent_idx in node.parents}
@@ -504,7 +505,7 @@ class QuokkaContext:
             logical_plan_graph.view()
 
     def _walk(self, node_id, graph):
-        graph.node(str(node_id), str(self.execution_nodes[node_id]))
+        graph.node(str(node_id), str(node_id) + " " + str(self.execution_nodes[node_id]))
         for parent in self.execution_nodes[node_id].parents:
             self._walk(self.execution_nodes[node_id].parents[parent], graph)
             graph.edge(str(self.execution_nodes[node_id].parents[parent]), str(node_id))
@@ -773,7 +774,159 @@ class QuokkaContext:
                     self.__fold_map__(parent_id)
                 return
 
+    def __merge_joins__(self, node_id):
+
+        # the goal of this pass is to merge join nodes into a virtual multi join node and then 
+        # relower the multi join node into a series of join nodes.
+        # we need to first perform a DFS traversal to find all the join nodes
+        # and merge them along the way
+        # we also need to handle the predicates and projections along the way. This pass is done 
+        # after projection and predicate pushdown.
+
+        node = self.execution_nodes[node_id]
+        targets = node.targets
+        parents = node.parents # this is going to be a dictionary of things
+
+        if issubclass(type(node), SourceNode):
+            return
+        # you are the one that triggered execution, you must be a SinkNode!
+        elif len(targets) == 0:
+            for parent in node.parents:
+                self.__merge_joins__(node.parents[parent])
+            return
+        else:
+            # you should have the required_columns attribute
+            if issubclass(type(node), JoinNode):
+
+                # if you have more than one target, you can't be merged into a multi join
+                if len(targets) > 1:
+                    for parent in parents:
+                        self.__merge_joins__(parents[parent])
+                    return
+
+                target_id = list(targets.keys())[0]
+
+                # you have one target, you can be fused. first figure out how many of your parents are join nodes.
                 
+                while True:
+                    new_parents = {-1: None}
+                    not_done = False
+                    for parent in parents:
+                        parent_node = self.execution_nodes[parents[parent]]
+                        if issubclass(type(parent_node), JoinNode):
+                            # we can only do join fusion if the parent didn't have any kind of batch functions
+                            if len(parent_node.targets) == 1 and len(parent_node.targets[node_id].batch_funcs) == 0:
+                                not_done = True
+                                assert len(parent_node.join_specs) == 1
+                                # you are now responsible for your parent's join spec
+                                new_join_spec = {}
+                                new_join_type = parent_node.join_specs[0][0]
+                                # get rid of this parent and absorb it into yourself
+                                for key in parent_node.parents:
+                                    new_key = max(new_parents.keys()) + 1
+                                    new_parents[new_key] = parent_node.parents[key]
+                                    new_join_spec[new_key] = parent_node.join_specs[0][1][key]
+                                    # now we have to remove the parent node_id from the parent's parents' targets and replace it with this node's id
+                                    self.execution_nodes[parent_node.parents[key]].targets[node_id] = self.execution_nodes[parent_node.parents[key]].targets[parents[parent]]
+                                    del self.execution_nodes[parent_node.parents[key]].targets[parents[parent]]
+
+                                node.add_join_spec((new_join_type,new_join_spec))
+                                # did the parent have predicates?
+                                if parent_node.targets[node_id].predicate is not None:
+                                    if node.targets[target_id].predicate is None:
+                                        node.targets[target_id].predicate = parent_node.targets[node_id].predicate
+                                    else:
+                                        node.targets[target_id].predicate = optimizer.simplify.simplify(sqlglot.exp.and_(
+                                            node.targets[target_id].predicate, parent_node.targets[node_id].predicate))
+                                
+                                del self.execution_nodes[parents[parent]]
+                                # don't have to worry about the parent's projections. You only care about your projections, 
+                                # i.e. the one you need at the very end.
+                            else:
+                                new_parents[max(new_parents.keys()) + 1] = parents[parent]
+                        else:
+                            new_parents[max(new_parents.keys()) + 1] = parents[parent]
+                    
+                    del new_parents[-1]
+                    parents = new_parents
+                    if not not_done:
+                        break
+                
+                node.parents = parents
+
+                # now update your join_specs by looking at your parents' projections. This should be correct
+                new_join_specs = []
+                for join_spec in node.join_specs:
+                    join_type = join_spec[0]
+                    join_dict = {}
+                    for key, col in join_spec[1].items():
+                        # now look for the parent this col belongs to 
+                        for parent in parents:
+                            if col in self.execution_nodes[parents[parent]].targets[node_id].projection:
+                                join_dict[parent] = col
+                                break
+                    new_join_specs.append((join_type, join_dict))
+                node.join_specs = new_join_specs
+
+                for parent in parents:
+                    self.__merge_joins__(parents[parent])
+                return
+
+            else:
+                for parent_idx in node.parents:
+                    parent_id = node.parents[parent_idx]
+                    self.__merge_joins__(parent_id)
+                return
+                
+    def __determine_stages__(self, node_id):
+
+        node = self.execution_nodes[node_id]
+        targets = node.targets
+        parents = node.parents # this is going to be a dictionary of things
+
+        # the main logic assumes that the node at node_id has been already assigned a stage
+        # and is in charge of assigning stages to its parents. If you are the sink node this won't be true
+        # so you have to assign yourself a stage of 0
+        if len(targets) == 0:
+            node.assign_stage(0)
+
+        if issubclass(type(node), SourceNode):
+            # you should already have been assigned by your target
+            return
+        else:
+            # you should have the required_columns attribute
+            if issubclass(type(node), JoinNode):
+                # pick a random thing to be probe side and all others be build side for now
+                probe = list(parents.keys())[0]
+                self.execution_nodes[parents[probe]].assign_stage(node.stage)
+                for parent in parents:
+                    if parent != probe:
+                        self.execution_nodes[parents[parent]].assign_stage(node.stage - 1)
+                
+                # you are now responsible for arranging the joinspec in the right order!
+                # you should have a join_specs attribute
+                new_join_specs = []
+                old_join_specs = set(range(len(node.join_specs)))
+                existing_tables = {probe}
+                while len(old_join_specs) > 0:
+                    for index in old_join_specs:
+                        join_spec = node.join_specs[index]
+                        if len(set(join_spec[1].keys()).intersection(existing_tables)) > 0:
+                            new_join_specs.append(join_spec)
+                            old_join_specs.remove(index)
+                            existing_tables = existing_tables.union(set(join_spec[1].keys()))
+                            break
+                node.join_specs = new_join_specs
+                # print(new_join_specs)
+
+            
+            else:
+                # for other nodes we currently don't do anything
+                for parent in parents:
+                    self.execution_nodes[parents[parent]].assign_stage(node.stage)
+        
+        for parent in parents:
+            self.__determine_stages__(parents[parent])
 
 class DataSet:
     def __init__(self, quokka_context: QuokkaContext, schema: dict, source_node_id: int) -> None:

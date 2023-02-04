@@ -1,8 +1,9 @@
 import sqlglot
 from pyquokka.dataset import *
-from pyquokka.executors import StorageExecutor, UDFExecutor 
+from pyquokka.executors import *
 from pyquokka.utils import EC2Cluster, LocalCluster
 import pyquokka.sql_utils as sql_utils
+from pyquokka.target_info import * 
 from functools import partial
 
 import textwrap
@@ -87,6 +88,9 @@ class Node:
         # this will be a dictionary of 
         self.output_sorted_reqs = None
     
+    def assign_stage(self, stage):
+        self.stage = stage
+    
     def lower(self, task_graph):
         raise NotImplementedError
 
@@ -97,7 +101,7 @@ class Node:
         self.placement_strategy = strategy
     
     def __str__(self):
-        result = str(type(self)) + '\nParents:' + str(self.parents) + '\nTargets:' 
+        result = str(type(self)) + '\n' + str(self.stage) + '\nParents:' + str(self.parents) + '\nTargets:' 
         for target in self.targets:
             result += "\n\t" + str(target) + " " + textwrap.fill(str(self.targets[target]))
         return result
@@ -107,7 +111,7 @@ class SourceNode(Node):
         super().__init__(schema)
     
     def __str__(self):
-        result = str(type(self)) + '\nTargets:' 
+        result = str(type(self)) + '\n' + str(self.stage) + '\nTargets:' 
         for target in self.targets:
             result += "\n\t" + str(target) + " " + str(self.targets[target])
         return result
@@ -120,7 +124,7 @@ class InputS3FilesNode(SourceNode):
     
     def lower(self, task_graph):
         file_reader = InputS3FilesDataset(self.bucket,self.prefix)
-        node = task_graph.new_input_reader_node(file_reader, self.placement_strategy)
+        node = task_graph.new_input_reader_node(file_reader, self.stage, self.placement_strategy)
         return node
 
 class InputDiskFilesNode(SourceNode):
@@ -130,7 +134,7 @@ class InputDiskFilesNode(SourceNode):
     
     def lower(self, task_graph):
         file_reader = InputDiskFilesDataset(self.directory)
-        node = task_graph.new_input_reader_node(file_reader, self.placement_strategy)
+        node = task_graph.new_input_reader_node(file_reader, self.stage, self.placement_strategy)
         return node
 
 class InputS3CSVNode(SourceNode):
@@ -145,7 +149,7 @@ class InputS3CSVNode(SourceNode):
 
     def lower(self, task_graph):
         csv_reader = InputS3CSVDataset(self.bucket, self.schema, prefix = self.prefix, key = self.key, sep=self.sep, header = self.has_header, stride = 16 * 1024 * 1024, columns = self.projection)
-        node = task_graph.new_input_reader_node(csv_reader, self.placement_strategy)
+        node = task_graph.new_input_reader_node(csv_reader, self.stage, self.placement_strategy)
         return node
 
 class InputDiskCSVNode(SourceNode):
@@ -164,7 +168,7 @@ class InputDiskCSVNode(SourceNode):
             csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, header = self.has_header, stride = 16 * 1024 * 1024, columns = self.projection, sort_info = (key, val))
         else:
             csv_reader = InputDiskCSVDataset(self.filename, self.schema, sep=self.sep, header = self.has_header, stride = 16 * 1024 * 1024, columns = self.projection)
-        node = task_graph.new_input_reader_node(csv_reader, self.placement_strategy)
+        node = task_graph.new_input_reader_node(csv_reader, self.stage, self.placement_strategy)
         return node
 
 class InputS3ParquetNode(SourceNode):
@@ -189,7 +193,7 @@ class InputS3ParquetNode(SourceNode):
                 parquet_reader = InputEC2ParquetDataset(self.bucket, self.prefix, columns = list(self.projection), filters = self.predicate)
         else:
             parquet_reader = InputParquetDataset(self.bucket + "/" + self.key, mode = "s3", columns = list(self.projection), filters = self.predicate)
-        node = task_graph.new_input_reader_node(parquet_reader, self.placement_strategy)
+        node = task_graph.new_input_reader_node(parquet_reader, self.stage, self.placement_strategy)
         return node
     
     def __str__(self):
@@ -211,7 +215,7 @@ class InputDiskParquetNode(SourceNode):
             raise Exception
         elif type(task_graph.cluster) == LocalCluster:
             parquet_reader = InputParquetDataset(self.filepath,  columns = list(self.projection), filters = self.predicate)
-            node = task_graph.new_input_reader_node(parquet_reader, self.placement_strategy)
+            node = task_graph.new_input_reader_node(parquet_reader, self.stage, self.placement_strategy)
             return node
     
     def __str__(self):
@@ -230,7 +234,7 @@ class DataSetNode(SinkNode):
     
     def lower(self, task_graph, parent_nodes, parent_source_info ):
         assert self.blocking
-        return task_graph.new_blocking_node(parent_nodes,StorageExecutor(), self.placement_strategy, source_target_info=parent_source_info)
+        return task_graph.new_blocking_node(parent_nodes,StorageExecutor(), self.stage, self.placement_strategy, source_target_info=parent_source_info)
         
 '''
 We need to keep a schema mapping to map the node's schema, aka the schema after the operator, to the schema of its parents to conduct
@@ -251,24 +255,115 @@ class TaskNode(Node):
         super().__init__(schema)
         self.schema_mapping = schema_mapping
         self.required_columns = required_columns
+    
+    def lower(self, task_graph, parent_nodes, parent_source_info ):
+        raise Exception("Abstract class TaskNode cannot be lowered")
+
+class JoinNode(TaskNode):
+    def __init__(self, schema, schema_mapping, required_columns, join_spec, assume_sorted = {}) -> None:
+        # you are not going to have an associated operator
+        super().__init__(schema, schema_mapping, required_columns)
+        self.assume_sorted = assume_sorted
+        self.join_specs = [join_spec] # (join_type, {parent_idx: join_key} )
+
+    def add_join_spec(self, join_spec):
+        self.join_specs.append(join_spec)
+    
+    def __str__(self):
+        result = 'Join Node with joins: ' + str(self.join_specs) + '\n' + str(self.stage) + '\nParents:' + str(self.parents) + '\nTargets:' 
+        for target in self.targets:
+            result += "\n\t" + str(target) + " " + textwrap.fill(str(self.targets[target]))
+        return result
+
+    def lower(self, task_graph, parent_nodes, parent_source_info):
+
+        if self.blocking:
+            assert len(self.targets) == 1
+            target_info = self.targets[list(self.targets.keys())[0]]
+            transform_func = target_info_to_transform_func(target_info)
         
+        print("lowering join node with ", len(self.join_specs), " join specs. Random join order used right now.")
+        joined_parents = set()
+
+        # self.join_specs = [self.join_specs[1]] + [self.join_specs[0]]
+
+        join_spec = self.join_specs[0]
+        join_type, join_keys = join_spec
+        assert len(join_keys) == 2
+        left = list(join_keys.keys())[0]
+        right = list(join_keys.keys())[1]
+        operator = JoinExecutor(None, join_keys[left], join_keys[right], join_type)
+        left_parent_target_info = parent_source_info[left]
+        right_parent_target_info = parent_source_info[right]
+        left_parent_target_info.partitioner = HashPartitioner(join_keys[left])
+        right_parent_target_info.partitioner = HashPartitioner(join_keys[right])
+
+        if len(self.join_specs) == 1 and self.blocking:
+            return task_graph.new_blocking_node({0: parent_nodes[left], 1: parent_nodes[right]}, operator, self.stage, self.placement_strategy, source_target_info={0: left_parent_target_info, 1: right_parent_target_info}, transform_func=transform_func)
+        else:
+            intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left], 1: parent_nodes[right]}, operator, self.stage, self.placement_strategy, source_target_info={0: left_parent_target_info, 1: right_parent_target_info})
+        joined_parents.add(parent_nodes[left])
+        joined_parents.add(parent_nodes[right])
+
+        for i in range(1, len(self.join_specs)):
+            join_spec = self.join_specs[i]
+            join_type, join_keys = join_spec
+            assert len(join_keys) == 2
+            left = list(join_keys.keys())[0]
+            right = list(join_keys.keys())[1]
+
+            operator = JoinExecutor(None, join_keys[left], join_keys[right], join_type)
+
+            if parent_nodes[left] in joined_parents and parent_nodes[right] in joined_parents:
+                raise Exception("Redundant join? Should be mapped to a filter")
+            elif parent_nodes[left] in joined_parents:
+                intermediate_target_info = TargetInfo(HashPartitioner(join_keys[left]), sqlglot.exp.TRUE, None, [])
+                parent_target_info = parent_source_info[right]
+                parent_target_info.partitioner = HashPartitioner(join_keys[right])
+                # print("adding node", intermediate_node, parent_nodes[right], {0: str(intermediate_target_info), 1: str(parent_target_info)})
+                if i == len(self.join_specs) - 1 and self.blocking:
+                    return task_graph.new_blocking_node({0: intermediate_node, 1: parent_nodes[right]}, operator, self.stage, self.placement_strategy, source_target_info={0: intermediate_target_info, 1: parent_target_info}, transform_func=transform_func)
+                else:
+                    intermediate_node = task_graph.new_non_blocking_node({0: intermediate_node, 1: parent_nodes[right]}, operator, self.stage, self.placement_strategy, source_target_info={0: intermediate_target_info, 1: parent_target_info})
+                joined_parents.add(parent_nodes[right])
+            elif parent_nodes[right] in joined_parents:
+                intermediate_target_info = TargetInfo(HashPartitioner(join_keys[right]), sqlglot.exp.TRUE, None, [])
+                parent_target_info = parent_source_info[left]
+                parent_target_info.partitioner = HashPartitioner(join_keys[left])
+                # print("adding node", parent_nodes[left], intermediate_node, {0: str(parent_target_info), 1: str(intermediate_target_info)})
+                if i == len(self.join_specs) - 1 and self.blocking:
+                    return task_graph.new_blocking_node({0: parent_nodes[left], 1: intermediate_node}, operator, self.stage, self.placement_strategy, source_target_info={0: parent_target_info, 1: intermediate_target_info}, transform_func=transform_func)
+                else:
+                    intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left], 1: intermediate_node}, operator, self.stage, self.placement_strategy, source_target_info={0: parent_target_info, 1: intermediate_target_info})
+                joined_parents.add(parent_nodes[left])
+            else:
+                raise Exception("Should not happen")
+        
+        return intermediate_node
 
 class StatefulNode(TaskNode):
     def __init__(self, schema, schema_mapping, required_columns, operator, assume_sorted = {}) -> None:
+        """
+        Args:
+            schema: the schema after the operator
+            schema_mapping: a dict from column name to a tuple (i, name), where i is the index in self.parents of the parent
+            assume_sorted: a dict from source index to True or False, indicating whether the node expects if the source is sorted
+        """
         super().__init__(schema, schema_mapping, required_columns)
         self.operator = operator
         self.assume_sorted = assume_sorted
     
     def lower(self, task_graph, parent_nodes, parent_source_info ):
+        
         if self.blocking:
             assert len(self.targets) == 1
             target_info = self.targets[list(self.targets.keys())[0]]
             transform_func = target_info_to_transform_func(target_info)          
             
-            return task_graph.new_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info, transform_fn = transform_func, assume_sorted = self.assume_sorted)
+            return task_graph.new_blocking_node(parent_nodes,self.operator, self.stage, self.placement_strategy, source_target_info=parent_source_info, transform_fn = transform_func, assume_sorted = self.assume_sorted)
         else:
-            return task_graph.new_non_blocking_node(parent_nodes,self.operator, self.placement_strategy, source_target_info=parent_source_info, assume_sorted = self.assume_sorted)
-        
+            return task_graph.new_non_blocking_node(parent_nodes,self.operator, self.stage, self.placement_strategy, source_target_info=parent_source_info, assume_sorted = self.assume_sorted)
+
 '''
 We need a separate MapNode from StatefulNode since we can compact UDFs
 
@@ -298,9 +393,9 @@ class MapNode(TaskNode):
             target_info = self.targets[list(self.targets.keys())[0]]
             transform_func = target_info_to_transform_func(target_info)     
 
-            return task_graph.new_blocking_node(parent_nodes,UDFExecutor(self.function), self.placement_strategy, source_target_info=parent_source_info, transform_fn = transform_func)
+            return task_graph.new_blocking_node(parent_nodes,UDFExecutor(self.function), self.stage, self.placement_strategy, source_target_info=parent_source_info, transform_fn = transform_func)
         else:
-            return task_graph.new_non_blocking_node(parent_nodes,UDFExecutor(self.function), self.placement_strategy, source_target_info=parent_source_info)
+            return task_graph.new_non_blocking_node(parent_nodes,UDFExecutor(self.function), self.stage, self.placement_strategy, source_target_info=parent_source_info)
 
 class FilterNode(TaskNode):
 

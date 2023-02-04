@@ -619,11 +619,10 @@ class BuildProbeJoinExecutor(Executor):
 class JoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
     # batch func must return a list of dfs too
-    def __init__(self, on = None, left_on = None, right_on = None, suffix="_right", how = "inner"):
+    def __init__(self, on = None, left_on = None, right_on = None, how = "inner"):
 
         self.state0 = None
         self.state1 = None
-        self.suffix = suffix
 
         if on is not None:
             assert left_on is None and right_on is None
@@ -709,9 +708,9 @@ class JoinExecutor(Executor):
 
         if stream_id == 0:
             if self.state1 is not None:
-                result = batch.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how=self.batch_how, suffix=self.suffix)
+                result = batch.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how=self.batch_how)
                 if self.how == "left" or self.how == "semi":
-                    new_left_null = batch.join(self.state1, left_on = self.left_on, right_on= self.right_on, how = "anti", suffix = self.suffix)
+                    new_left_null = batch.join(self.state1, left_on = self.left_on, right_on= self.right_on, how = "anti")
             else:
                 if self.how == "left" or self.how == "semi":
                     new_left_null = batch
@@ -731,13 +730,13 @@ class JoinExecutor(Executor):
         elif stream_id == 1:
 
             if self.state0 is not None and self.how != "semi":
-                result = self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how=self.batch_how, suffix=self.suffix)
+                result = self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how=self.batch_how)
                 
             if self.how == "semi" and self.left_null is not None:
-                result = self.left_null.join(batch, left_on = self.left_on, right_on = self.right_on, how = "semi", suffix = self.suffix)
+                result = self.left_null.join(batch, left_on = self.left_on, right_on = self.right_on, how = "semi")
             
             if (self.how == "left" or self.how == "semi") and self.left_null is not None:
-                self.left_null = self.left_null.join(batch, left_on = self.left_on, right_on = self.right_on, how = "anti", suffix = self.suffix)
+                self.left_null = self.left_null.join(batch, left_on = self.left_on, right_on = self.right_on, how = "anti")
 
             if self.state1 is None:
                 if self.how == "left":
@@ -746,8 +745,6 @@ class JoinExecutor(Executor):
             else:
                 self.state1.vstack(batch, in_place = True)
         
-        
-
         if result is not None and len(result) > 0:
             return result
     
@@ -767,7 +764,7 @@ class JoinExecutor(Executor):
         #print("done join ", executor_id)
         if self.how == "left" and self.left_null is not None and len(self.left_null) > 0:
             assert self.first_row_right is not None, "empty RHS"
-            return self.left_null.join(self.first_row_right, left_on= self.left_on, right_on= self.right_on, how = "left", suffix = self.suffix)
+            return self.left_null.join(self.first_row_right, left_on= self.left_on, right_on= self.right_on, how = "left")
 
         # print("DONE", executor_id)
 
