@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.1.4' 
+VERSION = '0.1.5' 
 DESCRIPTION = 'Quokka'
 LONG_DESCRIPTION = """
 Dope way to do cloud analytics\n
