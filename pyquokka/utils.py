@@ -184,9 +184,9 @@ class QuokkaClusterManager:
                     raise Exception("Couldn't connect to new instance in 30 seconds.")
                 time.sleep(5)
 
-        self.launch_all("sudo apt-get update", public_ips, "Failed to apt-get update")
-        self.launch_all("sudo apt install -y python3-pip", public_ips, "Failed to install pip", ignore_error=True)
-        self.launch_all("sudo apt install -y awscli", public_ips, "Failed to install awscli", ignore_error=True)
+        self.launch_all("sudo apt update", public_ips, "Failed to apt-get update")
+        self.launch_all("sudo apt install -y python3-pip", public_ips, "Failed to install pip", ignore_error= False)
+        self.launch_all("sudo apt install -y awscli", public_ips, "Failed to install awscli", ignore_error=False)
         self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
         self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
 

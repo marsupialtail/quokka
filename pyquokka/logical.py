@@ -228,6 +228,14 @@ class InputS3ParquetNode(SourceNode):
         self.predicate = predicate
         self.projection = projection
     
+    def set_cardinality(self):
+        s3fs = S3FileSystem()
+        dataset = pq.ParquetDataset(self.bucket + "/" + self.prefix, filesystem=s3fs )
+        # very cursory estimate
+        size = dataset.fragments[0].count_rows() * len(dataset.fragments)
+        for target in self.targets:
+            self.cardinality[target] = size
+    
     def lower(self, task_graph):
 
         if self.key is None:

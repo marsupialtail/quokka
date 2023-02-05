@@ -939,21 +939,22 @@ class QuokkaContext:
                     new_join_specs = []
                     old_join_specs = set(range(len(node.join_specs)))
                     existing_tables = {probe}
-                    while len(old_join_specs) > 0:
-                        for index in old_join_specs:
-                            join_spec = node.join_specs[index]
-                            intersected_tables = set(join_spec[1].keys()).intersection(existing_tables)
-                            if len(intersected_tables) > 0:
-                                
-                                assert len(intersected_tables) == 1, "There is a duplicate join condition, blowing up"
-                                intersected_table = intersected_tables.pop()
-                                other_table = list(set(join_spec[1].keys()).difference(existing_tables))[0]
 
-                                new_join_spec = (join_spec[0], [(intersected_table, join_spec[1][intersected_table]), (other_table, join_spec[1][other_table])])
-                                new_join_specs.append(new_join_spec)
-                                old_join_specs.remove(index)
-                                existing_tables = existing_tables.union(set(join_spec[1].keys()))
-                                break
+                    while len(old_join_specs) > 0:
+                        candidates ={ index: list(set(node.join_specs[index][1].keys()).difference(existing_tables)) for index in old_join_specs if len(set(node.join_specs[index][1].keys()).intersection(existing_tables)) > 0}
+                        assert all([len(candidates[index]) == 1 for index in candidates]), "There is a duplicate join condition, blowing up"
+                        candidates = {index: candidates[index][0] for index in candidates}
+                        assert len(candidates) > 0, "discontiguous join conditions. Blowing up"
+                        candidate = min(candidates, key=lambda index: self.execution_nodes[parents[candidates[index]]].cardinality[node_id])
+                        other_table = candidates[candidate]
+                        intersected_table = list(set(node.join_specs[candidate][1].keys()).intersection(existing_tables))[0]
+                        join_spec = node.join_specs[candidate]
+
+                        new_join_spec = (join_spec[0], [(intersected_table, join_spec[1][intersected_table]), (other_table, join_spec[1][other_table])])
+                        new_join_specs.append(new_join_spec)
+                        old_join_specs.remove(candidate)
+                        existing_tables = existing_tables.union(set(join_spec[1].keys()))
+
                     node.join_specs = new_join_specs
                     # print(new_join_specs)
                 else:

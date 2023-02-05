@@ -217,20 +217,19 @@ class TaskManager:
     def clear_flights(self, client):
         buf = pyarrow.allocate_buffer(0)
         action = pyarrow.flight.Action("clear", buf)
-        result = next(client.do_action(action))
-        #print(result.body.to_pybytes().decode("utf-8"))
-        if result.body.to_pybytes().decode("utf-8") != "True":
-            print(result.body.to_pybytes().decode("utf-8"))
-            raise Exception
+        for result in list(client.do_action(action)):
+            if result.body.to_pybytes().decode("utf-8") != "True":
+                print(result.body.to_pybytes().decode("utf-8"))
+                raise Exception
     
     def set_flight_configs(self, client):
 
         message = pyarrow.py_buffer(pickle.dumps({"mem_limit" : MEM_LIMIT, "max_batches" : MAX_BATCHES, "actor_stages": self.ast}))
         action = pyarrow.flight.Action("set_configs", message)
-        result = next(client.do_action(action))
-        if result.body.to_pybytes().decode("utf-8") != "True":
-            print(result.body.to_pybytes().decode("utf-8"))
-            raise Exception
+        for result in list(client.do_action(action)):
+            if result.body.to_pybytes().decode("utf-8") != "True":
+                print(result.body.to_pybytes().decode("utf-8"))
+                raise Exception
 
     def push(self, source_actor_id: int, source_channel_id: int, seq: int, output: pyarrow.Table, target_mask = None, from_local = False):
         
@@ -388,13 +387,13 @@ class ExecTaskManager(TaskManager):
     def check_puttable(self, client):
         buf = pyarrow.allocate_buffer(0)
         action = pyarrow.flight.Action("check_puttable", buf)
-        result = next(client.do_action(action))
-        #print(result.body.to_pybytes().decode("utf-8"))
-        if result.body.to_pybytes().decode("utf-8") != "True":
-            print("BACKPRESSURING!")
-            return False
-        else:
-            return True
+        for result in list(client.do_action(action)):
+            #print(result.body.to_pybytes().decode("utf-8"))
+            if result.body.to_pybytes().decode("utf-8") != "True":
+                print("BACKPRESSURING!")
+                return False
+            else:
+                return True
     
     def output_commit(self, transaction, actor_id, channel_id, out_seq, lineage):
 
@@ -645,8 +644,8 @@ class ExecTaskManager(TaskManager):
                 if len(input_names) > 0:
                     message = pyarrow.py_buffer(pickle.dumps(input_names))
                     action = pyarrow.flight.Action("cache_garbage_collect", message)
-                    result = next(self.flight_client.do_action(action))
-                    assert result.body.to_pybytes().decode("utf-8") == "True"
+                    for result in list(self.flight_client.do_action(action)):
+                        assert result.body.to_pybytes().decode("utf-8") == "True"
             
             elif task_type == "exectape":
                 candidate_task = TapedExecutorTask.from_tuple(tup)
@@ -750,8 +749,8 @@ class ExecTaskManager(TaskManager):
             
                 message = pyarrow.py_buffer(pickle.dumps(input_names))
                 action = pyarrow.flight.Action("cache_garbage_collect", message)
-                result = next(self.flight_client.do_action(action))
-                assert result.body.to_pybytes().decode("utf-8") == "True"
+                for result in list(self.flight_client.do_action(action)):
+                    assert result.body.to_pybytes().decode("utf-8") == "True"
 
 
 @ray.remote
@@ -768,19 +767,19 @@ class IOTaskManager(TaskManager):
         while True:
             buf = pyarrow.allocate_buffer(0)
             action = pyarrow.flight.Action("check_puttable", buf)
-            result = next(client.do_action(action))
-            #print(result.body.to_pybytes().decode("utf-8"))
-            if result.body.to_pybytes().decode("utf-8") != "True":
-                print("BACKPRESSURING!")
-                # be nice
-                if not delayed:
-                    self.delay += 1
-                    delayed = True
-                print(self.delay)
-                time.sleep(self.delay)
-                continue
-            else:
-                return True
+            for result in list(client.do_action(action)):
+                #print(result.body.to_pybytes().decode("utf-8"))
+                if result.body.to_pybytes().decode("utf-8") != "True":
+                    print("BACKPRESSURING!")
+                    # be nice
+                    if not delayed:
+                        self.delay += 1
+                        delayed = True
+                    print(self.delay)
+                    time.sleep(self.delay)
+                    continue
+                else:
+                    return True
     
     def output_commit(self, transaction, actor_id, channel_id, out_seq, lineage):
 
