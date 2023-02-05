@@ -395,6 +395,7 @@ class QuokkaContext:
         self.__early_projection__(node_id)
         self.__fold_map__(node_id)
         self.__merge_joins__(node_id)
+        self.__propagate_cardinality__(node_id)
         self.__determine_stages__(node_id)
         
         assert len(self.execution_nodes[node_id].parents) == 1
@@ -500,15 +501,19 @@ class QuokkaContext:
             logical_plan_graph.node(str(node_id), str(node_id) + str(self.execution_nodes[node_id]))
             for parent in self.execution_nodes[node_id].parents:
                 self._walk(self.execution_nodes[node_id].parents[parent], logical_plan_graph)
+                cardinality = self.execution_nodes[self.execution_nodes[node_id].parents[parent]].cardinality[node_id]
+                cardinality = round(cardinality, 2) if cardinality is not None else None
                 logical_plan_graph.edge(
-                    str(self.execution_nodes[node_id].parents[parent]), str(node_id))
+                    str(self.execution_nodes[node_id].parents[parent]), str(node_id), label = str(cardinality))
             logical_plan_graph.view()
 
     def _walk(self, node_id, graph):
         graph.node(str(node_id), str(node_id) + " " + str(self.execution_nodes[node_id]))
         for parent in self.execution_nodes[node_id].parents:
             self._walk(self.execution_nodes[node_id].parents[parent], graph)
-            graph.edge(str(self.execution_nodes[node_id].parents[parent]), str(node_id))
+            cardinality = self.execution_nodes[self.execution_nodes[node_id].parents[parent]].cardinality[node_id]
+            cardinality = round(cardinality, 2) if cardinality is not None else None
+            graph.edge(str(self.execution_nodes[node_id].parents[parent]), str(node_id), label = str(cardinality))
 
     def __push_filter__(self, node_id):
 
@@ -798,8 +803,8 @@ class QuokkaContext:
             # you should have the required_columns attribute
             if issubclass(type(node), JoinNode):
 
-                # if you have more than one target, you can't be merged into a multi join
-                if len(targets) > 1:
+                # if you have more than one target or you are not an inner join, you can't be merged into a multi join
+                if len(targets) > 1 or not all([join_spec[0] == "inner" for join_spec in node.join_specs]):
                     for parent in parents:
                         self.__merge_joins__(parents[parent])
                     return
@@ -877,7 +882,21 @@ class QuokkaContext:
                     parent_id = node.parents[parent_idx]
                     self.__merge_joins__(parent_id)
                 return
-                
+    
+    def __propagate_cardinality__(self, node_id):
+
+        node = self.execution_nodes[node_id]
+        parents = node.parents
+
+        if issubclass(type(node), SourceNode):
+            node.set_cardinality()
+            return
+        else:
+            for parent in parents:
+                self.__propagate_cardinality__(parents[parent])
+            parent_cardinalites = {parent: self.execution_nodes[parents[parent]].cardinality[node_id] for parent in parents}
+            node.set_cardinality(parent_cardinalites)
+
     # this is the pass that fixes the join order. Arguably the MOST important pass
     def __determine_stages__(self, node_id):
 
@@ -898,34 +917,55 @@ class QuokkaContext:
             # you should have the required_columns attribute
             if issubclass(type(node), JoinNode):
                 # pick a random thing to be probe side and all others be build side for now
-                probe = list(parents.keys())[0]
-                self.execution_nodes[parents[probe]].assign_stage(node.stage)
-                for parent in parents:
-                    if parent != probe:
-                        self.execution_nodes[parents[parent]].assign_stage(node.stage - 1)
-                
-                # you are now responsible for arranging the joinspec in the right order!
-                # you should have a join_specs attribute
-                new_join_specs = []
-                old_join_specs = set(range(len(node.join_specs)))
-                existing_tables = {probe}
-                while len(old_join_specs) > 0:
-                    for index in old_join_specs:
-                        join_spec = node.join_specs[index]
-                        intersected_tables = set(join_spec[1].keys()).intersection(existing_tables)
-                        if len(intersected_tables) > 0:
-                            
-                            assert len(intersected_tables) == 1, "There is a duplicate join condition, blowing up"
-                            intersected_table = intersected_tables.pop()
-                            other_table = list(set(join_spec[1].keys()).difference(existing_tables))[0]
 
-                            new_join_spec = (join_spec[0], [(intersected_table, join_spec[1][intersected_table]), (other_table, join_spec[1][other_table])])
-                            new_join_specs.append(new_join_spec)
-                            old_join_specs.remove(index)
-                            existing_tables = existing_tables.union(set(join_spec[1].keys()))
-                            break
-                node.join_specs = new_join_specs
-                # print(new_join_specs)
+                # check if everything is an inner join
+
+                if all([join_spec[0] == "inner" for join_spec in node.join_specs]):
+                    estimated_cardinality = {}
+                    for parent in parents:
+                        estimated_cardinality[parent] = self.execution_nodes[parents[parent]].cardinality[node_id]
+                        if estimated_cardinality[parent] is None:
+                            estimated_cardinality[parent] = -1
+
+                    # set probe to be the parent with the largest cardinality
+                    probe = max(estimated_cardinality, key=estimated_cardinality.get)
+                    self.execution_nodes[parents[probe]].assign_stage(node.stage)
+                    for parent in parents:
+                        if parent != probe:
+                            self.execution_nodes[parents[parent]].assign_stage(node.stage - 1)
+                    
+                    # you are now responsible for arranging the joinspec in the right order!
+                    # you should have a join_specs attribute
+                    new_join_specs = []
+                    old_join_specs = set(range(len(node.join_specs)))
+                    existing_tables = {probe}
+                    while len(old_join_specs) > 0:
+                        for index in old_join_specs:
+                            join_spec = node.join_specs[index]
+                            intersected_tables = set(join_spec[1].keys()).intersection(existing_tables)
+                            if len(intersected_tables) > 0:
+                                
+                                assert len(intersected_tables) == 1, "There is a duplicate join condition, blowing up"
+                                intersected_table = intersected_tables.pop()
+                                other_table = list(set(join_spec[1].keys()).difference(existing_tables))[0]
+
+                                new_join_spec = (join_spec[0], [(intersected_table, join_spec[1][intersected_table]), (other_table, join_spec[1][other_table])])
+                                new_join_specs.append(new_join_spec)
+                                old_join_specs.remove(index)
+                                existing_tables = existing_tables.union(set(join_spec[1].keys()))
+                                break
+                    node.join_specs = new_join_specs
+                    # print(new_join_specs)
+                else:
+                    # there are some joins that are not inner joins 
+                    # currently we do not attempt to reorder them, in fact we can only tolerate one join here. haha.
+                    assert len(node.join_specs) == 1, "There are multiple joins and some of them are not inner joins, blowing up"
+                    assert len(parents) == 2 and 0 in parents and 1 in parents
+                    join_spec = node.join_specs[0]
+                    # in a semi, anti or left join, 0 needs to be probe.
+                    node.join_specs = [(join_spec[0], [(0, join_spec[1][0]), (1, join_spec[1][1])])] 
+                    self.execution_nodes[parents[0]].assign_stage(node.stage)
+                    self.execution_nodes[parents[1]].assign_stage(node.stage - 1)
 
             
             else:

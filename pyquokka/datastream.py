@@ -920,7 +920,7 @@ class DataStream:
             return self.quokka_context.new_stream(
                 sources={0: self},
                 partitioners={0: PassThroughPartitioner()},
-                node=StatefulNode(
+                node=BroadcastJoinNode(
                     schema=new_schema,
                     schema_mapping=schema_mapping,
                     required_columns={0: {left_on}},
