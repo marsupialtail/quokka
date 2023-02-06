@@ -501,11 +501,6 @@ class ExecTaskManager(TaskManager):
                                                     .filter(polars.col("min_seq") <= polars.col("done_seq"))\
                                                     .drop("done_seq")
                 
-                if hasattr(self.function_objects[actor_id, channel_id], 'update_sources'):
-                    remaining_source_actor_ids = input_requirements["source_actor_id"].unique().to_list()
-                    remaining_sources = set([self.mappings[actor_id][source_actor_id] for source_actor_id in remaining_source_actor_ids])
-                    self.function_objects[actor_id, channel_id].update_sources(remaining_sources)
-                
                 # print(input_requirements)
                 
                 transaction = self.r.pipeline()
@@ -672,11 +667,6 @@ class ExecTaskManager(TaskManager):
                 name_prefix = pickle.dumps(('s', actor_id, channel_id, state_seq))
                 input_requirements = self.LT.get(self.r, name_prefix)
                 assert input_requirements is not None, pickle.loads(name_prefix)
-
-                if hasattr(self.function_objects[actor_id, channel_id], 'update_sources'):
-                    remaining_source_actor_ids = input_requirements["source_actor_id"].unique().to_list()
-                    remaining_sources = set([self.mappings[actor_id][source_actor_id] for source_actor_id in remaining_source_actor_ids])
-                    self.function_objects[actor_id, channel_id].update_sources(remaining_sources)
                 
                 if actor_id in self.sat:
                     request = ("cache", actor_id, channel_id, input_requirements, True, self.sat[actor_id])

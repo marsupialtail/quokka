@@ -566,6 +566,7 @@ class BuildProbeJoinExecutor(Executor):
         assert how in {"inner", "left", "semi", "anti"}
         self.how = how
         self.key_to_keep = key_to_keep
+        self.things_seen = []
 
     def execute(self,batches, stream_id, executor_id):
         # state compaction
@@ -573,31 +574,23 @@ class BuildProbeJoinExecutor(Executor):
         if len(batches) == 0:
             return
         batch = polars.concat(batches)
+        self.things_seen.append((stream_id, len(batches)))
 
         # build
         if stream_id == 1:
-            assert self.phase == "build"
+            assert self.phase == "build", (self.left_on, self.right_on, self.things_seen)
             self.state = batch if self.state is None else self.state.vstack(batch, in_place = True)
                
         # probe
         elif stream_id == 0:
-            assert self.phase == "probe"
+            self.phase = "probe"
             result = batch.join(self.state,left_on = self.left_on, right_on = self.right_on ,how= self.how)
             if self.key_to_keep == "right":
                 result = result.rename({self.left_on: self.right_on})
             return result
-
-    def update_sources(self, remaining_sources):
-        # build side depleted, must drain probe state
-        if 1 not in remaining_sources:
-            self.phase = "probe"
-
-        # probe side depleted
-        if 0 not in remaining_sources:
-            pass
     
     def done(self,executor_id):
-        self.update_sources({})
+        pass
 
 class JoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
