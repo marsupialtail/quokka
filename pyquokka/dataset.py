@@ -26,6 +26,19 @@ import math
 def overlap(a, b):
     return max(-1, min(a[1], b[1]) - max(a[0], b[0]))
 
+
+class InputRayDataset:
+
+    def __init__(self, objects_dict):
+        self.objects_dict = objects_dict
+    
+    def get_own_state(self, num_channels):
+        return {channel: list(range(len(self.objects_dict[channel]))) for channel in self.objects_dict}
+
+    def execute(self, mapper_id, state=None):
+        return ray.get(self.objects_dict[mapper_id][state])
+
+
 class InputEC2ParquetDataset:
 
     # filter pushdown could be profitable in the future, especially when you can skip entire Parquet files

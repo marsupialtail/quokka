@@ -147,6 +147,15 @@ class InputDiskFilesNode(SourceNode):
         node = task_graph.new_input_reader_node(file_reader, self.stage, self.placement_strategy)
         return node
 
+# class InputRayDatasetNode(SourceNode):
+#     def __init__(self, dataset, schema) -> None:
+#         super().__init__(schema)
+#         self.dataset = dataset
+    
+#     def lower(self, task_graph):
+#         node = task_graph.new_input_reader_node(self.dataset, self.stage, self.placement_strategy)
+#         return node
+
 class InputS3CSVNode(SourceNode):
     def __init__(self, bucket, prefix, key, schema, sep, has_header, projection = None) -> None:
         super().__init__(schema)

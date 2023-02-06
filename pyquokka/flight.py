@@ -296,7 +296,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                 partition_fn = 0 # TODO: only support 1 partition fn right now
                 source_actor_id, source_channel_seqs = pickle.loads(input_requirements)
 
-                if source_actor_id not in sorted_reqs:
+                if sorted_reqs is None or source_actor_id not in sorted_reqs:
                     for source_channel_id in source_channel_seqs:
                         for seq in source_channel_seqs[source_channel_id]:
                             name = (source_actor_id, source_channel_id, seq, actor_id, partition_fn, channel_id)

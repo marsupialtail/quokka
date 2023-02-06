@@ -326,6 +326,11 @@ class QuokkaContext:
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
     
+    def read_dataset(self, dataset):
+        objects_dict = dataset.to_dict()
+        self.nodes[self.latest_node_id] = InputRayDatasetNode(objects_dict)
+        self.latest_node_id += 1
+        return DataStream(self, dataset.schema, self.latest_node_id - 1)
 
     def read_sorted_parquet(self, table_location: str, sorted_by: str, schema = None):
         assert type(sorted_by) == str
@@ -914,9 +919,7 @@ class QuokkaContext:
             # you should already have been assigned by your target
             return
         else:
-            # you should have the required_columns attribute
             if issubclass(type(node), JoinNode):
-                # pick a random thing to be probe side and all others be build side for now
 
                 # check if everything is an inner join
 
@@ -941,6 +944,9 @@ class QuokkaContext:
                     existing_tables = {probe}
 
                     while len(old_join_specs) > 0:
+
+                        # find the build side that's smallest to join against.
+
                         candidates ={ index: list(set(node.join_specs[index][1].keys()).difference(existing_tables)) for index in old_join_specs if len(set(node.join_specs[index][1].keys()).intersection(existing_tables)) > 0}
                         assert all([len(candidates[index]) == 1 for index in candidates]), "There is a duplicate join condition, blowing up"
                         candidates = {index: candidates[index][0] for index in candidates}

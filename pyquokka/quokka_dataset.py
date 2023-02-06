@@ -8,7 +8,7 @@ class Dataset:
 
     def __init__(self, wrapped_dataset) -> None:
         self.wrapped_dataset = wrapped_dataset
-    
+        
     def to_list(self):
         return ray.get(self.wrapped_dataset.to_list.remote())
     
@@ -30,6 +30,9 @@ class ArrowDataset:
         self.objects = {i: [] for i in range(self.num_channels)}
         self.metadata = {}
         self.done = False
+
+    def to_dict(self):
+        return self.objects
 
     def added_object(self, channel, object_handle):
         self.objects[channel].append(object_handle[0])

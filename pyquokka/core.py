@@ -17,7 +17,7 @@ CHECKPOINT_INTERVAL = None
 MAX_SEQ = 1000000000
 DEBUG = False
 PROFILE = False
-FT = False
+FT = True
 MEM_LIMIT = 0.25
 MAX_BATCHES = 30
 
@@ -230,6 +230,17 @@ class TaskManager:
             if result.body.to_pybytes().decode("utf-8") != "True":
                 print(result.body.to_pybytes().decode("utf-8"))
                 raise Exception
+    
+    def check_puttable(self, client):
+        buf = pyarrow.allocate_buffer(0)
+        action = pyarrow.flight.Action("check_puttable", buf)
+        for result in list(client.do_action(action)):
+            #print(result.body.to_pybytes().decode("utf-8"))
+            if result.body.to_pybytes().decode("utf-8") != "True":
+                print("BACKPRESSURING!")
+                return False
+            else:
+                return True
 
     def push(self, source_actor_id: int, source_channel_id: int, seq: int, output: pyarrow.Table, target_mask = None, from_local = False):
         
@@ -246,7 +257,10 @@ class TaskManager:
             output = polars.from_arrow(output)
         elif type(output) == polars.internals.DataFrame:
             pass
+        elif output is None:
+            assert from_local
         else:
+            print(output)
             raise Exception("push data type not understood")
 
         
@@ -383,17 +397,6 @@ class ExecTaskManager(TaskManager):
             bucket.objects.all().delete()
 
         self.tape_input_reqs = {}
-    
-    def check_puttable(self, client):
-        buf = pyarrow.allocate_buffer(0)
-        action = pyarrow.flight.Action("check_puttable", buf)
-        for result in list(client.do_action(action)):
-            #print(result.body.to_pybytes().decode("utf-8"))
-            if result.body.to_pybytes().decode("utf-8") != "True":
-                print("BACKPRESSURING!")
-                return False
-            else:
-                return True
     
     def output_commit(self, transaction, actor_id, channel_id, out_seq, lineage):
 
