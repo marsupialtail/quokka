@@ -19,6 +19,21 @@ def apply_conditions_to_batch(funcs, batch):
         batch = batch[func]
     return batch
 
+def label_sample_table_names(predicate):
+    """
+    Replace all table name references in the given predicate with 'sample'.
+    Args:
+    predicate (SQLGLot exp): precondition that predicate should only have one unique table name. If it doesn't, return an error.
+    """
+    w = predicate.copy()
+    columns = w.find_all(exp.Column)
+    tables = set()
+    for c in columns:
+        tables.add(c.table)
+        c.replace(sqlglot.parse_one('sample.' + c.name))
+    assert(len(tables) <= 1)
+    return w
+
 def filters_to_expression(filters):
     """
     Check if filters are well-formed.
@@ -169,6 +184,9 @@ def evaluate(node):
     elif type(node) == sqlglot.expressions.Column:
         return polars.col(node.name)
     elif is_cast_to_date(node):
+        # If a column is being casted to date, then just return the column
+        if isinstance(node.this, sqlglot.expressions.Column):
+          return evaluate(node.this)
         try:
             d = datetime.strptime(node.name, "%Y-%m-%d")
         except:
