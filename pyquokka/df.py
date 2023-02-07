@@ -951,7 +951,7 @@ class QuokkaContext:
                         assert all([len(candidates[index]) == 1 for index in candidates]), "There is a duplicate join condition, blowing up"
                         candidates = {index: candidates[index][0] for index in candidates}
                         assert len(candidates) > 0, "discontiguous join conditions. Blowing up"
-                        candidate = min(candidates, key=lambda index: self.execution_nodes[parents[candidates[index]]].cardinality[node_id])
+                        candidate = min(candidates, key=lambda index: estimated_cardinality[candidates[index]])
                         other_table = candidates[candidate]
                         intersected_table = list(set(node.join_specs[candidate][1].keys()).intersection(existing_tables))[0]
                         join_spec = node.join_specs[candidate]

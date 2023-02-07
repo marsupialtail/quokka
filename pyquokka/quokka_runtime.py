@@ -258,7 +258,7 @@ class TaskGraph:
         assert all([i is not None for i in stages]), "source stages not found"
         stage_sources = {}
         for i in range(len(stages)):
-            stage = stages[i]
+            stage = int(stages[i])
             source = sources[i]
             if stage not in stage_sources:
                 stage_sources[stage] = []
@@ -267,6 +267,7 @@ class TaskGraph:
         input_reqs = []
 
         for stage in sorted(stage_sources.keys()):
+            # print(self.current_actor, stage)
             source_actor_ids = []
             source_channel_ids = []
             min_seqs = []
@@ -292,7 +293,7 @@ class TaskGraph:
         self.FOT.set(pipe, self.current_actor, ray.cloudpickle.dumps(functionObject))
 
         input_reqs = self.prologue(streams, placement_strategy, source_target_info)
-        # print("input_reqs",input_reqs)
+        # print("input_reqs",self.current_actor, input_reqs)
 
         for key in assume_sorted:
             # first find how many channels that key has in input_reqs

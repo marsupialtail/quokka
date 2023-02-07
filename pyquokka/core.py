@@ -17,7 +17,7 @@ CHECKPOINT_INTERVAL = None
 MAX_SEQ = 1000000000
 DEBUG = False
 PROFILE = False
-FT = True
+FT = False
 MEM_LIMIT = 0.25
 MAX_BATCHES = 30
 
@@ -464,7 +464,7 @@ class ExecTaskManager(TaskManager):
             count += 1
 
             candidate_tasks = self.NTT.lrange(self.r, str(self.node_id), 0, -1)
-            candidate_tasks = [candidate_task for candidate_task in candidate_tasks if self.ast[pickle.loads(candidate_task)[1][0]] <= self.current_stage]
+            # candidate_tasks = [candidate_task for candidate_task in candidate_tasks if self.ast[pickle.loads(candidate_task)[1][0]] <= self.current_stage]
             length = len(candidate_tasks)
             if length == 0:
                 continue
