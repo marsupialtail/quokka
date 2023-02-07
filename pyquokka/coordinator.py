@@ -349,7 +349,7 @@ class Coordinator:
                     # important bug fix: you must repush things that you haven't consumed yet. because they will be needed in the future
                     # otherwise deadlock.
                     # print(actor_id, channel_id, rewinded_state_seq)
-                    for requirement in pickle.loads(self.IRT.get(self.r, pickle.dumps((actor_id, channel_id, rewinded_state_seq)))).to_dicts():
+                    for requirement in polars.concat(pickle.loads(self.IRT.get(self.r, pickle.dumps((actor_id, channel_id, rewinded_state_seq))))).to_dicts():
                         source_actor_id = requirement['source_actor_id']
                         source_channel_id = requirement["source_channel_id"]
                         min_seq = requirement["min_seq"]

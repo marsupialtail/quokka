@@ -478,6 +478,7 @@ class ExecTaskManager(TaskManager):
                 raise Exception("unsupported task type", task_type)
 
             elif task_type == "exec":
+                # time.sleep(1)
                 candidate_task = ExecutorTask.from_tuple(tup)
 
                 actor_id = candidate_task.actor_id
@@ -495,13 +496,20 @@ class ExecTaskManager(TaskManager):
                 self.update_dst()
                 
                 if self.dst is not None:
+
+                    assert type(input_requirements) == list
                     
-                    input_requirements = input_requirements.join(self.dst, on = ["source_actor_id", "source_channel_id"], how = "left")\
+                    new_input_requirements = input_requirements[0].join(self.dst, on = ["source_actor_id", "source_channel_id"], how = "left")\
                                                     .fill_null(MAX_SEQ)\
                                                     .filter(polars.col("min_seq") <= polars.col("done_seq"))\
                                                     .drop("done_seq")
-                
-                # print(input_requirements)
+                    
+                    # print("refershing", actor_id, channel_id, input_requirements, self.dst.filter(polars.col("source_actor_id")==0), new_input_requirements)
+
+                    if len(new_input_requirements) == 0:
+                        input_requirements = input_requirements[1:]
+                    else:
+                        input_requirements = [new_input_requirements] + input_requirements[1:]
                 
                 transaction = self.r.pipeline()
 
@@ -512,9 +520,9 @@ class ExecTaskManager(TaskManager):
                 if len(input_requirements) > 0:
 
                     if actor_id in self.sat:
-                        request = ("cache", actor_id, channel_id, input_requirements, False, self.sat[actor_id])
+                        request = ("cache", actor_id, channel_id, input_requirements[0], False, self.sat[actor_id])
                     else:
-                        request = ("cache", actor_id, channel_id, input_requirements, False, None)
+                        request = ("cache", actor_id, channel_id, input_requirements[0], False, None)
 
                     # if we can bake logic inside the the flight server we probably should, because that will be baked into C++ at some point.
 
@@ -592,21 +600,25 @@ class ExecTaskManager(TaskManager):
                     source_channel_progress = [len(source_channel_seqs[i]) for i in source_channel_ids]
                     progress = polars.from_dict({"source_actor_id": [source_actor_id] * len(source_channel_ids) , "source_channel_id": source_channel_ids, "progress": source_channel_progress})
                     # progress is guaranteed to have something since len(batches) > 0
-                    
-                    # print_if_debug("progress", progress)
-                    
-                    new_input_reqs = input_requirements.join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
+
+                    # print("starting with input reqs", input_requirements[0])      
+                    new_input_reqs = input_requirements[0].join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
                     new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
                     
-                    print_if_debug(new_input_reqs)
                     new_input_reqs = new_input_reqs.drop("progress")
+                    # print("progress", actor_id, channel_id, progress, new_input_reqs)
+                    # if self.dst is not None:
+                    #     print(input_requirements, self.dst.filter(polars.col("source_actor_id") == 0))
+                    # else:
+                    #     print(input_requirements, "None")
 
                     out_seq = self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq)
                     if out_seq == -1:
                         # this aborts the transaction automatically
                         continue
-                        
-                    next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, new_input_reqs)
+                    
+                    # print("next task reqs", [new_input_reqs] + input_requirements[1:])
+                    next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, [new_input_reqs] + input_requirements[1:])
 
                 else:
                     output = self.function_objects[actor_id, channel_id].done(channel_id)
@@ -627,7 +639,7 @@ class ExecTaskManager(TaskManager):
                             self.CT.sadd(transaction, pickle.dumps((source_actor_id, source_channel_id, seq)), pickle.dumps((actor_id, channel_id)))
 
                     self.LCT.rpush(transaction, pickle.dumps((actor_id, channel_id)), pickle.dumps((state_seq, out_seq)))
-                    self.IRT.set(transaction, pickle.dumps((actor_id, channel_id, state_seq)), pickle.dumps(new_input_reqs))
+                    self.IRT.set(transaction, pickle.dumps((actor_id, channel_id, state_seq)), pickle.dumps([new_input_reqs] + input_requirements[1:]))
                 # this way of logging the lineage probably use less space than a Polars table actually.                        
 
                 self.EST.set(transaction, pickle.dumps((actor_id, channel_id)), state_seq)                    
@@ -705,9 +717,20 @@ class ExecTaskManager(TaskManager):
                 source_channel_progress = [len(source_channel_seqs[k]) for k in source_channel_ids]
                 progress = polars.from_dict({"source_actor_id": [source_actor_id] * len(source_channel_ids) , "source_channel_id": source_channel_ids, "progress": source_channel_progress})
 
-                new_input_reqs = self.tape_input_reqs[actor_id, channel_id].join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
+                new_input_reqs = self.tape_input_reqs[actor_id, channel_id][0].join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
                 new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
-                self.tape_input_reqs[actor_id, channel_id] = new_input_reqs.select(["source_actor_id", "source_channel_id","min_seq"])
+                new_input_reqs = new_input_reqs.select(["source_actor_id", "source_channel_id","min_seq"])
+                self.update_dst()
+                if self.dst is not None:
+                    new_input_reqs = new_input_reqs.join(self.dst, on = ["source_actor_id", "source_channel_id"], how = "left")\
+                                                    .fill_null(MAX_SEQ)\
+                                                    .filter(polars.col("min_seq") <= polars.col("done_seq"))\
+                                                    .drop("done_seq")
+                
+                if len(new_input_reqs) == 0:
+                    self.tape_input_reqs[actor_id, channel_id] =  self.tape_input_reqs[actor_id, channel_id][1:]
+                else:
+                    self.tape_input_reqs[actor_id, channel_id] = [new_input_reqs] +  self.tape_input_reqs[actor_id, channel_id][1:]
 
                 input = [record_batches_to_table(batch) for batch in batches if sum([len(b) for b in batch]) > 0]
 

@@ -250,15 +250,32 @@ class TaskGraph:
         registered = ray.get([node.register_mapping.remote(self.current_actor, mapping) for node in (self.nodes.values())])
         assert all(registered)
 
-        source_actor_ids = []
-        source_channel_ids = []
-        min_seqs = []
-        for source in mapping:
-            num_channels = self.get_total_channels_from_placement_strategy(self.actor_placement_strategy[source], self.actor_types[source])
-            source_actor_ids.extend([source] * num_channels)
-            source_channel_ids.extend(range(num_channels))
-            min_seqs.extend([0] * num_channels)
-        input_reqs = polars.from_dict({"source_actor_id":source_actor_ids, "source_channel_id":source_channel_ids, "min_seq":min_seqs})
+        # consult the AST to figure out source stages
+        # the result should be a list of dictionaries by stage
+
+        sources = list(mapping.keys())
+        stages = self.AST.mget(self.r, sources)
+        assert all([i is not None for i in stages]), "source stages not found"
+        stage_sources = {}
+        for i in range(len(stages)):
+            stage = stages[i]
+            source = sources[i]
+            if stage not in stage_sources:
+                stage_sources[stage] = []
+            stage_sources[stage].append(source)
+
+        input_reqs = []
+
+        for stage in sorted(stage_sources.keys()):
+            source_actor_ids = []
+            source_channel_ids = []
+            min_seqs = []
+            for source in stage_sources[stage]:
+                num_channels = self.get_total_channels_from_placement_strategy(self.actor_placement_strategy[source], self.actor_types[source])
+                source_actor_ids.extend([source] * num_channels)
+                source_channel_ids.extend(range(num_channels))
+                min_seqs.extend([0] * num_channels)
+            input_reqs.append(polars.from_dict({"source_actor_id":source_actor_ids, "source_channel_id":source_channel_ids, "min_seq":min_seqs}))
 
         return input_reqs
 
@@ -279,7 +296,7 @@ class TaskGraph:
 
         for key in assume_sorted:
             # first find how many channels that key has in input_reqs
-            sorted_source_channels = len(input_reqs.filter(polars.col("source_actor_id") == key))
+            sorted_source_channels = len(polars.concat(input_reqs).filter(polars.col("source_actor_id") == key))
             assume_sorted[key] = sorted_source_channels
         
         if len(assume_sorted) > 0:
