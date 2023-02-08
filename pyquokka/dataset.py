@@ -94,7 +94,7 @@ class InputEC2ParquetDataset:
         def download(file):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                return pq.read_table(self.bucket + "/" +file, columns=self.columns, filters=self.filters, use_threads= False, filesystem = self.s3)
+                return pq.read_table(self.bucket + "/" +file, columns=self.columns, filters=self.filters, use_threads= True, filesystem = self.s3)
 
         assert self.num_channels is not None
 

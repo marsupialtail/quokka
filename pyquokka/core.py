@@ -12,6 +12,7 @@ import time
 import boto3
 import types
 from functools import partial
+import concurrent.futures
 
 CHECKPOINT_INTERVAL = None
 MAX_SEQ = 1000000000
@@ -20,6 +21,7 @@ PROFILE = False
 FT = False
 MEM_LIMIT = 0.25
 MAX_BATCHES = 30
+
 
 def print_if_debug(*x):
     if DEBUG:
@@ -263,8 +265,6 @@ class TaskManager:
             print(output)
             raise Exception("push data type not understood")
 
-        
-
         for target_actor_id in partition_fns:
 
             if target_mask is not None and target_actor_id not in target_mask:
@@ -284,18 +284,19 @@ class TaskManager:
                 if FT:
                     self.HBQ.put(source_actor_id, source_channel_id, seq, target_actor_id, outputs)
                 print_if_profile("disk spill time", time.time() - start_spill)
-            # wrap all the outputs with their actual names and by default persist all outputs
 
             # print(outputs)
             
             # print(source_actor_id, source_channel_id, seq)
 
-            for target_channel_id in self.actor_flight_clients[target_actor_id]:
+            if target_mask is not None:
+                channels_to_do = [channel for channel in self.actor_flight_clients[target_actor_id] if channel in target_mask[target_actor_id]]
+            else:
+                channels_to_do = [channel for channel in self.actor_flight_clients[target_actor_id]]
+            
+            def do_channel(target_channel_id):
 
                 start = time.time()
-
-                if target_mask is not None and target_channel_id not in target_mask[target_actor_id]:
-                    continue
 
                 if target_channel_id in outputs and len(outputs[target_channel_id]) > 0:
                     data = outputs[target_channel_id]
@@ -305,14 +306,10 @@ class TaskManager:
                     
                 else:
                     name = (source_actor_id, source_channel_id, seq, target_actor_id, 0, target_channel_id)
-                   
                     batches = [pyarrow.RecordBatch.from_pydict({"__empty__":[]})]
-                    # print(fake_row.schema, fake_row.to_pandas(), batches[0].schema)
-                    # print(name, batches, fake_row.to_pandas())
 
                 assert len(batches) == 1, batches
-                # spin here until you can finally push it. If you die while spinning, well yourself will be recovered.
-                # this is fine since you don't have the recovery lock.
+
                 client = self.actor_flight_clients[target_actor_id][target_channel_id]
 
                 print_if_debug("pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
@@ -332,13 +329,22 @@ class TaskManager:
                     writer.close()
 
                 except pyarrow._flight.FlightUnavailableError:
-                    # failed to push to cache, probably because downstream node failed. update actor_flight_clients
                     print("downstream unavailable")
                     return False
                 
                 # print("finished pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
 
-                print_if_profile("pushing to one channel time", time.time() - start)
+                print_if_profile("pushing to one channel time", time.time() - start, len(batches[0]), batches[0].nbytes)
+                return True
+
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+            futures = {}
+            for target_channel_id in channels_to_do:
+                futures[target_channel_id] = executor.submit(do_channel, target_channel_id)
+            
+            result = {target_channel_id:futures[target_channel_id].result() for target_channel_id in channels_to_do}
+            if not all(result.values()):
+                return False
 
         print_if_profile("push time", time.time() - start_push)
         return True
@@ -464,6 +470,8 @@ class ExecTaskManager(TaskManager):
             count += 1
 
             candidate_tasks = self.NTT.lrange(self.r, str(self.node_id), 0, -1)
+            # we don't need to make sure that the exec tasks respect stages because our input requirements now contain that information
+            # that combined with input task stages should gurantee that exec task stages are respected.
             # candidate_tasks = [candidate_task for candidate_task in candidate_tasks if self.ast[pickle.loads(candidate_task)[1][0]] <= self.current_stage]
             length = len(candidate_tasks)
             if length == 0:
