@@ -373,7 +373,7 @@ class JoinNode(TaskNode):
 
         if len(self.join_specs) == 1 and self.blocking:
             return task_graph.new_blocking_node({0: parent_nodes[left_parent], 1: parent_nodes[right_parent]}, 
-                        operator, self.stage, self.placement_strategy, source_target_info={0: left_parent_target_info, 1: right_parent_target_info}, transform_func=transform_func)
+                        operator, self.stage, self.placement_strategy, source_target_info={0: left_parent_target_info, 1: right_parent_target_info}, transform_fn=transform_func)
         else:
             intermediate_node = task_graph.new_non_blocking_node({0: parent_nodes[left_parent], 1: parent_nodes[right_parent]},
                          operator, self.stage, self.placement_strategy, source_target_info={0: left_parent_target_info, 1: right_parent_target_info})
@@ -396,7 +396,7 @@ class JoinNode(TaskNode):
             # print("adding node", intermediate_node, parent_nodes[right], {0: str(intermediate_target_info), 1: str(parent_target_info)})
             if i == len(self.join_specs) - 1 and self.blocking:
                 return task_graph.new_blocking_node({0: intermediate_node, 1: parent_nodes[right_parent]}, 
-                        operator, self.stage, self.placement_strategy, source_target_info={0: intermediate_target_info, 1: parent_target_info}, transform_func=transform_func)
+                        operator, self.stage, self.placement_strategy, source_target_info={0: intermediate_target_info, 1: parent_target_info}, transform_fn=transform_func)
             else:
                 intermediate_node = task_graph.new_non_blocking_node({0: intermediate_node, 1: parent_nodes[right_parent]}, 
                         operator, self.stage, self.placement_strategy, source_target_info={0: intermediate_target_info, 1: parent_target_info})
