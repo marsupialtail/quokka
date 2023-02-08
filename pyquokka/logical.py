@@ -206,7 +206,7 @@ class InputDiskCSVNode(SourceNode):
 
         # now apply the predicate to this sample
         for target in self.targets:
-            predicate = self.targets[target].predicate
+            predicate = sql_utils.label_sample_table_names(self.targets[target].predicate)
             if predicate == sqlglot.exp.TRUE:
                 count = len(sample)
             else:
