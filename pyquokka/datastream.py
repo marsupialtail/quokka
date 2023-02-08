@@ -489,7 +489,7 @@ class DataStream:
             
         )
     
-    def with_column_sql(self, sql_expression, foldable = True):
+    def with_column_sql(self, sql_expression, foldable = True, required_columns = None):
 
         """
         Example sql expression:
@@ -501,13 +501,16 @@ class DataStream:
         
         """
 
-        enhanced_exp = "select " + sql_expression + " from batch_arrow"
+        enhanced_exp = "select *," + sql_expression + " from batch_arrow"
 
         sqlglot_node = sqlglot.parse_one(enhanced_exp)
         if required_columns is None:
             required_columns = required_columns_from_exp(sqlglot_node)
         
-        new_columns = [i.alias for i in enhanced_exp.selects]
+        for col in required_columns:
+            assert col in self.schema, "required column %s not in schema" % col
+        
+        new_columns = [i.alias for i in sqlglot_node.selects if i.alias != '']
 
         assert type(required_columns) == set
         for column in new_columns:
@@ -516,7 +519,7 @@ class DataStream:
         def duckdb_func(func, batch):
             batch_arrow = batch.to_arrow()
             con = duckdb.connect().execute('PRAGMA threads=%d' % multiprocessing.cpu_count())
-            return polars.from_arrow(con.execute(func, batch=batch).arrow())
+            return polars.from_arrow(con.execute(func).arrow())
 
         return self.quokka_context.new_stream(
             sources={0: self},
@@ -601,8 +604,13 @@ class DataStream:
         assert type(required_columns) == set
         assert new_column not in self.schema, "For now new columns cannot have same names as existing columns"
 
-        def polars_func(func, batch):
-            return batch.with_column(polars.Series(name=new_column, values=func(batch)))
+        assert type(f) == type(lambda x:1) or type(f) == polars.internals.expr.expr.Expr
+
+        def polars_func_lambda(func, batch):
+            return batch.with_columns(polars.Series(name=new_column, values=func(batch)))
+
+        def polars_func_expr(expr, batch):
+            return batch.with_columns(expr.alias(new_column))
 
         return self.quokka_context.new_stream(
             sources={0: self},
@@ -612,7 +620,7 @@ class DataStream:
                 schema_mapping={
                     **{new_column: (-1, new_column)}, **{col: (0, col) for col in self.schema}},
                 required_columns={0: required_columns},
-                function=partial(polars_func, f),
+                function=partial(polars_func_lambda, f) if type(f) == type(lambda x:1) else partial(polars_func_expr, f),
                 foldable=foldable),
             schema=self.schema + [new_column],
             sorted = self.sorted
