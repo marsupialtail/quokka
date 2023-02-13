@@ -1,4 +1,4 @@
-# Fault tolerance for distributed data systems is really quite simple
+# Distributed fault tolerance made simple
 
 First since you are here, I think you might appreciate this short mnemonic I jotted down in my grad school distributed systems class: 
 - **Optimistic concurrency**:  shotgun marriage, possible divorce
