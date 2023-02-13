@@ -94,7 +94,9 @@ def do_1():
     '''
 
     d = lineitem.filter("l_shipdate <= date '1998-12-01' - interval '90' day")
-    d = d.with_column("disc_price", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]), required_columns ={"l_extendedprice", "l_discount"})
+    #d = d.with_column("disc_price", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]), required_columns ={"l_extendedprice", "l_discount"})
+    d = d.with_column("disc_price", polars.col("l_extendedprice") * (1 - polars.col("l_discount")), required_columns ={"l_extendedprice", "l_discount"})
+    # d = d.with_column_sql("l_extendedprice * (1-l_discount) as disc_price, l_extendedprice * (1-l_discount) * (1+l_tax) as charge")
     d = d.with_column("charge", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]) * (1 + x["l_tax"]), required_columns={"l_extendedprice", "l_discount", "l_tax"})
 
     f = d.groupby(["l_returnflag", "l_linestatus"], orderby=["l_returnflag","l_linestatus"]).agg({"l_quantity":["sum","avg"], "l_extendedprice":["sum","avg"], "disc_price":"sum", 
@@ -150,6 +152,7 @@ def do_4():
     d = orders.join(d, left_on="o_orderkey", right_on="l_orderkey", how = "semi")
     d = d.filter("o_orderdate >= date '1993-07-01' and o_orderdate < date '1993-10-01'")
     f = d.groupby("o_orderpriority").agg({'*':['count']})
+    f.explain()
     return f.collect()
 
 
@@ -296,6 +299,15 @@ def do_12_alternate():
     f = d.groupby("l_shipmode").aggregate(aggregations={'high':['sum'], 'low':['sum']})
     return f.collect()
 
+def do_15():
+
+    # first compute the revenue
+    d = lineitem.filter("l_shipdate >= date '1996-01-01' and l_shipdate < date '1996-01-01' + interval '3' month")
+    d = d.with_column("revenue", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]), required_columns={"l_extendedprice", "l_discount"})
+    revenue = d.groupby("l_suppkey").aggregate(aggregations={"revenue":"sum"}).compute()
+    max_revenue = qc.read_dataset(revenue).max("revenue_sum")
+    print(max_revenue)
+
 def count():
 
     return lineitem.aggregate({"*":"count"}).collect()
@@ -372,6 +384,13 @@ def sort():
 
     return lineitem.drop("l_comment").sort("l_partkey", 200000000).write_parquet("s3://yugan/tpc-h-out/", output_line_limit = 5000000)
 
+def dataset_test():
+    z = orders.join(lineitem, left_on = "o_orderkey", right_on = "l_orderkey").filter("o_orderkey > 100").select(["o_orderkey", "o_custkey"]).compute()
+    print(z)
+    s = qc.read_dataset(z)
+    print(s)
+    print(s.collect())
+
 # print(count())
 # print(csv_to_parquet_disk())
 # print(csv_to_csv_disk())
@@ -381,16 +400,18 @@ def sort():
 
 # print(do_1())
 # print(do_3())
-
-print(do_4())
-print(do_5())
-print(do_6())
-print(do_7())
-print(do_8())
-print(do_9())
-print(do_12())
+# 
+# print(do_4())
+# print(do_5())
+# print(do_6())
+# print(do_7())
+# print(do_8())
+# print(do_9())
+# print(do_12())
 
 # print(do_12_alternate())
 
 # print(word_count())
 # print(covariance())
+
+print(do_15())

@@ -26,17 +26,30 @@ import math
 def overlap(a, b):
     return max(-1, min(a[1], b[1]) - max(a[0], b[0]))
 
+# this is actually fault tolerant, since the dataframe is pickled and stored in Redis
+# this is obviously not efficient in a cloud environment, but the intended use is for local development anyways
+class InputPolarsDataset:
 
-class InputRayDataset:
+    def __init__(self, df):
+        self.df = df
 
-    def __init__(self, objects_dict):
-        self.objects_dict = objects_dict
-    
     def get_own_state(self, num_channels):
-        return {channel: list(range(len(self.objects_dict[channel]))) for channel in self.objects_dict}
+        assert num_channels == 1
+        return {0: 0}
 
     def execute(self, mapper_id, state=None):
-        return ray.get(self.objects_dict[mapper_id][state])
+        return None, self.df
+
+# this is the only non fault tolerant operator here. This is because the Ray object store is not fault tolerant and not replayable.
+class InputRayDataset:
+
+    # objects_dict is a dictionary of IP address to a list of Ray object references
+    def __init__(self, objects_dict):
+        self.objects_dict = objects_dict
+
+    def execute(self, mapper_id, state=None):
+        # state will be a tuple of IP, index
+        return None, ray.get(self.objects_dict[state[0]][state[1]])
 
 
 class InputEC2ParquetDataset:
@@ -679,7 +692,10 @@ class InputS3CSVDataset:
         if sort_info is not None:
             self.sort_key = sort_info[0]
             self.sort_mode = sort_info[1]
-        assert self.sort_mode in {"stride", "range"}
+            assert self.sort_mode in {"stride", "range"}
+        else:
+            self.sort_key = None
+            self.sort_mode = None
     
     # we need to rethink this whole setting num channels business. For this operator we don't want each node to do redundant work!
     def get_own_state(self, num_channels):

@@ -2,6 +2,7 @@ import redis
 import ray
 import polars
 import time
+from pyquokka.dataset import InputRayDataset
 from pyquokka.coordinator import Coordinator
 from pyquokka.placement_strategy import *
 from pyquokka.quokka_dataset import * 
@@ -99,9 +100,10 @@ class TaskGraph:
             return 1
         elif type(placement_strategy) == CustomChannelsStrategy:
             return self.cluster.num_node * placement_strategy.channels_per_node * (self.io_per_node if node_type == 'input' else self.exec_per_node)
+        elif type(placement_strategy) == DatasetStrategy:
+            return placement_strategy.total_channels
         else:
             print(placement_strategy)
-            import pdb; pdb.set_trace()
             raise Exception("strategy not supported")
 
     def epilogue(self, stage, placement_strategy):
@@ -109,6 +111,47 @@ class TaskGraph:
         self.actor_placement_strategy[self.current_actor] = placement_strategy
         self.current_actor += 1
         return self.current_actor - 1
+
+    def new_input_dataset_node(self, dataset, stage = 0):
+
+        self.actor_types[self.current_actor] = 'input'
+
+        # this will be a dictionary of ip addresses to ray refs
+        objects_dict = dataset.to_dict()        
+        # print(channel_info)
+        self.input_partitions[self.current_actor] = sum([len(objects_dict[k]) for k in objects_dict])
+
+        reader = InputRayDataset(objects_dict)
+
+        pipe = self.r.pipeline()
+        self.FOT.set(pipe, self.current_actor, ray.cloudpickle.dumps(reader))
+
+        count = 0
+        channel_locs = {}
+
+        # print(objects_dict)
+
+        for ip in objects_dict:
+            assert ip in self.node_locs.values()
+            nodes = [k for k in self.io_nodes if self.node_locs[k] == ip]
+            objects_per_node = (len(objects_dict[ip]) - 1) // len(nodes) + 1
+            for i in range(len(nodes)):
+                node = nodes[i]
+                objects = list(range(i * objects_per_node , min((i + 1) * objects_per_node, len(objects_dict[ip]))))
+                if len(objects) == 0:
+                    break
+                # print(objects)
+                lineages = [(ip, i) for i in objects]
+                vals = {pickle.dumps((self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
+                input_task = TapedInputTask(self.current_actor, count, [i for i in range(len(lineages))])
+                self.LT.mset(pipe, vals)
+                self.NTT.rpush(pipe, node, input_task.reduce())
+                channel_locs[count] = node
+                count += 1
+        
+        pipe.execute()
+        ray.get(self.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
+        return self.epilogue(stage, DatasetStrategy(len(channel_locs)))
 
     def new_input_reader_node(self, reader, stage = 0, placement_strategy = None):
 
@@ -163,17 +206,22 @@ class TaskGraph:
 
         source_placement_strategy = self.actor_placement_strategy[source_node_id]
         
-        assert type(source_placement_strategy) == CustomChannelsStrategy
-        source_total_channels = self.get_total_channels_from_placement_strategy(source_placement_strategy, self.actor_types[source_node_id])
+
+        if type(source_placement_strategy) == CustomChannelsStrategy:
+            source_total_channels = self.get_total_channels_from_placement_strategy(source_placement_strategy, self.actor_types[source_node_id])
+        elif type(source_placement_strategy) == DatasetStrategy:
+            source_total_channels = source_placement_strategy.total_channels
+        else:
+            raise Exception("source strategy not supported")
+
         if type(target_placement_strategy) == CustomChannelsStrategy:
             target_total_channels = self.get_total_channels_from_placement_strategy(target_placement_strategy, "exec")
         elif type(target_placement_strategy) == SingleChannelStrategy:
             target_total_channels = 1
         else:
-            raise Exception("strategy not supported")
+            raise Exception("target strategy not supported")
         
         if source_total_channels >= target_total_channels:
-            assert source_total_channels % target_total_channels == 0
             return partial(partition_key_0, source_total_channels // target_total_channels )
         else:
             assert target_total_channels % source_total_channels == 0
@@ -341,12 +389,12 @@ class TaskGraph:
         self.actor_types[current_actor] = 'exec'
         total_channels = self.get_total_channels_from_placement_strategy(placement_strategy, 'exec')
 
-        output_dataset = ArrowDataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote(total_channels)
+        output_dataset = ArrowDataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote()
         ray.get(output_dataset.ping.remote())
 
         registered = ray.get([node.register_blocking.remote(current_actor , transform_fn, output_dataset) for node in list(self.nodes.values())])
         assert all(registered)
-        return Dataset(output_dataset)
+        return output_dataset
     
     def create(self):
 

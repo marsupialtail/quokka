@@ -255,6 +255,7 @@ class TaskManager:
         
         partition_fns = self.partition_fns[source_actor_id]
 
+        start_convert = time.time()
         if type(output) == pyarrow.Table:
             output = polars.from_arrow(output)
         elif type(output) == polars.internals.DataFrame:
@@ -264,6 +265,8 @@ class TaskManager:
         else:
             print(output)
             raise Exception("push data type not understood")
+
+        print_if_profile("convert time", time.time() - start_convert)
 
         for target_actor_id in partition_fns:
 
@@ -447,7 +450,7 @@ class ExecTaskManager(TaskManager):
                     transform_fn, dataset = self.blocking_nodes[actor_id]
                     if transform_fn is not None:
                         data = transform_fn(data)
-                    ray.get(dataset.added_object.remote(channel_id, [ray.put(data.to_arrow(), _owner = dataset)]))
+                    ray.get(dataset.added_object.remote(ray._private.services.get_node_ip_address(), [ray.put(data.to_arrow(), _owner = dataset)]))
                 self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
 
                 out_seq += 1

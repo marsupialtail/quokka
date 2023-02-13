@@ -33,7 +33,19 @@ class EC2Cluster:
 
         pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
         # connect to that ray cluster
-        ray.init(address='ray://' + str(self.leader_public_ip) + ':10001', runtime_env={"py_modules":[pyquokka_loc]})
+        ray.init(address='ray://' + str(self.leader_public_ip) + ':10001', runtime_env={"py_modules":[pyquokka_loc]},
+                 _system_config={
+                    "max_io_workers": 4, 
+                    "object_spilling_config": json.dumps(
+                        {
+                        "type": "filesystem",
+                        "params": {
+                            "directory_path": "/data",
+                            "buffer_size": 1_000_000,
+                        }
+                        },
+                    )
+                })
     
     def to_json(self, output = "cluster.json"):
         json.dump({"instance_ids":self.instance_ids,"cpu_count_per_instance":self.cpu_count},open(output,"w"))

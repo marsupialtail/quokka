@@ -327,10 +327,24 @@ class QuokkaContext:
         return DataStream(self, schema, self.latest_node_id - 1)
     
     def read_dataset(self, dataset):
-        objects_dict = dataset.to_dict()
-        self.nodes[self.latest_node_id] = InputRayDatasetNode(objects_dict)
+        self.nodes[self.latest_node_id] = InputRayDatasetNode(dataset)
         self.latest_node_id += 1
         return DataStream(self, dataset.schema, self.latest_node_id - 1)
+
+    def from_polars(self, df):
+        self.nodes[self.latest_node_id] = InputPolarsNode(df)
+        self.latest_node_id += 1
+        return DataStream(self, df.columns, self.latest_node_id - 1)
+
+    def from_pandas(self, df):
+        self.nodes[self.latest_node_id] = InputPolarsNode(polars.from_pandas(df))
+        self.latest_node_id += 1
+        return DataStream(self, df.columns, self.latest_node_id - 1)
+
+    def from_arrow(self, df):
+        self.nodes[self.latest_node_id] = InputPolarsNode(polars.from_arrow(df))
+        self.latest_node_id += 1
+        return DataStream(self, df.columns, self.latest_node_id - 1)
 
     def read_sorted_parquet(self, table_location: str, sorted_by: str, schema = None):
         assert type(sorted_by) == str
@@ -416,7 +430,7 @@ class QuokkaContext:
             return parent_id
 
 
-    def lower(self, end_node_id, collect = True):
+    def lower(self, end_node_id, collect = True, dataset_schema = None):
 
         start = time.time()
         task_graph = TaskGraph(self.cluster, self.io_per_node, self.exec_per_node)
@@ -449,9 +463,10 @@ class QuokkaContext:
         # wipe the execution state
         self.execution_nodes = {}
         if collect:
-            return result.to_df()
+            return ray.get(result.to_df.remote())
         else:
-            return result
+            assert dataset_schema is not None
+            return Dataset(dataset_schema, result)
                     
 
     def execute_node(self, node_id, explain = False, mode = None, collect = True):
@@ -459,6 +474,7 @@ class QuokkaContext:
 
         # we will now make a copy of the nodes involved in the computation. 
         
+        end_schema = self.nodes[node_id].schema
         node = self.nodes[node_id]
         nodes = deque([node])
         self.execution_nodes = {node_id: copy.deepcopy(node)}
@@ -491,7 +507,7 @@ class QuokkaContext:
             self.explain(new_node_id, mode = mode)
             return None
         else:
-            return self.lower(new_node_id, collect = collect)
+            return self.lower(new_node_id, collect = collect, dataset_schema = end_schema)
 
     def explain(self, node_id, mode="graph"):
 

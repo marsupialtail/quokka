@@ -6,9 +6,16 @@ import pyarrow as pa
 
 class Dataset:
 
-    def __init__(self, wrapped_dataset) -> None:
+    def __init__(self, schema, wrapped_dataset) -> None:
+        self.schema = schema
         self.wrapped_dataset = wrapped_dataset
         
+    def __str__(self):
+        return "DataSet[" + ",".join(self.schema) + "]"
+
+    def __repr__(self):
+        return "DataSet[" + ",".join(self.schema) + "]"
+
     def to_list(self):
         return ray.get(self.wrapped_dataset.to_list.remote())
     
@@ -22,20 +29,24 @@ class Dataset:
         return ray.get(self.wrapped_dataset.to_arrow_refs.remote())
 
 
+# we need to figure out how to clean up dead objects on dead nodes.
+# not a big problem right now since Arrow Datasets are not fault tolerant anyway
+
 @ray.remote
 class ArrowDataset:
 
-    def __init__(self, num_channels) -> None:
-        self.num_channels = num_channels
-        self.objects = {i: [] for i in range(self.num_channels)}
+    def __init__(self) -> None:
+        self.objects = {}
         self.metadata = {}
         self.done = False
 
     def to_dict(self):
         return self.objects
 
-    def added_object(self, channel, object_handle):
-        self.objects[channel].append(object_handle[0])
+    def added_object(self, ip, object_handle):
+        if ip not in self.objects:
+            self.objects[ip] = []
+        self.objects[ip].append(object_handle[0])
     
     def get_objects(self):
         assert self.is_complete()
@@ -43,14 +54,14 @@ class ArrowDataset:
 
     def to_arrow_refs(self):
         results = []
-        for channel in self.objects:
-            results.extend(self.objects[channel])
+        for ip in self.objects:
+            results.extend(self.objects[ip])
         return results
 
     def to_df(self):
         dfs = []
-        for channel in self.objects:
-            for object in self.objects[channel]:
+        for ip in self.objects:
+            for object in self.objects[ip]:
                 dfs.append(ray.get(object))
         if len(dfs) > 0:
             arrow_table = pa.concat_tables(dfs)

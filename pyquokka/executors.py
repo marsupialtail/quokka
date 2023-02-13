@@ -60,6 +60,7 @@ class StorageExecutor(Executor):
         pass
     
     def execute(self,batches,stream_id, executor_id):
+        # print("executing storage node")
         batches = [batch for batch in batches if batch is not None and len(batch) > 0]
         #print(batches)
         if len(batches) > 0:

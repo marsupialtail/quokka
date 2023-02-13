@@ -98,7 +98,7 @@ class Node:
     # instantiating the input operators could help with the cardinality estimator,
     # but in the future, the cardinality could come from a catalog
 
-    def set_cardinality(self, parent_cardinalities):
+    def set_cardinality(self):
         return None
     
     def lower(self, task_graph):
@@ -126,6 +126,10 @@ class SourceNode(Node):
             result += "\n\t" + str(target) + " " + str(self.targets[target])
         return result
 
+    def set_cardinality(self):
+        for target in self.targets:
+            self.cardinality[target] = None
+
 class InputS3FilesNode(SourceNode):
     def __init__(self, bucket, prefix, schema) -> None:
         super().__init__(schema)
@@ -147,14 +151,23 @@ class InputDiskFilesNode(SourceNode):
         node = task_graph.new_input_reader_node(file_reader, self.stage, self.placement_strategy)
         return node
 
-# class InputRayDatasetNode(SourceNode):
-#     def __init__(self, dataset, schema) -> None:
-#         super().__init__(schema)
-#         self.dataset = dataset
+class InputPolarsNode(SourceNode):
+    def __init__(self, df, schema) -> None:
+        super().__init__(schema)
+        self.df = df
     
-#     def lower(self, task_graph):
-#         node = task_graph.new_input_reader_node(self.dataset, self.stage, self.placement_strategy)
-#         return node
+    def lower(self, task_graph):
+        node = task_graph.new_input_reader_node(self.df, self.stage, SingleChannelStrategy())
+        return node
+
+class InputRayDatasetNode(SourceNode):
+    def __init__(self, dataset) -> None:
+        super().__init__(dataset.schema)
+        self.dataset = dataset
+    
+    def lower(self, task_graph):
+        node = task_graph.new_input_dataset_node(self.dataset, self.stage)
+        return node
 
 class InputS3CSVNode(SourceNode):
     def __init__(self, bucket, prefix, key, schema, sep, has_header, projection = None) -> None:
@@ -291,6 +304,9 @@ class InputDiskParquetNode(SourceNode):
 class SinkNode(Node):
     def __init__(self, schema) -> None:
         super().__init__(schema)
+    
+    def set_cardinality(self, parent_cardinality):
+        return None
 
 class DataSetNode(SinkNode):
     def __init__(self, schema) -> None:
