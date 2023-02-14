@@ -14,9 +14,20 @@ def target_info_to_transform_func(target_info):
 
         if data is None or len(data) == 0:
             return None
-        if predicate != True:
-            data = data.filter(predicate(data))
+        data = data.filter(predicate)
         if len(data) == 0:
+            return None
+        for batch_func in batch_funcs:
+            data = batch_func(data)
+            if data is None or len(data) == 0:
+                return None
+        if projection is not None:
+            data = data[sorted(list(projection))]
+        return data
+
+    def transform_fn_no_filter(batch_funcs, projection, data):
+
+        if data is None or len(data) == 0:
             return None
         for batch_func in batch_funcs:
             data = batch_func(data)
@@ -28,14 +39,13 @@ def target_info_to_transform_func(target_info):
 
 
     if target_info.predicate == sqlglot.exp.TRUE:
-        predicate = True
-    elif target_info.predicate == False:
+        return partial(transform_fn_no_filter, target_info.batch_funcs, target_info.projection)
+    elif target_info.predicate == sqlglot.exp.FALSE:
         print("false predicate detected, entire subtree is useless. We should cut the entire subtree!")
-        predicate = sql_utils.evaluate(target_info.predicate) 
+        return lambda x: None
     else:    
         predicate = sql_utils.evaluate(target_info.predicate) 
-    
-    return partial(transform_fn, predicate, target_info.batch_funcs, target_info.projection)
+        return partial(transform_fn, predicate, target_info.batch_funcs, target_info.projection)
 
 
 class PlacementStrategy:

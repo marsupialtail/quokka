@@ -272,6 +272,17 @@ def do_10():
     f = d.groupby(["c_custkey", "c_name", "c_acctbal", "c_phone", "n_name", \
         "c_address", "c_comment"]).aggregate()
 
+def do_11():
+    d = supplier.join(nation.filter(polars.col("n_name") == 'GERMANY'), left_on="s_nationkey", right_on="n_nationkey")
+    d = d.join(partsupp, left_on="s_suppkey", right_on="ps_suppkey")
+    d = d.with_column("value", polars.col("ps_supplycost") * polars.col("ps_availqty"), required_columns={"ps_supplycost", "ps_availqty"})
+    d = d.select(["ps_partkey", "value"]).compute()
+    temp = qc.read_dataset(d)
+    val = (temp.sum("value") * 0.0001)[0,0]
+    temp.groupby("ps_partkey").aggregate(aggregations={"value":"sum"}).filter("value_sum > " + str(val)).explain()
+    return temp.groupby("ps_partkey").aggregate(aggregations={"value":"sum"}).filter("value_sum > " + str(val)).collect().sort('value_sum',reverse=True)
+    
+
 def do_12():
     
     d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
@@ -305,8 +316,14 @@ def do_15():
     d = lineitem.filter("l_shipdate >= date '1996-01-01' and l_shipdate < date '1996-01-01' + interval '3' month")
     d = d.with_column("revenue", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]), required_columns={"l_extendedprice", "l_discount"})
     revenue = d.groupby("l_suppkey").aggregate(aggregations={"revenue":"sum"}).compute()
-    max_revenue = qc.read_dataset(revenue).max("revenue_sum")
+    print(revenue)
+    revenue = qc.read_dataset(revenue)
+    max_revenue = revenue.max("revenue_sum")[0,0]
     print(max_revenue)
+    result = supplier.join(revenue, left_on="s_suppkey", right_on="l_suppkey").filter("revenue_sum == " + str(max_revenue)).select(["s_suppkey", "s_name", "s_address", "s_phone", "revenue_sum"])
+    result.explain()
+    return result.collect()
+    # print(result)
 
 def count():
 
@@ -407,6 +424,7 @@ def dataset_test():
 # print(do_7())
 # print(do_8())
 # print(do_9())
+print(do_11())
 # print(do_12())
 
 # print(do_12_alternate())
@@ -414,4 +432,4 @@ def dataset_test():
 # print(word_count())
 # print(covariance())
 
-print(do_15())
+# print(do_15())
