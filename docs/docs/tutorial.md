@@ -155,7 +155,7 @@ If you think the first lesson was too complicated, it proably was. This is becau
 
 In most scenarios, it is my hope that you don't have to define custom objects, and use canned implementations which you can just import. This is similar to how Tensorflow or Pytorch works. If you know how to import `torch.nn.Conv2d`, you get the idea. 
 
-Here, we are going to take two CSVs on Disk, join them, and count the number of records in the result: `select count(*) from a and b where a.key = b.key`. You can use the a.csv and b.csv provided in the apps/tutorials folder, or you can supply your own and change the CSV input reader arguments appropriately.
+Here, we are going to take two CSVs on disk, join them, and count the number of records in the result: `select count(*) from a and b where a.key = b.key`. You can use the a.csv and b.csv provided in the apps/tutorials folder, or you can supply your own and change the CSV input reader arguments appropriately.
 
 Without further ado, here's the code:
 
@@ -217,6 +217,150 @@ Quokka by default will execute the join in a pipelined parallel fashion with the
 
 You can try to play around with this example to test out what the `predicate`, `projection` and `batch_funcs` do. For example, try to set a predicate which filters out rows with `val1 > 0.5`: `sqlglot.parse_one("val1 > 0.5")`. You can also try to set a projection on one of the TargetInfos which only returns the `key_a` column: `["key_a"]`. 
 
+## Lesson 2: More inputs readers, more joins
+### Lesson 2.1: JSON Joins
+
+We are again going to be dealing with joins. This time, though, we are going to join data from two JSONs on disk. As in lesson 1, we are then going to count the records in the result. You can use the a.json and b.json provided in the apps/tutorials folder, or, as in lesson 1, you can supply your own and change the JSON reader accordingly.
+
+Here's the code:
+
+~~~python
+
+import time
+from pyquokka.quokka_runtime import TaskGraph
+from pyquokka.executors import JoinExecutor, CountExecutor
+from pyquokka.target_info import TargetInfo, PassThroughPartitioner, HashPartitioner
+from pyquokka.placement_strategy import SingleChannelStrategy
+from pyquokka.dataset import InputDiskJSONDataset
+import sqlglot
+import pandas as pd
+import pyarrow as pa
+
+from pyquokka.utils import LocalCluster, QuokkaClusterManager
+
+manager = QuokkaClusterManager()
+cluster = LocalCluster()
+
+task_graph = TaskGraph(cluster)
+
+
+schema_a = pa.schema([
+    pa.field('key_a', pa.int64()),
+    pa.field('val1_a', pa.float64()),
+    pa.field('val2_a', pa.float64())
+])
+
+schema_b = pa.schema([
+    pa.field('key_b', pa.int64()),
+    pa.field('val1_b', pa.float64()),
+    pa.field('val2_b', pa.float64())
+])
+
+
+a_reader = InputDiskJSONDataset("a.json", schema=schema_a)
+b_reader = InputDiskJSONDataset("b.json", schema=schema_b)
+
+a = task_graph.new_input_reader_node(a_reader)
+b = task_graph.new_input_reader_node(b_reader)
+
+join_executor = JoinExecutor(left_on="key_a", right_on = "key_b")
+joined = task_graph.new_non_blocking_node({0:a,1:b},join_executor,
+    source_target_info={0:TargetInfo(partitioner = HashPartitioner("key_a"), 
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = ["key_a"],
+                                    batch_funcs = []), 
+                        1:TargetInfo(partitioner = HashPartitioner("key_b"),
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = ["key_b"],
+                                    batch_funcs = [])})
+count_executor = CountExecutor()
+count = task_graph.new_blocking_node({0:joined},count_executor, placement_strategy= SingleChannelStrategy(),
+    source_target_info={0:TargetInfo(partitioner = PassThroughPartitioner(),
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = None,
+                                    batch_funcs = [])})
+
+task_graph.create()
+start = time.time()
+task_graph.run()
+print("total time ", time.time() - start)
+
+print(count.to_df())
+
+
+a = json.read_json("a.json")
+b = json.read_json("b.json")
+a = a.to_pandas()
+b = b.to_pandas()
+print(len(a.merge(b,left_on="key_a", right_on = "key_b", how="inner")))
+
+~~~
+
+Notice how when creating `a_reader` and `b_reader`, we specify a pyarrow schema. This can be important if you want the values JSON file to be parsed as specific types. When using the `InputJSONDiskReader` with an explicit schema, make sure to specify a valid pyarrow schema, so the parser does not throw an error. We do not have to use an explicit schema, however. See the next lesson for this. 
+
+### Lesson 2.2: JSON and CSV Joins 
+
+We will now be joining a JSON file and a CSV on disk. The code is the following:
+
+~~~ python3
+
+import time
+from pyquokka.quokka_runtime import TaskGraph
+from pyquokka.executors import JoinExecutor, CountExecutor
+from pyquokka.target_info import TargetInfo, PassThroughPartitioner, HashPartitioner
+from pyquokka.placement_strategy import SingleChannelStrategy
+from pyquokka.dataset import InputDiskCSVDataset, InputDiskJSONDataset
+import sqlglot
+import pandas as pd
+
+from pyquokka.utils import LocalCluster, QuokkaClusterManager
+
+manager = QuokkaClusterManager()
+cluster = LocalCluster()
+
+task_graph = TaskGraph(cluster)
+
+a_reader = InputDiskJSONDataset("a.json")
+b_reader = InputDiskCSVDataset("b.csv", header = True ,  stride =  1024)
+
+a = task_graph.new_input_reader_node(a_reader)
+b = task_graph.new_input_reader_node(b_reader)
+
+join_executor = JoinExecutor(left_on="key_a", right_on = "key_b")
+joined = task_graph.new_non_blocking_node({0:a,1:b},join_executor,
+    source_target_info={0:TargetInfo(partitioner = HashPartitioner("key_a"), 
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = ["key_a"],
+                                    batch_funcs = []), 
+                        1:TargetInfo(partitioner = HashPartitioner("key_b"),
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = ["key_b"],
+                                    batch_funcs = [])})
+count_executor = CountExecutor()
+count = task_graph.new_blocking_node({0:joined},count_executor, placement_strategy= SingleChannelStrategy(),
+    source_target_info={0:TargetInfo(partitioner = PassThroughPartitioner(),
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = None,
+                                    batch_funcs = [])})
+
+task_graph.create()
+start = time.time()
+task_graph.run()
+print("total time ", time.time() - start)
+
+print(count.to_df())
+
+a = json.read_json("a.json")
+a = a.to_pandas()
+a["key_a"] = a["key_a"].astype(str)
+b = pd.read_csv("b.csv",names=["key_b","val1","val2"])
+print(len(a.merge(b,left_on="key_a", right_on = "key_b", how="inner")))
+
+~~~
+
+Here, we are using our `InputDiskJSONReader` as the `a_reader` and our `InputDiskCSVReader` as the `b_reader`. Notice how we are not using an explicit pyarrow schema for the JSON input reader here. We simply let the input reader infer the data type of the values present in our JSON file. 
+
+
 This is it for now. I unfortunately can't find too much time to write tutorials, but I hope this is enough to get you started. If you have any questions, feel free to reach out to me on the Quokka Discord server. 
 
-You can always check out how the Quokka canned executors and input readers work, in `pyquokka/executors.py` and `pyquokka/dataset.py`. If you are feeling particularly audacious, you can try implementing a JSON reader! I have even included some example json files for you in this folder.
+You can always check out how the Quokka canned executors and input readers work, in `pyquokka/executors.py` and `pyquokka/dataset.py`. If you are feeling particularly audacious, you can try implementing a new input reader! 
