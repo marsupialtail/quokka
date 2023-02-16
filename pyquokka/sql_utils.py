@@ -284,36 +284,106 @@ def csv_condition_decomp(condition):
     
     return partial(apply_conditions_to_batch, batch_funcs),  required_columns_from_exp(condition)
 
-def parse_aggregations(expr):
+def parse_single_aggregation(expr, prefix = ''):
     """
-    For parsing complex aggregation expressions.
+    For parsing complex aggregation expressions. Convert aggregations into sums.
 
     Args:
-        e (sqlglot expression): Expression representing aggregation
+        expr (string): Single aggregation expression
+        prefix (string): prefix to append to simple aggregation aliases
 
     Returns: 
         agg_list (list): List of strings representing simple aggregations (root node is sum, count, etc).
-        expr (sqlglot expression): Original expression written in terms of aggs.
+        expr (string): Original expression written in terms of aggs.
         If there is no aggregation, return ([], e).
 
     Examples:
         Input: 2 * COUNT(*)
-        Output: (["COUNT(*) as agg_0"], 2*agg_0)
+        Output: (['COUNT(*) as agg_0'], '2 * SUM(agg_0)')
 
-        Input: SUM(l_partkey + 1) / SUM(l_orderkey)
-        Output: (['SUM(l_partkey + 1) as agg_0', 'SUM(l_orderkey) as agg_1'], agg_0 / agg_1)
+        Input: SUM(l_partkey + 1) / SUM(l_orderkey) as r
+        Output: (['SUM(l_partkey + 1) as agg_0', 'SUM(l_orderkey) as agg_1'],
+                  'SUM(agg_0) / SUM(agg_1) AS r')
 
-        Intput: 1/(MIN(l_orderkey) * SUM(l_partkey) + COUNT(*))
-        Output: (['COUNT(*) as agg_0', 'MIN(l_orderkey) as agg_1', 'SUM(l_partkey) as agg_2'], 1/(agg_1 * agg_2 + agg_0))
+        Input: AVG(x+2) / SUM(x+1) + MIN(x+3)
+        Output: (['MIN(x + 3) as agg_0', 'SUM(x + 2) as agg_1', 'COUNT(*) as agg_2', 'SUM(x + 1) as agg_3'],
+                  '(SUM(agg_1) / SUM(agg_2)) / SUM(agg_3) + MIN(agg_0)')
+        
+        Input: (['SUM(a) as agg_0', 'SUM(c) as agg_1', 'COUNT(*) as agg_2', 'MIN(b) as agg_3'],
+                 'SUM(agg_0) / ((SUM(agg_1) / SUM(agg_2)) + MIN(agg_3))')
     """
-    e = expr.copy()
+    e = sqlglot.parse_one(expr)
     aggregations = [i for i in e.find_all(exp.AggFunc)]
     if len(aggregations) == 0: return [], e
 
     agg_list = []
-    for i, a in enumerate(aggregations):
-        new_name = "agg_" + str(i)
-        agg_list.append(a.sql() + " as " + new_name)
-        if a == e: e = e.replace(sqlglot.parse_one(new_name))
-        else: a.replace(sqlglot.parse_one(new_name))
-    return agg_list, e
+    i = 0
+    for a in aggregations:
+        new_name = prefix + "agg_" + str(i)
+        
+        # Convert averages to sums
+        if isinstance(a, exp.Avg):
+            new_exp = exp.Sum.from_arg_list(a.unnest_operands())
+            agg_list.append(new_exp.sql() + " as " + new_name)
+            
+            count_name = prefix + "agg_" + str(i+1)
+            agg_list.append("COUNT(*) as " + count_name)
+            i += 1
+            
+            if a == e:
+                new_final_exp = sqlglot.parse_one(exp.Sum.from_arg_list([sqlglot.parse_one(new_name)]).sql() + "/ SUM(" + count_name + ")")
+                e = e.replace(new_final_exp)
+            
+            new_exp.this.replace(sqlglot.parse_one(new_name))
+            new_exp = sqlglot.parse_one("(" + new_exp.sql() + "/ SUM(" + count_name + "))")
+            a.replace(new_exp)
+        else:
+            agg_list.append(a.sql() + " as " + new_name)
+        
+        if isinstance(a, exp.Count):
+            new_exp = exp.Sum.from_arg_list([sqlglot.parse_one(new_name)])
+            if a == e: 
+                e.this.replace(new_exp)
+                return agg_list, new_exp.sql()
+            else:
+                a.replace(new_exp)
+        if a == e: 
+            e.this.replace(sqlglot.parse_one(new_name))
+            return agg_list, e.sql() + " as " + new_name
+        else: 
+            a.this.replace(sqlglot.parse_one(new_name))
+        i += 1
+    return agg_list, e.sql()
+
+def parse_multiple_aggregations(aggs):
+    """
+    Args:
+        aggs (str): list of aggregations separated by commas
+        
+    Returns:
+        simple_aggs (str): simple aggregation functions
+        final_expr (str): list of column expressions corresponding to original aggregations, separated by commas
+        
+    Examples:
+        Input: "min(a), max(b), sum(c), avg(d), count(*)"
+        Output: ('MIN(a) as e0_agg_0,MAX(b) as e1_agg_0,SUM(c) as e2_agg_0,SUM(d) as e3_agg_0,COUNT(*) as e3_agg_1,COUNT(*) as e4_agg_0',
+                 'MIN(e0_agg_0) as e0_agg_0,MAX(e1_agg_0) as e1_agg_0,SUM(e2_agg_0) as e2_agg_0,SUM(e3_agg_0) / SUM(e3_agg_1),SUM(e4_agg_0)')
+ 
+        Input: "sum(x)/sum(y) as z, avg(c) as b, avg(d)+avg(e) as k"
+        Output: ('SUM(x) as e0_agg_0,SUM(y) as e0_agg_1,SUM(c) as e1_agg_0,COUNT(*) as e1_agg_1,SUM(d) as e2_agg_0,COUNT(*) as e2_agg_1,SUM(e) as e2_agg_2,COUNT(*) as e2_agg_3',
+                 'SUM(e0_agg_0) / SUM(e0_agg_1) AS z,(SUM(e1_agg_0) / SUM(e1_agg_1)) AS b,(SUM(e2_agg_0) / SUM(e2_agg_1)) + (SUM(e2_agg_2) / SUM(e2_agg_3)) AS k')
+    
+    """
+    agg_list = [sqlglot.parse_one(a) for a in aggs.split(',')]
+    simple_agg_list = []
+    final_expr_list = []
+    i = 0
+    for a in agg_list:
+        prefix = "e" + str(i) + "_"
+        l, e = parse_single_aggregation(a.sql(), prefix)
+        simple_agg_list.extend(l)
+        final_expr_list.append(e)
+    
+        i += 1
+    return ','.join(simple_agg_list), ','.join(final_expr_list)
+
