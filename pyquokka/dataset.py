@@ -619,12 +619,11 @@ class InputDiskCSVDataset:
 
 
 class InputDiskJSONDataset:
-    def __init__(self, filepath , names = None , sep=",", stride=16 * 1024 * 1024, window = 1024 * 4, keys = None, sort_info = None) -> None:
+    def __init__(self, filepath , names = None , stride=16 * 1024 * 1024, window = 1024 * 4, keys = None, sort_info = None, schema = None) -> None:
         self.filepath = filepath
 
         self.num_channels = None
         self.names = names
-        self.sep = sep
         self.stride = stride
         self.keys = keys
         
@@ -632,6 +631,13 @@ class InputDiskJSONDataset:
         
         self.length = 0
         self.file_sizes = None
+
+        # Schema needs to be be a pyarrow.schema object
+        if schema is not None:
+            self.parse_options = json.ParseOptions(json.ParseOptions(explicit_schema = schema, newlines_in_values = False))
+        else:
+            self.parse_options = json.ParseOptions(json.ParseOptions(newlines_in_values = False))
+
 
         if sort_info is not None:
             self.sort_key = sort_info[0]
@@ -666,7 +672,7 @@ class InputDiskJSONDataset:
                 first_newline = resp.find(bytes('\n','utf-8'))
                 resp = resp[:first_newline]
                 min_key = json.read_json(BytesIO(resp), read_options=json.ReadOptions(
-                    use_threads=True), parse_options=json.ParseOptions(newlines_in_values = False))[self.sort_key][0].as_py()
+                    use_threads=True), parse_options=self.parse_options)[self.sort_key][0].as_py()
                 
                 f = open(file, "rb")
                 f.seek(size - self.window)
@@ -674,7 +680,7 @@ class InputDiskJSONDataset:
                 first_newline = resp.find(bytes('\n','utf-8'))
                 resp = resp[first_newline + 1:]
                 max_key = json.read_json(BytesIO(new_resp), read_options=json.ReadOptions(
-                    use_threads=True), parse_options=json.ParseOptions(newlines_in_values = False))[self.sort_key][-1].as_py()
+                    use_threads=True), parse_options=self.parse_options)[self.sort_key][-1].as_py()
                 file_stats.append((file, min_key, max_key, size))
             
             file_stats = sorted(file_stats, key=lambda x: x[1])
@@ -756,7 +762,7 @@ class InputDiskJSONDataset:
             resp = prefix + resp[: last_newline]
 
             bump = json.read_json(BytesIO(resp), read_options=json.ReadOptions(
-                    use_threads=True), parse_options=json.ParseOptions(newlines_in_values = False))
+                    use_threads=True), parse_options=self.parse_options)
             bump = bump.select(self.keys) if self.keys is not None else bump
 
             return None, bump
