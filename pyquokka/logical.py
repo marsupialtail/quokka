@@ -1,6 +1,7 @@
 import sqlglot
 from pyquokka.dataset import *
 from pyquokka.executors import *
+from pyquokka.placement_strategy import * 
 from pyquokka.utils import EC2Cluster, LocalCluster
 import pyquokka.sql_utils as sql_utils
 from pyquokka.target_info import * 
@@ -47,33 +48,6 @@ def target_info_to_transform_func(target_info):
         predicate = sql_utils.evaluate(target_info.predicate) 
         return partial(transform_fn, predicate, target_info.batch_funcs, target_info.projection)
 
-
-class PlacementStrategy:
-    def __init__(self) -> None:
-        pass
-
-'''
-Launch a single channel. Useful for aggregator nodes etc.
-'''
-class SingleChannelStrategy(PlacementStrategy):
-    def __init__(self) -> None:
-        super().__init__()
-
-'''
-Launch a custom number of cahnnels per node. Note the default is cpu_count for SourceNodes and 1 for task nodes.
-'''
-class CustomChannelsStrategy(PlacementStrategy):
-    def __init__(self, channels) -> None:
-        super().__init__()
-        self.channels_per_node = channels
-
-'''
-Launch only on GPU instances.
-'''
-class GPUStrategy(PlacementStrategy):
-    def __init__(self) -> None:
-        super().__init__()
-
 '''
 A node takes in inputs from its parent nodes, process them according to some operator, and sends outputs to targets.
 A node may apply different partitioners, post-predicates and projections for different targets.
@@ -100,6 +74,7 @@ class Node:
 
         # this is a dictionary of target to estimated cardinality. All targets in self.targets must be here
         self.cardinality = {}
+        self.stage = None
     
     def assign_stage(self, stage):
         self.stage = stage
@@ -528,6 +503,10 @@ class FilterNode(TaskNode):
             schema_mapping = {column: (0, column) for column in schema}, 
             required_columns = {0:set(i.name for i in predicate.find_all(sqlglot.expressions.Column))})
         self.predicate = predicate
+    
+    def __str__(self):
+        result = "filter node: " + self.predicate.sql()
+        return result
     
     def lower(self, task_graph, parent_nodes, parent_source_info):
         print("Tried to lower a filter node. This means the optimization probably failed and something bad is happening.")

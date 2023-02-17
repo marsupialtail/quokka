@@ -310,6 +310,25 @@ def do_12_alternate():
     f = d.groupby("l_shipmode").aggregate(aggregations={'high':['sum'], 'low':['sum']})
     return f.collect()
 
+def do_13():
+
+    d = customer.join(orders, left_on="c_custkey", right_on="o_custkey", how="left")
+    d = d.filter("o_comment not like '%special%requests%'")
+    d = d.with_column("o_orderkey_1", polars.col("o_orderkey").is_not_null(), required_columns={"o_orderkey"})
+    c_orders = d.groupby("c_custkey").aggregate(aggregations={"o_orderkey_1":"sum"}).rename({"o_orderkey_1_sum":"c_count"})
+    result = c_orders.groupby("c_count").aggregate(aggregations={"*":"count"}).collect().sort('__count_sum',reverse=True)
+
+    ref_customer = polars.read_csv("/home/ziheng/tpc-h/customer.tbl", sep="|")
+    ref_orders = polars.read_csv("/home/ziheng/tpc-h/orders.tbl", sep="|").\
+        filter( ~(polars.col("o_comment").str.contains('special') & polars.col("o_comment").str.contains('requests')))
+    ref = ref_customer.join(ref_orders, left_on="c_custkey", right_on="o_custkey", how="left")\
+        .with_column(polars.col("o_orderkey").is_not_null().alias("o_orderkey_1")).groupby("c_custkey").agg([polars.col("o_orderkey_1").sum()])\
+        .groupby("o_orderkey_1").count().sort('count',reverse = True)
+        #.sort('o_orderkey_1',reverse = True)
+
+    print(result)
+    print(ref)
+
 def do_15():
 
     # first compute the revenue
@@ -324,6 +343,51 @@ def do_15():
     result.explain()
     return result.collect()
     # print(result)
+
+def do_16():
+
+    print("we need to impleemnt groupby count distinct. It's hella hard")
+
+    bad_suppliers = supplier.filter("s_comment like '%Customer%Complaints%'")
+    d = partsupp.join(bad_suppliers, left_on="ps_suppkey", right_on="s_suppkey", how="anti")
+    d = d.join(part, left_on="ps_partkey", right_on="p_partkey", how="inner")
+    d = d.filter("p_brand != 'Brand#45' and p_type not like 'MEDIUM POLISHED%' and p_size in (49, 14, 23, 45, 19, 3, 36, 9)")
+    result = d.groupby(["p_brand", "p_type", "p_size"]).aggregate(aggregations={"ps_supplycost":"sum"})
+    result.explain()
+    return result.collect()
+
+def do_19():
+
+    d = lineitem.join(part, left_on="l_partkey", right_on="p_partkey", how="inner")
+    d = d.filter("""
+                (
+                    p_brand = 'Brand#12'
+                    and p_container in ('SM CASE', 'SM BOX', 'SM PACK', 'SM PKG')
+                    and l_quantity >= 1 and l_quantity <= 1 + 10
+                    and p_size between 1 and 5
+                    and l_shipmode in ('AIR', 'AIR REG')
+                    and l_shipinstruct = 'DELIVER IN PERSON') or 
+                (
+                    p_brand = 'Brand#23'
+                    and p_container in ('MED BAG', 'MED BOX', 'MED PKG', 'MED PACK')
+                    and l_quantity >= 10 and l_quantity <= 10 + 10
+                    and p_size between 1 and 10
+                    and l_shipmode in ('AIR', 'AIR REG')
+                    and l_shipinstruct = 'DELIVER IN PERSON') or
+                (
+                    p_brand = 'Brand#34'
+                    and p_container in ('LG CASE', 'LG BOX', 'LG PACK', 'LG PKG')
+                    and l_quantity >= 20 and l_quantity <= 20 + 10
+                    and p_size between 1 and 15
+                    and l_shipmode in ('AIR', 'AIR REG')
+                    and l_shipinstruct = 'DELIVER IN PERSON'
+                )
+    """)
+    d = d.with_column("revenue", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]), required_columns={"l_extendedprice", "l_discount"})
+    result = d.aggregate(aggregations={"revenue":"sum"})
+    result.explain()
+    return result.collect()
+
 
 def count():
 
@@ -424,12 +488,14 @@ def dataset_test():
 # print(do_7())
 # print(do_8())
 # print(do_9())
-print(do_11())
+# print(do_11())
 # print(do_12())
-
+# print(do_13())
 # print(do_12_alternate())
 
 # print(word_count())
 # print(covariance())
 
 # print(do_15())
+# print(do_16())
+print(do_19())

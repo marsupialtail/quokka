@@ -125,7 +125,8 @@ def evaluate(node):
             filter = node.expression.this
             if filter[0] == '%' and filter[-1] == '%':
                 filter = filter[1:-1]
-                return lf.str.contains(filter)
+                stuff = filter.split("%")
+                return reduce(operator.and_, [lf.str.contains(i) for i in stuff])
             elif filter[0] != '%' and filter[-1] == '%':
                 filter = filter[:-1]
                 return lf.str.starts_with(filter)
@@ -158,16 +159,12 @@ def evaluate(node):
         return predicate * if_true + (~predicate) * default
         
     elif type(node) == sqlglot.expressions.In:
-        if all([type(i) == exp.Literal for i in node.args["expressions"]]):
-            lf = evaluate(node.this)
-            # unfortunately we cannot use polars built-in isin function because it will fail to serialize 
-            # when you want to send to Ray
-            expr = (lf == node.args["expressions"][0].name)
-            for i in node.args["expressions"][1:]:
-                expr = expr | (lf == i.name)
-            return expr
-        else:
-            raise Exception(" we can only generate kernels for in keyword if the set is a list of literals")
+
+        # the types should work out even without conversion, is_in with polars work if the list is string and the type is int.
+        lf = evaluate(node.this)
+        l = [k.name for k in node.args['expressions']]
+        return lf.is_in(l)
+
     elif type(node) == sqlglot.expressions.Between:
         pred = evaluate(node.this)
         low = evaluate(node.args['low'])

@@ -522,8 +522,11 @@ class QuokkaContext:
             logical_plan_graph.node(str(node_id), str(node_id) + str(self.execution_nodes[node_id]))
             for parent in self.execution_nodes[node_id].parents:
                 self._walk(self.execution_nodes[node_id].parents[parent], logical_plan_graph)
-                cardinality = self.execution_nodes[self.execution_nodes[node_id].parents[parent]].cardinality[node_id]
-                cardinality = round(cardinality, 2) if cardinality is not None else None
+                try:
+                    cardinality = self.execution_nodes[self.execution_nodes[node_id].parents[parent]].cardinality[node_id]
+                    cardinality = round(cardinality, 2) if cardinality is not None else None
+                except:
+                    cardinality = None
                 logical_plan_graph.edge(
                     str(self.execution_nodes[node_id].parents[parent]), str(node_id), label = str(cardinality))
             logical_plan_graph.view()
@@ -532,8 +535,11 @@ class QuokkaContext:
         graph.node(str(node_id), str(node_id) + " " + str(self.execution_nodes[node_id]))
         for parent in self.execution_nodes[node_id].parents:
             self._walk(self.execution_nodes[node_id].parents[parent], graph)
-            cardinality = self.execution_nodes[self.execution_nodes[node_id].parents[parent]].cardinality[node_id]
-            cardinality = round(cardinality, 2) if cardinality is not None else None
+            try:
+                cardinality = self.execution_nodes[self.execution_nodes[node_id].parents[parent]].cardinality[node_id]
+                cardinality = round(cardinality, 2) if cardinality is not None else None
+            except:
+                cardinality = None
             graph.edge(str(self.execution_nodes[node_id].parents[parent]), str(node_id), label = str(cardinality))
 
     def __push_filter__(self, node_id):
@@ -545,16 +551,20 @@ class QuokkaContext:
         if len(targets) == 0:
             for parent in node.parents:
                 self.__push_filter__(node.parents[parent])
+            return
 
         # if this node has more than one target, just give up, we might handle this later by pushing an OR predicate
         elif len(targets) > 1:
             for parent in node.parents:
                 self.__push_filter__(node.parents[parent])
+            return
 
         # you have exactly one target
         else:
             target_id = list(targets.items())[0][0]
             predicate = targets[target_id].predicate
+
+            import pdb;pdb.set_trace()
 
             assert predicate == sqlglot.exp.TRUE or optimizer.normalize.normalized(
                 predicate), "predicate must be CNF"
@@ -578,24 +588,21 @@ class QuokkaContext:
                 predicate = optimizer.simplify.simplify(
                     sqlglot.exp.and_(predicate, node.predicate))
                 parent_id = node.parents[0]
-                if optimizer.simplify.simplify(predicate) == sqlglot.exp.TRUE:
-                    return self.__push_filter__(parent_id)
-                else:
-                    parent = self.execution_nodes[parent_id]
-                    parent.targets[target_id] = copy.deepcopy(
-                        targets[target_id])
-                    parent.targets[target_id].and_predicate(predicate)
-                    success = False
-                    # we need to find which parent in the target is this node, and replace it with this node's parent
-                    for key in self.execution_nodes[target_id].parents:
-                        if self.execution_nodes[target_id].parents[key] == node_id:
-                            self.execution_nodes[target_id].parents[key] = parent_id
-                            success = True
-                            break
-                    assert success
-                    del parent.targets[node_id]
-                    del self.execution_nodes[node_id]
-                    return self.__push_filter__(parent_id)
+                parent = self.execution_nodes[parent_id]
+                parent.targets[target_id] = copy.deepcopy(
+                    targets[target_id])
+                parent.targets[target_id].and_predicate(predicate)
+                success = False
+                # we need to find which parent in the target is this node, and replace it with this node's parent
+                for key in self.execution_nodes[target_id].parents:
+                    if self.execution_nodes[target_id].parents[key] == node_id:
+                        self.execution_nodes[target_id].parents[key] = parent_id
+                        success = True
+                        break
+                assert success
+                del parent.targets[node_id]
+                del self.execution_nodes[node_id]
+                return self.__push_filter__(parent_id)
 
             # if this is not a filter node, it might have multiple parents. This is okay.
             # we assume the predicate is in CNF format. We will go through all the conjuncts and determine which parent we can push each conjunct to
@@ -603,7 +610,8 @@ class QuokkaContext:
             else:
                 if optimizer.simplify.simplify(predicate) == sqlglot.exp.TRUE:
                     for parent in node.parents:
-                        return self.__push_filter__(node.parents[parent])
+                        self.__push_filter__(node.parents[parent])
+                    return
                 else:
                     conjuncts = list(
                         predicate.flatten()
@@ -636,6 +644,7 @@ class QuokkaContext:
 
                     for parent in node.parents:
                         self.__push_filter__(node.parents[parent])
+                    return 
 
     def __early_projection__(self, node_id):
 
@@ -840,8 +849,8 @@ class QuokkaContext:
                     for parent in parents:
                         parent_node = self.execution_nodes[parents[parent]]
                         if issubclass(type(parent_node), JoinNode):
-                            # we can only do join fusion if the parent didn't have any kind of batch functions
-                            if len(parent_node.targets) == 1 and len(parent_node.targets[node_id].batch_funcs) == 0:
+                            # we can only do join fusion if the parent didn't have any kind of batch functions and if the parent only has inner joins
+                            if len(parent_node.targets) == 1 and len(parent_node.targets[node_id].batch_funcs) == 0 and all([join_spec[0] == "inner" for join_spec in parent_node.join_specs]):
                                 not_done = True
                                 assert len(parent_node.join_specs) == 1
                                 # you are now responsible for your parent's join spec
