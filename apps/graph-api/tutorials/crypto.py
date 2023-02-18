@@ -9,43 +9,62 @@ import polars
 import ray
 cluster = LocalCluster()
 
+from web3 import Web3, HTTPProvider
+
+#Replace with your Alchemy API key:
+apiKey = "ukYQfHBOSIeUwipjO76QoCwst48yE528"
+
+
 # this dataset will generate a sequence of numbers, from 0 to limit. 
 class SimpleDataset:
-    def __init__(self, limit) -> None:
+    def __init__(self, arguments) -> None:
         
-        self.limit = limit
-        self.num_channels = None
+        self.arguments = arguments
+        self.web3 = None
 
     def get_own_state(self, num_channels):
         channel_info = {}
         for channel in range(num_channels):
-            channel_info[channel] = [i for i in range(channel, self.limit, num_channels)]
+            channel_info[channel] = [self.arguments[i] for i in range(channel, len(self.arguments), num_channels)]
         return channel_info
 
     def execute(self, channel, state = None):
-        curr_number = state
-        return None, polars.DataFrame({"number": [curr_number]})
 
+        if self.web3 is None:
+           self.web3 = Web3(Web3.HTTPProvider('https://eth-mainnet.g.alchemy.com/v2/'+apiKey))
+        
+        logs = state(self.web3)
+        df = polars.from_records([dict(k) for k in logs])
+        print(len(df))
+        return None, df
+    
 class AddExecutor(Executor):
     def __init__(self) -> None:
-        self.sum = None
+        self.state = None
     def execute(self,batches,stream_id, channel):
         for batch in batches:
-            self.sum = polars.from_arrow(batch) if self.sum is None else self.sum + polars.from_arrow(batch)
+            self.state = polars.from_arrow(batch) if self.state is None else self.state.vstack(polars.from_arrow(batch))
 
     def done(self,channel):
-        print("I am executor ", channel, " my sum is ", self.sum)
-        return self.sum
+        return self.state
 
+
+web3 = Web3(Web3.HTTPProvider('https://eth-mainnet.g.alchemy.com/v2/'+apiKey))
 task_graph = TaskGraph(cluster)
-reader = SimpleDataset(80)
+arguments = [{'fromBlock': 1000000, 'toBlock': 1000100},
+             {'fromBlock': 1000100, 'toBlock': 1000200},
+             {'fromBlock': 1000200, 'toBlock': 1000300},
+             {'fromBlock': 1000300, 'toBlock': 1000400}]
+# you must capture the local i in the lambda.
+arguments = [lambda x, i = i: x.eth.get_logs(i) for i in arguments]
+reader = SimpleDataset(arguments)
 numbers = task_graph.new_input_reader_node(reader)
 
 executor = AddExecutor()
 sum = task_graph.new_blocking_node({0:numbers},executor, placement_strategy = SingleChannelStrategy(), source_target_info={0:TargetInfo(partitioner = PassThroughPartitioner(), 
                                     predicate = sqlglot.exp.TRUE,
                                     projection = None,
-                                    batch_funcs = [])})
+                                    batch_funcs = [])},assume_sorted={0:True})
 
 task_graph.create()
 

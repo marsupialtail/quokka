@@ -1,4 +1,3 @@
-import pickle
 import pyarrow as pa
 import pyarrow.csv as csv
 import pyarrow.parquet as pq

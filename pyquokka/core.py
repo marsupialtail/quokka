@@ -1,7 +1,7 @@
 import ray
 import pyarrow
 import pyarrow.flight
-import pickle
+import ray.cloudpickle as pickle
 import redis
 from pyquokka.hbq import * 
 from pyquokka.task import * 

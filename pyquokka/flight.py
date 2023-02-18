@@ -163,7 +163,6 @@ class FlightServer(pyarrow.flight.FlightServerBase):
 
     @staticmethod
     def number_batches(batches, fake_row = None):
-        
         for name, batch in batches:
             for b in batch[0]:
                 if "__empty__" in b.schema.names:
@@ -247,12 +246,13 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                                 break
                     
                 else:
+
                     # we have to return batches strided:  2-1, 3-1, 1-2, 2-2, ...
                     # first we need to figure out which channel we need to start from from the input reqs
                     # print(input_requirements, source_actor_id)
                     input_requirements = input_requirements.filter(polars.col("source_actor_id") == source_actor_id)
                     stuff = input_requirements.sort("source_channel_id")\
-                                         .with_column((input_requirements["min_seq"] - input_requirements["min_seq"].shift(1)).alias("lag"))\
+                                         .with_columns((input_requirements["min_seq"] - input_requirements["min_seq"].shift(1)).alias("lag"))\
                                          .filter(polars.col("lag") == -1)
                     if len(stuff) == 0:
                         # we are starting from the beginning
@@ -261,8 +261,11 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                         curr_seq_no = input_requirements.sort("source_channel_id").to_dicts()[0]["min_seq"]
                     else:
                         assert len(stuff) == 1, "must have only one row on the edge"
-                        start_channel_id = stuff.to_dicts()[0]["source_channel_id"]
-                        curr_seq_no = stuff.to_dicts()[0]["min_seq"]
+
+                        # using to_dicts()[0][key] results in unexplained errors where the dict might be empty even though len(stuff) == 1, 
+                        # unable to reproduce in standalone script.
+                        start_channel_id = stuff["source_channel_id"][0]
+                        curr_seq_no = stuff["min_seq"][0]
 
                     total_source_channels = sorted_reqs[source_actor_id]
                     # now we are going to go up the required batches until we hit one that's not in the flight_keys
@@ -281,7 +284,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                             break
                         curr_seq_no += 1
                         start_channel_id = 0
-                    
+                
                 if len(batches) == 0:
                     self.flights_lock.release()
                     return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches([]))
@@ -330,7 +333,6 @@ class FlightServer(pyarrow.flight.FlightServerBase):
         else:
             raise Exception("mode not supported")
         
-        print_if_debug(batches)
         fake_row = None
         schema = None
         for name, batch in batches:

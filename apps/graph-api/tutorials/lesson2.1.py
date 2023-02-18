@@ -7,6 +7,7 @@ from pyquokka.dataset import InputDiskJSONDataset
 import sqlglot
 import pandas as pd
 import pyarrow as pa
+import ray
 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 
@@ -57,9 +58,9 @@ start = time.time()
 task_graph.run()
 print("total time ", time.time() - start)
 
-print(count.to_df())
+print(ray.get(count.to_df.remote()))
 
-
+import json
 a = json.read_json("a.json")
 b = json.read_json("b.json")
 a = a.to_pandas()

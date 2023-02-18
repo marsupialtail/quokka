@@ -3,7 +3,7 @@ lists of redis client wrappers that prepend keys with schema
 can't use different Redis DBs because that's not best practice, and you can't do transactions across different DBs.
 to do a transaction here just take out r.pipeline on the main redis client that's passed in to construct these tables.
 '''
-import pickle
+import ray.cloudpickle as pickle
 
 class ClientWrapper:
     def __init__(self,  key_prefix) -> None:

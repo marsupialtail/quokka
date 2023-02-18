@@ -13,6 +13,7 @@ from pyquokka.tables import *
 from pyquokka.utils import LocalCluster, EC2Cluster
 import pyquokka.sql_utils as sql_utils
 from functools import partial
+import ray.cloudpickle as pickle
 
 class TaskGraph:
     # this keeps the logical dependency DAG between tasks 

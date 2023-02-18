@@ -16,7 +16,6 @@ import sys
 from pyarrow.fs import S3FileSystem, LocalFileSystem
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
-import pickle
 import concurrent.futures
 import duckdb
 import multiprocessing

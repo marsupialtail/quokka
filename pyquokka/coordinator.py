@@ -1,5 +1,5 @@
 import ray
-import pickle
+import ray.cloudpickle as pickle
 import redis
 from pyquokka.task import * 
 from pyquokka.tables import * 

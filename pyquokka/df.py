@@ -564,8 +564,6 @@ class QuokkaContext:
             target_id = list(targets.items())[0][0]
             predicate = targets[target_id].predicate
 
-            import pdb;pdb.set_trace()
-
             assert predicate == sqlglot.exp.TRUE or optimizer.normalize.normalized(
                 predicate), "predicate must be CNF"
 
