@@ -5,7 +5,7 @@ from pyquokka.logical import *
 from pyquokka.target_info import *
 from pyquokka.quokka_runtime import *
 from pyquokka.utils import EC2Cluster, LocalCluster
-from pyquokka.sql_utils import required_columns_from_exp
+from pyquokka.sql_utils import required_columns_from_exp, label_sample_table_names
 from functools import partial
 import pyarrow as pa
 
@@ -501,7 +501,7 @@ class DataStream:
         
         """
 
-        enhanced_exp = "select *," + sql_expression + " from batch_arrow"
+        enhanced_exp = "select *," + label_sample_table_names(sqlglot.parse_one(sql_expression), 'batch_arrow').sql() + " from batch_arrow"
 
         sqlglot_node = sqlglot.parse_one(enhanced_exp)
         if required_columns is None:
