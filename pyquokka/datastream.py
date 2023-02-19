@@ -489,7 +489,7 @@ class DataStream:
             
         )
     
-    def with_column_sql(self, sql_expression, foldable = True, required_columns = None):
+    def with_columns_sql(self, sql_expression, foldable = True, required_columns = None):
 
         """
         Example sql expression:
@@ -1032,6 +1032,16 @@ class DataStream:
             node=node,
             schema=new_schema,
         )
+
+    def _grouped_aggregate_sql(self, groupby: list, aggregations: str, orderby = None):
+
+        try:
+            batch_agg, final_agg = sql_utils.parse_multiple_aggregations(aggregations)
+        except Exception as e:
+            raise Exception("Error parsing aggregations: " + str(e))
+        
+        # now push down the batch_agg with with_column
+        
 
     def _grouped_aggregate(self, groupby: list, aggregations: dict, orderby=None):
         '''
