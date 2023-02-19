@@ -19,19 +19,18 @@ def apply_conditions_to_batch(funcs, batch):
         batch = batch[func]
     return batch
 
-def label_sample_table_names(predicate):
+def label_sample_table_names(predicate, new_name = 'sample'):
     """
-    Replace all table name references in the given predicate with 'sample'.
+    Replace all table name references in the given predicate with new_name (defaults to sample).
     Args:
-    predicate (SQLGLot exp): precondition that predicate should only have one unique table name. If it doesn't, return an error.
+    predicate (SQLGLot exp)
+
+    Returns: sqlglot expression with all table names replaced with new_name.
     """
     w = predicate.copy()
     columns = w.find_all(exp.Column)
-    tables = set()
     for c in columns:
-        tables.add(c.table)
-        c.replace(sqlglot.parse_one('sample.' + c.name))
-    assert(len(tables) <= 1)
+        c.replace(sqlglot.parse_one(new_name + '.' + c.name))
     return w
 
 def filters_to_expression(filters):
@@ -156,8 +155,7 @@ def evaluate(node):
         when = node.args["ifs"][0]
         predicate = evaluate(when.this)
         if_true = evaluate(when.args['true'])
-        return predicate * if_true + (~predicate) * default
-        
+        return polars.when(predicate).then(if_true).otherwise(default)
     elif type(node) == sqlglot.expressions.In:
 
         # the types should work out even without conversion, is_in with polars work if the list is string and the type is int.
@@ -194,6 +192,14 @@ def evaluate(node):
             return True
         else:
             return False
+    elif type(node) == sqlglot.expressions.Extract:
+        feature = node.this.name; from_date = evaluate(node.expression)
+        if feature == 'year': 
+            return from_date.dt.year()
+        elif feature == 'month':
+            return from_date.dt.month()
+        elif feature == 'day':
+            return from_date.dt.day()
     else:
         print(node)
         print(type(node))
