@@ -100,7 +100,8 @@ class HoppingWindowExecutor(Executor):
         batch = polars.concat(batches)
 
         # current polars implementation cannot support floating point groupby dynamic and rolling operations.
-        assert (batch[self.time_col].dtype in {polars.Int32, polars.Int64, polars.Datetime, polars.Date} )
+        assert (batch[self.time_col].dtype == polars.Int32 or batch[self.time_col].dtype == polars.Int64 or 
+        batch[self.time_col].dtype == polars.Datetime or batch[self.time_col].dtype == polars.Date), batch[self.time_col].dtype
 
         size = self.window.size_polars
         hop = self.window.hop_polars            
@@ -236,7 +237,8 @@ class SlidingWindowExecutor(Executor):
         batch = polars.concat(batches)
 
         # current polars implementation cannot support floating point groupby dynamic and rolling operations.
-        assert (batch[self.time_col].dtype in {polars.Int32, polars.Int64, polars.Datetime, polars.Date} )
+        assert (batch[self.time_col].dtype == polars.Int32 or batch[self.time_col].dtype == polars.Int64 or 
+        batch[self.time_col].dtype == polars.Datetime or batch[self.time_col].dtype == polars.Date), batch[self.time_col].dtype
 
         size = self.window.size_before_polars
         to_discard = None
@@ -283,7 +285,8 @@ class SessionWindowExecutor(Executor):
         batch = polars.concat(batches)
 
         # current polars implementation cannot support floating point groupby dynamic and rolling operations.
-        assert (batch[self.time_col].dtype in {polars.Int32, polars.Int64, polars.Datetime, polars.Date} )
+        assert (batch[self.time_col].dtype == polars.Int32 or batch[self.time_col].dtype == polars.Int64 or 
+        batch[self.time_col].dtype == polars.Datetime or batch[self.time_col].dtype == polars.Date), batch[self.time_col].dtype
         timeout = self.window.timeout
 
         if self.state is not None:
