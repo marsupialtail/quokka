@@ -31,7 +31,16 @@ setup(
             'polars>=0.16.0', # latest version for groupby semantics
             'sqlglot',
             'graphviz',
-            'tqdm'
+            'tqdm',
+            'msgpack',
+            'grpcio',
+            'pyyaml',
+            'pyyaml',
+            'filelock',
+            'jsonschema',
+            'click',
+            'requests',
+            'aiohttp',
             ], # add any additional packages that 
         extra_requires = {
                 "datalake" : ["pyiceberg", "deltalake"]
