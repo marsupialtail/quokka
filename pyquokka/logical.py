@@ -169,6 +169,32 @@ class InputS3CSVNode(SourceNode):
         node = task_graph.new_input_reader_node(csv_reader, self.stage, self.placement_strategy)
         return node
 
+class InputRestGetAPINode(SourceNode):
+    def __init__(self, url, arguments, headers, schema, batch_size = 10000) -> None:
+        super().__init__(schema)
+        self.url = url
+        self.arguments = arguments
+        self.batch_size = batch_size
+        self.headers = headers
+    
+    def lower(self, task_graph):
+        rest_reader = InputRestGetAPIDataset(self.url, self.arguments, self.headers, self.schema, self.batch_size)
+        node = task_graph.new_input_reader_node(rest_reader, self.stage, self.placement_strategy)
+        return node
+
+class InputRestPostAPINode(SourceNode):
+    def __init__(self, url, arguments, headers, schema, batch_size = 10000) -> None:
+        super().__init__(schema)
+        self.url = url
+        self.arguments = arguments
+        self.headers = headers
+        self.batch_size = batch_size
+    
+    def lower(self, task_graph):
+        rest_reader = InputRestPostAPIDataset(self.url, self.arguments, self.headers, self.schema, self.batch_size)
+        node = task_graph.new_input_reader_node(rest_reader, self.stage, self.placement_strategy)
+        return node
+
 class InputDiskCSVNode(SourceNode):
     def __init__(self, filename, schema, sep, has_header, projection = None) -> None:
         super().__init__(schema)

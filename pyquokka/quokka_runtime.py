@@ -186,6 +186,10 @@ class TaskGraph:
                     input_task = TapedInputTask(self.current_actor, count, [i for i in range(len(lineages))])
                     self.LT.mset(pipe, vals)
                     self.NTT.rpush(pipe, node, input_task.reduce())
+                
+                else:
+                    # this channel doesn't have anything to do, mark it as done. DST for it must be set for the executors to terminate
+                    self.DST.set(pipe, pickle.dumps((self.current_actor, count)), -1)
 
                 channel_locs[count] = node
                 count += 1

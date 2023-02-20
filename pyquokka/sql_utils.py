@@ -119,6 +119,7 @@ def evaluate(node):
             return lf < rf
         elif type(node) == sqlglot.expressions.LTE:
             return lf <= rf
+        
         elif type(node) == sqlglot.expressions.Like:
             assert node.expression.is_string
             filter = node.expression.this
@@ -200,6 +201,9 @@ def evaluate(node):
             return from_date.dt.month()
         elif feature == 'day':
             return from_date.dt.day()
+    elif type(node) == sqlglot.expressions.RegexpLike:
+        assert node.expression.is_string, "regex must be string"
+        return evaluate(node.this).str.contains(node.expression.this)
     else:
         print(node)
         print(type(node))

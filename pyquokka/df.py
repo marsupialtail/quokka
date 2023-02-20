@@ -326,6 +326,17 @@ class QuokkaContext:
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
     
+
+    def read_rest_post(self, url, data, schema, headers = {}, batch_size = 10000):
+        self.nodes[self.latest_node_id] = InputRestPostAPINode(url, data, headers, schema, batch_size = batch_size)
+        self.latest_node_id += 1
+        return DataStream(self, schema, self.latest_node_id - 1)
+    
+    def read_rest_get(self, url, data, schema, headers = {}, batch_size = 10000):
+        self.nodes[self.latest_node_id] = InputRestGetAPINode(url, data, headers, schema, batch_size = batch_size)
+        self.latest_node_id += 1
+        return DataStream(self, schema, self.latest_node_id - 1)
+
     def read_dataset(self, dataset):
         self.nodes[self.latest_node_id] = InputRayDatasetNode(dataset)
         self.latest_node_id += 1
