@@ -132,6 +132,7 @@ class Coordinator:
 
         # you need to figure out what is the first stage to execute
         self.ast = self.AST.to_dict(self.r)
+        self.r.set("finish-execution",  0)
         self.r.set("current-execution-stage", min(self.ast.values()))
         execute_handles = {worker : self.node_handles[worker].execute.remote() for worker in self.node_handles}
         execute_handles_list = list(execute_handles.values())
@@ -146,9 +147,10 @@ class Coordinator:
 
                 self.update_undone()                
                 if len(self.undone) == 0:
-                    for worker in self.node_handles:
-                        ray.kill(self.node_handles[worker])
-                    break
+                    # wipe task manager state after execution of a TaskGraph.
+                    self.r.set("finish-execution",  1)
+                    assert all(ray.get(unfinished))
+                    return
                 self.update_execution_stage()
 
             except ray.exceptions.RayActorError:

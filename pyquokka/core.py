@@ -54,6 +54,7 @@ An example:
 
 
 class TaskManager:
+
     def __init__(self, node_id : int, coordinator_ip : str, worker_ips:list, hbq_path = "/data/") -> None:
 
         self.node_id = node_id
@@ -77,14 +78,7 @@ class TaskManager:
 
         #  Bytedance can write this.
         self.HBQ = HBQ(hbq_path)
-
-        '''
-        - Node Task Table (NTT): track the current tasks for each node. Key- node IP. Value - Set of tasks on that node. 
-        - Lineage Table (LT): track the lineage of each object
-        - PT delete lock: every time a node wants to delete from the PT (engage in GC), they need to check this lock is not acquired but the coordinator. It's like a shared lock. Two nodes can hold this lock at the same time, but no node can hold this lock if the coordinator has it. 
-                
-        '''
-
+  
         if coordinator_ip == "localhost":
             print("Warning: coordinator_ip set to localhost. This only makes sense for local deployment.")
 
@@ -105,6 +99,15 @@ class TaskManager:
         self.self_flight_client = pyarrow.flight.connect("grpc://0.0.0.0:5005")
 
         # self.tasks = deque()
+
+    def wipe_state(self):
+        self.mappings = {}
+        self.function_objects = {}
+        self.partition_fns = {}
+        self.target_count = {}
+        self.blocking_nodes = {}
+        self.dst = None
+        return True
 
     def init(self):
         self.actor_flight_clients = {}
@@ -467,7 +470,9 @@ class ExecTaskManager(TaskManager):
         self.set_flight_configs(self.flight_client)
 
         while True:
-
+            if self.r.get("finish-execution") == b'1':
+                self.wipe_state()
+                return True
             self.check_in_recovery()
             self.current_stage = int(self.r.get("current-execution-stage"))
 
@@ -833,6 +838,9 @@ class IOTaskManager(TaskManager):
         pyarrow.set_cpu_count(8)
         count = -1
         while True:
+            if self.r.get("finish-execution") == b'1':
+                self.wipe_state()
+                return True
             time.sleep(self.delay)
             if self.delay - 0.1 > 0.1:
                 self.delay -= 0.1
@@ -942,6 +950,9 @@ class ReplayTaskManager(TaskManager):
         pyarrow.set_cpu_count(8)
         count = -1
         while True:
+            if self.r.get("finish-execution") == b'1':
+                self.wipe_state()
+                return True
             self.check_in_recovery()
             # you don't need to check your execution stage since replay tasks can happen whenever.
 

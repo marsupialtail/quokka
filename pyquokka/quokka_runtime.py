@@ -17,16 +17,14 @@ import ray.cloudpickle as pickle
 
 class TaskGraph:
     # this keeps the logical dependency DAG between tasks 
-    def __init__(self, cluster, io_per_node = 2, exec_per_node = 1) -> None:
-
-        self.io_per_node = io_per_node
-        self.exec_per_node = exec_per_node
-        self.cluster = cluster
+    def __init__(self, context) -> None:
+        
+        self.context = context
         self.current_actor = 0
         self.actors = {}
         self.actor_placement_strategy = {}
         
-        self.r = redis.Redis(host=str(self.cluster.leader_public_ip), port=6800, db=0)
+        self.r = redis.Redis(host=str(self.context.cluster.leader_public_ip), port=6800, db=0)
         while True:
             try:
                 _ = self.r.keys()
@@ -36,51 +34,8 @@ class TaskGraph:
         
         self.r.flushall()
 
-        self.coordinator = Coordinator.options(num_cpus=0.001, max_concurrency = 2,resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote()
-
-        self.nodes = {}
         # for topological ordering
         self.actor_types = {}
-
-        self.node_locs= {}
-        self.io_nodes = set()
-        self.compute_nodes = set()
-        self.replay_nodes = set()
-        count = 0
-
-        self.leader_compute_nodes = []
-
-        # default strategy launches two IO nodes and one compute node per machine
-        private_ips = list(self.cluster.private_ips.values())
-        for ip in private_ips:
-            
-            for k in range(1):
-                self.nodes[count] = ReplayTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()))
-                self.replay_nodes.add(count)
-                self.node_locs[count] = ip
-                count += 1
-            for k in range(io_per_node):
-                self.nodes[count] = IOTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()))
-                self.io_nodes.add(count)
-                self.node_locs[count] = ip
-                count += 1
-            for k in range(exec_per_node):
-                if type(self.cluster) == LocalCluster:
-                    self.nodes[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()), None)
-                elif type(self.cluster) == EC2Cluster:
-                    self.nodes[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()), "quokka-checkpoint") 
-                else:
-                    raise Exception
-
-                if ip == self.cluster.leader_private_ip:
-                    self.leader_compute_nodes.append(count)
-                
-                self.compute_nodes.add(count)
-                self.node_locs[count] = ip
-                count += 1        
-
-        ray.get(self.coordinator.register_nodes.remote(replay_nodes = {k: self.nodes[k] for k in self.replay_nodes}, io_nodes = {k: self.nodes[k] for k in self.io_nodes}, compute_nodes = {k: self.nodes[k] for k in self.compute_nodes}))
-        ray.get(self.coordinator.register_node_ips.remote( self.node_locs ))
 
         self.FOT = FunctionObjectTable()
         self.CLT = ChannelLocationTable()
@@ -100,7 +55,7 @@ class TaskGraph:
         if type(placement_strategy) == SingleChannelStrategy:
             return 1
         elif type(placement_strategy) == CustomChannelsStrategy:
-            return self.cluster.num_node * placement_strategy.channels_per_node * (self.io_per_node if node_type == 'input' else self.exec_per_node)
+            return self.context.cluster.num_node * placement_strategy.channels_per_node * (self.context.io_per_node if node_type == 'input' else self.context.exec_per_node)
         elif type(placement_strategy) == DatasetStrategy:
             return placement_strategy.total_channels
         else:
@@ -133,8 +88,8 @@ class TaskGraph:
         # print(objects_dict)
 
         for ip in objects_dict:
-            assert ip in self.node_locs.values()
-            nodes = [k for k in self.io_nodes if self.node_locs[k] == ip]
+            assert ip in self.context.node_locs.values()
+            nodes = [k for k in self.context.io_nodes if self.context.node_locs[k] == ip]
             objects_per_node = (len(objects_dict[ip]) - 1) // len(nodes) + 1
             for i in range(len(nodes)):
                 node = nodes[i]
@@ -151,7 +106,7 @@ class TaskGraph:
                 count += 1
         
         pipe.execute()
-        ray.get(self.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
+        ray.get(self.context.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
         return self.epilogue(stage, DatasetStrategy(len(channel_locs)))
 
     def new_input_reader_node(self, reader, stage = 0, placement_strategy = None):
@@ -172,7 +127,7 @@ class TaskGraph:
         count = 0
         channel_locs = {}
         
-        for node in sorted(self.io_nodes):
+        for node in sorted(self.context.io_nodes):
             for channel in range(placement_strategy.channels_per_node):
 
                 if count in channel_info:
@@ -194,7 +149,7 @@ class TaskGraph:
                 channel_locs[count] = node
                 count += 1
         pipe.execute()
-        ray.get(self.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
+        ray.get(self.context.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
 
         return self.epilogue(stage, placement_strategy)
     
@@ -296,11 +251,11 @@ class TaskGraph:
             # TODO: figure out why you need to do this to make it work
             self.PFT.get(self.r, pickle.dumps((source, self.current_actor)))
             
-            registered = ray.get([node.register_partition_function.remote(source, self.current_actor, self.get_total_channels_from_placement_strategy(placement_strategy, 'exec')) for node in (self.nodes.values())])
+            registered = ray.get([node.register_partition_function.remote(source, self.current_actor, self.get_total_channels_from_placement_strategy(placement_strategy, 'exec')) for node in (self.context.task_managers.values())])
             assert all(registered)
 
         
-        registered = ray.get([node.register_mapping.remote(self.current_actor, mapping) for node in (self.nodes.values())])
+        registered = ray.get([node.register_mapping.remote(self.current_actor, mapping) for node in (self.context.task_managers.values())])
         assert all(registered)
 
         # consult the AST to figure out source stages
@@ -359,29 +314,29 @@ class TaskGraph:
         channel_locs = {}
         if type(placement_strategy) == SingleChannelStrategy:
 
-            node = self.leader_compute_nodes[0]
+            node = self.context.leader_compute_nodes[0]
             exec_task = ExecutorTask(self.current_actor, 0, 0, 0, input_reqs)
             channel_locs[0] = node
             self.NTT.rpush(pipe, node, exec_task.reduce())
-            self.CLT.set(pipe, pickle.dumps((self.current_actor, 0)), self.node_locs[node])
+            self.CLT.set(pipe, pickle.dumps((self.current_actor, 0)), self.context.node_locs[node])
             self.IRT.set(pipe, pickle.dumps((self.current_actor, 0, -1)), pickle.dumps(input_reqs))
 
         elif type(placement_strategy) == CustomChannelsStrategy:
 
             count = 0
-            for node in sorted(self.compute_nodes):
+            for node in sorted(self.context.compute_nodes):
                 for channel in range(placement_strategy.channels_per_node):
                     exec_task = ExecutorTask(self.current_actor, count, 0, 0, input_reqs)
                     channel_locs[count] = node
                     self.NTT.rpush(pipe, node, exec_task.reduce())
-                    self.CLT.set(pipe, pickle.dumps((self.current_actor, count)), self.node_locs[node])
+                    self.CLT.set(pipe, pickle.dumps((self.current_actor, count)), self.context.node_locs[node])
                     self.IRT.set(pipe, pickle.dumps((self.current_actor, count, -1)), pickle.dumps(input_reqs))
                     count += 1
         else:
             raise Exception("placement strategy not supported")
         
         pipe.execute()
-        ray.get(self.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
+        ray.get(self.context.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
         
         return self.epilogue(stage, placement_strategy)
 
@@ -394,23 +349,23 @@ class TaskGraph:
         self.actor_types[current_actor] = 'exec'
         total_channels = self.get_total_channels_from_placement_strategy(placement_strategy, 'exec')
 
-        output_dataset = ArrowDataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote()
+        output_dataset = ArrowDataset.options(num_cpus = 0.001, resources={"node:" + str(self.context.cluster.leader_private_ip): 0.001}).remote()
         ray.get(output_dataset.ping.remote())
 
-        registered = ray.get([node.register_blocking.remote(current_actor , transform_fn, output_dataset) for node in list(self.nodes.values())])
+        registered = ray.get([node.register_blocking.remote(current_actor , transform_fn, output_dataset) for node in list(self.context.task_managers.values())])
         assert all(registered)
         return output_dataset
     
     def create(self):
 
-        initted = ray.get([node.init.remote() for node in list(self.nodes.values())])
+        initted = ray.get([node.init.remote() for node in list(self.context.task_managers.values())])
         assert all(initted)
 
         # galaxy brain shit here -- the topological order is implicit given the way the API works. 
         topological_order = list(range(self.current_actor))[::-1]
         topological_order = [k for k in topological_order if self.actor_types[k] != 'input']
         # print("topological_order", topological_order)
-        ray.get(self.coordinator.register_actor_topo.remote(topological_order))
+        ray.get(self.context.coordinator.register_actor_topo.remote(topological_order))
         
     def run(self):
 
@@ -445,6 +400,6 @@ class TaskGraph:
         if not PROFILE:
             new_thread = threading.Thread(target = progress)
             new_thread.start()
-        ray.get(self.coordinator.execute.remote())
+        ray.get(self.context.coordinator.execute.remote())
         if not PROFILE:
             new_thread.join()

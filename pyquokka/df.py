@@ -14,6 +14,49 @@ class QuokkaContext:
         self.io_per_node = io_per_node
         self.exec_per_node = exec_per_node
 
+        self.coordinator = Coordinator.options(num_cpus=0.001, max_concurrency = 2,resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote()
+
+        self.task_managers = {}
+        self.node_locs= {}
+        self.io_nodes = set()
+        self.compute_nodes = set()
+        self.replay_nodes = set()
+        count = 0
+
+        self.leader_compute_nodes = []
+
+        # default strategy launches two IO nodes and one compute node per machine
+        private_ips = list(self.cluster.private_ips.values())
+        for ip in private_ips:
+            
+            for k in range(1):
+                self.task_managers[count] = ReplayTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()))
+                self.replay_nodes.add(count)
+                self.node_locs[count] = ip
+                count += 1
+            for k in range(io_per_node):
+                self.task_managers[count] = IOTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()))
+                self.io_nodes.add(count)
+                self.node_locs[count] = ip
+                count += 1
+            for k in range(exec_per_node):
+                if type(self.cluster) == LocalCluster:
+                    self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()), None)
+                elif type(self.cluster) == EC2Cluster:
+                    self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()), "quokka-checkpoint") 
+                else:
+                    raise Exception
+
+                if ip == self.cluster.leader_private_ip:
+                    self.leader_compute_nodes.append(count)
+                
+                self.compute_nodes.add(count)
+                self.node_locs[count] = ip
+                count += 1        
+
+        ray.get(self.coordinator.register_nodes.remote(replay_nodes = {k: self.task_managers[k] for k in self.replay_nodes}, io_nodes = {k: self.task_managers[k] for k in self.io_nodes}, compute_nodes = {k: self.task_managers[k] for k in self.compute_nodes}))
+        ray.get(self.coordinator.register_node_ips.remote( self.node_locs ))
+
     def read_files(self, table_location: str):
 
         """
@@ -444,7 +487,7 @@ class QuokkaContext:
     def lower(self, end_node_id, collect = True, dataset_schema = None):
 
         start = time.time()
-        task_graph = TaskGraph(self.cluster, self.io_per_node, self.exec_per_node)
+        task_graph = TaskGraph(self)
         print("setup time ", time.time() - start)
         node = self.execution_nodes[end_node_id]
         nodes = deque([node])
