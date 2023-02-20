@@ -30,20 +30,20 @@ class QuokkaContext:
         for ip in private_ips:
             
             for k in range(1):
-                self.task_managers[count] = ReplayTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()))
+                self.task_managers[count] = ReplayTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()))
                 self.replay_nodes.add(count)
                 self.node_locs[count] = ip
                 count += 1
             for k in range(io_per_node):
-                self.task_managers[count] = IOTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()))
+                self.task_managers[count] = IOTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()))
                 self.io_nodes.add(count)
                 self.node_locs[count] = ip
                 count += 1
             for k in range(exec_per_node):
                 if type(self.cluster) == LocalCluster:
-                    self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()), None)
+                    self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()), None)
                 elif type(self.cluster) == EC2Cluster:
-                    self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, cluster.leader_private_ip, list(cluster.private_ips.values()), "quokka-checkpoint") 
+                    self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()), "quokka-checkpoint") 
                 else:
                     raise Exception
 
