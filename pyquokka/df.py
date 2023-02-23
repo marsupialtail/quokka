@@ -1,7 +1,6 @@
 import graphviz
 import copy
 import polars
-from pyquokka.logical import InputDiskFilesNode, InputS3FilesNode, SourceNode
 import pyquokka.sql_utils as sql_utils
 from pyquokka.datastream import * 
 import os
@@ -345,7 +344,7 @@ class QuokkaContext:
                     schema = [k.name for k in f.schema_arrow]
                 if len(files) == 1:
                     size = os.path.getsize(table_location + files[0])
-                    if size < 10 * 1048576:
+                    if size < 1 * 871900:
                         return polars.read_parquet(table_location + files[0])
                 self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
 
@@ -355,7 +354,7 @@ class QuokkaContext:
                 except:
                     raise Exception("could not find the parquet file at ", table_location)
                 
-                if size < 9 * 1048576:
+                if size < 1 * 871900:
                     return polars.read_parquet(table_location)
                 else:
                     if schema is None:
@@ -411,6 +410,20 @@ class QuokkaContext:
         stream = self.read_csv(table_location, schema, has_header, sep)
         stream._set_sorted({sorted_by : "stride"})
         return stream
+
+    def read_iceberg(self, table, snapshot = None):
+        from pyiceberg.catalog import load_catalog
+        catalog = load_catalog("glue", **{"type":"glue"})
+        try:
+            table = catalog.load_table(table)
+        except:
+            raise Exception("table not found")
+        if snapshot is not None:
+            assert snapshot in [i.snapshot_id for i in table.metadata.snapshots], "snapshot not found"
+
+        self.nodes[self.latest_node_id] = InputS3IcebergNode(table, snapshot)
+        self.latest_node_id += 1
+        return DataStream(self, [i.name for i in table.schema().fields], self.latest_node_id - 1)
 
     '''
     This is expected to be internal for now. This is a pretty new API and people probably don't know how to use this.
@@ -627,7 +640,7 @@ class QuokkaContext:
 
             if issubclass(type(node), SourceNode):
                 # push down predicates to the Parquet Nodes!, for the CSV nodes give up
-                if type(node) == InputDiskParquetNode or type(node) == InputS3ParquetNode:
+                if type(node) == InputDiskParquetNode or type(node) == InputS3ParquetNode or type(node) == InputS3IcebergNode:
                     filters, remaining_predicate = sql_utils.parquet_condition_decomp(predicate)
                     if len(filters) > 0:
                         node.predicate = filters
@@ -705,7 +718,7 @@ class QuokkaContext:
 
         if issubclass(type(node), SourceNode):
             # push down predicates to the Parquet Nodes! It benefits CSV nodes too because believe it or not polars.from_arrow could be slow
-            if type(node) == InputDiskParquetNode or type(node) == InputS3ParquetNode or type(node) == InputDiskCSVNode or type(node) == InputS3CSVNode:
+            if type(node) == InputDiskParquetNode or type(node) == InputS3ParquetNode or type(node) == InputDiskCSVNode or type(node) == InputS3CSVNode or type(node) == InputS3IcebergNode:
                 projection = set()
                 predicate_required_columns = set()
                 for target_id in targets:

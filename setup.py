@@ -25,7 +25,7 @@ setup(
             'pandas',
             'numpy',
             'protobuf==3.20.*', # or Ray will not work
-            'ray',
+            'ray>=2.0.0',
             'psutil',
             'h5py',
             'polars>=0.16.0', # latest version for groupby semantics

@@ -987,7 +987,6 @@ class DuckAggExecutor(Executor):
         assert type(groupby_keys) == list
         self.groupby_keys = groupby_keys
         self.mean_cols = mean_cols
-        self.length_limit = 1000000
         self.con = None        
         self.count_col = "__count_sum"
         
@@ -1036,24 +1035,16 @@ class DuckAggExecutor(Executor):
     
     def execute(self,batches, stream_id, executor_id):
 
-        if self.con is None:
-            self.con = duckdb.connect().execute('PRAGMA threads=%d' % multiprocessing.cpu_count())
-
         batch = pa.concat_tables(batches)
-        if self.state is None:
-            self.state = batch
-        else:
-            self.state = pa.concat_tables([self.state, batch])
-        if len(self.state) > self.length_limit:
-            batch_arrow = self.state
-            self.state = self.con.execute(self.agg_clause).arrow()
-            del batch_arrow
+        self.state = batch if self.state is None else pa.concat_tables([self.state, batch])
     
     def done(self, executor_id):
+
         if self.state is None:
             return None
+        con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
         batch_arrow = self.state
-        self.state = polars.from_arrow(self.con.execute(self.agg_clause).arrow())
+        self.state = polars.from_arrow(con.execute(self.agg_clause).arrow())
         del batch_arrow
 
         for key in self.mean_cols:

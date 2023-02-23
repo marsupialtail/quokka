@@ -52,7 +52,12 @@ class InputRayDataset:
 
     def execute(self, mapper_id, state=None):
         # state will be a tuple of IP, index
-        return None, ray.get(self.objects_dict[state[0]][state[1]])
+        try:
+            result = ray.get(self.objects_dict[state[0]][state[1]])
+        except:
+            raise Exception("Unable to get object from {} at index {}.".format(state[0], state[1]))
+        
+        return None, result
 
 # this dataset will generate a sequence of numbers, from 0 to limit. 
 class InputRestGetAPIDataset:
@@ -141,11 +146,12 @@ class InputEC2ParquetDataset:
     # might as well do the filtering at the Pandas step. Also you need to map filters to the DNF form of tuples, which could be
     # an interesting project in itself. Time for an intern?
 
-    def __init__(self, bucket, prefix, columns=None, filters=None) -> None:
+    def __init__(self, bucket = None, prefix = None, files = None, columns=None, filters=None) -> None:
 
         self.bucket = bucket
         self.prefix = prefix
-        assert self.prefix is not None
+        self.files = files
+        assert (self.bucket is not None and self.prefix is not None) or self.files is not None
 
         self.num_channels = None
         self.columns = columns
@@ -160,17 +166,20 @@ class InputEC2ParquetDataset:
 
     def get_own_state(self, num_channels):
         self.num_channels = num_channels
-        s3 = boto3.client('s3')
-        z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
-        self.files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
-        self.length += sum([i['Size'] for i in z['Contents'] if i['Key'].endswith(".parquet")])
-        while 'NextContinuationToken' in z.keys():
-            z = self.s3.list_objects_v2(
-                Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
-            self.files.extend([i['Key'] for i in z['Contents']
-                              if i['Key'].endswith(".parquet")])
-            self.length += sum([i['Size'] for i in z['Contents']
-                              if i['Key'].endswith(".parquet")])
+        if self.files is None:
+            s3 = boto3.client('s3')
+            z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
+            self.files = [self.bucket + "/" + i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
+            # self.length += sum([i['Size'] for i in z['Contents'] if i['Key'].endswith(".parquet")])
+            while 'NextContinuationToken' in z.keys():
+                z = self.s3.list_objects_v2(
+                    Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
+                self.files.extend([self.bucket + "/" + i['Key'] for i in z['Contents']
+                                if i['Key'].endswith(".parquet")])
+                # self.length += sum([i['Size'] for i in z['Contents']
+                #                   if i['Key'].endswith(".parquet")])
+        else:
+            self.files = [i.replace("s3://", "") for i in self.files]
         channel_infos = {}
         for channel in range(num_channels):
             my_files = [self.files[k] for k in range(channel, len(self.files), self.num_channels)]
@@ -189,7 +198,10 @@ class InputEC2ParquetDataset:
         def download(file):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                return pq.read_table(self.bucket + "/" +file, columns=self.columns, filters=self.filters, use_threads= True, filesystem = self.s3)
+                if self.columns is not None:
+                    return pq.read_table( file, columns=self.columns, filters=self.filters, use_threads= True, filesystem = self.s3)
+                else:
+                    return pq.read_table( file, filters=self.filters, use_threads= True, filesystem = self.s3)
 
         assert self.num_channels is not None
 

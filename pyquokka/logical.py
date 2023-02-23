@@ -251,19 +251,67 @@ class InputDiskCSVNode(SourceNode):
         node = task_graph.new_input_reader_node(csv_reader, self.stage, self.placement_strategy)
         return node
 
+class InputS3IcebergNode(SourceNode):
+    def __init__(self, table, snapshot = None, predicate = None, projection = None) -> None:
+        
+        schema = [i.name for i in table.schema().fields]
+        super().__init__(schema)
+        self.table = table # pyiceberg table format
+        self.files = [task.file.file_path for task in self.table.scan(snapshot_id = snapshot).plan_files()]
+        self.predicate = predicate
+        self.projection = projection
+        self.snapshot = snapshot
+
+    def set_cardinality(self):     
+
+        if self.snapshot is None:
+            cardinality = self.table.metadata.snapshots[-1].summary.additional_properties['total-records']
+        else:
+            snapshots = self.table.metadata.snapshots
+            snapshot = [i for i in snapshots if i.snapshot_id == self.snapshot][0]
+            cardinality = snapshot.summary.additional_properties['total-records']
+
+        for target in self.targets:
+            self.cardinality[target] = cardinality
+    
+    def lower(self, task_graph):
+
+        # if self.table.sort_orders() is not None:
+        #     assert len(self.output_sorted_reqs) == 1
+        #     key = list(self.output_sorted_reqs.keys())[0]
+        #     val = self.output_sorted_reqs[key]
+        #     parquet_reader = InputSortedEC2ParquetDataset(self.bucket, self.prefix, key, columns = list(self.projection), filters = self.predicate, mode=val)
+        # else:
+
+        parquet_reader = InputEC2ParquetDataset(bucket = None, prefix = None, files = self.files, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate)
+        node = task_graph.new_input_reader_node(parquet_reader, self.stage, self.placement_strategy)
+        return node
+    
+    def __str__(self):
+        result = str(type(self)) + '\nPredicate: ' + str(self.predicate) + '\nProjection: ' + str(self.projection) + '\nTargets:' 
+        for target in self.targets:
+            result += "\n\t" + str(target) + " " + str(self.targets[target])
+        return result
+
 class InputS3ParquetNode(SourceNode):
     def __init__(self, bucket, prefix, key, schema, predicate = None, projection = None) -> None:
         super().__init__(schema)
-        assert (prefix is None) != (key is None) # xor
+        
         self.prefix = prefix
         self.key = key
         self.bucket = bucket
         self.predicate = predicate
         self.projection = projection
-    
+
+        assert bucket is not None
+        assert (prefix is None) != (key is None) # xor
+
     def set_cardinality(self):
         s3fs = S3FileSystem()
-        dataset = pq.ParquetDataset(self.bucket + "/" + self.prefix, filesystem=s3fs )
+        if self.key is not None:
+            dataset = pq.ParquetDataset(self.bucket + "/" + self.prefix, filesystem=s3fs )
+        else:
+            dataset = pq.ParquetDataset(self.bucket + "/" + self.key, filesystem=s3fs )
         # very cursory estimate
         size = dataset.fragments[0].count_rows() * len(dataset.fragments)
         for target in self.targets:
@@ -276,11 +324,11 @@ class InputS3ParquetNode(SourceNode):
                 assert len(self.output_sorted_reqs) == 1
                 key = list(self.output_sorted_reqs.keys())[0]
                 val = self.output_sorted_reqs[key]
-                parquet_reader = InputSortedEC2ParquetDataset(self.bucket, self.prefix, key, columns = list(self.projection), filters = self.predicate, mode=val)
+                parquet_reader = InputSortedEC2ParquetDataset(self.bucket, self.prefix, key, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate, mode=val)
             else:
-                parquet_reader = InputEC2ParquetDataset(self.bucket, self.prefix, columns = list(self.projection), filters = self.predicate)
+                parquet_reader = InputEC2ParquetDataset(bucket = self.bucket, prefix = self.prefix, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate)
         else:
-            parquet_reader = InputParquetDataset(self.bucket + "/" + self.key, mode = "s3", columns = list(self.projection), filters = self.predicate)
+            parquet_reader = InputParquetDataset(self.bucket + "/" + self.key, mode = "s3", columns = list(self.projection) if self.projection is not None else None, filters = self.predicate)
         node = task_graph.new_input_reader_node(parquet_reader, self.stage, self.placement_strategy)
         return node
     
@@ -299,9 +347,9 @@ class InputDiskParquetNode(SourceNode):
 
     def lower(self, task_graph):
 
-        if type(task_graph.cluster) ==  EC2Cluster:
+        if type(task_graph.context.cluster) ==  EC2Cluster:
             raise Exception
-        elif type(task_graph.cluster) == LocalCluster:
+        elif type(task_graph.context.cluster) == LocalCluster:
             parquet_reader = InputParquetDataset(self.filepath,  columns = list(self.projection), filters = self.predicate)
             node = task_graph.new_input_reader_node(parquet_reader, self.stage, self.placement_strategy)
             return node

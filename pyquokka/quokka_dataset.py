@@ -15,6 +15,12 @@ class Dataset:
 
     def __repr__(self):
         return "DataSet[" + ",".join(self.schema) + "]"
+    
+    def __copy__(self):
+        return Dataset(self.schema, self.wrapped_dataset)
+    
+    def __deepcopy__(self, memo):
+        return Dataset(self.schema, self.wrapped_dataset)
 
     def to_list(self):
         return ray.get(self.wrapped_dataset.to_list.remote())

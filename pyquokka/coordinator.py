@@ -142,14 +142,14 @@ class Coordinator:
 
             try:
                 finished, unfinished = ray.wait(execute_handles_list, timeout= 0.01)
-                execute_handles_list = unfinished
-                ray.get(finished)
+                # print("finished", finished, "unfinished", unfinished)
+                assert len(unfinished) == len(execute_handles_list), "no execute method should terminate on its own" + str(ray.get(finished))
 
                 self.update_undone()                
                 if len(self.undone) == 0:
                     # wipe task manager state after execution of a TaskGraph.
                     self.r.set("finish-execution",  1)
-                    assert all(ray.get(unfinished))
+                    assert all(ray.get(execute_handles_list))
                     return
                 self.update_execution_stage()
 
