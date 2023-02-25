@@ -29,7 +29,7 @@ class Dataset:
         return ray.get(self.wrapped_dataset.to_df.remote())
     
     def to_dict(self):
-        return ray.get(self.wrapped_dataset.to_dict.remote())
+        return  ray.get(self.wrapped_dataset.to_dict.remote())
     
     def to_arrow_refs(self):
         return ray.get(self.wrapped_dataset.to_arrow_refs.remote())
@@ -47,7 +47,7 @@ class ArrowDataset:
         self.done = False
 
     def to_dict(self):
-        return self.objects
+        return {ip: [ray.cloudpickle.dumps(object) for object in self.objects[ip]] for ip in self.objects}
 
     def added_object(self, ip, object_handle):
         if ip not in self.objects:

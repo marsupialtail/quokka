@@ -402,7 +402,7 @@ class ExecTaskManager(TaskManager):
         self.IRT = InputRequirementsTable()
         self.SAT = SortedActorsTable()
 
-        if checkpoint_bucket is not None:
+        if checkpoint_bucket is not None and CHECKPOINT_INTERVAL is not None:
             self.checkpoint_bucket = checkpoint_bucket
             s3 = boto3.resource('s3')
             bucket = s3.Bucket(checkpoint_bucket)

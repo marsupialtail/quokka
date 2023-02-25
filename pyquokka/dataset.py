@@ -22,7 +22,6 @@ import warnings
 import random
 import ray
 import math
-import aiohttp
 import asyncio
 
 # computes the overlap of two intervals (a1, a2) and (b1, b2)
@@ -53,7 +52,9 @@ class InputRayDataset:
     def execute(self, mapper_id, state=None):
         # state will be a tuple of IP, index
         try:
-            result = ray.get(self.objects_dict[state[0]][state[1]])
+            # print("Getting object from {} at index {}.".format(state[0], state[1]), self.objects_dict[state[0]][state[1]])
+            result = ray.get(ray.cloudpickle.loads(self.objects_dict[state[0]][state[1]]), timeout=10)
+            # print(result)
         except:
             raise Exception("Unable to get object from {} at index {}.".format(state[0], state[1]))
         
@@ -81,7 +82,7 @@ class InputRestGetAPIDataset:
         return channel_info
 
     def execute(self, channel, state = None):
-        
+        import aiohttp
         async def get(url, session):
             try:
                 async with session.get(url=self.url + url, headers = self.headers) as response:
@@ -120,7 +121,7 @@ class InputRestPostAPIDataset:
         return channel_info
 
     def execute(self, channel, state = None):
-        
+        import aiohttp
         async def get(data, session):
             try:
                 async with session.post(url=self.url, data = json.dumps(data), headers = self.headers) as response:

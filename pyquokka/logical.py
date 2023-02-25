@@ -308,7 +308,7 @@ class InputS3ParquetNode(SourceNode):
 
     def set_cardinality(self):
         s3fs = S3FileSystem()
-        if self.key is not None:
+        if self.key is None:
             dataset = pq.ParquetDataset(self.bucket + "/" + self.prefix, filesystem=s3fs )
         else:
             dataset = pq.ParquetDataset(self.bucket + "/" + self.key, filesystem=s3fs )
