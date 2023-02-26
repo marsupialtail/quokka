@@ -6,7 +6,7 @@ format = "csv"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
 s3_path_csv = "s3://tpc-h-csv/"
-s3_path_parquet = "s3://tpc-h-parquet/"
+s3_path_parquet = "s3://books-iceberg/tpch.db/"
 
 import pyarrow as pa
 import pyarrow.compute as compute
@@ -56,15 +56,15 @@ elif mode == "S3":
         nation = qc.read_csv(s3_path_csv + "nation/nation.tbl", nation_scheme, sep = "|").drop(["null"])
         region = qc.read_csv(s3_path_csv + "region/region.tbl", region_scheme, sep = "|").drop(["null"])
     elif format == "parquet":
-        lineitem = qc.read_parquet(s3_path_parquet + "lineitem.parquet/*")
+        lineitem = qc.read_parquet(s3_path_parquet + "lineitem/data/*")
         #lineitem = qc.read_parquet("s3://yugan/tpc-h-out/*")
-        orders = qc.read_parquet(s3_path_parquet + "orders.parquet/*")
-        customer = qc.read_parquet(s3_path_parquet + "customer.parquet/*")
-        part = qc.read_parquet(s3_path_parquet + "part.parquet/*")
-        supplier = qc.read_parquet(s3_path_parquet + "supplier.parquet/*")
-        partsupp = qc.read_parquet(s3_path_parquet + "partsupp.parquet/*")
-        nation = qc.read_parquet(s3_path_parquet + "nation.parquet/*")
-        region = qc.read_parquet(s3_path_parquet + "region.parquet/*")
+        orders = qc.read_parquet(s3_path_parquet + "orders/data/*")
+        customer = qc.read_parquet(s3_path_parquet + "customer/data/*")
+        part = qc.read_parquet(s3_path_parquet + "part/data/*") 
+        supplier = qc.read_parquet(s3_path_parquet + "supplier/data/*")
+        partsupp = qc.read_parquet(s3_path_parquet + "partsupp/data/*")
+        nation = qc.read_parquet(s3_path_parquet + "nation/data/*")
+        region = qc.read_parquet(s3_path_parquet + "region/data/*")
 
     else:
         raise Exception
@@ -104,6 +104,22 @@ def do_1():
         
     return f.collect()
 
+def do_1_sql():
+
+    d = lineitem.filter("l_shipdate <= date '1998-12-01' - interval '90' day")
+    f = d.groupby(["l_returnflag", "l_linestatus"]).agg_sql( 
+                             """sum(l_quantity) as sum_qty,
+                                sum(l_extendedprice) as sum_base_price,
+                                sum(l_extendedprice * (1 - l_discount)) as sum_disc_price,
+                                sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge,
+                                avg(l_quantity) as avg_qty,
+                                avg(l_extendedprice) as avg_price,
+                                avg(l_discount) as avg_disc,
+                                count(*) as count_order"""
+    )
+    f.explain()
+    return f.collect()
+                             
 def do_2():
     '''
     Quokka does not do query unnesting.
@@ -140,6 +156,14 @@ def do_3():
     f.explain()
     return f.collect()
 
+def do_3_sql():
+    d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
+    d = customer.join(d,left_on="c_custkey", right_on="o_custkey")
+    d = d.filter("c_mktsegment = 'BUILDING' and o_orderdate < date '1995-03-15' and l_shipdate > date '1995-03-15'")
+    f = d.groupby(["l_orderkey","o_orderdate","o_shippriority"]).agg_sql("sum(l_extendedprice * (1 - l_discount)) as revenue")
+    f.explain()
+    return f.collect()
+
 def do_4():
 
     '''
@@ -155,6 +179,14 @@ def do_4():
     f.explain()
     return f.collect()
 
+
+def do_4_sql():
+    d = lineitem.filter("l_commitdate < l_receiptdate")
+    d = orders.join(d, left_on="o_orderkey", right_on="l_orderkey", how = "semi")
+    d = d.filter("o_orderdate >= date '1993-07-01' and o_orderdate < date '1993-10-01'")
+    f = d.groupby("o_orderpriority").agg_sql("count(*) as count_order")
+    f.explain()
+    return f.collect()
 
 def do_5():
 
@@ -174,6 +206,19 @@ def do_5():
     d = d.with_column("revenue", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
     #f = d.groupby("n_name", orderby=[("revenue",'desc')]).agg({"revenue":["sum"]})
     f = d.groupby("n_name").agg({"revenue":["sum"]})
+    f.explain()
+    return f.collect()
+
+
+def do_5_sql():
+    asia = region.filter(region["r_name"] == "ASIA")
+    asian_nations = nation.join(asia, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
+    d = customer.join(asian_nations, left_on="c_nationkey", right_on="n_nationkey")
+    d = d.join(orders, left_on="c_custkey", right_on="o_custkey", suffix="_3")
+    d = d.join(lineitem, left_on="o_orderkey", right_on="l_orderkey", suffix="_4")
+    d = d.join(supplier, left_on="l_suppkey", right_on="s_suppkey", suffix="_5")
+    d = d.filter("s_nationkey = c_nationkey and o_orderdate >= date '1994-01-01' and o_orderdate < date '1994-01-01' + interval '1' year")
+    f = d.groupby("n_name").agg_sql("sum(l_extendedprice * (1 - l_discount)) as revenue")
     f.explain()
     return f.collect()
 
@@ -202,6 +247,11 @@ def do_6():
     f = d.aggregate({"revenue":["sum"]})
     return f.collect()
 
+def do_6_sql():
+    d = lineitem.filter("l_shipdate >= date '1994-01-01' and l_shipdate < date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01 and l_quantity < 24")
+    f = d.agg_sql("sum(l_extendedprice * l_discount) as revenue")
+    return f.collect()
+
 def do_7():
     d1 = customer.join(nation, left_on = "c_nationkey", right_on = "n_nationkey")
     d1 = d1.join(orders, left_on = "c_custkey", right_on = "o_custkey", suffix = "_3")
@@ -218,6 +268,25 @@ def do_7():
     d = d.with_column("l_year", lambda x: x["l_shipdate"].dt.year(), required_columns = {"l_shipdate"})
     d = d.with_column("volume", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
     f = d.groupby(["supp_nation","cust_nation","l_year"], orderby=["supp_nation","cust_nation","l_year"]).aggregate({"volume":"sum"})
+    f.explain()
+    return f.collect()
+
+def do_7_sql():
+    d1 = customer.join(nation, left_on = "c_nationkey", right_on = "n_nationkey")
+    d1 = d1.join(orders, left_on = "c_custkey", right_on = "o_custkey", suffix = "_3")
+    d2 = supplier.join(nation, left_on="s_nationkey", right_on = "n_nationkey")
+    d2 = lineitem.join(d2, left_on = "l_suppkey", right_on = "s_suppkey", suffix = "_3")
+    
+    d = d1.join(d2, left_on = "o_orderkey", right_on = "l_orderkey",suffix="_4")
+    d = d.rename({"n_name_4": "supp_nation", "n_name": "cust_nation"})
+    d = d.filter("""(
+                                (supp_nation = 'FRANCE' and cust_nation = 'GERMANY')
+                                or (supp_nation = 'GERMANY' and cust_nation = 'FRANCE')
+                        )
+                        and l_shipdate between date '1995-01-01' and date '1996-12-31'""")
+    d = d.with_column("l_year", lambda x: x["l_shipdate"].dt.year(), required_columns = {"l_shipdate"})
+    f = d.groupby(["supp_nation","cust_nation","l_year"], orderby=["supp_nation","cust_nation","l_year"]).\
+        agg_sql("sum(l_extendedprice * ( 1 - l_discount)) as volume")
     f.explain()
     return f.collect()
 
@@ -334,7 +403,8 @@ def do_15():
     # first compute the revenue
     d = lineitem.filter("l_shipdate >= date '1996-01-01' and l_shipdate < date '1996-01-01' + interval '3' month")
     d = d.with_column("revenue", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]), required_columns={"l_extendedprice", "l_discount"})
-    revenue = d.groupby("l_suppkey").aggregate(aggregations={"revenue":"sum"}).compute()
+    revenue = d.groupby("l_suppkey").aggregate(aggregations={"revenue":"sum"})
+    revenue = revenue.compute()
     print(revenue)
     revenue = qc.read_dataset(revenue)
     max_revenue = revenue.max("revenue_sum")[0,0]
@@ -342,7 +412,6 @@ def do_15():
     result = supplier.join(revenue, left_on="s_suppkey", right_on="l_suppkey").filter("revenue_sum == " + str(max_revenue)).select(["s_suppkey", "s_name", "s_address", "s_phone", "revenue_sum"])
     result.explain()
     return result.collect()
-    # print(result)
 
 def do_16():
 
@@ -355,6 +424,7 @@ def do_16():
     result = d.groupby(["p_brand", "p_type", "p_size"]).aggregate(aggregations={"ps_supplycost":"sum"})
     result.explain()
     return result.collect()
+
 
 def do_19():
 
@@ -481,7 +551,7 @@ def dataset_test():
 
 # print(do_1())
 # print(do_3())
-# 
+
 # print(do_4())
 # print(do_5())
 # print(do_6())
@@ -498,4 +568,12 @@ def dataset_test():
 
 # print(do_15())
 # print(do_16())
-print(do_19())
+# print(do_19())
+
+print(do_1_sql())
+# print(do_2_sql())
+print(do_3_sql())
+print(do_4_sql())
+print(do_5_sql())
+print(do_6_sql())
+print(do_7_sql())

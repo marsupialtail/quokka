@@ -976,6 +976,41 @@ class DistinctExecutor(Executor):
     def done(self, executor_id):
         return
 
+class SQLAggExecutor(Executor):
+    def __init__(self, groupby_keys, orderby_keys, sql_statement) -> None:
+        self.agg_clause = "select " + sql_statement + " from batch_arrow"
+        if len(groupby_keys) > 0:
+            self.agg_clause += " group by "
+            for key in groupby_keys:
+                self.agg_clause += key + ","
+            self.agg_clause = self.agg_clause[:-1]
+
+        if orderby_keys is not None:
+            self.agg_clause += " order by "
+            for key, dir in orderby_keys:
+                if dir == "desc":
+                    self.agg_clause += key + " desc,"
+                else:
+                    self.agg_clause += key + ","
+            self.agg_clause = self.agg_clause[:-1]
+        
+        self.state = None
+    
+    def execute(self, batches, stream_id, executor_id):
+        batch = pa.concat_tables(batches)
+        self.state = batch if self.state is None else pa.concat_tables([self.state, batch])
+    
+    def done(self, executor_id):
+
+        if self.state is None:
+            return None
+        con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
+        batch_arrow = self.state
+        self.state = polars.from_arrow(con.execute(self.agg_clause).arrow())
+        del batch_arrow
+        
+        return self.state
+
 
 class DuckAggExecutor(Executor):
 
@@ -988,7 +1023,6 @@ class DuckAggExecutor(Executor):
         self.groupby_keys = groupby_keys
         self.mean_cols = mean_cols
         self.con = None        
-        self.count_col = "__count_sum"
         
         # we could use SQLGlot here but that's overkill.
         self.agg_clause = "select"

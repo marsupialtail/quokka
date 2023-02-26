@@ -489,7 +489,7 @@ class DataStream:
             
         )
     
-    def with_columns_sql(self, sql_expression, foldable = True, required_columns = None):
+    def sql_transform(self, sql_expression, groupby = [], foldable = True, required_columns = None):
 
         """
         Example sql expression:
@@ -501,7 +501,13 @@ class DataStream:
         
         """
 
-        enhanced_exp = "select *," + label_sample_table_names(sqlglot.parse_one(sql_expression), 'batch_arrow').sql() + " from batch_arrow"
+        assert type(groupby) == list
+
+        enhanced_exp = "select " +",".join(groupby) + ", " + sql_expression + " from batch_arrow"
+        if len(groupby) > 0:
+            enhanced_exp = enhanced_exp + " group by " + ",".join(groupby)
+
+        enhanced_exp = label_sample_table_names(sqlglot.parse_one(enhanced_exp), 'batch_arrow').sql()
 
         sqlglot_node = sqlglot.parse_one(enhanced_exp)
         if required_columns is None:
@@ -510,7 +516,8 @@ class DataStream:
         for col in required_columns:
             assert col in self.schema, "required column %s not in schema" % col
         
-        new_columns = [i.alias for i in sqlglot_node.selects if i.alias != '']
+        new_columns = [i.alias for i in sqlglot_node.selects if i.name not in groupby]
+        assert '' not in new_columns, "must provide alias for each computation"
 
         assert type(required_columns) == set
         for column in new_columns:
@@ -520,18 +527,18 @@ class DataStream:
             batch_arrow = batch.to_arrow()
             con = duckdb.connect().execute('PRAGMA threads=%d' % multiprocessing.cpu_count())
             return polars.from_arrow(con.execute(func).arrow())
-
+        
         return self.quokka_context.new_stream(
             sources={0: self},
             partitioners={0: PassThroughPartitioner()},
             node=MapNode(
-                schema=self.schema+new_columns,
+                schema=groupby + new_columns,
                 schema_mapping={
                     **{new_column: (-1, new_column) for new_column in new_columns}, **{col: (0, col) for col in self.schema}},
                 required_columns={0: required_columns},
                 function=partial(duckdb_func, enhanced_exp),
                 foldable=foldable),
-            schema=self.schema + new_columns,
+            schema= groupby + new_columns,
             sorted = self.sorted
             )
 
@@ -1036,12 +1043,31 @@ class DataStream:
     def _grouped_aggregate_sql(self, groupby: list, aggregations: str, orderby = None):
 
         try:
-            batch_agg, final_agg = sql_utils.parse_multiple_aggregations(aggregations)
+            batch_agg, final_agg, new_schema = sql_utils.parse_multiple_aggregations(aggregations)
         except Exception as e:
             raise Exception("Error parsing aggregations: " + str(e))
-        
-        # now push down the batch_agg with with_column
-        
+    
+        clauses = aggregations.split(",")
+        assert all(["as" in clause or "AS" in clause for clause in clauses]), "must provide alias for each aggregation"
+
+        agged = self.sql_transform(batch_agg, groupby)
+
+        # now we need to groupby and aggregate the final_agg
+        agg_node = StatefulNode(
+            schema=new_schema,
+            schema_mapping={col: (-1, col) for col in new_schema},
+            required_columns={0: set(agged.schema)},
+            operator=SQLAggExecutor(groupby, orderby, final_agg)
+        )
+        agg_node.set_placement_strategy(SingleChannelStrategy())
+        aggregated_stream = self.quokka_context.new_stream(
+            sources={0: agged},
+            partitioners={0: BroadcastPartitioner()},
+            node=agg_node,
+            schema=new_schema,
+            
+        )
+        return aggregated_stream
 
     def _grouped_aggregate(self, groupby: list, aggregations: dict, orderby=None):
         '''
@@ -1209,6 +1235,9 @@ class DataStream:
 
         return self._grouped_aggregate([], aggregations, None)
 
+    def agg_sql(self, aggregations: str):
+        return self._grouped_aggregate_sql([], aggregations, None)
+
     def aggregate(self, aggregations):
 
         """
@@ -1366,6 +1395,9 @@ class GroupedDataStream:
         """
 
         return self.source_data_stream._grouped_aggregate(self.groupby, aggregations, self.orderby)
+
+    def agg_sql(self, aggregations: str):
+        return self.source_data_stream._grouped_aggregate_sql(self.groupby, aggregations, self.orderby)
 
     def aggregate(self, aggregations: dict):
         """

@@ -385,12 +385,15 @@ def parse_multiple_aggregations(aggs):
     simple_agg_list = []
     final_expr_list = []
     i = 0
+    aliases = []
     for a in agg_list:
         prefix = "e" + str(i) + "_"
         l, e = parse_single_aggregation(a.sql(), prefix)
         simple_agg_list.extend(l)
         final_expr_list.append(e)
-    
-        i += 1
-    return ','.join(simple_agg_list), ','.join(final_expr_list)
 
+        assert type(sqlglot.parse_one(e)) == sqlglot.exp.Alias, "must provide alias for each aggregation in grouped_agg_sql"
+        aliases.append(sqlglot.parse_one(e).alias)
+
+        i += 1
+    return ','.join(simple_agg_list), ','.join(final_expr_list), aliases
