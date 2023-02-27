@@ -23,6 +23,7 @@ class QuokkaContext:
         count = 0
 
         self.leader_compute_nodes = []
+        self.leader_io_nodes = []
 
         # default strategy launches two IO nodes and one compute node per machine
         private_ips = list(self.cluster.private_ips.values())
@@ -38,6 +39,10 @@ class QuokkaContext:
                 self.io_nodes.add(count)
                 self.node_locs[count] = ip
                 count += 1
+
+                if ip == self.cluster.leader_private_ip:
+                    self.leader_io_nodes.append(count)
+
             for k in range(exec_per_node):
                 if type(self.cluster) == LocalCluster:
                     self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()), None)
@@ -911,50 +916,62 @@ class QuokkaContext:
                 while True:
                     new_parents = {-1: None}
                     not_done = False
+                    new_join_specs = []
                     for parent in parents:
                         parent_node = self.execution_nodes[parents[parent]]
-                        if issubclass(type(parent_node), JoinNode):
-                            # we can only do join fusion if the parent didn't have any kind of batch functions and if the parent only has inner joins
-                            if len(parent_node.targets) == 1 and len(parent_node.targets[node_id].batch_funcs) == 0 and all([join_spec[0] == "inner" for join_spec in parent_node.join_specs]):
-                                not_done = True
-                                assert len(parent_node.join_specs) == 1
-                                # you are now responsible for your parent's join spec
-                                new_join_spec = {}
-                                new_join_type = parent_node.join_specs[0][0]
-                                # get rid of this parent and absorb it into yourself
-                                for key in parent_node.parents:
-                                    new_key = max(new_parents.keys()) + 1
-                                    new_parents[new_key] = parent_node.parents[key]
-                                    new_join_spec[new_key] = parent_node.join_specs[0][1][key]
-                                    # now we have to remove the parent node_id from the parent's parents' targets and replace it with this node's id
-                                    self.execution_nodes[parent_node.parents[key]].targets[node_id] = self.execution_nodes[parent_node.parents[key]].targets[parents[parent]]
-                                    del self.execution_nodes[parent_node.parents[key]].targets[parents[parent]]
+                        if issubclass(type(parent_node), JoinNode) and len(parent_node.targets) == 1 and len(parent_node.targets[node_id].batch_funcs) == 0 and all([join_spec[0] == "inner" for join_spec in parent_node.join_specs]):
+                            not_done = True
+                            assert len(parent_node.join_specs) == 1
+                            # you are now responsible for your parent's join spec
+                            new_join_spec = {}
+                            new_join_type = parent_node.join_specs[0][0]
+                            # get rid of this parent and absorb it into yourself
+                            for key in parent_node.parents:
+                                new_key = max(new_parents.keys()) + 1
+                                new_parents[new_key] = parent_node.parents[key]
+                                new_join_spec[new_key] = parent_node.join_specs[0][1][key]
+                                # now we have to remove the parent node_id from the parent's parents' targets and replace it with this node's id
+                                self.execution_nodes[parent_node.parents[key]].targets[node_id] = self.execution_nodes[parent_node.parents[key]].targets[parents[parent]]
+                                del self.execution_nodes[parent_node.parents[key]].targets[parents[parent]]
 
-                                node.add_join_spec((new_join_type,new_join_spec))
-                                # did the parent have predicates?
-                                if parent_node.targets[node_id].predicate is not None:
-                                    if node.targets[target_id].predicate is None:
-                                        node.targets[target_id].predicate = parent_node.targets[node_id].predicate
-                                    else:
-                                        node.targets[target_id].predicate = optimizer.simplify.simplify(sqlglot.exp.and_(
-                                            node.targets[target_id].predicate, parent_node.targets[node_id].predicate))
-                                
-                                del self.execution_nodes[parents[parent]]
-                                # don't have to worry about the parent's projections. You only care about your projections, 
-                                # i.e. the one you need at the very end.
-                            else:
-                                new_parents[max(new_parents.keys()) + 1] = parents[parent]
+                            new_join_specs.append((new_join_type, new_join_spec))
+                            # did the parent have predicates?
+                            if parent_node.targets[node_id].predicate is not None:
+                                if node.targets[target_id].predicate is None:
+                                    node.targets[target_id].predicate = parent_node.targets[node_id].predicate
+                                else:
+                                    node.targets[target_id].predicate = optimizer.simplify.simplify(sqlglot.exp.and_(
+                                        node.targets[target_id].predicate, parent_node.targets[node_id].predicate))
+                            
+                            del self.execution_nodes[parents[parent]]
+                            # don't have to worry about the parent's projections. You only care about your projections, 
+                            # i.e. the one you need at the very end.
                         else:
-                            new_parents[max(new_parents.keys()) + 1] = parents[parent]
+                            new_parent_key = max(new_parents.keys()) + 1
+                            new_parents[new_parent_key] = parents[parent]
+                            # now you have to swap all the keys in the join specs
+                            for i in range(len(node.join_specs)):
+                                join_spec = node.join_specs[i]
+                                if parent in join_spec[1] and new_parent_key != parent:
+                                    # print(join_spec[1], new_parent_key, parent)
+                                    join_spec[1][new_parent_key] = join_spec[1][parent]
+                                    del join_spec[1][parent]
+                                    node.join_specs[i] = join_spec
+                    for join_spec in new_join_specs:
+                        node.add_join_spec(join_spec)
+
                     
+                    # print(new_parents)
                     del new_parents[-1]
                     parents = new_parents
                     if not not_done:
                         break
+                    print(node.join_specs)
                 
                 node.parents = parents
 
                 # now update your join_specs by looking at your parents' projections. This should be correct
+                # import pdb;pdb.set_trace()
                 new_join_specs = []
                 for join_spec in node.join_specs:
                     join_type = join_spec[0]
@@ -1010,7 +1027,7 @@ class QuokkaContext:
             return
         else:
             if issubclass(type(node), JoinNode):
-
+                
                 # check if everything is an inner join
 
                 if all([join_spec[0] == "inner" for join_spec in node.join_specs]):

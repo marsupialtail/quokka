@@ -398,6 +398,16 @@ def do_13():
     print(result)
     print(ref)
 
+def do_14():
+    d = lineitem.join(part, left_on="l_partkey", right_on="p_partkey")
+    d = d.filter("l_shipdate >= date '1995-09-01' and l_shipdate < date '1995-09-01' + interval '1' month")
+    f = d.agg_sql("""100.00 * sum(case
+                when p_type like 'PROMO%'
+                        then l_extendedprice * (1 - l_discount)
+                else 0
+        end) / sum(l_extendedprice * (1 - l_discount)) as promo_revenue""")
+    return f.collect()
+
 def do_15():
 
     # first compute the revenue
@@ -425,6 +435,16 @@ def do_16():
     result.explain()
     return result.collect()
 
+def do_17():
+    u_0 = lineitem.groupby("l_partkey").agg_sql("0.2 * AVG(l_quantity) AS avg_quantity").compute()
+    u_0 = qc.read_dataset(u_0)
+    print(u_0)
+    d = lineitem.join(part, left_on="l_partkey", right_on="p_partkey", how="inner")
+    d = d.join(u_0, left_on="l_partkey", right_on="l_partkey", how="inner")
+    d = d.filter("p_brand = 'Brand#23' and p_container = 'MED BOX' and l_quantity < avg_quantity")
+    f = d.agg_sql("SUM(l_extendedprice) / 7.0 AS avg_yearly")
+    f.explain()
+    return f.collect()
 
 def do_19():
 
@@ -570,10 +590,13 @@ def dataset_test():
 # print(do_16())
 # print(do_19())
 
-print(do_1_sql())
+# print(do_1_sql())
 # print(do_2_sql())
-print(do_3_sql())
-print(do_4_sql())
+# print(do_3_sql())
+# print(do_4_sql())
 print(do_5_sql())
-print(do_6_sql())
-print(do_7_sql())
+# print(do_6_sql())
+# print(do_7_sql())
+
+# print(do_17())
+# print(do_14())

@@ -37,7 +37,7 @@ class InputPolarsDataset:
 
     def get_own_state(self, num_channels):
         assert num_channels == 1
-        return {0: 0}
+        return {0: [0]}
 
     def execute(self, mapper_id, state=None):
         return None, self.df

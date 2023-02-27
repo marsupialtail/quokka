@@ -978,7 +978,11 @@ class DistinctExecutor(Executor):
 
 class SQLAggExecutor(Executor):
     def __init__(self, groupby_keys, orderby_keys, sql_statement) -> None:
-        self.agg_clause = "select " + sql_statement + " from batch_arrow"
+        assert type(groupby_keys) == list
+        if len(groupby_keys) > 0:
+            self.agg_clause = "select " + ",".join(groupby_keys) + ", " + sql_statement + " from batch_arrow"
+        else:
+            self.agg_clause = "select " + sql_statement + " from batch_arrow"
         if len(groupby_keys) > 0:
             self.agg_clause += " group by "
             for key in groupby_keys:
@@ -1007,8 +1011,7 @@ class SQLAggExecutor(Executor):
         con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
         batch_arrow = self.state
         self.state = polars.from_arrow(con.execute(self.agg_clause).arrow())
-        del batch_arrow
-        
+        del batch_arrow        
         return self.state
 
 

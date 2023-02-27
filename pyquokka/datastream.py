@@ -1054,8 +1054,9 @@ class DataStream:
 
         # now we need to groupby and aggregate the final_agg
         agg_node = StatefulNode(
-            schema=new_schema,
-            schema_mapping={col: (-1, col) for col in new_schema},
+            schema=groupby + new_schema,
+            schema_mapping={
+                    **{new_column: (-1, new_column) for new_column in new_schema}, **{col: (0, col) for col in groupby}},
             required_columns={0: set(agged.schema)},
             operator=SQLAggExecutor(groupby, orderby, final_agg)
         )
@@ -1064,7 +1065,7 @@ class DataStream:
             sources={0: agged},
             partitioners={0: BroadcastPartitioner()},
             node=agg_node,
-            schema=new_schema,
+            schema=groupby + new_schema,
             
         )
         return aggregated_stream

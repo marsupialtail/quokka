@@ -137,12 +137,12 @@ class InputDiskFilesNode(SourceNode):
         return node
 
 class InputPolarsNode(SourceNode):
-    def __init__(self, df, schema) -> None:
-        super().__init__(schema)
+    def __init__(self, df) -> None:
+        super().__init__(df.columns)
         self.df = df
     
     def lower(self, task_graph):
-        node = task_graph.new_input_reader_node(self.df, self.stage, SingleChannelStrategy())
+        node = task_graph.new_input_reader_node(InputPolarsDataset(self.df), self.stage, SingleChannelStrategy())
         return node
 
 class InputRayDatasetNode(SourceNode):

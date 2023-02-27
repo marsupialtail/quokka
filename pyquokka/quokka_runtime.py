@@ -114,7 +114,8 @@ class TaskGraph:
         self.actor_types[self.current_actor] = 'input'
         if placement_strategy is None:
             placement_strategy = CustomChannelsStrategy(1)
-        assert type(placement_strategy) == CustomChannelsStrategy
+        
+        assert type(placement_strategy) in [SingleChannelStrategy, CustomChannelsStrategy]
         
         channel_info = reader.get_own_state(self.get_total_channels_from_placement_strategy(placement_strategy, 'input'))
         # print(channel_info)
@@ -126,28 +127,40 @@ class TaskGraph:
 
         count = 0
         channel_locs = {}
+
+        if type(placement_strategy) == SingleChannelStrategy:
+
+            node = self.context.leader_io_nodes[0]
+            lineages = channel_info[0]
+            vals = {pickle.dumps((self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
+            input_task = TapedInputTask(self.current_actor, count, [i for i in range(len(lineages))])
+            self.LT.mset(pipe, vals)
+            self.NTT.rpush(pipe, node, input_task.reduce())
+            channel_locs[count] = node
         
-        for node in sorted(self.context.io_nodes):
-            for channel in range(placement_strategy.channels_per_node):
+        elif type(placement_strategy) == CustomChannelsStrategy:
+        
+            for node in sorted(self.context.io_nodes):
+                for channel in range(placement_strategy.channels_per_node):
 
-                if count in channel_info:
-                    lineages = channel_info[count]
-                else:
-                    lineages = []
+                    if count in channel_info:
+                        lineages = channel_info[count]
+                    else:
+                        lineages = []
 
-                if len(lineages) > 0:
-                    vals = {pickle.dumps((self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
+                    if len(lineages) > 0:
+                        vals = {pickle.dumps((self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
 
-                    input_task = TapedInputTask(self.current_actor, count, [i for i in range(len(lineages))])
-                    self.LT.mset(pipe, vals)
-                    self.NTT.rpush(pipe, node, input_task.reduce())
-                
-                else:
-                    # this channel doesn't have anything to do, mark it as done. DST for it must be set for the executors to terminate
-                    self.DST.set(pipe, pickle.dumps((self.current_actor, count)), -1)
+                        input_task = TapedInputTask(self.current_actor, count, [i for i in range(len(lineages))])
+                        self.LT.mset(pipe, vals)
+                        self.NTT.rpush(pipe, node, input_task.reduce())
+                    
+                    else:
+                        # this channel doesn't have anything to do, mark it as done. DST for it must be set for the executors to terminate
+                        self.DST.set(pipe, pickle.dumps((self.current_actor, count)), -1)
 
-                channel_locs[count] = node
-                count += 1
+                    channel_locs[count] = node
+                    count += 1
         pipe.execute()
         ray.get(self.context.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
 
@@ -171,6 +184,8 @@ class TaskGraph:
             source_total_channels = self.get_total_channels_from_placement_strategy(source_placement_strategy, self.actor_types[source_node_id])
         elif type(source_placement_strategy) == DatasetStrategy:
             source_total_channels = source_placement_strategy.total_channels
+        elif type(source_placement_strategy) == SingleChannelStrategy:
+            source_total_channels = 1
         else:
             raise Exception("source strategy not supported")
 
