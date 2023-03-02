@@ -916,7 +916,9 @@ class QuokkaContext:
                 while True:
                     new_parents = {-1: None}
                     not_done = False
+                    old_join_specs = copy.deepcopy(node.join_specs)
                     new_join_specs = []
+                    source_mapping = {}
                     for parent in parents:
                         parent_node = self.execution_nodes[parents[parent]]
                         if issubclass(type(parent_node), JoinNode) and len(parent_node.targets) == 1 and len(parent_node.targets[node_id].batch_funcs) == 0 and all([join_spec[0] == "inner" for join_spec in parent_node.join_specs]):
@@ -926,13 +928,16 @@ class QuokkaContext:
                             new_join_spec = {}
                             new_join_type = parent_node.join_specs[0][0]
                             # get rid of this parent and absorb it into yourself
+                            new_keys = []
                             for key in parent_node.parents:
                                 new_key = max(new_parents.keys()) + 1
+                                new_keys.append(new_key)
                                 new_parents[new_key] = parent_node.parents[key]
                                 new_join_spec[new_key] = parent_node.join_specs[0][1][key]
                                 # now we have to remove the parent node_id from the parent's parents' targets and replace it with this node's id
                                 self.execution_nodes[parent_node.parents[key]].targets[node_id] = self.execution_nodes[parent_node.parents[key]].targets[parents[parent]]
                                 del self.execution_nodes[parent_node.parents[key]].targets[parents[parent]]
+                            source_mapping[parent] = new_keys
 
                             new_join_specs.append((new_join_type, new_join_spec))
                             # did the parent have predicates?
@@ -949,17 +954,27 @@ class QuokkaContext:
                         else:
                             new_parent_key = max(new_parents.keys()) + 1
                             new_parents[new_parent_key] = parents[parent]
-                            # now you have to swap all the keys in the join specs
-                            for i in range(len(node.join_specs)):
-                                join_spec = node.join_specs[i]
-                                if parent in join_spec[1] and new_parent_key != parent:
-                                    # print(join_spec[1], new_parent_key, parent)
-                                    join_spec[1][new_parent_key] = join_spec[1][parent]
-                                    del join_spec[1][parent]
-                                    node.join_specs[i] = join_spec
-                    for join_spec in new_join_specs:
-                        node.add_join_spec(join_spec)
-
+                            source_mapping[parent] = new_parent_key
+                    
+                    renamed_join_specs = []
+                    for join_spec in old_join_specs:
+                        new_join_spec = {}
+                        for key in join_spec[1]:
+                            new_key = source_mapping[key]
+                            if type(new_key) == list:
+                                # need to figure out which one of the new keys this key belongs to
+                                # TODO: in case this new key belongs to both, it will default to the first one
+                                # eventually you want to move to a join graph. Eventually.
+                                join_key = join_spec[1][key]
+                                assert len(new_key) == 2
+                                if join_key in self.execution_nodes[new_parents[new_key[0]]].targets[node_id].projection:
+                                    new_key = new_key[0]
+                                else:
+                                    new_key = new_key[1]
+                            new_join_spec[new_key] = join_spec[1][key]
+                        renamed_join_specs.append((join_spec[0], new_join_spec))
+                    node.join_specs = renamed_join_specs + new_join_specs
+                    # import pdb;pdb.set_trace()
                     
                     # print(new_parents)
                     del new_parents[-1]
@@ -969,21 +984,7 @@ class QuokkaContext:
                     print(node.join_specs)
                 
                 node.parents = parents
-
-                # now update your join_specs by looking at your parents' projections. This should be correct
                 # import pdb;pdb.set_trace()
-                new_join_specs = []
-                for join_spec in node.join_specs:
-                    join_type = join_spec[0]
-                    join_dict = {}
-                    for key, col in join_spec[1].items():
-                        # now look for the parent this col belongs to 
-                        for parent in parents:
-                            if col in self.execution_nodes[parents[parent]].targets[node_id].projection:
-                                join_dict[parent] = col
-                                break
-                    new_join_specs.append((join_type, join_dict))
-                node.join_specs = new_join_specs
 
                 for parent in parents:
                     self.__merge_joins__(parents[parent])

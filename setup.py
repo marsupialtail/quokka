@@ -24,7 +24,8 @@ setup(
             'boto3',
             'pandas',
             'numpy',
-            'protobuf==3.20.*', # or Ray will not work
+            #'protobuf==3.20.*', uncomment if Ray does not work on Apple
+            'protobuf',
             'ray>=2.0.0',
             'psutil',
             'h5py',

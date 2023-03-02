@@ -87,6 +87,9 @@ class InputRestGetAPIDataset:
             try:
                 async with session.get(url=self.url + url, headers = self.headers) as response:
                     resp = await response.json()
+                    for projection in self.projection:
+                        if projection not in resp:
+                            resp[projection] = None
                     return resp
             except Exception as e:
                 print("Unable to get url {} due to {}.".format(url, e.__class__))
