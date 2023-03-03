@@ -303,8 +303,7 @@ class DataStream:
             batch_arrow = self._get_materialized_df().to_arrow()
             con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
             df = polars.from_arrow(con.execute("select * from batch_arrow where " + predicate.sql()).arrow())
-            self._set_materialized_df(df)
-            return self
+            return self.quokka_context.from_polars(df)
 
         return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=FilterNode(self.schema, predicate),
                                               schema=self.schema, sorted = self.sorted)
@@ -348,8 +347,7 @@ class DataStream:
         
         if self.materialized:
             df = self._get_materialized_df().select(columns)
-            self._set_materialized_df(df)
-            return self
+            return self.quokka_context.from_polars(df)
 
         return self.quokka_context.new_stream(
             sources={0: self},
@@ -394,8 +392,7 @@ class DataStream:
         else:
             if self.materialized:
                 df = self._get_materialized_df().drop(actual_cols_to_drop)
-                self._set_materialized_df(df)
-                return self
+                return self.quokka_context.from_polars(df)
             else:
                 return self.select([col for col in self.schema if col not in cols_to_drop])
 
@@ -427,8 +424,7 @@ class DataStream:
         
         if self.materialized:
             df = self._get_materialized_df().rename(rename_dict)
-            self._set_materialized_df(df)
-            return self
+            return self.quokka_context.from_polars(df)
 
         # the fact you can write this in one line is why I love Python
         new_schema = [col if col not in rename_dict else rename_dict[col]
@@ -527,8 +523,7 @@ class DataStream:
         if self.materialized:
             df = self._get_materialized_df()
             df = f(df)
-            self._set_materialized_df(df)
-            return self
+            return self.quokka_context.from_polars(df)
 
         select_stream = self.select(required_columns)
 
@@ -584,8 +579,7 @@ class DataStream:
             batch_arrow = self._get_materialized_df().to_arrow()
             con = duckdb.connect().execute('PRAGMA threads=%d' % multiprocessing.cpu_count())
             df = polars.from_arrow(con.execute(enhanced_exp).arrow())
-            self._set_materialized_df(df)
-            return self
+            return self.quokka_context.from_polars(df)
 
         def duckdb_func(func, batch):
             batch_arrow = batch.to_arrow()
