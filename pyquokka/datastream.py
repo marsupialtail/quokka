@@ -32,11 +32,22 @@ class DataStream:
 
     """
 
-    def __init__(self, quokka_context, schema: list, source_node_id: int, sorted_reqs = None) -> None:
+    def __init__(self, quokka_context, schema: list, source_node_id: int, sorted_reqs = None, materialized = False) -> None:
         self.quokka_context = quokka_context
         self.schema = schema
         self.source_node_id = source_node_id
         self.sorted = sorted_reqs
+        self.materialized = materialized # this is used to indicate whether or not the source is materializable from a polars dataframe
+
+    def _get_materialized_df(self):
+        assert self.materialized == True
+        return self.quokka_context.nodes[self.source_node_id].df
+    
+    def _set_materialized_df(self, df):
+        assert type(df) == polars.DataFrame
+        assert self.materialized == True
+        self.quokka_context.nodes[self.source_node_id].df = df
+        self.schema = df.columns
 
     def _set_sorted(self, sorted_reqs):
         """
@@ -68,6 +79,9 @@ class DataStream:
             >>> result = f.collect() # result will be a Polars dataframe, as if you did polars.read_csv("my_csv.csv")
             ~~~
         """
+        if self.materialized:
+            return self._get_materialized_df()
+
         dataset = self.quokka_context.new_dataset(self, self.schema)
         return self.quokka_context.execute_node(dataset.source_node_id)
 
@@ -120,6 +134,11 @@ class DataStream:
         """
 
         assert "*" not in table_location, "* not supported, just supply the path."
+
+        if self.materialized:
+            df = self._get_materialized_df()
+            df.write_csv(table_location)
+            return
 
         if table_location[:5] == "s3://":
 
@@ -185,6 +204,11 @@ class DataStream:
             >>> f.write_parquet("/home/user/test-out") # you should create the directory before hand.
             ~~~
         """
+
+        if self.materialized:
+            df = self._get_materialized_df()
+            df.write_parquet(table_location)
+            return
 
         if table_location[:5] == "s3://":
 
@@ -274,6 +298,13 @@ class DataStream:
             sqlglot.expressions.Column))
         for column in columns:
             assert column in self.schema, "Tried to filter on a column not in the schema"
+        
+        if self.materialized:
+            batch_arrow = self._get_materialized_df().to_arrow()
+            con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
+            df = polars.from_arrow(con.execute("select * from batch_arrow where " + predicate.sql()).arrow())
+            self._set_materialized_df(df)
+            return self
 
         return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=FilterNode(self.schema, predicate),
                                               schema=self.schema, sorted = self.sorted)
@@ -314,6 +345,11 @@ class DataStream:
 
         for column in columns:
             assert column in self.schema, "Projection column not in schema"
+        
+        if self.materialized:
+            df = self._get_materialized_df().select(columns)
+            self._set_materialized_df(df)
+            return self
 
         return self.quokka_context.new_stream(
             sources={0: self},
@@ -346,12 +382,22 @@ class DataStream:
             >>> f = f.select(["l_orderdate"])
             ~~~
         """
-        
+        assert type(cols_to_drop) == list
+        actual_cols_to_drop = []
         for col in cols_to_drop:
-            assert col in self.schema, "col to drop not found in schema"
+            if col in self.schema:
+                actual_cols_to_drop.append(col)
             if self.sorted is not None:
                 assert col not in self.sorted, "cannot drop a sort key!"
-        return self.select([col for col in self.schema if col not in cols_to_drop])
+        if len(actual_cols_to_drop) == 0:
+            return self
+        else:
+            if self.materialized:
+                df = self._get_materialized_df().drop(actual_cols_to_drop)
+                self._set_materialized_df(df)
+                return self
+            else:
+                return self.select([col for col in self.schema if col not in cols_to_drop])
 
     def rename(self, rename_dict):
 
@@ -378,6 +424,11 @@ class DataStream:
             assert rename_dict[key] not in self.schema, "new name must not be in current schema"
             if self.sorted is not None and key in self.sorted:
                 new_sorted[rename_dict[key]] = self.sorted[key]
+        
+        if self.materialized:
+            df = self._get_materialized_df().rename(rename_dict)
+            self._set_materialized_df(df)
+            return self
 
         # the fact you can write this in one line is why I love Python
         new_schema = [col if col not in rename_dict else rename_dict[col]
@@ -473,6 +524,12 @@ class DataStream:
             required_columns = set(required_columns)
         assert type(required_columns) == set
 
+        if self.materialized:
+            df = self._get_materialized_df()
+            df = f(df)
+            self._set_materialized_df(df)
+            return self
+
         select_stream = self.select(required_columns)
 
         return self.quokka_context.new_stream(
@@ -522,6 +579,13 @@ class DataStream:
         assert type(required_columns) == set
         for column in new_columns:
             assert column not in self.schema, "For now new columns cannot have same names as existing columns"
+        
+        if self.materialized:
+            batch_arrow = self._get_materialized_df().to_arrow()
+            con = duckdb.connect().execute('PRAGMA threads=%d' % multiprocessing.cpu_count())
+            df = polars.from_arrow(con.execute(enhanced_exp).arrow())
+            self._set_materialized_df(df)
+            return self
 
         def duckdb_func(func, batch):
             batch_arrow = batch.to_arrow()
@@ -611,7 +675,7 @@ class DataStream:
         assert type(required_columns) == set
         assert new_column not in self.schema, "For now new columns cannot have same names as existing columns"
 
-        assert type(f) == type(lambda x:1) or type(f) == polars.internals.expr.expr.Expr
+        assert type(f) == type(lambda x:1) or type(f) == polars.internals.expr.expr.Expr            
 
         def polars_func_lambda(func, batch):
             return batch.with_columns(polars.Series(name=new_column, values=func(batch)))
@@ -837,8 +901,7 @@ class DataStream:
         """
 
         assert how in {"inner", "left", "semi", "anti"}
-        assert type(right) == polars.internals.DataFrame or issubclass(
-            type(right), DataStream)
+        assert issubclass(type(right), DataStream), "must join against a Quokka DataStream"
 
         if maintain_sort_order is not None:
 
@@ -876,12 +939,15 @@ class DataStream:
         #assert node1.schema[left_on] == node2.schema[right_on], "join column has different schema in tables"
 
         new_schema = self.schema.copy()
-        schema_mapping = {col: (0, col) for col in self.schema}
+        if self.materialized:
+            schema_mapping = {col: (-1, col) for col in self.schema}
+        else:
+            schema_mapping = {col: (0, col) for col in self.schema}
 
         # if the right table is already materialized, the schema mapping should forget about it since we can't push anything down anyways.
         # an optimization could be to push down the predicate directly to the materialized Polars DataFrame in the BroadcastJoinExecutor
         # leave this as a TODO. this could be greatly benenficial if it significantly reduces the size of the small table.
-        if type(right) == polars.internals.DataFrame:
+        if right.materialized:
             right_table_id = -1
         else:
             right_table_id = 1
@@ -908,7 +974,7 @@ class DataStream:
         if len(rename_dict) > 0:
             right = right.rename(rename_dict)
 
-        if issubclass(type(right), DataStream):
+        if not self.materialized and not right.materialized:
 
             if maintain_sort_order is None:
                 assume_sorted = {}
@@ -930,7 +996,24 @@ class DataStream:
                 schema=new_schema,
                 )
 
-        elif type(right) == polars.internals.DataFrame:
+        elif self.materialized and not right.materialized:
+
+            assert how in {"inner"}
+            
+            return self.quokka_context.new_stream(
+                sources={0: right},
+                partitioners={0: PassThroughPartitioner()},
+                node=BroadcastJoinNode(
+                    schema=new_schema,
+                    schema_mapping=schema_mapping,
+                    required_columns={0: {right_on}},
+                    operator=BroadcastJoinExecutor(
+                        self._get_materialized_df(), small_on=left_on, big_on=right_on, suffix=suffix, how=how)
+                ),
+                schema=new_schema,
+                )
+
+        elif not self.materialized and right.materialized:
             
             return self.quokka_context.new_stream(
                 sources={0: self},
@@ -940,10 +1023,17 @@ class DataStream:
                     schema_mapping=schema_mapping,
                     required_columns={0: {left_on}},
                     operator=BroadcastJoinExecutor(
-                        right, small_on=right_on, big_on=left_on, suffix=suffix, how=how)
+                        right._get_materialized_df(), small_on=right_on, big_on=left_on, suffix=suffix, how=how)
                 ),
                 schema=new_schema,
                 )
+
+        else:
+
+            right_df = right._get_materialized_df()
+            left_df = self._get_materialized_df()
+            result = left_df.join(right_df, how=how, left_on=left_on, right_on=right_on, suffix=suffix)
+            return self.quokka_context.from_polars(result)
 
     def groupby(self, groupby: list, orderby=None):
 

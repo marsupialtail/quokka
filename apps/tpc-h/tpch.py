@@ -196,7 +196,7 @@ def do_5():
     As a general rule of thumb you want to join small tables first and then bigger ones.
     '''
 
-    asia = region.filter(region["r_name"] == "ASIA")
+    asia = region.filter("r_name == 'ASIA'")
     asian_nations = nation.join(asia, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
     d = customer.join(asian_nations, left_on="c_nationkey", right_on="n_nationkey")
     d = d.join(orders, left_on="c_custkey", right_on="o_custkey", suffix="_3")
@@ -211,7 +211,7 @@ def do_5():
 
 
 def do_5_sql():
-    asia = region.filter(region["r_name"] == "ASIA")
+    asia = region.filter("r_name == 'ASIA'")
     asian_nations = nation.join(asia, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
     d = customer.join(asian_nations, left_on="c_nationkey", right_on="n_nationkey")
     d = d.join(orders, left_on="c_custkey", right_on="o_custkey", suffix="_3")
@@ -291,7 +291,7 @@ def do_7_sql():
     return f.collect()
 
 def do_8():
-    america = region.filter(region["r_name"] == "AMERICA")
+    america = region.filter("r_name = 'AMERICA'")
     american_nations = nation.join(america, left_on="n_regionkey",right_on="r_regionkey").select(["n_nationkey"])
     american_customers = customer.join(american_nations, left_on="c_nationkey", right_on="n_nationkey")
     american_orders = orders.join(american_customers, left_on = "o_custkey", right_on="c_custkey")
@@ -342,7 +342,7 @@ def do_10():
         "c_address", "c_comment"]).aggregate()
 
 def do_11():
-    d = supplier.join(nation.filter(polars.col("n_name") == 'GERMANY'), left_on="s_nationkey", right_on="n_nationkey")
+    d = supplier.join(nation.filter("n_name == 'GERMANY'"), left_on="s_nationkey", right_on="n_nationkey")
     d = d.join(partsupp, left_on="s_suppkey", right_on="ps_suppkey")
     d = d.with_column("value", polars.col("ps_supplycost") * polars.col("ps_availqty"), required_columns={"ps_supplycost", "ps_availqty"})
     d = d.select(["ps_partkey", "value"]).compute()
@@ -446,6 +446,14 @@ def do_17():
     f.explain()
     return f.collect()
 
+def do_18():
+    u_0 = lineitem.groupby("l_orderkey").agg_sql("SUM(l_quantity)) AS sum_quant").filter("sum_quant > 300").compute()
+    u_0 = qc.read_dataset(u_0)
+    d = customer.join(orders, left_on="c_custkey", right_on="o_custkey", how="inner")
+    d = d.join(u_0, left_on="o_orderkey", right_on="l_orderkey", how="inner")
+    d = d.join(lineitem, left_on="o_orderkey", right_on="l_orderkey", how="inner")
+    d = d.groupby("c_name", "c_custkey", "o_orderkey", "o_orderdate", "o_totalprice").agg_sql("sum(l_quantity) AS total_quantity")
+
 def do_19():
 
     d = lineitem.join(part, left_on="l_partkey", right_on="p_partkey", how="inner")
@@ -478,6 +486,12 @@ def do_19():
     result.explain()
     return result.collect()
 
+
+def do_20():
+    u_0 = lineitem.filter("l_shipdate < date '1995-01-01' and l_shipdate >= '1994-01-01'").groupby(["l_partkey", "l_suppkey"]).agg_sql("0.5 * SUM(l_quantity) AS sum_quantity").compute()
+    u_3 = part.filter("p_name like 'forest%'")
+    u_4 = partsupp.join(u_0, left_on="ps_suppkey", right_on="l_suppkey", how="inner")
+    u_4 = u_4.join(u_3, left_on="ps_partkey", right_on="p_partkey", how="semi")
 
 def count():
 
@@ -576,27 +590,27 @@ def dataset_test():
 # print(do_5())
 # print(do_6())
 # print(do_7())
-# print(do_8())
-# print(do_9())
-# print(do_11())
-# print(do_12())
-# print(do_13())
+
 # print(do_12_alternate())
 
 # print(word_count())
 # print(covariance())
 
-# print(do_15())
-# print(do_16())
-# print(do_19())
+
 
 # print(do_1_sql())
-# print(do_2_sql())
 # print(do_3_sql())
 # print(do_4_sql())
-print(do_5_sql())
+# print(do_5_sql())
 # print(do_6_sql())
 # print(do_7_sql())
-
-# print(do_17())
-# print(do_14())
+# print(do_8())
+# print(do_9())
+print(do_11())
+print(do_12())
+print(do_13())
+print(do_14())
+print(do_15())
+print(do_16())
+print(do_17())
+# print(do_19())

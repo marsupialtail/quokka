@@ -429,7 +429,7 @@ class JoinNode(TaskNode):
             target_info = self.targets[list(self.targets.keys())[0]]
             transform_func = target_info_to_transform_func(target_info)
         
-        print("lowering join node with ", len(self.join_specs), " join specs. Random join order used right now.")
+        # print("lowering join node with ", len(self.join_specs), " join specs. Heuristics CBO join order used right now.")
         joined_parents = set()
 
         # self.join_specs = [self.join_specs[1]] + [self.join_specs[0]]

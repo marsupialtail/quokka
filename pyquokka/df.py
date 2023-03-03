@@ -177,7 +177,10 @@ class QuokkaContext:
                     schema = resp[:first_newline].decode("utf-8").split(sep)
 
                 if len(files) == 1 and sizes[0] < 10 * 1048576:
-                    return polars.read_csv("s3://" + bucket + "/" + files[0], new_columns = schema, has_header = has_header,sep = sep)
+                    df = polars.read_csv("s3://" + bucket + "/" + files[0], new_columns = schema, has_header = has_header,sep = sep)
+                    self.nodes[self.latest_node_id] = InputPolarsNode(df)
+                    self.latest_node_id += 1
+                    return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
 
                 self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, prefix, None, schema, sep, has_header)
             else:
@@ -186,7 +189,10 @@ class QuokkaContext:
                 response = s3.head_object(Bucket= bucket, Key=key)
                 size = response['ContentLength']
                 if size < 10 * 1048576:
-                    return polars.read_csv("s3://" + table_location, new_columns = schema, has_header = has_header,sep = sep)
+                    df = polars.read_csv("s3://" + table_location, new_columns = schema, has_header = has_header,sep = sep)
+                    self.nodes[self.latest_node_id] = InputPolarsNode(df)
+                    self.latest_node_id += 1
+                    return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
                 else:
 
                     if schema is None:
@@ -215,7 +221,10 @@ class QuokkaContext:
                 if len(files) == 1:
                     size = os.path.getsize(table_location + files[0])
                     if size < 1 * 1048576:
-                        return polars.read_csv(table_location + files[0], new_columns=schema, has_header=has_header, sep = sep)
+                        df = polars.read_csv(table_location + files[0], new_columns=schema, has_header=has_header, sep = sep)
+                        self.nodes[self.latest_node_id] = InputPolarsNode(df)
+                        self.latest_node_id += 1
+                        return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
                 
                 if schema is None:
                     resp = open(table_location + files[0],"r").read(1024 * 4)
@@ -228,7 +237,10 @@ class QuokkaContext:
             else:
                 size = os.path.getsize(table_location)
                 if size < 1 * 1048576:
-                    return polars.read_csv(table_location, new_columns = schema, has_header = has_header,sep = sep)
+                    df = polars.read_csv(table_location, new_columns = schema, has_header = has_header,sep = sep)
+                    self.nodes[self.latest_node_id] = InputPolarsNode(df)
+                    self.latest_node_id += 1
+                    return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
                 else:
                     
                     if schema is None:
@@ -303,7 +315,10 @@ class QuokkaContext:
                 sizes = [i['Size'] for i in z['Contents'] if i['Key'].endswith('.parquet')]
                 assert len(files) > 0, "could not find any parquet files. make sure they end with .parquet"
                 if len(files) == 1 and sizes[0] < 10 * 1048576:
-                    return polars.read_parquet("s3://" + bucket + "/" + files[0])
+                    df = polars.read_parquet("s3://" + bucket + "/" + files[0])
+                    self.nodes[self.latest_node_id] = InputPolarsNode(df)
+                    self.latest_node_id += 1
+                    return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
                 
                 if schema is None:
                     try:
@@ -327,7 +342,10 @@ class QuokkaContext:
                 response = s3.head_object(Bucket= bucket, Key=key)
                 size = response['ContentLength']
                 if size < 10 * 1048576:
-                    return polars.read_parquet("s3://" + table_location)
+                    df = polars.read_parquet("s3://" + table_location)
+                    self.nodes[self.latest_node_id] = InputPolarsNode(df)
+                    self.latest_node_id += 1
+                    return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
                 else:
                     self.nodes[self.latest_node_id] = InputS3ParquetNode(bucket, None, key, schema)
 
@@ -350,7 +368,10 @@ class QuokkaContext:
                 if len(files) == 1:
                     size = os.path.getsize(table_location + files[0])
                     if size < 1 * 871900:
-                        return polars.read_parquet(table_location + files[0])
+                        df = polars.read_parquet(table_location + files[0])
+                        self.nodes[self.latest_node_id] = InputPolarsNode(df)
+                        self.latest_node_id += 1
+                        return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
                 self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
 
             else:
@@ -360,7 +381,10 @@ class QuokkaContext:
                     raise Exception("could not find the parquet file at ", table_location)
                 
                 if size < 1 * 871900:
-                    return polars.read_parquet(table_location)
+                    df = polars.read_parquet(table_location)
+                    self.nodes[self.latest_node_id] = InputPolarsNode(df)
+                    self.latest_node_id += 1
+                    return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
                 else:
                     if schema is None:
                         f = pq.ParquetFile(table_location)
@@ -392,17 +416,17 @@ class QuokkaContext:
     def from_polars(self, df):
         self.nodes[self.latest_node_id] = InputPolarsNode(df)
         self.latest_node_id += 1
-        return DataStream(self, df.columns, self.latest_node_id - 1)
+        return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
 
     def from_pandas(self, df):
         self.nodes[self.latest_node_id] = InputPolarsNode(polars.from_pandas(df))
         self.latest_node_id += 1
-        return DataStream(self, df.columns, self.latest_node_id - 1)
+        return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
 
     def from_arrow(self, df):
         self.nodes[self.latest_node_id] = InputPolarsNode(polars.from_arrow(df))
         self.latest_node_id += 1
-        return DataStream(self, df.columns, self.latest_node_id - 1)
+        return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
 
     def read_sorted_parquet(self, table_location: str, sorted_by: str, schema = None):
         assert type(sorted_by) == str
@@ -460,7 +484,7 @@ class QuokkaContext:
         is entirely drained by this node before the other input stream starts to be processed. This can be used to implement build-probe join, e.g.
         implementing this is a priority.
     '''
-    def new_stream(self, sources: dict, partitioners: dict, node: Node, schema: list, sorted = None):
+    def new_stream(self, sources: dict, partitioners: dict, node: Node, schema: list, sorted = None, materialized = False):
         self.nodes[self.latest_node_id] = node
         for source in sources:
             source_datastream = sources[source]
@@ -471,7 +495,7 @@ class QuokkaContext:
 
         self.latest_node_id += 1
 
-        return DataStream(self, schema, self.latest_node_id - 1, sorted)
+        return DataStream(self, schema, self.latest_node_id - 1, sorted, materialized)
 
     '''
     This defines a dataset object which is used by the optimizer. 
@@ -760,7 +784,7 @@ class QuokkaContext:
                 for target_id in targets:
                     target = targets[target_id]
                     # all the predicates should have been pushed past projection nodes in predicate pushdown
-                    assert target.predicate == sqlglot.exp.TRUE
+                    assert target.predicate == sqlglot.exp.TRUE, target.predicate
                     if target.projection is None:
                         target.projection = node.projection
                     # your target projections should never contain columns that you don't contain, should be asserted at DataStream level
@@ -974,17 +998,14 @@ class QuokkaContext:
                             new_join_spec[new_key] = join_spec[1][key]
                         renamed_join_specs.append((join_spec[0], new_join_spec))
                     node.join_specs = renamed_join_specs + new_join_specs
-                    # import pdb;pdb.set_trace()
                     
-                    # print(new_parents)
                     del new_parents[-1]
                     parents = new_parents
                     if not not_done:
                         break
-                    print(node.join_specs)
+                    # print(node.join_specs)
                 
                 node.parents = parents
-                # import pdb;pdb.set_trace()
 
                 for parent in parents:
                     self.__merge_joins__(parents[parent])
