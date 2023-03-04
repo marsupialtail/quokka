@@ -1,4 +1,3 @@
-from os import rename
 from pyquokka.executors import *
 from pyquokka.dataset import *
 from pyquokka.logical import *
@@ -436,6 +435,7 @@ class DataStream:
             if key not in rename_dict:
                 schema_mapping[key] = (0, key)
 
+        print(rename_dict)
         def f(x): return x.rename(rename_dict)
 
         return self.quokka_context.new_stream(
@@ -947,7 +947,9 @@ class DataStream:
             right_table_id = 1
 
         rename_dict = {}
-        for col in right.schema:
+
+        right_cols = right.schema if how not in {"semi", "anti"} else [right_on]
+        for col in right_cols:
             if col == right_on:
                 continue
             if col in new_schema:

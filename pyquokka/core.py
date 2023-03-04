@@ -146,6 +146,11 @@ class TaskManager:
             x = x.filter(predicate_fn)
             # print("filter time", time.time() - start)
 
+            for func in batch_funcs:
+                x = func(x)
+                if x is None or len(x) == 0:
+                    return {}
+
             start = time.time()
             partitioned = partitioner_fn(x, source_channel, num_target_channels)
             # print("partition fn time", time.time() - start)
@@ -153,10 +158,6 @@ class TaskManager:
             results = {}
             for channel in partitioned:
                 payload = partitioned[channel]
-                for func in batch_funcs:
-                    if payload is None:
-                        break
-                    payload = func(payload)
 
                 if payload is None:
                     continue
