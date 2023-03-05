@@ -1148,11 +1148,11 @@ class DataStream:
 
         if len(columns) == 1:
             if descending:
-                transformed = self.transform(g, new_schema = self.schema, required_columns=set(columns))
+                transformed = self.transform(g, new_schema = self.schema, required_columns=set(self.schema))
             else:
-                transformed = self.transform(f, new_schema = self.schema, required_columns=set(columns))
+                transformed = self.transform(f, new_schema = self.schema, required_columns=set(self.schema))
         else:
-            transformed = self.transform(h, new_schema = self.schema, required_columns=set(columns))
+            transformed = self.transform(h, new_schema = self.schema, required_columns=set(self.schema))
         
         topk_node = StatefulNode(
             schema=self.schema,

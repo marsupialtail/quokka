@@ -17,7 +17,7 @@ import polars
 if mode == "DISK":
     cluster = LocalCluster()
 elif mode == "S3":
-    manager = QuokkaClusterManager()
+    manager = QuokkaClusterManager(key_name = "tony_key", key_location = "/home/ziheng/Downloads/tony_key.pem")
     cluster = manager.get_cluster_from_json("config.json")
 else:
     raise Exception
@@ -349,7 +349,7 @@ def do_11():
     temp = qc.read_dataset(d)
     val = (temp.sum("value") * 0.0001)[0,0]
     temp.groupby("ps_partkey").aggregate(aggregations={"value":"sum"}).filter("value_sum > " + str(val)).explain()
-    return temp.groupby("ps_partkey").aggregate(aggregations={"value":"sum"}).filter("value_sum > " + str(val)).collect().sort('value_sum',reverse=True)
+    return temp.groupby("ps_partkey").aggregate(aggregations={"value":"sum"}).filter("value_sum > " + str(val)).collect()#.sort('value_sum',reverse=True)
     
 
 def do_12():
@@ -406,6 +406,7 @@ def do_14():
                         then l_extendedprice * (1 - l_discount)
                 else 0
         end) / sum(l_extendedprice * (1 - l_discount)) as promo_revenue""")
+    f.explain()
     return f.collect()
 
 def do_15():
@@ -488,10 +489,29 @@ def do_19():
 
 
 def do_20():
-    u_0 = lineitem.filter("l_shipdate < date '1995-01-01' and l_shipdate >= '1994-01-01'").groupby(["l_partkey", "l_suppkey"]).agg_sql("0.5 * SUM(l_quantity) AS sum_quantity").compute()
+    u_0 = lineitem.filter("l_shipdate < date '1995-01-01' and l_shipdate >= date '1994-01-01'").groupby(["l_partkey", "l_suppkey"]).agg_sql("0.5 * SUM(l_quantity) AS sum_quantity").compute()
     u_3 = part.filter("p_name like 'forest%'")
-    u_4 = partsupp.join(u_0, left_on="ps_suppkey", right_on="l_suppkey", how="inner")
+    u_4 = partsupp.join(qc.read_dataset(u_0), left_on="ps_suppkey", right_on="l_suppkey", how="inner")
     u_4 = u_4.join(u_3, left_on="ps_partkey", right_on="p_partkey", how="semi")
+    u_4 = u_4.filter("ps_availqty > sum_quantity")
+    d = supplier.join(u_4, left_on="s_suppkey", right_on="ps_suppkey", how="semi")
+    d = d.join(nation.filter("n_name = 'CANADA'"), left_on="s_nationkey", right_on="n_nationkey", how="inner")
+    d = d.select(["s_name", "s_address"])
+    d.explain()
+    return d.collect().sort("s_name")
+
+def do_20_polars():
+    lineitem = polars.read_csv("/home/ziheng/tpc-h/lineitem.tbl", sep = "|", has_header=True)
+    u_0 = lineitem.filter(polars.col("l_shipdate") < "1995-01-01").filter(polars.col("l_shipdate") >= "1994-01-01").\
+        groupby(["l_partkey", "l_suppkey"]).agg(polars.col("l_quantity").sum()).\
+        with_column((polars.col("l_quantity") * 0.5).alias("sum_quantity"))
+    part = polars.read_csv("/home/ziheng/tpc-h/part.tbl", sep = "|", has_header=True)
+    partsupp = polars.read_csv("/home/ziheng/tpc-h/partsupp.tbl", sep = "|", has_header=True)
+    u_3 = part.filter(polars.col("p_name").str.starts_with("forest"))
+    print(u_0)
+
+def do_21():
+    pass
 
 def count():
 
@@ -598,14 +618,14 @@ def dataset_test():
 
 
 
-# print(do_1_sql())
-# print(do_3_sql())
-# print(do_4_sql())
-# print(do_5_sql())
-# print(do_6_sql())
-# print(do_7_sql())
-# print(do_8())
-# print(do_9())
+print(do_1_sql())
+print(do_3_sql())
+print(do_4_sql())
+print(do_5_sql())
+print(do_6_sql())
+print(do_7_sql())
+print(do_8())
+print(do_9())
 print(do_11())
 print(do_12())
 print(do_13())
@@ -614,3 +634,5 @@ print(do_15())
 print(do_16())
 print(do_17())
 # print(do_19())
+# print(do_20())
+# print(do_20_polars())
