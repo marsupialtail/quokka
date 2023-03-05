@@ -1013,86 +1013,33 @@ class SQLAggExecutor(Executor):
         self.state = polars.from_arrow(con.execute(self.agg_clause).arrow())
         del batch_arrow        
         return self.state
-
-
-class DuckAggExecutor(Executor):
-
-    def __init__(self, groupby_keys, orderby_keys, aggregation_dict, mean_cols, count):
-
+    
+class TopKExecutor(Executor):
+    def __init__(self, columns, k, descending = False) -> None:
+        assert type(columns) == list and len(columns) > 0
+        assert k > 0
         self.state = None
-        self.emit_count = count
-        self.do_count = count
-        assert type(groupby_keys) == list
-        self.groupby_keys = groupby_keys
-        self.mean_cols = mean_cols
-        self.con = None        
-        
-        # we could use SQLGlot here but that's overkill.
-        self.agg_clause = "select"
-        for key in groupby_keys:
-            self.agg_clause += "\n\t" + key + ","
-        
-        for key in aggregation_dict:
-            agg_type = aggregation_dict[key]
-            assert agg_type in {
-                    "max", "min", "mean", "sum"}, "only support max, min, mean and sum for now"
-            if agg_type == "mean":
-                self.do_count = True
-                self.agg_clause += "\n\tsum(" + key + ") as " + key + "_sum,"
-            else:
-                self.agg_clause += "\n\t" + agg_type + "(" + key + ") as " + key + "_" + agg_type + ","
-        
-        if self.do_count:
-            self.agg_clause += "\n\tsum(__count_sum) as __count_sum,"
-        
-        # remove trailing comma
-        self.agg_clause = self.agg_clause[:-1]
-        self.agg_clause += "\nfrom\n\tbatch_arrow\n"
-        if len(groupby_keys) > 0:
-            self.agg_clause += "group by "
-            for key in groupby_keys:
-                self.agg_clause += key + ","
-            self.agg_clause = self.agg_clause[:-1]
-
-        if orderby_keys is not None:
-            self.agg_clause += "\norder by "
-            for key, dir in orderby_keys:
-                if dir == "desc":
-                    self.agg_clause += key + " desc,"
-                else:
-                    self.agg_clause += key + ","
-            self.agg_clause = self.agg_clause[:-1]
-        # print(self.agg_clause)
+        self.columns = columns
+        self.k = k
+        self.descending = descending
 
     def checkpoint(self, conn, actor_id, channel_id, seq):
         pass
     
     def restore(self, conn, actor_id, channel_id, seq):
         pass
-    
-    def execute(self,batches, stream_id, executor_id):
 
+    def execute(self, batches, stream_id, executor_id):
         batch = pa.concat_tables(batches)
         self.state = batch if self.state is None else pa.concat_tables([self.state, batch])
     
     def done(self, executor_id):
-
-        if self.state is None:
-            return None
-        con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
         batch_arrow = self.state
-        self.state = polars.from_arrow(con.execute(self.agg_clause).arrow())
-        del batch_arrow
-
-        for key in self.mean_cols:
-            keep_sum = self.mean_cols[key]
-            self.state = self.state.with_column(polars.Series(key + "_mean", self.state[key + "_sum"]/ self.state[self.count_col]))
-            if not keep_sum:
-                self.state = self.state.drop(key + "_sum")
-        
-        if self.do_count and not self.emit_count:
-            self.state = self.state.drop(self.count_col)
-        
+        con = duckdb.connect().execute('PRAGMA threads=%d' % multiprocessing.cpu_count())
+        if not self.descending:
+            self.state = polars.from_arrow(con.execute("select * from batch_arrow order by " + ",".join(self.columns) + " desc limit " + str(self.k)).arrow())
+        else:
+            self.state = polars.from_arrow(con.execute("select * from batch_arrow order by " + ",".join(self.columns) + " limit " + str(self.k)).arrow())
         return self.state
 
 class CountExecutor(Executor):
@@ -1109,14 +1056,6 @@ class CountExecutor(Executor):
     def execute(self, batches, stream_id, executor_id):
         
         self.state += sum(len(batch) for batch in batches)
-    
-    def serialize(self):
-        return {0:self.state}, "all"
-    
-    def deserialize(self, s):
-        # the default is to get a list of things 
-        assert type(s) == list and len(s) == 1
-        self.state = s[0][0]
     
     def done(self, executor_id):
         #print("COUNT:", self.state)

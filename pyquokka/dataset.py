@@ -594,7 +594,7 @@ class InputDiskCSVDataset:
             else:
                 detected_names = resp[:first_newline].split(self.sep)
                 if self.names != detected_names:
-                    print("Warning, detected column names from header row not the same as supplied column names!")
+                    print("Warning, detected column names from header row not the same as supplied column names! This could also be because your rows end with the delimiter.")
                     print("Detected", detected_names)
                     print("Supplied", self.names)
         
@@ -708,8 +708,10 @@ class InputDiskCSVDataset:
                     raise Exception
                 resp = resp[first_newline + 1:]
 
-            bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
-                column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+            # bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
+            #     column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
+            bump = polars.read_csv(resp, new_columns = self.names, sep = self.sep, has_header = False, try_parse_dates=True)
+            
             bump = bump.select(self.columns) if self.columns is not None else bump
 
             return None, bump
@@ -986,7 +988,7 @@ class InputS3CSVDataset:
             else:
                 detected_names = resp[:first_newline].decode("utf-8").split(",")
                 if self.names != detected_names:
-                    print("Warning, detected column names from header row not the same as supplied column names!")
+                    print("Warning, detected column names from header row not the same as supplied column names! This could also be because your rows end with the delimiter.")
                     print("Detected", detected_names)
                     print("Supplied", self.names)
 

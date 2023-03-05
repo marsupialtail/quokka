@@ -153,6 +153,11 @@ class InputRayDatasetNode(SourceNode):
     def lower(self, task_graph):
         node = task_graph.new_input_dataset_node(self.dataset, self.stage)
         return node
+    
+    def set_cardinality(self):
+        card = self.dataset.length()
+        for target in self.targets:
+            self.cardinality[target] = card
 
 class InputS3CSVNode(SourceNode):
     def __init__(self, bucket, prefix, key, schema, sep, has_header, projection = None) -> None:
@@ -225,8 +230,11 @@ class InputDiskCSVNode(SourceNode):
         sample = sample[first_new_line + 1 : last_new_line]
 
         # now read sample as a csv
-        sample = csv.read_csv(BytesIO(sample), read_options=csv.ReadOptions(
-                column_names=self.schema), parse_options=csv.ParseOptions(delimiter=self.sep))
+        # sample = csv.read_csv(BytesIO(sample), read_options=csv.ReadOptions(
+        #         column_names=self.schema), parse_options=csv.ParseOptions(delimiter=self.sep))
+
+        # import pdb;pdb.set_trace()
+        sample = polars.read_csv(sample, new_columns = self.schema, sep = self.sep, has_header = False).to_arrow()
 
         # now apply the predicate to this sample
         for target in self.targets:

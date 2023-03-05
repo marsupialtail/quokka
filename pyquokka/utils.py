@@ -62,8 +62,13 @@ class LocalCluster:
         # we assume you have pyquokka installed, and we are going to spin up a ray cluster locally
         ray.init(ignore_reinit_error=True)
         flight_file = pyquokka_loc + "/flight.py"
-        print(flight_file)
+        self.flight_process = None
+        self.redis_process = None
         os.system("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288")
+        port5005 = os.popen("lsof -i:5005").read()
+        if "python" in port5005:
+            raise Exception("Port 5005 is already in use. Kill the process that is using it first.")
+            
         try:
             self.flight_process = subprocess.Popen(["python3", flight_file], preexec_fn = preexec_function)
         except:
@@ -77,9 +82,10 @@ class LocalCluster:
     
     def __del__(self):
         # we need to join the process that is running the flight server! 
-        self.flight_process.kill()
-        self.redis_process.kill()
-        pass
+        if self.flight_process is not None:
+            self.flight_process.kill()
+        if self.redis_process is not None:
+            self.redis_process.kill()
 
 
 class QuokkaClusterManager:

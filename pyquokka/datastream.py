@@ -435,7 +435,6 @@ class DataStream:
             if key not in rename_dict:
                 schema_mapping[key] = (0, key)
 
-        print(rename_dict)
         def f(x): return x.rename(rename_dict)
 
         return self.quokka_context.new_stream(
@@ -583,6 +582,9 @@ class DataStream:
 
         def duckdb_func(func, batch):
             batch_arrow = batch.to_arrow()
+            for i, (col_name, type_) in enumerate(zip(batch_arrow.schema.names, batch_arrow.schema.types)):
+                if pa.types.is_boolean(type_):
+                    batch_arrow = batch_arrow.set_column(i, col_name, compute.cast(batch_arrow.column(col_name), pa.int32()))
             con = duckdb.connect().execute('PRAGMA threads=%d' % multiprocessing.cpu_count())
             return polars.from_arrow(con.execute(func).arrow())
         
@@ -1126,6 +1128,46 @@ class DataStream:
             schema=new_schema,
         )
 
+    def top_k(self, columns, k, descending = False):
+        """
+        This is a topk function that effectively performs select * from stream order by columns limit k.
+        The strategy is to take k rows from each batch coming in and do a final sort and limit k in a stateful executor.
+        """
+        if type(columns) == str:
+            columns = [columns]
+        assert type(columns) == list and len(columns) > 0
+        assert type(k) == int
+        assert k > 0
+
+        def f(df):
+            return df.filter(polars.col(columns[0]) >= polars.col(columns[0]).top_k(k).min())
+        def g(df):
+            return df.filter(polars.col(columns[0]) <= polars.col(columns[0]).top_k(k, descending = True).max())
+        def h(df):
+            return df.sort(columns, descending = (not descending)).limit(k)
+
+        if len(columns) == 1:
+            if descending:
+                transformed = self.transform(g, new_schema = self.schema, required_columns=set(columns))
+            else:
+                transformed = self.transform(f, new_schema = self.schema, required_columns=set(columns))
+        else:
+            transformed = self.transform(h, new_schema = self.schema, required_columns=set(columns))
+        
+        topk_node = StatefulNode(
+            schema=self.schema,
+            schema_mapping={col: (0, col) for col in self.schema},
+            required_columns={0: set(columns)},
+            operator=TopKExecutor(columns, k, descending)
+        )
+        topk_node.set_placement_strategy(SingleChannelStrategy())
+        return self.quokka_context.new_stream(
+            sources={0: transformed},
+            partitioners={0: BroadcastPartitioner()},
+            node=topk_node,
+            schema=self.schema,
+        )
+    
     def _grouped_aggregate_sql(self, groupby: list, aggregations: str, orderby = None):
 
         try:
@@ -1146,144 +1188,52 @@ class DataStream:
             required_columns={0: set(agged.schema)},
             operator=SQLAggExecutor(groupby, orderby, final_agg)
         )
-        agg_node.set_placement_strategy(SingleChannelStrategy())
-        aggregated_stream = self.quokka_context.new_stream(
-            sources={0: agged},
-            partitioners={0: BroadcastPartitioner()},
-            node=agg_node,
-            schema=groupby + new_schema,
-            
-        )
+        if len(groupby) > 0:
+            aggregated_stream = self.quokka_context.new_stream(
+                sources={0: agged},
+                partitioners={0: HashPartitioner(groupby[0])},
+                node=agg_node,
+                schema=groupby + new_schema,
+                
+            )
+        else:
+            agg_node.set_placement_strategy(SingleChannelStrategy())
+            aggregated_stream = self.quokka_context.new_stream(
+                sources={0: agged},
+                partitioners={0: BroadcastPartitioner()},
+                node=agg_node,
+                schema=groupby + new_schema,
+                
+            )
         return aggregated_stream
 
     def _grouped_aggregate(self, groupby: list, aggregations: dict, orderby=None):
-        '''
-        This is an internal method. Regular people are expected to use .groupby().agg() instead of this.
-        This is a blocking operation. This will return a Dataset
-        Aggregations is expected to take the form of a dictionary like this {'high':['sum'], 'low':['avg']}. The keys of this dict must be in the schema.
-        The groupby argument is a list of keys to groupby. If it is empty, then no grouping is done
-        '''
+        # we are going to convert the aggregations_dict into a SQL statement and call _grouped_aggregate_sql
 
-        # do some checks first
-
-        do_count = False
-
-        for key in aggregations:
-            assert (key == "*" and (aggregations[key] == ['count'] or aggregations[key] == 'count')) or (
-                key in self.schema and key not in groupby)
-            if type(aggregations[key]) == str:
-                aggregations[key] = [aggregations[key]]
-            for i in range(len(aggregations[key])):
-                if aggregations[key][i] == "avg":
-                    aggregations[key][i] = "mean"
-                    assert aggregations[key][i] in {
-                        "max", "min", "mean", "sum"}, "only support max, min, mean and sum for now"
-                if aggregations[key][i] == "mean":
-                    do_count = True
-        for key in groupby:
-            assert key in self.schema
-
-        if "*" in aggregations:
-            do_count = True
-            emit_count = True
-            del aggregations["*"]
-            assert "__count_sum" not in self.schema, "schema conflict with column name count"
-        else:
-            emit_count = False
-
-
-        required_columns = groupby + list(aggregations.keys())
-        # this can happen if you just do .count()
-        if len(required_columns) == 0:
-            # you need to pull a column from the source currently else the engine won't work.
-            # this is an extremely dirty hack to optimize specifically for TPCH. So we don't end up pulling the l_comment column when you just count all the rows.
-            # we should solve this in the future, either by doing count separately or have schema types
-            required_columns = [self.schema[1] if len(self.schema) > 1 else self.schema[0]]
-
-        transformed_schema = ["__count_sum"] if do_count else []
-        for key in groupby:
-            transformed_schema.append(key)
-
-        new_schema = ["__count_sum"] if emit_count else []
-        for key in groupby:
-            new_schema.append(key)
-
-        '''
-        We need to do two things here. The groupby-aggregation will be pushed down as a transformation.
-        We need to generate the function for the transformation, as well as the necessary arguments to instantiate the AggExecutor.
-        in the aggregations argument, each column could have multiple aggregations defined. However the transformation will make sure 
-        that each of those aggregations gets its own column in the transformed schema, so the AggExecutor doesn't have to deal with this.
-        '''
-
-        agg_clause = "select\n\tcount(*) as __count_sum," if do_count else "select"
-        for key in groupby:
-            agg_clause += "\n\t" + key + ","
-
-        agg_executor_dict = {}
-        # key is column name, value is Boolean to indicate if you should keep around the sum column.
-        mean_cols = {}
-        for key in aggregations:
-            for agg_spec in aggregations[key]:
-                if agg_spec == "mean":
-
-                    new_schema.append(key + "_mean")
-
-                    if "sum" in aggregations[key]:
-                        mean_cols[key] = True
-
-                    else:
-                        transformed_schema.append(key)
-                        agg_executor_dict[key] = "sum"
-                        mean_cols[key] = False
-                        agg_clause += "\n\tsum(" + key + ") as " + key + ","
-
+        # first, we need to convert the aggregations dict into a SQL statement
+        sql = ""
+        for col, agg in aggregations.items():
+            if col == "*":
+                assert agg == "count" or agg == ["count"]
+                sql += f"count(*) as count,"
+                continue
+            if type(agg) == str:
+                agg = [agg]
+            for a in agg:
+                if a == "min":
+                    sql += f"min({col}) as {col}_min,"
+                elif a == "max":
+                    sql += f"max({col}) as {col}_max,"
+                elif a == "mean":
+                    sql += f"avg({col}) as {col}_mean,"
+                elif a == "sum":
+                    sql += f"sum({col}) as {col}_sum,"
+                elif a == "avg":
+                    sql += f"avg({col}) as {col}_avg,"
                 else:
-                    transformed_schema.append(key)
-                    new_schema.append(key + "_" + agg_spec)
-                    agg_executor_dict[key] = agg_spec
-                    agg_clause += "\n\t" + agg_spec + "(" + key + ") as " + key + ","
-
-        # now insert the transform node.
-        # this function needs to be fast since it's executed at every batch in the actual runtime.
-        agg_clause += "\nfrom\n\tbatch_arrow\n"
-        if len(groupby) > 0:
-            agg_clause += "group by "
-            for key in groupby:
-                agg_clause += key + ","
-            agg_clause = agg_clause[:-1]
-
-        def f(query, batch):
-            batch_arrow = batch.to_arrow()
-            # duckdb cannot sum bools
-            for i, (col_name, type_) in enumerate(zip(batch_arrow.schema.names, batch_arrow.schema.types)):
-                if pa.types.is_boolean(type_):
-                    batch_arrow = batch_arrow.set_column(i, col_name, compute.cast(batch_arrow.column(col_name), pa.int32()))
-            con = duckdb.connect().execute('PRAGMA threads=%d' % multiprocessing.cpu_count())
-            return polars.from_arrow(con.execute(query).arrow())
-
-        map_func = partial(f, agg_clause)
-
-        transformed_stream = self.transform(map_func,
-                                            new_schema=transformed_schema,
-                                            # it shouldn't matter too much for the required columns, since no predicates or projections will ever be pushed through this map node.
-                                            # even if this map node gets fused with prior map nodes, no predicates should ever be pushed through those map nodes either.
-                                            required_columns=set(required_columns))
-        agg_node = StatefulNode(
-            schema=new_schema,
-            schema_mapping={col: (-1, col) for col in new_schema},
-            required_columns={0: set(transformed_schema)},
-            operator=DuckAggExecutor(groupby, orderby, agg_executor_dict, mean_cols, emit_count)
-        )
-        agg_node.set_placement_strategy(SingleChannelStrategy())
-        aggregated_stream = self.quokka_context.new_stream(
-            sources={0: transformed_stream},
-            partitioners={0: BroadcastPartitioner()},
-            node=agg_node,
-            schema=new_schema,
-            
-        )
-
-        return aggregated_stream
+                    raise Exception("Unrecognized aggregation: " + a)
+        sql = sql[:-1]
+        return self._grouped_aggregate_sql(groupby, sql, orderby)
 
     def agg(self, aggregations):
 

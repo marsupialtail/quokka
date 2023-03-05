@@ -222,7 +222,7 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                     return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches([]))
 
                 # pick the source with the most batches to give.
-                source_actor_id = exec_plan.lazy().groupby("source_actor_id").agg(polars.count()).sort("count",reverse=True).limit(1).collect().to_dicts()[0]["source_actor_id"]
+                source_actor_id = exec_plan.lazy().groupby("source_actor_id").agg(polars.count()).sort("count",descending=True).limit(1).collect().to_dicts()[0]["source_actor_id"]
                 
                 # we need to sort the exec plan!
                 # exec_plan = exec_plan.filter(polars.col("source_actor_id") == source_actor_id).sort(["source_channel_id","seq"])

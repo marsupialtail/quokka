@@ -455,7 +455,7 @@ class ExecTaskManager(TaskManager):
                     if transform_fn is not None:
                         data = transform_fn(data)
                     if data is not None:
-                        ray.get(dataset.added_object.remote(ray._private.services.get_node_ip_address(), [ray.put(data.to_arrow(), _owner = dataset)]))
+                        ray.get(dataset.added_object.remote(ray._private.services.get_node_ip_address(), [ray.put(data.to_arrow(), _owner = dataset), len(data)]))
                 self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
 
                 out_seq += 1

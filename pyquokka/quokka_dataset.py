@@ -34,6 +34,8 @@ class Dataset:
     def to_arrow_refs(self):
         return ray.get(self.wrapped_dataset.to_arrow_refs.remote())
 
+    def length(self):
+        return ray.get(self.wrapped_dataset.length.remote())
 
 # we need to figure out how to clean up dead objects on dead nodes.
 # not a big problem right now since Arrow Datasets are not fault tolerant anyway
@@ -45,6 +47,10 @@ class ArrowDataset:
         self.objects = {}
         self.metadata = {}
         self.done = False
+        self.length = 0
+    
+    def length(self):
+        return self.length
 
     def to_dict(self):
         return {ip: [ray.cloudpickle.dumps(object) for object in self.objects[ip]] for ip in self.objects}
@@ -53,6 +59,7 @@ class ArrowDataset:
         if ip not in self.objects:
             self.objects[ip] = []
         self.objects[ip].append(object_handle[0])
+        self.length += object_handle[1]
     
     def get_objects(self):
         assert self.is_complete()
