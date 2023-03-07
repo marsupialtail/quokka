@@ -29,7 +29,7 @@ setup(
             'ray>=2.0.0',
             'psutil',
             'h5py',
-            'polars>=0.16.0', # latest version for groupby semantics
+            'polars>=0.16.8', # latest version for groupby semantics
             'sqlglot',
             'graphviz',
             'tqdm',

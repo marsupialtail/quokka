@@ -146,8 +146,14 @@ class DataStream:
                     "Warning: trying to write S3 dataset on local machine. This assumes high network bandwidth.")
 
             table_location = table_location[5:]
+            bucket = table_location.split("/")[0]
+            try:
+                client = boto3.client("s3")
+                region = client.get_bucket_location(Bucket=bucket)["LocationConstraint"]
+            except:
+                raise Exception("Bucket does not exist.")
             executor = OutputExecutor(
-                table_location, "csv", mode="s3", row_group_size=output_line_limit)
+                table_location, "csv", region=region, row_group_size=output_line_limit)
 
         else:
 
@@ -160,7 +166,7 @@ class DataStream:
                 table_location), "Must supply an existing directory"
 
             executor = OutputExecutor(
-                table_location, "csv", mode="local", row_group_size=output_line_limit)
+                table_location, "csv", region="local", row_group_size=output_line_limit)
 
         name_stream = self.quokka_context.new_stream(
             sources={0: self},
@@ -216,8 +222,14 @@ class DataStream:
                     "Warning: trying to write S3 dataset on local machine. This assumes high network bandwidth.")
 
             table_location = table_location[5:]
+            bucket = table_location.split("/")[0]
+            try:
+                client = boto3.client("s3")
+                region = client.get_bucket_location(Bucket=bucket)["LocationConstraint"]
+            except:
+                raise Exception("Bucket does not exist.")
             executor = OutputExecutor(
-                table_location, "parquet", mode="s3", row_group_size=output_line_limit)
+                table_location, "parquet", region=region, row_group_size=output_line_limit)
 
         else:
 
@@ -228,7 +240,7 @@ class DataStream:
             assert table_location[0] == "/", "You must supply absolute path to directory."
 
             executor = OutputExecutor(
-                table_location, "parquet", mode="local", row_group_size=output_line_limit)
+                table_location, "parquet", region="local", row_group_size=output_line_limit)
 
         name_stream = self.quokka_context.new_stream(
             sources={0: self},

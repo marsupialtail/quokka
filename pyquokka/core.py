@@ -166,7 +166,7 @@ class TaskManager:
                 if projection is not None:
                     results[channel] =  payload[sorted(list(projection))]
                 else:
-                    results[channel] = payload
+                    results[channel] = payload[sorted(list(payload.columns))]
                 # print("selection time", time.time() - start)
             return results
 

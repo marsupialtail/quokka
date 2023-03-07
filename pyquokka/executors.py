@@ -359,7 +359,7 @@ class SessionWindowExecutor(Executor):
             return result
         
 class OutputExecutor(Executor):
-    def __init__(self, filepath, format, prefix = "part", mode = "local", row_group_size = 5500000) -> None:
+    def __init__(self, filepath, format, prefix = "part", region = "local", row_group_size = 5500000) -> None:
         self.num = 0
         assert format == "csv" or format == "parquet"
         self.format = format
@@ -368,7 +368,7 @@ class OutputExecutor(Executor):
         self.row_group_size = row_group_size
         self.my_batches = []
         self.name = 0
-        self.mode = mode
+        self.region = region
         self.executor = None
 
     def serialize(self):
@@ -379,9 +379,8 @@ class OutputExecutor(Executor):
 
     def execute(self,batches,stream_id, executor_id):
 
-        fs = LocalFileSystem() if self.mode == "local" else S3FileSystem(region='us-west-1')
-        self.my_batches.extend([i for i in batches if i is not None])
-
+        fs = LocalFileSystem() if self.region == "local" else S3FileSystem(region=self.region)
+        self.my_batches.extend([polars.from_arrow(i) for i in batches if i is not None and len(i) > 0])
 
         '''
         You want to use Payrrow's write table API to flush everything at once. to get the parallelism.
@@ -456,7 +455,7 @@ class OutputExecutor(Executor):
     def done(self,executor_id):
         df = polars.concat(self.my_batches)
         #print(df)
-        fs = LocalFileSystem() if self.mode == "local" else S3FileSystem(region='us-west-1')
+        fs = LocalFileSystem() if self.region == "local" else S3FileSystem(region=self.region)
         write_batch = df.to_arrow()
         if self.format == "csv":
             for i, (col_name, type_) in enumerate(zip(write_batch.schema.names, write_batch.schema.types)):
