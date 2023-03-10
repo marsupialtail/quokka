@@ -305,6 +305,7 @@ class DataStream:
         predicate = sqlglot.parse_one(predicate)
         # convert to CNF
         predicate = optimizer.normalize.normalize(predicate)
+
         columns = set(i.name for i in predicate.find_all(
             sqlglot.expressions.Column))
         for column in columns:
@@ -316,7 +317,16 @@ class DataStream:
             df = polars.from_arrow(con.execute("select * from batch_arrow where " + predicate.sql()).arrow())
             return self.quokka_context.from_polars(df)
 
-        return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=FilterNode(self.schema, predicate),
+        if not optimizer.normalize.normalized(predicate):
+            def f(df):
+                batch_arrow = df.to_arrow()
+                con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
+                return polars.from_arrow(con.execute("select * from batch_arrow where " + predicate.sql()).arrow())
+        
+            transformed = self.transform(f, new_schema = self.schema, required_columns=self.schema)
+            return transformed
+        else:
+            return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=FilterNode(self.schema, predicate),
                                               schema=self.schema, sorted = self.sorted)
 
     def select(self, columns: list):
