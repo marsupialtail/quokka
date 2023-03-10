@@ -1,12 +1,12 @@
 from pyquokka.df import * 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
-mode = "DISK"
-format = "csv"
+mode = "S3"
+format = "parquet"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
 s3_path_csv = "s3://tpc-h-csv/"
-s3_path_parquet = "s3://books-iceberg/tpch.db/"
+s3_path_parquet = "s3://tpc-h-parquet-100/"
 
 import pyarrow as pa
 import pyarrow.compute as compute
@@ -26,14 +26,14 @@ qc = QuokkaContext(cluster,4,2)
 
 if mode == "DISK":
     if format == "csv":
-        lineitem = qc.read_csv(disk_path + "lineitem.tbl", sep="|", has_header=True).drop(["null"])
-        orders = qc.read_csv(disk_path + "orders.tbl", sep="|", has_header=True).drop(["null"])
-        customer = qc.read_csv(disk_path + "customer.tbl",sep = "|", has_header=True).drop(["null"])
-        part = qc.read_csv(disk_path + "part.tbl", sep = "|", has_header=True).drop(["null"])
-        supplier = qc.read_csv(disk_path + "supplier.tbl", sep = "|", has_header=True).drop(["null"])
-        partsupp = qc.read_csv(disk_path + "partsupp.tbl", sep = "|", has_header=True).drop(["null"])
-        nation = qc.read_csv(disk_path + "nation.tbl", sep = "|", has_header=True).drop(["null"])
-        region = qc.read_csv(disk_path + "region.tbl", sep = "|", has_header=True).drop(["null"])
+        lineitem = qc.read_csv(disk_path + "lineitem.tbl", sep="|", has_header=True)
+        orders = qc.read_csv(disk_path + "orders.tbl", sep="|", has_header=True)
+        customer = qc.read_csv(disk_path + "customer.tbl",sep = "|", has_header=True)
+        part = qc.read_csv(disk_path + "part.tbl", sep = "|", has_header=True)
+        supplier = qc.read_csv(disk_path + "supplier.tbl", sep = "|", has_header=True)
+        partsupp = qc.read_csv(disk_path + "partsupp.tbl", sep = "|", has_header=True)
+        nation = qc.read_csv(disk_path + "nation.tbl", sep = "|", has_header=True)
+        region = qc.read_csv(disk_path + "region.tbl", sep = "|", has_header=True)
     elif format == "parquet":
         lineitem = qc.read_parquet(disk_path + "lineitem.parquet")
         orders = qc.read_parquet(disk_path + "orders.parquet")
@@ -56,15 +56,14 @@ elif mode == "S3":
         nation = qc.read_csv(s3_path_csv + "nation/nation.tbl", nation_scheme, sep = "|").drop(["null"])
         region = qc.read_csv(s3_path_csv + "region/region.tbl", region_scheme, sep = "|").drop(["null"])
     elif format == "parquet":
-        lineitem = qc.read_parquet(s3_path_parquet + "lineitem/data/*")
-        #lineitem = qc.read_parquet("s3://yugan/tpc-h-out/*")
-        orders = qc.read_parquet(s3_path_parquet + "orders/data/*")
-        customer = qc.read_parquet(s3_path_parquet + "customer/data/*")
-        part = qc.read_parquet(s3_path_parquet + "part/data/*") 
-        supplier = qc.read_parquet(s3_path_parquet + "supplier/data/*")
-        partsupp = qc.read_parquet(s3_path_parquet + "partsupp/data/*")
-        nation = qc.read_parquet(s3_path_parquet + "nation/data/*")
-        region = qc.read_parquet(s3_path_parquet + "region/data/*")
+        lineitem = qc.read_parquet(s3_path_parquet + "lineitem.parquet/*")
+        orders = qc.read_parquet(s3_path_parquet + "orders.parquet/*")
+        customer = qc.read_parquet(s3_path_parquet + "customer.parquet/*")
+        part = qc.read_parquet(s3_path_parquet + "part.parquet/*") 
+        supplier = qc.read_parquet(s3_path_parquet + "supplier.parquet/*")
+        partsupp = qc.read_parquet(s3_path_parquet + "partsupp.parquet/*")
+        nation = qc.read_parquet(s3_path_parquet + "nation.parquet/*")
+        region = qc.read_parquet(s3_path_parquet + "region.parquet/*")
 
     else:
         raise Exception
@@ -124,25 +123,20 @@ def do_2():
     '''
     Quokka does not do query unnesting.
     '''
-    europe = region.filter(region["r_name"] == "EUROPE")
+    europe = region.filter("r_name = 'EUROPE'")
     european_nations = nation.join(europe, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
     d = supplier.join(european_nations, left_on="s_nationkey", right_on="n_nationkey")
     d = partsupp.join(d, left_on="ps_suppkey", right_on="s_suppkey")
-    f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"}).collect()
-    f = f.rename({"ps_supplycost_min":"min_cost","ps_partkey":"europe_key"})
+    f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"}).rename({"ps_supplycost_min":"min_cost","ps_partkey":"europe_key"}).compute()
 
-    d = d.join(f, left_on="ps_supplycost", right_on="min_cost", suffix="_2")
+    d = d.join(qc.read_dataset(f), left_on="ps_supplycost", right_on="min_cost", suffix="_2")
     d = d.join(part, left_on="europe_key", right_on="p_partkey", suffix="_3")
     d = d.filter("""europe_key = ps_partkey and p_size = 15 and p_type like '%BRASS' """)
     d = d.select(["s_acctbal", "s_name", "n_name", "europe_key", "p_mfgr", "s_address", "s_phone", "s_comment"])
 
-    d.explain()
-
-    f = d.collect()
-    f = f.sort(["s_acctbal","n_name","s_name","europe_key"],reverse=[True,False,False,False])[:100]
-
-    
-    return f
+    f = d.top_k(["s_acctbal","n_name","s_name","europe_key"],100, descending=[True,False,False,False])
+    f.explain()
+    return f.collect()
 
 
 def do_3():
@@ -160,7 +154,8 @@ def do_3_sql():
     d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
     d = customer.join(d,left_on="c_custkey", right_on="o_custkey")
     d = d.filter("c_mktsegment = 'BUILDING' and o_orderdate < date '1995-03-15' and l_shipdate > date '1995-03-15'")
-    f = d.groupby(["l_orderkey","o_orderdate","o_shippriority"]).agg_sql("sum(l_extendedprice * (1 - l_discount)) as revenue")
+    d = d.groupby(["l_orderkey","o_orderdate","o_shippriority"]).agg_sql("sum(l_extendedprice * (1 - l_discount)) as revenue")
+    f = d.top_k(["revenue", "o_orderdate"], 10, descending=[True, False])
     f.explain()
     return f.collect()
 
@@ -207,7 +202,7 @@ def do_5():
     #f = d.groupby("n_name", orderby=[("revenue",'desc')]).agg({"revenue":["sum"]})
     f = d.groupby("n_name").agg({"revenue":["sum"]})
     f.explain()
-    return f.collect()
+    return f.collect().sort("revenue", descending = True)
 
 
 def do_5_sql():
@@ -220,26 +215,7 @@ def do_5_sql():
     d = d.filter("s_nationkey = c_nationkey and o_orderdate >= date '1994-01-01' and o_orderdate < date '1994-01-01' + interval '1' year")
     f = d.groupby("n_name").agg_sql("sum(l_extendedprice * (1 - l_discount)) as revenue")
     f.explain()
-    return f.collect()
-
-# def do_5():
-
-#     '''
-#     Quokka currently does not pick the best join order, or the best join strategy. This is upcoming improvement for a future release.
-#     You will have to pick the best join order. One way to do this is to do sparksql.explain and "borrow" Spark Catalyst CBO's plan.
-#     As a general rule of thumb you want to join small tables first and then bigger ones.
-#     '''
-
-    
-#     d = customer.filter("c_nationkey IN (8, 9, 12, 18,21)").join(orders, left_on="c_custkey", right_on="o_custkey", suffix="_3")
-#     d = d.join(lineitem, left_on="o_orderkey", right_on="l_orderkey", suffix="_4")
-#     d = d.join(supplier, left_on="l_suppkey", right_on="s_suppkey", suffix="_5")
-#     d = d.filter("s_nationkey = c_nationkey and o_orderdate >= date '1994-01-01' and o_orderdate < date '1994-01-01' + interval '1' year")
-#     d = d.with_column("revenue", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
-#     #f = d.groupby("n_name", orderby=[("revenue",'desc')]).agg({"revenue":["sum"]})
-#     f = d.groupby("c_nationkey").agg({"revenue":["sum"]})
-
-#     return f.collect()
+    return f.collect().sort("revenue", descending = True)
 
 def do_6():
     d = lineitem.filter("l_shipdate >= date '1994-01-01' and l_shipdate < date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01 and l_quantity < 24")
@@ -269,7 +245,7 @@ def do_7():
     d = d.with_column("volume", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
     f = d.groupby(["supp_nation","cust_nation","l_year"], orderby=["supp_nation","cust_nation","l_year"]).aggregate({"volume":"sum"})
     f.explain()
-    return f.collect()
+    return f.collect().sort(["supp_nation","cust_nation","l_year"])
 
 def do_7_sql():
     d1 = customer.join(nation, left_on = "c_nationkey", right_on = "n_nationkey")
@@ -288,7 +264,7 @@ def do_7_sql():
     f = d.groupby(["supp_nation","cust_nation","l_year"], orderby=["supp_nation","cust_nation","l_year"]).\
         agg_sql("sum(l_extendedprice * ( 1 - l_discount)) as volume")
     f.explain()
-    return f.collect()
+    return f.collect().sort(["supp_nation","cust_nation","l_year"])
 
 def do_8():
     america = region.filter("r_name = 'AMERICA'")
@@ -310,7 +286,7 @@ def do_8():
 
     f = d.groupby("o_year").aggregate(aggregations={"volume":"sum", "brazil_volume":"sum"})
     f.explain()
-    return f.collect()
+    return f.collect().sort("o_year")
 
 # join ordering will be hard for this one
 def do_9():
@@ -331,15 +307,17 @@ def do_9():
 
 def do_10():
     d = customer.join(nation, left_on="c_nationkey", right_on="n_nationkey")
-    d = d.join(orders, left_on = "c_custkey", right_on = "o_orderkey")
+    d = d.join(orders, left_on = "c_custkey", right_on = "o_custkey")
     d = d.join(lineitem, left_on = "o_orderkey", right_on="l_orderkey")
     d = d.filter("""
         o_orderdate >= date '1993-10-01'
         and o_orderdate < date '1993-10-01' + interval '3' month
         and l_returnflag = 'R'
     """)
-    f = d.groupby(["c_custkey", "c_name", "c_acctbal", "c_phone", "n_name", \
-        "c_address", "c_comment"]).aggregate()
+    d = d.groupby(["c_custkey", "c_name", "c_acctbal", "c_phone", "n_name", \
+        "c_address", "c_comment"]).agg_sql("sum(l_extendedprice * (1 - l_discount)) as revenue")
+    f = d.top_k("revenue", 20, descending=True)
+    return f.collect()
 
 def do_11():
     d = supplier.join(nation.filter("n_name == 'GERMANY'"), left_on="s_nationkey", right_on="n_nationkey")
@@ -349,7 +327,7 @@ def do_11():
     temp = qc.read_dataset(d)
     val = (temp.sum("value") * 0.0001)[0,0]
     temp.groupby("ps_partkey").aggregate(aggregations={"value":"sum"}).filter("value_sum > " + str(val)).explain()
-    return temp.groupby("ps_partkey").aggregate(aggregations={"value":"sum"}).filter("value_sum > " + str(val)).collect()#.sort('value_sum',reverse=True)
+    return temp.groupby("ps_partkey").aggregate(aggregations={"value":"sum"}).filter("value_sum > " + str(val)).collect()# .sort('value_sum',reverse=True)
     
 
 def do_12():
@@ -383,9 +361,8 @@ def do_13():
 
     d = customer.join(orders, left_on="c_custkey", right_on="o_custkey", how="left")
     d = d.filter("o_comment not like '%special%requests%'")
-    d = d.with_column("o_orderkey_1", polars.col("o_orderkey").is_not_null(), required_columns={"o_orderkey"})
-    c_orders = d.groupby("c_custkey").aggregate(aggregations={"o_orderkey_1":"sum"}).rename({"o_orderkey_1_sum":"c_count"})
-    result = c_orders.groupby("c_count").aggregate(aggregations={"*":"count"}).collect().sort('__count_sum',reverse=True)
+    c_orders = d.groupby("c_custkey").agg_sql("count(o_orderkey) as c_count")
+    result = c_orders.groupby("c_count").aggregate(aggregations={"*":"count"}).collect().sort('count')
 
     ref_customer = polars.read_csv("/home/ziheng/tpc-h/customer.tbl", sep="|")
     ref_orders = polars.read_csv("/home/ziheng/tpc-h/orders.tbl", sep="|").\
@@ -432,7 +409,7 @@ def do_16():
     d = partsupp.join(bad_suppliers, left_on="ps_suppkey", right_on="s_suppkey", how="anti")
     d = d.join(part, left_on="ps_partkey", right_on="p_partkey", how="inner")
     d = d.filter("p_brand != 'Brand#45' and p_type not like 'MEDIUM POLISHED%' and p_size in (49, 14, 23, 45, 19, 3, 36, 9)")
-    result = d.groupby(["p_brand", "p_type", "p_size"]).aggregate(aggregations={"ps_supplycost":"sum"})
+    result = d.groupby(["p_brand", "p_type", "p_size"]).agg_sql("count(distinct ps_supplycost) as supplier_cnt")
     result.explain()
     return result.collect()
 
@@ -448,12 +425,14 @@ def do_17():
     return f.collect()
 
 def do_18():
-    u_0 = lineitem.groupby("l_orderkey").agg_sql("SUM(l_quantity)) AS sum_quant").filter("sum_quant > 300").compute()
+    u_0 = lineitem.groupby("l_orderkey").agg_sql("SUM(l_quantity) AS sum_quant").filter("sum_quant > 300").compute()
     u_0 = qc.read_dataset(u_0)
     d = customer.join(orders, left_on="c_custkey", right_on="o_custkey", how="inner")
     d = d.join(u_0, left_on="o_orderkey", right_on="l_orderkey", how="inner")
     d = d.join(lineitem, left_on="o_orderkey", right_on="l_orderkey", how="inner")
-    d = d.groupby("c_name", "c_custkey", "o_orderkey", "o_orderdate", "o_totalprice").agg_sql("sum(l_quantity) AS total_quantity")
+    d = d.groupby(["c_name", "c_custkey", "o_orderkey", "o_orderdate", "o_totalprice"]).agg_sql("sum(l_quantity) AS total_quantity")
+    d = d.top_k(["o_totalprice", "o_orderdate"], 100, descending = [True, False])
+    return d.collect()
 
 def do_19():
 
@@ -493,54 +472,47 @@ def do_20():
     u_3 = part.filter("p_name like 'forest%'")
     u_4 = partsupp.join(qc.read_dataset(u_0), left_on="ps_suppkey", right_on="l_suppkey", how="inner")
     u_4 = u_4.join(u_3, left_on="ps_partkey", right_on="p_partkey", how="semi")
-    u_4 = u_4.filter("ps_availqty > sum_quantity")
+    u_4 = u_4.filter("ps_availqty > sum_quantity and ps_partkey = l_partkey")
     d = supplier.join(u_4, left_on="s_suppkey", right_on="ps_suppkey", how="semi")
     d = d.join(nation.filter("n_name = 'CANADA'"), left_on="s_nationkey", right_on="n_nationkey", how="inner")
     d = d.select(["s_name", "s_address"])
     d.explain()
     return d.collect().sort("s_name")
 
-def do_20_polars():
-    lineitem = polars.read_csv("/home/ziheng/tpc-h/lineitem.tbl", sep = "|", has_header=True)
-    u_0 = lineitem.filter(polars.col("l_shipdate") < "1995-01-01").filter(polars.col("l_shipdate") >= "1994-01-01").\
-        groupby(["l_partkey", "l_suppkey"]).agg(polars.col("l_quantity").sum()).\
-        with_column((polars.col("l_quantity") * 0.5).alias("sum_quantity"))
-    part = polars.read_csv("/home/ziheng/tpc-h/part.tbl", sep = "|", has_header=True)
-    partsupp = polars.read_csv("/home/ziheng/tpc-h/partsupp.tbl", sep = "|", has_header=True)
-    u_3 = part.filter(polars.col("p_name").str.starts_with("forest"))
-    print(u_0)
-
+# the SQL for this is just probably not going to happen for a while
+# this OOMs on cluster setup for SF100, probably ain't too great
 def do_21():
-    pass
+    
+    u_0 = lineitem.groupby("l_orderkey").agg_sql("ARRAY_AGG(l_suppkey) AS u_1").compute()
+    u_1 = lineitem.filter("l_receiptdate > l_commitdate").groupby("l_orderkey").agg_sql("ARRAY_AGG(l_suppkey) AS u_2").compute()
 
-def count():
+    d = lineitem.join(supplier, left_on="l_suppkey", right_on="s_suppkey", how="inner")
+    d = d.join(orders, left_on="l_orderkey", right_on="o_orderkey", how="inner")
+    d = d.filter("l_receiptdate > l_commitdate and s_nationkey = 20 and o_orderstatus = 'F'")
+    d = d.join(qc.read_dataset(u_0), left_on="l_orderkey", right_on="l_orderkey", how="inner", suffix = "_2")
+    d = d.join(qc.read_dataset(u_1), left_on="l_orderkey", right_on="l_orderkey", how="left", suffix = "_3")
+    d = d.with_column("cond1", lambda a: (a["u_2"].is_null()) | (~ (a["u_2"].arr.contains(a["l_suppkey"]) & (a["u_2"].arr.unique().arr.lengths() > 1))), required_columns={"l_suppkey", "u_2"})
+    d = d.with_column("cond2", lambda a: a["u_1"].arr.contains(a["l_suppkey"]) & (a["u_1"].arr.unique().arr.lengths() > 1), required_columns={"l_suppkey", "u_1"})
+    d = d.with_column("cond3", lambda x: x["cond1"] & x["cond2"], required_columns={"cond1", "cond2"})
+    # d.explain()
+    # return d.select(["u_1", "u_2", "l_suppkey", "cond1", "cond2", "cond3"]).top_k(["l_suppkey"], 100, descending=[False]).collect()
+    d = d.filter("cond3")
+    d = d.groupby("s_name").agg_sql("count(*) AS numwait").top_k(["numwait", "s_name"], 100, descending=[True,False])
+    d.explain()
+    return d.collect()
 
-    return lineitem.aggregate({"*":"count"}).collect()
+def do_22():
+    u_0 = customer.filter("""
+        c_acctbal > 0.00
+        AND SUBSTRING(c_phone, 1, 2) IN ('13', '31', '23', '29', '30', '18', '17')
+    """).agg_sql("AVG(c_acctbal) AS _col_0").collect()[0,0]
 
-def csv_to_parquet_disk():
-
-    if not (mode == "DISK" and format == "csv"):
-        return
-    else:
-        parquet = lineitem.write_parquet("/home/ziheng/tpc-h-out/", output_line_limit = 100000)
-        return parquet
-
-def csv_to_csv_disk():
-
-    if not (mode == "DISK" and format == "csv"):
-        return
-    else:
-        csvfiles = lineitem.write_csv("/home/ziheng/tpc-h-out/", output_line_limit = 1000000)
-        return csvfiles
-
-def csv_to_parquet_s3():
-
-    if not (mode == "S3" and format == "csv"):
-        return
-    else:
-        parquet = lineitem.write_parquet("s3://yugan/tpc-h-out/", output_line_limit = 5000000)
-        return parquet
-        
+    d = customer.with_column("cntrycode", lambda x: x["c_phone"].str.slice(0, 2), required_columns={"c_phone"})
+    d = d.filter("cntrycode IN ('13', '31', '23', '29', '30', '18', '17') and c_acctbal > " + str(u_0))
+    d = d.join(orders, left_on="c_custkey", right_on="o_custkey", how="anti")
+    d = d.groupby("cntrycode").agg_sql("count(*) AS numcust, sum(c_acctbal) AS totacctbal")
+    d.explain()
+    return d.collect().sort('cntrycode')
 
 def word_count():
 
@@ -596,43 +568,27 @@ def dataset_test():
     print(s)
     print(s.collect())
 
-# print(count())
-# print(csv_to_parquet_disk())
-# print(csv_to_csv_disk())
-# print(csv_to_parquet_s3())
-
-# print(do_2())
-
-# print(do_1())
-# print(do_3())
-
-# print(do_4())
-# print(do_5())
-# print(do_6())
-# print(do_7())
-
-# print(do_12_alternate())
-
-# print(word_count())
-# print(covariance())
-
-
-
-print(do_1_sql())
-print(do_3_sql())
-print(do_4_sql())
-print(do_5_sql())
-print(do_6_sql())
-print(do_7_sql())
-print(do_8())
-print(do_9())
-print(do_11())
-print(do_12())
-print(do_13())
-print(do_14())
-print(do_15())
-print(do_16())
-print(do_17())
-# print(do_19())
+# print(do_1_sql())
+print(do_2()) # bad join order
+# print(do_3_sql())
+# print(do_4_sql())
+# print(do_5_sql())
+# print(do_6_sql())
+# print(do_7_sql())
+# print(do_8())
+# print(do_9())
+# print(do_10())
+# print(do_11())
+# print(do_12())
+# print(do_13()) 
+# print(do_14())
+# print(do_15())
+# print(do_16()) # count distinct
+# print(do_17())
+# print(do_18())
+# print(do_19()) # unest DNF
 # print(do_20())
-# print(do_20_polars())
+# print(do_22())
+
+
+# print(do_21()) # just wn't work

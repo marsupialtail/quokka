@@ -123,18 +123,19 @@ def evaluate(node):
         elif type(node) == sqlglot.expressions.Like:
             assert node.expression.is_string
             filter = node.expression.this
-            if filter[0] == '%' and filter[-1] == '%':
+            if filter[0] == '%' and filter[-1] == '%' and '%' not in filter[1:-1]:
                 filter = filter[1:-1]
-                stuff = filter.split("%")
-                return reduce(operator.and_, [lf.str.contains(i) for i in stuff])
-            elif filter[0] != '%' and filter[-1] == '%':
+                return lf.str.contains(filter)
+            elif filter[-1] == '%' and '%' not in filter[:-1]:
                 filter = filter[:-1]
                 return lf.str.starts_with(filter)
-            elif filter[0] == '%' and filter[-1] != '%':
+            elif filter[0] == '%' and '%' not in filter[1:]:
                 filter = filter[1:]
                 return lf.str.ends_with(filter)
-            elif filter[0] != '%' and filter[-1] != '%':
+            elif '%' not in filter:
                 return lf == filter
+            else:
+                raise Exception
         else:
             print(type(node))
             raise Exception("making predicate failed")
@@ -204,9 +205,14 @@ def evaluate(node):
     elif type(node) == sqlglot.expressions.RegexpLike:
         assert node.expression.is_string, "regex must be string"
         return evaluate(node.this).str.contains(node.expression.this)
+
+    elif type(node) == sqlglot.expressions.Substring:
+        start = int(node.args['start'].this)
+        length = int(node.args['length'].this)
+        assert start >= 1
+        return evaluate(node.this).str.slice(start - 1, length)
+
     else:
-        print(node)
-        print(type(node))
         raise Exception("making predicate failed")
 
 def parquet_condition_decomp(condition):
@@ -261,7 +267,8 @@ def parquet_condition_decomp(condition):
                 else:
                     raise Exception("Incongrent types in IN clause")
             else:
-                raise Exception("left operand of IN clause must be column")
+                # TODO: implement this pyarrow parquet reader supports it
+                pass
         elif type(node) == exp.Between:
             if type(node.this) == exp.Column:
                 if type(node.args["low"]) == exp.Literal and type(node.args["high"]) == exp.Literal:
@@ -354,6 +361,15 @@ def parse_single_aggregation(expr, prefix = ''):
                 return agg_list, new_exp.sql()
             else:
                 a.replace(new_exp)
+
+        if isinstance(a, exp.ArrayAgg):
+            new_exp = exp.Anonymous.from_arg_list(["flatten", exp.ArrayAgg.from_arg_list([new_name])])
+            if a == e: 
+                e.this.replace(new_exp)
+                return agg_list, new_exp.sql()
+            else:
+                a.replace(new_exp)
+
         if a == e: 
             e.this.replace(sqlglot.parse_one(new_name))
             return agg_list, e.sql() + " as " + new_name

@@ -164,6 +164,8 @@ class QuokkaContext:
 
                 s3 = boto3.client('s3')
                 z = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+                if 'Contents' not in z:
+                    raise Exception("Wrong S3 path")
                 files = [i['Key'] for i in z['Contents']]
                 sizes = [i['Size'] for i in z['Contents']]
                 assert len(files) > 0
@@ -324,10 +326,12 @@ class QuokkaContext:
                 prefix = "/".join(table_location[:-1].split("/")[1:])
                 s3 = boto3.client('s3')
                 z = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+                if 'Contents' not in z:
+                    raise Exception("Wrong S3 path")
                 files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
                 sizes = [i['Size'] for i in z['Contents'] if i['Key'].endswith('.parquet')]
                 assert len(files) > 0, "could not find any parquet files. make sure they end with .parquet"
-                if len(files) == 1 and sizes[0] < 10 * 1048576:
+                if sum(sizes) < 10 * 1048576:
                     df = polars.read_parquet("s3://" + bucket + "/" + files[0])
                     self.nodes[self.latest_node_id] = InputPolarsNode(df)
                     self.latest_node_id += 1
@@ -618,7 +622,11 @@ class QuokkaContext:
                 if target_id in execution_node_set:
                     # only deleting the target in the node in execution_nodes, not in nodes!
                     new_targets[target_id] = node.targets[target_id]
+            
+            if len(new_targets) > 1:
+                raise Exception("Currently a DataStream can only have one downstream consumer, please file an issue!")
             node.targets = new_targets
+
         
         #self.explain(node_id)
 
@@ -709,6 +717,10 @@ class QuokkaContext:
                     sqlglot.exp.and_(predicate, node.predicate))
                 parent_id = node.parents[0]
                 parent = self.execution_nodes[parent_id]
+
+                if target_id in parent.targets:
+                    raise Exception("node with two targets detected, we should never have let the user created this graph!")
+
                 parent.targets[target_id] = copy.deepcopy(
                     targets[target_id])
                 parent.targets[target_id].and_predicate(predicate)
@@ -908,8 +920,13 @@ class QuokkaContext:
                 parent = self.execution_nodes[node.parents[0]]
                 for target_id in targets:
                     target = targets[target_id]
-                    parent.targets[target_id] = TargetInfo(target.partitioner, parent.targets[node_id].predicate,  target.projection, [
-                                                           node.function] + target.batch_funcs)
+                    if target.predicate == sqlglot.exp.TRUE:
+                        parent.targets[target_id] = TargetInfo(target.partitioner, parent.targets[node_id].predicate,  target.projection, [
+                                                            node.function] + target.batch_funcs)
+                    else:
+                        func = lambda x: x.filter(sql_utils.evaluate(target.predicate))
+                        parent.targets[target_id] = TargetInfo(target.partitioner, parent.targets[node_id].predicate,  target.projection, [
+                                                            node.function, func] + target.batch_funcs)
 
                     # we need to find which parent in the target is this node, and replace it with this node's parent
                     success = False

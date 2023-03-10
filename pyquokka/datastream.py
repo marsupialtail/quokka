@@ -308,7 +308,7 @@ class DataStream:
         columns = set(i.name for i in predicate.find_all(
             sqlglot.expressions.Column))
         for column in columns:
-            assert column in self.schema, "Tried to filter on a column not in the schema"
+            assert column in self.schema, "Tried to filter on a column not in the schema {}".format(column)
         
         if self.materialized:
             batch_arrow = self._get_materialized_df().to_arrow()
@@ -1140,7 +1140,7 @@ class DataStream:
             schema=new_schema,
         )
 
-    def top_k(self, columns, k, descending = False):
+    def top_k(self, columns, k, descending = None):
         """
         This is a topk function that effectively performs select * from stream order by columns limit k.
         The strategy is to take k rows from each batch coming in and do a final sort and limit k in a stateful executor.
@@ -1148,29 +1148,39 @@ class DataStream:
         if type(columns) == str:
             columns = [columns]
         assert type(columns) == list and len(columns) > 0
+        
+        if descending is not None:
+            if type(descending) == bool:
+                descending = [descending]
+            assert type(descending) == list and len(descending) == len(columns)
+            assert all([type(i) == bool for i in descending])
+        else:
+            descending = [False] * len(columns)
+        
         assert type(k) == int
         assert k > 0
 
-        def f(df):
-            return df.filter(polars.col(columns[0]) >= polars.col(columns[0]).top_k(k).min())
-        def g(df):
-            return df.filter(polars.col(columns[0]) <= polars.col(columns[0]).top_k(k, descending = True).max())
-        def h(df):
-            return df.sort(columns, descending = (not descending)).limit(k)
-
-        if len(columns) == 1:
-            if descending:
-                transformed = self.transform(g, new_schema = self.schema, required_columns=set(self.schema))
+        new_columns = []
+        for i in range(len(columns)):
+            if descending[i]:
+                new_columns.append(columns[i] + " desc")
             else:
-                transformed = self.transform(f, new_schema = self.schema, required_columns=set(self.schema))
-        else:
-            transformed = self.transform(h, new_schema = self.schema, required_columns=set(self.schema))
+                new_columns.append(columns[i] + " asc")
+
+        sql_statement = "select * from batch_arrow order by " + ",".join(new_columns) + " limit " + str(k)
+
+        def f(df):
+            batch_arrow = df.to_arrow()
+            con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
+            return polars.from_arrow(con.execute(sql_statement).arrow())
+        
+        transformed = self.transform(f, new_schema = self.schema, required_columns=set(self.schema))
         
         topk_node = StatefulNode(
             schema=self.schema,
             schema_mapping={col: (0, col) for col in self.schema},
             required_columns={0: set(columns)},
-            operator=TopKExecutor(columns, k, descending)
+            operator=TopKExecutor(sql_statement)
         )
         topk_node.set_placement_strategy(SingleChannelStrategy())
         return self.quokka_context.new_stream(

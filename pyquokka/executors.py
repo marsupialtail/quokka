@@ -371,70 +371,30 @@ class OutputExecutor(Executor):
         self.region = region
         self.executor = None
 
-    def serialize(self):
-        return {}, "all"
-    
-    def deserialize(self, s):
-        pass
+    def upload_write_batch(self, write_batch, executor_id):
 
-    def execute(self,batches,stream_id, executor_id):
+        if self.executor is None:
+            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=multiprocessing.cpu_count())
+            self.fs = LocalFileSystem() if self.region == "local" else S3FileSystem(region=self.region)
 
-        fs = LocalFileSystem() if self.region == "local" else S3FileSystem(region=self.region)
-        self.my_batches.extend([polars.from_arrow(i) for i in batches if i is not None and len(i) > 0])
-
-        '''
-        You want to use Payrrow's write table API to flush everything at once. to get the parallelism.
-        Being able to write multiple row groups at once really speeds things up. It's okay if you are slow at first
-        because you are uploading/writing things one at a time
-        '''
-
-        lengths = [len(batch) for batch in self.my_batches]
-        total_len = np.sum(lengths)
-
-        # print(time.time(),[len(batch) for batch in self.my_batches], total_len)
-
-        if total_len <= self.row_group_size:
-            return
-
-        write_len = total_len // self.row_group_size * self.row_group_size
-        full_batches_to_take = np.where(np.cumsum(lengths) >= write_len)[0][0]        
-
-        write_batch = polars.concat(self.my_batches[:full_batches_to_take]) if full_batches_to_take > 0 else None
-        rows_to_take = int(write_len - np.sum(lengths[:full_batches_to_take]))
-        self.my_batches = self.my_batches[full_batches_to_take:]
-        if rows_to_take > 0:
-            if write_batch is not None:
-                write_batch.vstack(self.my_batches[0][:rows_to_take], in_place=True)
-            else:
-                write_batch = self.my_batches[0][:rows_to_take]
-            self.my_batches[0] = self.my_batches[0][rows_to_take:]
-
-        write_batch = write_batch.to_arrow()
+        def upload_parquet(table, where):
+            pq.write_table(table, where, filesystem=self.fs)
+            return True
+        def upload_csv(table, where):
+            f = self.fs.open_output_stream(where)
+            csv.write_csv(table, f)
+            f.close()
+            return True
+        
         if self.format == "csv":
             for i, (col_name, type_) in enumerate(zip(write_batch.schema.names, write_batch.schema.types)):
                 if pa.types.is_decimal(type_):
                     write_batch = write_batch.set_column(i, col_name, compute.cast(write_batch.column(col_name), pa.float64()))
 
-
-        assert len(write_batch) % self.row_group_size == 0
-        # print("WRITING", self.filepath,self.mode )
-
-        if self.executor is None:
-            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
-
-        def upload_parquet(table, where):
-            pq.write_table(table, where, filesystem=fs)
-            return True
-        def upload_csv(table, where):
-            f = fs.open_output_stream(where)
-            csv.write_csv(table, f)
-            f.close()
-            return True
-
         futures = []
 
         for i in range(0, len(write_batch), self.row_group_size):
-            current_batch = write_batch[i * self.row_group_size : (i+1) * self.row_group_size]
+            current_batch = write_batch[i : i + self.row_group_size]
             basename_template = self.filepath + "/" + self.prefix + "-" + str(executor_id) + "-" + str(self.name)  + "." + self.format
             self.name += 1
             if self.format == "parquet":
@@ -444,31 +404,43 @@ class OutputExecutor(Executor):
         
         assert all([fut.result() for fut in futures])
 
-        # ds.write_dataset(write_batch,base_dir = self.filepath, 
-        #     basename_template = self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-{i}." + self.format, format=self.format, filesystem = fs,
-        #     existing_data_behavior='overwrite_or_ignore',
-        #     max_rows_per_file=self.row_group_size,max_rows_per_group=self.row_group_size)
-        # print("wrote the dataset")
+    def execute(self,batches,stream_id, executor_id):
+
+        self.my_batches.extend([i for i in batches if i is not None and len(i) > 0])
+
+        lengths = [len(batch) for batch in self.my_batches]
+        total_len = np.sum(lengths)
+
+        if total_len <= self.row_group_size:
+            return
+
+        write_len = total_len // self.row_group_size * self.row_group_size
+        full_batches_to_take = np.where(np.cumsum(lengths) >= write_len)[0][0]        
+
+        write_batch = pa.concat_tables(self.my_batches[:full_batches_to_take]) if full_batches_to_take > 0 else None
+        rows_to_take = int(write_len - np.sum(lengths[:full_batches_to_take]))
+        self.my_batches = self.my_batches[full_batches_to_take:]
+        if rows_to_take > 0:
+            if write_batch is not None:
+                write_batch = pa.concat_tables([write_batch, self.my_batches[0][:rows_to_take]])
+            else:
+                write_batch = self.my_batches[0][:rows_to_take]
+            self.my_batches[0] = self.my_batches[0][rows_to_take:]
+
+        assert len(write_batch) % self.row_group_size == 0
+        # print("WRITING", self.filepath,self.mode )
+
+        self.upload_write_batch(write_batch, executor_id)
+
         return_df = polars.from_dict({"filename":[(self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-" + str(i) + "." + self.format) for i in range(len(write_batch) // self.row_group_size) ]})
-        return return_df.to_arrow()
+        return return_df
 
     def done(self,executor_id):
-        df = polars.concat(self.my_batches)
-        #print(df)
-        fs = LocalFileSystem() if self.region == "local" else S3FileSystem(region=self.region)
-        write_batch = df.to_arrow()
-        if self.format == "csv":
-            for i, (col_name, type_) in enumerate(zip(write_batch.schema.names, write_batch.schema.types)):
-                if pa.types.is_decimal(type_):
-                    write_batch = write_batch.set_column(i, col_name, compute.cast(write_batch.column(col_name), pa.float64()))
-
-        ds.write_dataset(write_batch,base_dir = self.filepath, 
-            basename_template = self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-{i}." + self.format, format=self.format, filesystem = fs,
-            existing_data_behavior='overwrite_or_ignore',
-            max_rows_per_file=self.row_group_size,max_rows_per_group=self.row_group_size)
+        df = pa.concat_tables(self.my_batches)
+        self.upload_write_batch(df, executor_id)
         
-        return_df = polars.from_dict({"filename":[(self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-" + str(i) + "." + self.format) for i in range((len(write_batch) -1) // self.row_group_size + 1) ]})
-        return return_df.to_arrow()
+        return_df = polars.from_dict({"filename":[(self.prefix + "-" + str(executor_id) + "-" + str(self.name) + "-" + str(i) + "." + self.format) for i in range((len(df) -1) // self.row_group_size + 1) ]})
+        return return_df
 
 class BroadcastJoinExecutor(Executor):
     # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
@@ -1014,13 +986,9 @@ class SQLAggExecutor(Executor):
         return self.state
     
 class TopKExecutor(Executor):
-    def __init__(self, columns, k, descending = False) -> None:
-        assert type(columns) == list and len(columns) > 0
-        assert k > 0
+    def __init__(self, sql_statement) -> None:
+        self.statement = sql_statement
         self.state = None
-        self.columns = columns
-        self.k = k
-        self.descending = descending
 
     def checkpoint(self, conn, actor_id, channel_id, seq):
         pass
@@ -1033,12 +1001,13 @@ class TopKExecutor(Executor):
         self.state = batch if self.state is None else pa.concat_tables([self.state, batch])
     
     def done(self, executor_id):
+
+        if self.state is None:
+            return None
+        con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
         batch_arrow = self.state
-        con = duckdb.connect().execute('PRAGMA threads=%d' % multiprocessing.cpu_count())
-        if not self.descending:
-            self.state = polars.from_arrow(con.execute("select * from batch_arrow order by " + ",".join(self.columns) + " desc limit " + str(self.k)).arrow())
-        else:
-            self.state = polars.from_arrow(con.execute("select * from batch_arrow order by " + ",".join(self.columns) + " limit " + str(self.k)).arrow())
+        self.state = polars.from_arrow(con.execute(self.statement).arrow())
+        del batch_arrow        
         return self.state
 
 class CountExecutor(Executor):

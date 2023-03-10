@@ -33,19 +33,8 @@ class EC2Cluster:
 
         pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
         # connect to that ray cluster
-        ray.init(address='ray://' + str(self.leader_public_ip) + ':10001', runtime_env={"py_modules":[pyquokka_loc]},
-                 _system_config={
-                    "max_io_workers": 4, 
-                    "object_spilling_config": json.dumps(
-                        {
-                        "type": "filesystem",
-                        "params": {
-                            "directory_path": "/data",
-                            "buffer_size": 1_000_000,
-                        }
-                        },
-                    )
-                })
+        ray.init(address='ray://' + str(self.leader_public_ip) + ':10001', 
+                 runtime_env={"py_modules":[pyquokka_loc]})
     
     def to_json(self, output = "cluster.json"):
         json.dump({"instance_ids":self.instance_ids,"cpu_count_per_instance":self.cpu_count},open(output,"w"))
@@ -150,7 +139,8 @@ class QuokkaClusterManager:
                 time.sleep(5)
 
         z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + 
-        " /home/ubuntu/.local/bin/ray start --disable-usage-stats --head --port=6380")
+        """ /home/ubuntu/.local/bin/ray start --disable-usage-stats --head --port=6380 --object-store-memory 5000000000
+        --system-config='{"automatic_object_spilling_enabled":true,"max_io_workers":4,"object_spilling_config":"{\"type\":\"filesystem\",\"params\":{\"directory_path\":\"/data\"}}"}""")
         print(z)
         # this is a bug, it will only work with python3.8!
         z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + 
@@ -226,7 +216,7 @@ class QuokkaClusterManager:
         print("Trying to set up spill dir.")
         try:
             self.launch_all("sudo mkdir /data", public_ips, "failed to make temp spill directory")
-            if "i3" in instance_type: # use a more sophisticated policy later
+            if "i3" in instance_type or "d" in instance_type: # use a more sophisticated policy later
                 self.launch_all("sudo mkfs.ext4 -E nodiscard /dev/nvme0n1;", public_ips, "failed to format nvme ssd")
                 self.launch_all("sudo mount /dev/nvme0n1 /data;", public_ips, "failed to mount nvme ssd")
         except:

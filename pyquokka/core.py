@@ -13,7 +13,7 @@ import boto3
 import types
 from functools import partial
 import concurrent.futures
-
+import duckdb
 CHECKPOINT_INTERVAL = None
 MAX_SEQ = 1000000000
 DEBUG = False
@@ -143,7 +143,12 @@ class TaskManager:
 
             start = time.time()
             # print(predicate_fn)
-            x = x.filter(predicate_fn)
+            if type(predicate_fn) == str:
+                con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
+                batch_arrow = x.to_arrow()
+                x = polars.from_arrow(con.execute(predicate_fn).arrow())
+            else:
+                x = x.filter(predicate_fn)
             # print("filter time", time.time() - start)
 
             for func in batch_funcs:
@@ -174,7 +179,10 @@ class TaskManager:
         # for the moment let's assume that no autoscaling happens and this doesn't change.
 
         target_info = ray.cloudpickle.loads(self.PFT.get(self.r, pickle.dumps((source_actor_id, target_actor_id))))
-        target_info.predicate = sql_utils.evaluate(target_info.predicate)
+        try:
+            target_info.predicate = sql_utils.evaluate(target_info.predicate)
+        except:
+            target_info.predicate = "select * from batch_arrow where " + target_info.predicate.sql() 
         partition_function = partial(partition_fn, target_info.predicate, target_info.partitioner, target_info.batch_funcs, target_info.projection, number_target_channels)
 
         if source_actor_id not in self.partition_fns:

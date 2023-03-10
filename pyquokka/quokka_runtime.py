@@ -210,7 +210,7 @@ class TaskGraph:
             assert type(data) == polars.internals.DataFrame
             if "int" in str(data[key].dtype).lower():
                 partitions = data.with_column(polars.Series(name="__partition__", values=(data[key] % num_target_channels))).partition_by("__partition__")
-            elif data[key].dtype == polars.datatypes.Utf8:
+            elif data[key].dtype == polars.datatypes.Utf8 or data[key].dtype == polars.datatypes.Float32 or data[key].dtype == polars.datatypes.Float64:
                 partitions = data.with_column(polars.Series(name="__partition__", values=(data[key].hash() % num_target_channels))).partition_by("__partition__")
             else:
                 print(data[key])
