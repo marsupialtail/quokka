@@ -7,6 +7,9 @@ import os
 
 class QuokkaContext:
     def __init__(self, cluster = None, io_per_node = 2, exec_per_node = 1) -> None:
+
+        self.config= {"optimize_joins" : True}
+
         self.latest_node_id = 0
         self.nodes = {}
         self.cluster = LocalCluster() if cluster is None else cluster
@@ -60,6 +63,14 @@ class QuokkaContext:
 
         ray.get(self.coordinator.register_nodes.remote(replay_nodes = {k: self.task_managers[k] for k in self.replay_nodes}, io_nodes = {k: self.task_managers[k] for k in self.io_nodes}, compute_nodes = {k: self.task_managers[k] for k in self.compute_nodes}))
         ray.get(self.coordinator.register_node_ips.remote( self.node_locs ))
+
+    def set_config(self, key, value):
+        assert key in self.config, "key not found in config"
+        self.config[key] = value
+    
+    def get_config(self, key):
+        assert key in self.config, "key not found in config"
+        return self.config[key]
 
     def read_files(self, table_location: str):
 
@@ -539,7 +550,8 @@ class QuokkaContext:
         self.__push_filter__(node_id)
         self.__early_projection__(node_id)
         self.__fold_map__(node_id)
-        self.__merge_joins__(node_id)
+        if self.config["optimize_joins"]:
+            self.__merge_joins__(node_id)
         self.__propagate_cardinality__(node_id)
         self.__determine_stages__(node_id)
         
