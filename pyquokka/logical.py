@@ -111,7 +111,10 @@ class SourceNode(Node):
             result += "\n\t" + str(target) + " " + str(self.targets[target])
         return result
 
-    def set_cardinality(self):
+    def get_sample(self):
+        return None
+
+    def set_cardinality(self, sample = None):
         for target in self.targets:
             self.cardinality[target] = None
 
@@ -208,7 +211,7 @@ class InputDiskCSVNode(SourceNode):
         self.has_header = has_header
         self.projection = projection
     
-    def set_cardinality(self):
+    def get_sample(self):
         if os.path.isfile(self.filename):
             files = [self.filename]
             sizes = [os.path.getsize(self.filename)]
@@ -235,6 +238,9 @@ class InputDiskCSVNode(SourceNode):
 
         # import pdb;pdb.set_trace()
         sample = polars.read_csv(sample, new_columns = self.schema, sep = self.sep, has_header = False).to_arrow()
+        return sample
+    
+    def set_cardinality(self, sample):
 
         # now apply the predicate to this sample
         for target in self.targets:

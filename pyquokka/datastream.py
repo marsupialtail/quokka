@@ -1190,7 +1190,7 @@ class DataStream:
             schema=self.schema,
             schema_mapping={col: (0, col) for col in self.schema},
             required_columns={0: set(columns)},
-            operator=TopKExecutor(sql_statement)
+            operator=ConcatThenSQLExecutor(sql_statement)
         )
         topk_node.set_placement_strategy(SingleChannelStrategy())
         return self.quokka_context.new_stream(
@@ -1199,6 +1199,55 @@ class DataStream:
             node=topk_node,
             schema=self.schema,
         )
+    
+    def _grouped_count_distinct(self, groupby: list, count_col: str, orderby: list = None):
+
+        assert type(groupby) == list
+        assert type(count_col) == str
+        new_schema = [count_col]
+
+        if len(groupby) == 0:
+            sql_statement = "select count(distinct {}) as {} from batch_arrow".format(count_col, count_col)
+        else:
+            sql_statement = "select {}, count(distinct {}) as {} from batch_arrow group by {}".format(
+                ",".join(groupby), count_col, count_col, ",".join(groupby)
+            )
+
+        if orderby is not None:
+            assert type(orderby) == list
+            sql_statement += " order by "
+            for i in range(len(orderby)):
+                assert type(orderby[i]) == tuple
+                key = orderby[i][0]
+                direction = orderby[i][1]
+                sql_statement += "{} {},".format(key, direction)
+            sql_statement = sql_statement[:-1]
+
+        agg_node = StatefulNode(
+            schema=groupby + new_schema,
+            schema_mapping={
+                    **{new_column: (-1, new_column) for new_column in new_schema}, **{col: (0, col) for col in groupby}},
+            required_columns={0: set(groupby + [count_col])},
+            operator=ConcatThenSQLExecutor(sql_statement),
+        )
+        if len(groupby) > 0:
+            aggregated_stream = self.quokka_context.new_stream(
+                sources={0: self},
+                partitioners={0: HashPartitioner(groupby[0])},
+                node=agg_node,
+                schema=groupby + new_schema,
+            )
+        else:
+            agg_node.set_placement_strategy(SingleChannelStrategy())
+            aggregated_stream = self.quokka_context.new_stream(
+                sources={0: self},
+                partitioners={0: BroadcastPartitioner()},
+                node=agg_node,
+                schema=groupby + new_schema,
+                
+            )
+        return aggregated_stream
+
     
     def _grouped_aggregate_sql(self, groupby: list, aggregations: str, orderby = None):
 
@@ -1266,6 +1315,10 @@ class DataStream:
                     raise Exception("Unrecognized aggregation: " + a)
         sql = sql[:-1]
         return self._grouped_aggregate_sql(groupby, sql, orderby)
+
+    def count_distinct(self, col):
+
+        return self._grouped_count_distinct([], col)
 
     def agg(self, aggregations):
 
@@ -1427,6 +1480,9 @@ class GroupedDataStream:
         elif type(right) == polars.internals.DataFrame:
             
             raise NotImplementedError
+
+    def count_distinct(self, col: str):
+        return self.source_data_stream._grouped_count_distinct(self.groupby, col, self.orderby)
 
     def agg(self, aggregations: dict):
 

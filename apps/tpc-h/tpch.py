@@ -123,20 +123,23 @@ def do_2():
     '''
     Quokka does not do query unnesting.
     '''
+    qc.set_config("optimize_joins", False)
     europe = region.filter("r_name = 'EUROPE'")
     european_nations = nation.join(europe, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
     d = supplier.join(european_nations, left_on="s_nationkey", right_on="n_nationkey")
     d = partsupp.join(d, left_on="ps_suppkey", right_on="s_suppkey")
     f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"}).rename({"ps_supplycost_min":"min_cost","ps_partkey":"europe_key"}).compute()
 
-    d = d.join(qc.read_dataset(f), left_on="ps_supplycost", right_on="min_cost", suffix="_2")
-    d = d.join(part, left_on="europe_key", right_on="p_partkey", suffix="_3")
+    k = qc.read_dataset(f).join(part, left_on="europe_key", right_on="p_partkey", suffix="_3")
+    d = d.join(k, left_on="ps_supplycost", right_on="min_cost", suffix="_2")
     d = d.filter("""europe_key = ps_partkey and p_size = 15 and p_type like '%BRASS' """)
     d = d.select(["s_acctbal", "s_name", "n_name", "europe_key", "p_mfgr", "s_address", "s_phone", "s_comment"])
 
     f = d.top_k(["s_acctbal","n_name","s_name","europe_key"],100, descending=[True,False,False,False])
     f.explain()
-    return f.collect()
+    result = f.collect()
+    qc.set_config("optimize_joins", True)
+    return result
 
 
 def do_3():
@@ -150,11 +153,29 @@ def do_3():
     f.explain()
     return f.collect()
 
+# def do_3_sql():
+#     qc.set_config("optimize_joins", False)
+#     d = customer.join(orders,left_on="c_custkey", right_on="o_custkey")
+#     d = d.join(lineitem,left_on="o_orderkey", right_on="l_orderkey")
+#     d = d.filter("c_mktsegment = 'BUILDING' and o_orderdate < date '1995-03-15' and l_shipdate > date '1995-03-15'")
+#     d = d.groupby(["o_orderkey","o_orderdate","o_shippriority"]).agg_sql("sum(l_extendedprice * (1 - l_discount)) as revenue")
+#     f = d.top_k(["revenue", "o_orderdate"], 10, descending=[True, False])
+#     f.explain()
+#     return f.collect()
+
 def do_3_sql():
     d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
     d = customer.join(d,left_on="c_custkey", right_on="o_custkey")
     d = d.filter("c_mktsegment = 'BUILDING' and o_orderdate < date '1995-03-15' and l_shipdate > date '1995-03-15'")
     d = d.groupby(["l_orderkey","o_orderdate","o_shippriority"]).agg_sql("sum(l_extendedprice * (1 - l_discount)) as revenue")
+    f = d.top_k(["revenue", "o_orderdate"], 10, descending=[True, False])
+    f.explain()
+    return f.collect()
+
+def do_3_sql_blocking():
+    d = lineitem.filter("l_shipdate > date '1995-03-15'").join(orders.filter("o_orderdate < date '1995-03-15'"),left_on="l_orderkey", right_on="o_orderkey").compute()
+    d = customer.filter("c_mktsegment = 'BUILDING'").join(qc.read_dataset(d),left_on="c_custkey", right_on="o_custkey").compute()
+    d = qc.read_dataset(d).groupby(["l_orderkey","o_orderdate","o_shippriority"]).agg_sql("sum(l_extendedprice * (1 - l_discount)) as revenue")
     f = d.top_k(["revenue", "o_orderdate"], 10, descending=[True, False])
     f.explain()
     return f.collect()
@@ -206,6 +227,7 @@ def do_5():
 
 
 def do_5_sql():
+    qc.set_config("optimize_joins", False)
     asia = region.filter("r_name == 'ASIA'")
     asian_nations = nation.join(asia, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
     d = customer.join(asian_nations, left_on="c_nationkey", right_on="n_nationkey")
@@ -215,7 +237,9 @@ def do_5_sql():
     d = d.filter("s_nationkey = c_nationkey and o_orderdate >= date '1994-01-01' and o_orderdate < date '1994-01-01' + interval '1' year")
     f = d.groupby("n_name").agg_sql("sum(l_extendedprice * (1 - l_discount)) as revenue")
     f.explain()
-    return f.collect().sort("revenue", descending = True)
+    result = f.collect().sort("revenue", descending = True)
+    qc.set_config("optimize_joins", True)
+    return result
 
 def do_6():
     d = lineitem.filter("l_shipdate >= date '1994-01-01' and l_shipdate < date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01 and l_quantity < 24")
@@ -267,6 +291,7 @@ def do_7_sql():
     return f.collect().sort(["supp_nation","cust_nation","l_year"])
 
 def do_8():
+    qc.set_config("optimize_joins", False)
     america = region.filter("r_name = 'AMERICA'")
     american_nations = nation.join(america, left_on="n_regionkey",right_on="r_regionkey").select(["n_nationkey"])
     american_customers = customer.join(american_nations, left_on="c_nationkey", right_on="n_nationkey")
@@ -286,7 +311,9 @@ def do_8():
 
     f = d.groupby("o_year").aggregate(aggregations={"volume":"sum", "brazil_volume":"sum"})
     f.explain()
-    return f.collect().sort("o_year")
+    result = f.collect().sort("o_year")
+    qc.set_config("optimize_joins", True)
+    return result
 
 # join ordering will be hard for this one
 def do_9():
@@ -364,16 +391,7 @@ def do_13():
     c_orders = d.groupby("c_custkey").agg_sql("count(o_orderkey) as c_count")
     result = c_orders.groupby("c_count").aggregate(aggregations={"*":"count"}).collect().sort('count')
 
-    ref_customer = polars.read_csv("/home/ziheng/tpc-h/customer.tbl", sep="|")
-    ref_orders = polars.read_csv("/home/ziheng/tpc-h/orders.tbl", sep="|").\
-        filter( ~(polars.col("o_comment").str.contains('special') & polars.col("o_comment").str.contains('requests')))
-    ref = ref_customer.join(ref_orders, left_on="c_custkey", right_on="o_custkey", how="left")\
-        .with_column(polars.col("o_orderkey").is_not_null().alias("o_orderkey_1")).groupby("c_custkey").agg([polars.col("o_orderkey_1").sum()])\
-        .groupby("o_orderkey_1").count().sort('count',reverse = True)
-        #.sort('o_orderkey_1',reverse = True)
-
-    print(result)
-    print(ref)
+    return result
 
 def do_14():
     d = lineitem.join(part, left_on="l_partkey", right_on="p_partkey")
@@ -403,26 +421,27 @@ def do_15():
 
 def do_16():
 
-    print("we need to impleemnt groupby count distinct. It's hella hard")
-
     bad_suppliers = supplier.filter("s_comment like '%Customer%Complaints%'")
     d = partsupp.join(bad_suppliers, left_on="ps_suppkey", right_on="s_suppkey", how="anti")
     d = d.join(part, left_on="ps_partkey", right_on="p_partkey", how="inner")
     d = d.filter("p_brand != 'Brand#45' and p_type not like 'MEDIUM POLISHED%' and p_size in (49, 14, 23, 45, 19, 3, 36, 9)")
-    result = d.groupby(["p_brand", "p_type", "p_size"]).agg_sql("count(distinct ps_supplycost) as supplier_cnt")
+    result = d.groupby(["p_brand", "p_type", "p_size"]).count_distinct("ps_supplycost")
     result.explain()
     return result.collect()
 
 def do_17():
+    qc.set_config("optimize_joins", "false")
     u_0 = lineitem.groupby("l_partkey").agg_sql("0.2 * AVG(l_quantity) AS avg_quantity").compute()
     u_0 = qc.read_dataset(u_0)
     print(u_0)
-    d = lineitem.join(part, left_on="l_partkey", right_on="p_partkey", how="inner")
-    d = d.join(u_0, left_on="l_partkey", right_on="l_partkey", how="inner")
+    d = part.join(u_0, left_on="p_partkey", right_on="l_partkey", how="inner")
+    d = d.join(lineitem, left_on="p_partkey", right_on="l_partkey", how="inner")
     d = d.filter("p_brand = 'Brand#23' and p_container = 'MED BOX' and l_quantity < avg_quantity")
     f = d.agg_sql("SUM(l_extendedprice) / 7.0 AS avg_yearly")
     f.explain()
-    return f.collect()
+    result = f.collect()
+    qc.set_config("optimize_joins", "true")
+    return result
 
 def do_18():
     u_0 = lineitem.groupby("l_orderkey").agg_sql("SUM(l_quantity) AS sum_quant").filter("sum_quant > 300").compute()
@@ -435,37 +454,39 @@ def do_18():
     return d.collect()
 
 def do_19():
-
-    d = lineitem.join(part, left_on="l_partkey", right_on="p_partkey", how="inner")
+    print("manual DNF unnesting currently needed for reasonable performance.")
+    d = lineitem.filter("""
+            (l_quantity >= 1 and l_quantity <= 30)
+            and (l_shipmode in ('AIR', 'AIR REG'))
+            and (l_shipinstruct = 'DELIVER IN PERSON')
+        """)\
+        .join(part.filter(
+        """(p_brand = 'Brand#12' or p_brand = 'Brand#23' or p_brand = 'Brand#34')
+            and (p_size between 1 and 15)
+            and (p_container in ('SM CASE', 'SM BOX', 'SM PACK', 'SM PKG', 'MED BAG', 'MED BOX', 'MED PKG', 'MED PACK', 'LG CASE', 'LG BOX', 'LG PACK', 'LG PKG'))
+        """), left_on="l_partkey", right_on="p_partkey", how="inner")
     d = d.filter("""
                 (
                     p_brand = 'Brand#12'
                     and p_container in ('SM CASE', 'SM BOX', 'SM PACK', 'SM PKG')
                     and l_quantity >= 1 and l_quantity <= 1 + 10
-                    and p_size between 1 and 5
-                    and l_shipmode in ('AIR', 'AIR REG')
-                    and l_shipinstruct = 'DELIVER IN PERSON') or 
+                    and p_size between 1 and 5) or 
                 (
                     p_brand = 'Brand#23'
                     and p_container in ('MED BAG', 'MED BOX', 'MED PKG', 'MED PACK')
                     and l_quantity >= 10 and l_quantity <= 10 + 10
-                    and p_size between 1 and 10
-                    and l_shipmode in ('AIR', 'AIR REG')
-                    and l_shipinstruct = 'DELIVER IN PERSON') or
+                    and p_size between 1 and 10) or 
                 (
                     p_brand = 'Brand#34'
                     and p_container in ('LG CASE', 'LG BOX', 'LG PACK', 'LG PKG')
                     and l_quantity >= 20 and l_quantity <= 20 + 10
                     and p_size between 1 and 15
-                    and l_shipmode in ('AIR', 'AIR REG')
-                    and l_shipinstruct = 'DELIVER IN PERSON'
                 )
     """)
     d = d.with_column("revenue", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]), required_columns={"l_extendedprice", "l_discount"})
     result = d.aggregate(aggregations={"revenue":"sum"})
     result.explain()
     return result.collect()
-
 
 def do_20():
     u_0 = lineitem.filter("l_shipdate < date '1995-01-01' and l_shipdate >= date '1994-01-01'").groupby(["l_partkey", "l_suppkey"]).agg_sql("0.5 * SUM(l_quantity) AS sum_quantity").compute()
@@ -569,8 +590,8 @@ def dataset_test():
     print(s.collect())
 
 # print(do_1_sql())
-print(do_2()) # bad join order
-# print(do_3_sql())
+# print(do_2())
+print(do_3_sql())
 # print(do_4_sql())
 # print(do_5_sql())
 # print(do_6_sql())
@@ -583,12 +604,14 @@ print(do_2()) # bad join order
 # print(do_13()) 
 # print(do_14())
 # print(do_15())
-# print(do_16()) # count distinct
+# print(do_16()) 
 # print(do_17())
 # print(do_18())
-# print(do_19()) # unest DNF
+# print(do_19())
 # print(do_20())
 # print(do_22())
 
 
-# print(do_21()) # just wn't work
+# print(do_21()) # just wn't work on AWS
+
+# print(do_3_sql_blocking())

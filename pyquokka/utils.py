@@ -161,6 +161,12 @@ class QuokkaClusterManager:
         #self.launch_all("python3 flight.py >> /home/ubuntu/flight-log  &", public_ips, "Failed to start flight servers on workers.")
         #self.launch_all_t("nohup python3 -u flight.py >> /home/ubuntu/flight-log &", public_ips, "Failed to start flight servers on workers.")
         self.launch_all("python3 -u flight.py &", public_ips, "Failed to start flight servers on workers.")
+        print("Trying to set up spill dir.")
+        try:
+            self.launch_all("sudo mkfs.ext4 -E nodiscard /dev/nvme1n1;", public_ips, "failed to format nvme ssd")
+            self.launch_all("sudo mount /dev/nvme1n1 /data;", public_ips, "failed to mount nvme ssd")
+        except:
+            pass
 
     def create_cluster(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = []):
 
@@ -210,17 +216,8 @@ class QuokkaClusterManager:
         pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
         script = pyquokka_loc + "/leader_startup.sh"
         z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + " 'sudo bash -s' < " + script)
-
+        self.launch_all("sudo mkdir /data", public_ips, "failed to make temp spill directory")
         self._initialize_instances(instance_ids)
-        
-        print("Trying to set up spill dir.")
-        try:
-            self.launch_all("sudo mkdir /data", public_ips, "failed to make temp spill directory")
-            if "i3" in instance_type or "d" in instance_type: # use a more sophisticated policy later
-                self.launch_all("sudo mkfs.ext4 -E nodiscard /dev/nvme0n1;", public_ips, "failed to format nvme ssd")
-                self.launch_all("sudo mount /dev/nvme0n1 /data;", public_ips, "failed to mount nvme ssd")
-        except:
-            pass
         
         self.launch_all("sudo chmod -R a+rw /data/", public_ips, "failed to give spill dir permissions")
         

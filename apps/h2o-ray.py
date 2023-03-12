@@ -20,12 +20,12 @@ else:
     small = qc.read_csv("/home/ziheng/db-benchmark/data/J1_1e7_1e1_0_0.csv", has_header = True)
     medium = qc.read_csv("/home/ziheng/db-benchmark/data/J1_1e7_1e4_0_0.csv", has_header = True)
 
-result = left.join(small, on = "id1")
+result = left.join(small, on = "id1").compute()
 
-if mode == "S3":
-    names = result.write_parquet("s3://h2oai-benchmark/out.parquet")
-else:
-    names = result.write_parquet("/home/ziheng/db-benchmark/data/out.parquet")
-#result = left.count()
-print(names)
-#arrow_refs = result.to_arrow_refs()
+# if mode == "S3":
+#     names = result.write_parquet("s3://h2oai-benchmark/out.parquet")
+# else:
+#     names = result.write_parquet("/home/ziheng/db-benchmark/data/out.parquet")
+# #result = left.count()
+# print(names)
+arrow_refs = result.to_arrow_refs()

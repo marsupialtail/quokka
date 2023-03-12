@@ -985,7 +985,7 @@ class SQLAggExecutor(Executor):
         del batch_arrow        
         return self.state
     
-class TopKExecutor(Executor):
+class ConcatThenSQLExecutor(Executor):
     def __init__(self, sql_statement) -> None:
         self.statement = sql_statement
         self.state = None
@@ -1028,6 +1028,8 @@ class CountExecutor(Executor):
     def done(self, executor_id):
         #print("COUNT:", self.state)
         return polars.DataFrame([self.state])
+
+
 
 
 class SuperFastSortExecutor(Executor):
