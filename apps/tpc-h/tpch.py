@@ -22,7 +22,7 @@ elif mode == "S3":
 else:
     raise Exception
 
-qc = QuokkaContext(cluster,4,2)
+qc = QuokkaContext(cluster,2,2)
 
 if mode == "DISK":
     if format == "csv":
@@ -317,20 +317,35 @@ def do_8():
 
 # join ordering will be hard for this one
 def do_9():
+    # d1 = supplier.join(nation, left_on="s_nationkey", right_on="n_nationkey")
+    # d = lineitem.join(part, left_on="l_partkey", right_on="p_partkey")
+    # d = d.join(d1, left_on="l_suppkey", right_on="s_suppkey")
+    # d = d.join(partsupp, left_on = "l_partkey", right_on = "ps_partkey")
+    # d = d.filter("ps_suppkey = l_suppkey and p_name like '%green%'")
+    # d = d.join(orders, left_on = "l_orderkey", right_on = "o_orderkey")
+    # d = d.with_column("o_year", lambda x: x["o_orderdate"].dt.year(), required_columns = {"o_orderdate"})
+    # d = d.with_column("amount", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]) - x["ps_supplycost"] * x["l_quantity"], required_columns = {"l_extendedprice", "l_discount", "ps_supplycost", "l_quantity"})
+    # d = d.rename({"n_name" : "nation"})
+    # f = d.groupby(["nation", "o_year"]).aggregate(aggregations = {"amount":"sum"})
+    # f.explain()
+    # result = f.collect()
+    # return result.sort(['nation', 'o_year'], descending=[False, True])
+
+    qc.set_config("optimize_joins", False)
+    d = partsupp.join(part, left_on="ps_partkey", right_on="p_partkey")
     d1 = supplier.join(nation, left_on="s_nationkey", right_on="n_nationkey")
-    d2 = part.join(partsupp, left_on="p_partkey", right_on="ps_partkey")
-    d2 = d2.filter("p_name like '%green%'")
-    d = d2.join(d1, left_on="ps_suppkey", right_on = "s_suppkey")
-    d = d.join(lineitem, left_on="p_partkey", right_on="l_partkey")
+    d = d1.join(d, left_on="s_suppkey", right_on="ps_suppkey")
+    d = d.join(lineitem, left_on="ps_partkey", right_on="l_partkey")
+    d = d.filter("s_suppkey = l_suppkey and p_name like '%green%'")
     d = d.join(orders, left_on = "l_orderkey", right_on = "o_orderkey")
     d = d.with_column("o_year", lambda x: x["o_orderdate"].dt.year(), required_columns = {"o_orderdate"})
     d = d.with_column("amount", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]) - x["ps_supplycost"] * x["l_quantity"], required_columns = {"l_extendedprice", "l_discount", "ps_supplycost", "l_quantity"})
     d = d.rename({"n_name" : "nation"})
-    
     f = d.groupby(["nation", "o_year"]).aggregate(aggregations = {"amount":"sum"})
     f.explain()
     result = f.collect()
-    return result.sort('amount_sum')
+    qc.set_config("optimize_joins", True)
+    return result.sort(['nation', 'o_year'], descending=[False, True])
 
 def do_10():
     d = customer.join(nation, left_on="c_nationkey", right_on="n_nationkey")
@@ -591,13 +606,13 @@ def dataset_test():
 
 # print(do_1_sql())
 # print(do_2())
-print(do_3_sql())
+# print(do_3_sql())
 # print(do_4_sql())
 # print(do_5_sql())
 # print(do_6_sql())
 # print(do_7_sql())
 # print(do_8())
-# print(do_9())
+print(do_9())
 # print(do_10())
 # print(do_11())
 # print(do_12())

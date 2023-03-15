@@ -31,7 +31,7 @@ class HBQ:
     def __init__(self, path = "/data/") -> None:
         self.store = {}
         self.path = path
-        self.executor =  concurrent.futures.ThreadPoolExecutor(max_workers=4)
+        # self.executor =  concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
         # there will be a race con
         try:
@@ -49,16 +49,18 @@ class HBQ:
 
         assert type(outputs) == dict
         new_outputs = {}
-        futures = []
+        # futures = []
         for key in outputs:
             assert type(outputs[key]) == polars.internals.DataFrame
             new_outputs[key] = self.path + "hbq-" + str(source_actor_id) + "-" + str(source_channel_id) + "-" + str(seq) \
                 + "-" + str(target_actor_id) + "-" + str(key) + ".ipc"
             outputs[key].write_ipc( new_outputs[key] )
-            futures.append(self.executor.submit(put_ipc, outputs[key], new_outputs[key]))
+            # futures.append(self.executor.submit(put_ipc, outputs[key], new_outputs[key]))
 
-        assert all([fut.result() for fut in futures])
+        # assert all([fut.result() for fut in futures])
         self.store[source_actor_id, source_channel_id, seq, target_actor_id] = new_outputs
+        return True
+
 
     def get(self, source_actor_id, source_channel_id, seq, target_actor_id):
 

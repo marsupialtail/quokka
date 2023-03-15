@@ -165,6 +165,7 @@ class QuokkaClusterManager:
         try:
             self.launch_all("sudo mkfs.ext4 -E nodiscard /dev/nvme1n1;", public_ips, "failed to format nvme ssd")
             self.launch_all("sudo mount /dev/nvme1n1 /data;", public_ips, "failed to mount nvme ssd")
+            self.launch_all("sudo chmod -R a+rw /data/", public_ips, "failed to give spill dir permissions")
         except:
             pass
 
@@ -218,8 +219,6 @@ class QuokkaClusterManager:
         z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + " 'sudo bash -s' < " + script)
         self.launch_all("sudo mkdir /data", public_ips, "failed to make temp spill directory")
         self._initialize_instances(instance_ids)
-        
-        self.launch_all("sudo chmod -R a+rw /data/", public_ips, "failed to give spill dir permissions")
         
 
         # I can't think of a better way to do this. This is the way to launch the flight server on each worker:
