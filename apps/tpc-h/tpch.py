@@ -316,20 +316,6 @@ def do_8():
 
 # join ordering will be hard for this one
 def do_9():
-    # d1 = supplier.join(nation, left_on="s_nationkey", right_on="n_nationkey")
-    # d = lineitem.join(part, left_on="l_partkey", right_on="p_partkey")
-    # d = d.join(d1, left_on="l_suppkey", right_on="s_suppkey")
-    # d = d.join(partsupp, left_on = "l_partkey", right_on = "ps_partkey")
-    # d = d.filter("ps_suppkey = l_suppkey and p_name like '%green%'")
-    # d = d.join(orders, left_on = "l_orderkey", right_on = "o_orderkey")
-    # d = d.with_column("o_year", lambda x: x["o_orderdate"].dt.year(), required_columns = {"o_orderdate"})
-    # d = d.with_column("amount", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]) - x["ps_supplycost"] * x["l_quantity"], required_columns = {"l_extendedprice", "l_discount", "ps_supplycost", "l_quantity"})
-    # d = d.rename({"n_name" : "nation"})
-    # f = d.groupby(["nation", "o_year"]).aggregate(aggregations = {"amount":"sum"})
-    # f.explain()
-    # result = f.collect()
-    # return result.sort(['nation', 'o_year'], descending=[False, True])
-
     qc.set_config("optimize_joins", False)
     d = partsupp.join(part, left_on="ps_partkey", right_on="p_partkey")
     d1 = supplier.join(nation, left_on="s_nationkey", right_on="n_nationkey")
