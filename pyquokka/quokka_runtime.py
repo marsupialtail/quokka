@@ -90,6 +90,7 @@ class TaskGraph:
         channel_locs = {}
 
         # print(objects_dict)
+        limits = {}
 
         for ip in objects_dict:
             assert ip in self.context.node_locs.values()
@@ -102,6 +103,7 @@ class TaskGraph:
                     break
                 # print(objects)
                 lineages = [(ip, i) for i in objects]
+                limits[count] = len(lineages)
                 vals = {pickle.dumps((self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
                 input_task = TapedInputTask(self.current_actor, count, [i for i in range(len(lineages))])
                 self.LIT.set(pipe, pickle.dumps((self.current_actor,count)), len(lineages) - 1)
@@ -110,6 +112,7 @@ class TaskGraph:
                 channel_locs[count] = node
                 count += 1
         
+        self.limits[self.current_actor] = limits
         pipe.execute()
         ray.get(self.context.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
 
@@ -135,7 +138,6 @@ class TaskGraph:
         count = 0
         channel_locs = {}
 
-        self.limits[self.current_actor] = 8
 
         if type(placement_strategy) == SingleChannelStrategy:
 
@@ -147,16 +149,19 @@ class TaskGraph:
             self.LT.mset(pipe, vals)
             self.NTT.rpush(pipe, node, input_task.reduce())
             channel_locs[count] = node
+            self.limits[self.current_actor] = {0: len(lineages)}
         
         elif type(placement_strategy) == CustomChannelsStrategy:
-        
+            limits = {}
             for node in sorted(self.context.io_nodes):
+                
                 for channel in range(placement_strategy.channels_per_node):
 
                     if count in channel_info:
                         lineages = channel_info[count]
                     else:
                         lineages = []
+                    limits[count] = len(lineages)
 
                     if len(lineages) > 0:
                         vals = {pickle.dumps((self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
@@ -171,6 +176,7 @@ class TaskGraph:
 
                     channel_locs[count] = node
                     count += 1
+            self.limits[self.current_actor] = limits
         pipe.execute()
         ray.get(self.context.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
 
@@ -342,14 +348,13 @@ class TaskGraph:
             source_actor_id = df["source_actor_id"][0]
             source_channels = df["source_channel_id"].to_list()
             assert source_actor_id in self.limits 
-            for k in range(self.limits[source_actor_id]):
-                source_channel_seqs = {source_channel_id : [k] for source_channel_id in source_channels}
+            max_limit = max(self.limits[source_actor_id].values())
+            for k in range(max_limit):
+                source_channel_seqs = {source_channel_id : [k] for source_channel_id in source_channels if k < self.limits[source_actor_id][source_channel_id]}
                 lineages.append((source_actor_id, source_channel_seqs))
             
-            # source_channel_seqs = {source_channel_id : [k for k in range(self.limits[source_actor_id])] for source_channel_id in source_channels}
+            # source_channel_seqs = {source_channel_id : [k for k in range(self.limits[source_actor_id][source_channel_id])] for source_channel_id in source_channels}
             # lineages.append((source_actor_id, source_channel_seqs))
-
-        self.limits[self.current_actor] = len(lineages) + 1 # final one is for .done()
 
         channel_locs = {}
         if type(placement_strategy) == SingleChannelStrategy:
@@ -361,9 +366,11 @@ class TaskGraph:
             channel_locs[0] = node
             self.CLT.set(pipe, pickle.dumps((self.current_actor, 0)), self.context.node_locs[node])
             self.IRT.set(pipe, pickle.dumps((self.current_actor, 0, -1)), pickle.dumps(input_reqs))
+            self.limits[self.current_actor] = {0: len(lineages) + 1}
 
         elif type(placement_strategy) == CustomChannelsStrategy:
-
+            
+            limits = {}
             count = 0
             for node in sorted(self.context.compute_nodes):
                 for channel in range(placement_strategy.channels_per_node):
@@ -374,7 +381,9 @@ class TaskGraph:
                     self.LT.mset(pipe, vals)
                     self.CLT.set(pipe, pickle.dumps((self.current_actor, count)), self.context.node_locs[node])
                     self.IRT.set(pipe, pickle.dumps((self.current_actor, count, -1)), pickle.dumps(input_reqs))
+                    limits[count] = len(lineages) + 1
                     count += 1
+            self.limits[self.current_actor] = limits
         else:
             raise Exception("placement strategy not supported")
         
