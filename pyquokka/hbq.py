@@ -34,12 +34,17 @@ class HBQ:
         # self.executor =  concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
         # there will be a race con
-        try:
-            files = glob.glob(self.path + '*')
-            for f in files:
+        self.wipe()    
+    
+    def wipe(self):
+        
+        # print("clearing cache")
+        files = glob.glob(self.path + '*')
+        for f in files:
+            try:
                 os.remove(f)
-        except:
-            pass
+            except:
+                pass
 
     def put(self, source_actor_id, source_channel_id, seq, target_actor_id, outputs):
 

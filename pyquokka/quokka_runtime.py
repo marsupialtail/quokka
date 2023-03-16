@@ -46,6 +46,7 @@ class TaskGraph:
         self.SAT = SortedActorsTable()
         self.PFT = PartitionFunctionTable()
         self.AST = ActorStageTable()
+        self.LIT = LastInputTable()
 
         # progress tracking stuff
         self.input_partitions = {}
@@ -100,6 +101,7 @@ class TaskGraph:
                 lineages = [(ip, i) for i in objects]
                 vals = {pickle.dumps((self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
                 input_task = TapedInputTask(self.current_actor, count, [i for i in range(len(lineages))])
+                self.LIT.set(pipe, pickle.dumps((self.current_actor,count)), len(lineages) - 1)
                 self.LT.mset(pipe, vals)
                 self.NTT.rpush(pipe, node, input_task.reduce())
                 channel_locs[count] = node
@@ -134,6 +136,7 @@ class TaskGraph:
             lineages = channel_info[0]
             vals = {pickle.dumps((self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
             input_task = TapedInputTask(self.current_actor, count, [i for i in range(len(lineages))])
+            self.LIT.set(pipe, pickle.dumps((self.current_actor,count)), len(lineages) - 1)
             self.LT.mset(pipe, vals)
             self.NTT.rpush(pipe, node, input_task.reduce())
             channel_locs[count] = node
@@ -150,8 +153,8 @@ class TaskGraph:
 
                     if len(lineages) > 0:
                         vals = {pickle.dumps((self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
-
                         input_task = TapedInputTask(self.current_actor, count, [i for i in range(len(lineages))])
+                        self.LIT.set(pipe, pickle.dumps((self.current_actor,count)), len(lineages) - 1)
                         self.LT.mset(pipe, vals)
                         self.NTT.rpush(pipe, node, input_task.reduce())
                     

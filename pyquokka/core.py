@@ -107,6 +107,7 @@ class TaskManager:
         self.target_count = {}
         self.blocking_nodes = {}
         self.dst = None
+        self.HBQ.wipe()
         return True
 
     def init(self):
@@ -775,7 +776,7 @@ class ExecTaskManager(TaskManager):
                     
                 if state_seq + 1 > candidate_task.last_state_seq:
                     next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, self.tape_input_reqs[actor_id, channel_id])
-                    print("finished exectape, next input requirement is ", new_input_reqs)
+                    print("finished exectape, next input requirement is ", self.tape_input_reqs[actor_id, channel_id])
 
                 else:
                     next_task = TapedExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, candidate_task.last_state_seq)
@@ -800,6 +801,7 @@ class IOTaskManager(TaskManager):
     def __init__(self, node_id: int, coordinator_ip: str, worker_ips: list) -> None:
         super().__init__(node_id, coordinator_ip, worker_ips)
         self.GIT = GeneratedInputTable()
+        self.LIT = LastInputTable()
         self.delay = 0.1
 
     # while the exectaskmanager should error out and proceed with the next task 
@@ -843,6 +845,7 @@ class IOTaskManager(TaskManager):
         """
         self.ast = self.AST.to_dict(self.r)
         self.set_flight_configs(self.flight_client)
+        self.lit = self.LIT.to_dict(self.r)
 
         pyarrow.set_cpu_count(8)
         count = -1
@@ -911,7 +914,7 @@ class IOTaskManager(TaskManager):
                 transaction = self.r.pipeline()
                 self.output_commit(transaction, actor_id, channel_id, seq, lineage)
                 self.task_commit(transaction, candidate_task, next_task)
-                if next_task is None:
+                if next_task is None and seq == self.lit[actor_id, channel_id]:
                     # print("DONE", actor_id, channel_id)
                     self.DST.set(transaction, pickle.dumps((actor_id, channel_id)), seq)
                 if not all(transaction.execute()):

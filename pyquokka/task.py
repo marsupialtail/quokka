@@ -92,6 +92,8 @@ class TapedInputTask(Task):
 
     def execute(self, functionObject, input_object):
 
+        # print("Executing TapedInputTask", self.actor_id, self.channel_id, self.tape[0])
+
         seq = self.tape[0]
 
         # we don't care what's the next thing we are supposed to read       
@@ -127,7 +129,7 @@ class ExecutorTask(Task):
         return cls(tup[0], tup[1], tup[2], tup[3], tup[4])
 
     def execute(self, functionObject, inputs, stream_id, channel_id):
-
+        # print("Executing ExecutorTask", self.actor_id, self.channel_id, self.state_seq, self.out_seq)
         output = functionObject.execute(inputs, stream_id, channel_id)
         return output, self.state_seq, self.out_seq 
 
@@ -147,7 +149,7 @@ class TapedExecutorTask(Task):
         return cls(tup[0], tup[1], tup[2], tup[3], tup[4])
 
     def execute(self, functionObject, inputs, stream_id, channel_id):
-
+        # print("Executing TapedExecutorTask", self.actor_id, self.channel_id, self.state_seq, self.out_seq, self.last_state_seq)
         output = functionObject.execute(inputs, stream_id, channel_id)
         return output, self.state_seq, self.out_seq 
 

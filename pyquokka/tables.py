@@ -310,3 +310,16 @@ class ActorStageTable(ClientWrapper):
         keys = self.keys(redis_client)
         values = self.mget(redis_client, keys)
         return {int(key): int(value) for key, value in zip(keys, values)}
+
+'''
+- Last Input Table (LIT): this tracks the last input of each actor_id, channel_id
+'''
+
+class LastInputTable(ClientWrapper):
+    def __init__(self) -> None:
+        super().__init__("LIT")
+    
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        values = self.mget(redis_client, keys)
+        return {pickle.loads(key): int(value) for key, value in zip(keys, values)}

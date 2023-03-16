@@ -493,7 +493,8 @@ class BroadcastJoinExecutor(Executor):
             try:
                 result = batch.join(self.state, left_on = self.big_on, right_on = self.small_on, how = self.batch_how, suffix = self.suffix)
             except:
-                print(batch, self.state)
+                print(batch, self.state, self.big_on, self.small_on)
+                raise Exception("join failed")
 
         new_left_null = None
         if self.how == "left" or self.how == "anti":
@@ -557,6 +558,7 @@ class BuildProbeJoinExecutor(Executor):
                
         # probe
         elif stream_id == 0:
+            # print("STATE LEN", len(self.state))
             self.phase = "probe"
             if self.state is None:
                 return
