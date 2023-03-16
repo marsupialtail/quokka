@@ -20,8 +20,7 @@ schema_lineitem = StructType()\
     .add("l_receiptdate",DateType(),True)\
     .add("l_shipinstruct",StringType(),True)\
     .add("l_shipmode",StringType(),True)\
-    .add("l_comment",StringType(),True)\
-    .add("l_extra",StringType(),True)
+    .add("l_comment",StringType(),True)
 
 schema_orders = StructType()\
     .add("o_orderkey",LongType(),True)\
@@ -32,8 +31,7 @@ schema_orders = StructType()\
     .add("o_orderpriority",StringType(),True)\
     .add("o_clerk",StringType(),True)\
     .add("o_shippriority",IntegerType(),True)\
-    .add("o_comment",StringType(),True)\
-    .add("o_extra",StringType(),True)
+    .add("o_comment",StringType(),True)
 
 schema_customers = StructType()\
     .add("c_custkey", LongType(), True)\
@@ -64,32 +62,32 @@ schema_nation = StructType([StructField("n_nationkey",LongType(),False),StructFi
 
 schema_region = StructType([StructField("r_regionkey",LongType(),False),StructField("r_name",StringType(),True),StructField("r_comment",StringType(),True)])
 
-
+source_bucket = "tpc-h-csv-1tb"
 
 df_lineitem = spark.read.option("header", "false").option("delimiter","|")\
             .schema(schema_lineitem)\
-            .csv("s3://tpc-h-csv/lineitem/lineitem.tbl.1")
+            .csv("s3://" +  source_bucket + "/lineitem/*")
 df_orders = spark.read.option("header", "false").option("delimiter","|")\
         .schema(schema_orders)\
-        .csv("s3://tpc-h-csv/orders/orders.tbl.1")
+        .csv("s3://" +  source_bucket + "/orders/*")
 df_customers = spark.read.option("header", "false").option("delimiter","|")\
         .schema(schema_customers)\
-        .csv("s3://tpc-h-csv/customer/customer.tbl.1")
+        .csv("s3://" +  source_bucket + "/customer/*")
 df_partsupp = spark.read.option("header", "false").option("delimiter","|")\
             .schema(schema_partsupp)\
-            .csv("s3://tpc-h-csv/partsupp/partsupp.tbl.1")
+            .csv("s3://" +  source_bucket + "/partsupp/*")
 df_part = spark.read.option("header", "false").option("delimiter","|")\
         .schema(schema_part)\
-        .csv("s3://tpc-h-csv/part/part.tbl.1")
+        .csv("s3://" +  source_bucket + "/part/*")
 df_supplier = spark.read.option("header", "false").option("delimiter","|")\
         .schema(schema_supplier)\
-        .csv("s3://tpc-h-csv/supplier/supplier.tbl.1")
+        .csv("s3://" +  source_bucket + "/supplier/*")
 df_region = spark.read.option("header", "false").option("delimiter","|")\
             .schema(schema_region)\
-            .csv("s3://tpc-h-csv/region/region.tbl")
+            .csv("s3://" +  source_bucket + "/region/*")
 df_nation = spark.read.option("header", "false").option("delimiter","|")\
         .schema(schema_nation)\
-        .csv("s3://tpc-h-csv/nation/nation.tbl")
+        .csv("s3://" +  source_bucket + "/nation/*")
 
 df_lineitem1 = spark.read.option("header", "false").option("delimiter","|")\
             .schema(schema_lineitem)\

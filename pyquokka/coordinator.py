@@ -502,7 +502,7 @@ class Coordinator:
         for actor_id in actor_ids:
             # rotate the list for every actor so the shit doesn't always end up on the first worker machine
 
-            alive_io_nodes = alive_io_nodes[4:] + alive_io_nodes[:4]
+            alive_io_nodes = alive_io_nodes[2:] + alive_io_nodes[:2]
 
             partitions = []
             for my_actor_id, channel_id in new_input_requests:

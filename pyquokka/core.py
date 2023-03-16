@@ -313,7 +313,6 @@ class TaskManager:
             def do_channel(target_channel_id):
 
                 start = time.time()
-
                 if target_channel_id in outputs and len(outputs[target_channel_id]) > 0:
                     data = outputs[target_channel_id]
                     # set the partition function number to 0 for now because we won't ever be changing the partition function.
@@ -443,6 +442,7 @@ class ExecTaskManager(TaskManager):
             pass
 
     def process_output(self, actor_id, channel_id, output, transaction, state_seq, out_seq):
+
         if output is not None:
             if type(output) == pyarrow.Table:
                 output = polars.from_arrow(output)
