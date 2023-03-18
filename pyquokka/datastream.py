@@ -182,7 +182,7 @@ class DataStream:
             
         )
 
-        return name_stream.collect()
+        return name_stream
 
     def write_parquet(self, table_location, output_line_limit=5000000):
 
@@ -256,7 +256,7 @@ class DataStream:
             
         )
 
-        return name_stream.collect()
+        return name_stream
 
     def filter(self, predicate: str):
 
@@ -585,6 +585,9 @@ class DataStream:
         sqlglot_node = sqlglot.parse_one(enhanced_exp)
         if required_columns is None:
             required_columns = required_columns_from_exp(sqlglot_node)
+        if len(required_columns) == 0:
+            # TODO: this is to make sure count works by picking a random column to download. 
+            required_columns = {self.schema[1]}
         
         for col in required_columns:
             assert col in self.schema, "required column %s not in schema" % col

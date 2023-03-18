@@ -558,10 +558,12 @@ class BuildProbeJoinExecutor(Executor):
                
         # probe
         elif stream_id == 0:
-            # print("STATE LEN", len(self.state))
-            self.phase = "probe"
             if self.state is None:
                 return
+            # print("STATE LEN", len(self.state))
+            if self.phase == "build":
+                self.state = self.state.sort(self.right_on)
+            self.phase = "probe"
             result = batch.join(self.state,left_on = self.left_on, right_on = self.right_on ,how= self.how)
             if self.key_to_keep == "right":
                 result = result.rename({self.left_on: self.right_on})

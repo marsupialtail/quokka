@@ -104,6 +104,7 @@ class Node:
 class SourceNode(Node):
     def __init__(self, schema) -> None:
         super().__init__(schema)
+        self.catalog_id = None
     
     def __str__(self):
         result = str(type(self)) + '\n' + str(self.stage) + '\nTargets:' 
@@ -111,10 +112,10 @@ class SourceNode(Node):
             result += "\n\t" + str(target) + " " + str(self.targets[target])
         return result
 
-    def get_sample(self):
-        return None
+    def set_catalog_id(self, catalog_id):
+        self.catalog_id = catalog_id
 
-    def set_cardinality(self, sample = None):
+    def set_cardinality(self, catalog):
         for target in self.targets:
             self.cardinality[target] = None
 
@@ -157,7 +158,7 @@ class InputRayDatasetNode(SourceNode):
         node = task_graph.new_input_dataset_node(self.dataset, self.stage)
         return node
     
-    def set_cardinality(self):
+    def set_cardinality(self, catalog):
         card = self.dataset.length()
         for target in self.targets:
             self.cardinality[target] = card
@@ -211,48 +212,12 @@ class InputDiskCSVNode(SourceNode):
         self.has_header = has_header
         self.projection = projection
     
-    def get_sample(self):
-        if os.path.isfile(self.filename):
-            files = [self.filename]
-            sizes = [os.path.getsize(self.filename)]
-        else:
-            assert os.path.isdir(self.filename), "Does not support prefix, must give absolute directory path for a list of files, will read everything in there!"
-            files = [self.filename + "/" + file for file in os.listdir(self.filename)]
-            sizes = [os.path.getsize(file) for file in files]
-        
-        # let's now sample from one file. This can change in the future
-        # we will sample 10 MB from the file
+    def set_cardinality(self, catalog):
 
-        file_to_do = np.random.choice(files, p = np.array(sizes) / sum(sizes))
-        start_pos = np.random.randint(0, max(os.path.getsize(file_to_do) - 10 * 1024 * 1024,1))
-        with open(file_to_do, 'rb') as f:
-            f.seek(start_pos)
-            sample = f.read(10 * 1024 * 1024)
-        first_new_line = sample.find(b'\n')
-        last_new_line = sample.rfind(b'\n')
-        sample = sample[first_new_line + 1 : last_new_line]
-
-        # now read sample as a csv
-        # sample = csv.read_csv(BytesIO(sample), read_options=csv.ReadOptions(
-        #         column_names=self.schema), parse_options=csv.ParseOptions(delimiter=self.sep))
-
-        # import pdb;pdb.set_trace()
-        sample = polars.read_csv(sample, new_columns = self.schema, sep = self.sep, has_header = False).to_arrow()
-        return sample
-    
-    def set_cardinality(self, sample):
-
-        # now apply the predicate to this sample
+        assert self.catalog_id is not None
         for target in self.targets:
             predicate = sql_utils.label_sample_table_names(self.targets[target].predicate)
-            if predicate == sqlglot.exp.TRUE:
-                count = len(sample)
-            else:
-                sql_statement = "select count(*) from sample where " + predicate.sql()
-                con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
-                count = con.execute(sql_statement).fetchall()[0][0]
-            estimated_cardinality = count * sum(sizes) / (10 * 1024 * 1024)
-            self.cardinality[target] = estimated_cardinality
+            self.cardinality[target] = ray.get(catalog.estimate_cardinality.remote(self.catalog_id, predicate))
 
     def lower(self, task_graph):
         if self.output_sorted_reqs is not None:
@@ -276,7 +241,7 @@ class InputS3IcebergNode(SourceNode):
         self.projection = projection
         self.snapshot = snapshot
 
-    def set_cardinality(self):     
+    def set_cardinality(self, catalog):     
 
         if self.snapshot is None:
             cardinality = self.table.metadata.snapshots[-1].summary.additional_properties['total-records']
@@ -308,41 +273,30 @@ class InputS3IcebergNode(SourceNode):
         return result
 
 class InputS3ParquetNode(SourceNode):
-    def __init__(self, bucket, prefix, key, schema, predicate = None, projection = None) -> None:
+    def __init__(self, files, schema, predicate = None, projection = None) -> None:
         super().__init__(schema)
         
-        self.prefix = prefix
-        self.key = key
-        self.bucket = bucket
+        self.files = files
         self.predicate = predicate
         self.projection = projection
 
-        assert bucket is not None
-        assert (prefix is None) != (key is None) # xor
+    def set_cardinality(self, catalog):
 
-    def set_cardinality(self):
-        s3fs = S3FileSystem()
-        if self.key is None:
-            dataset = pq.ParquetDataset(self.bucket + "/" + self.prefix, filesystem=s3fs )
-        else:
-            dataset = pq.ParquetDataset(self.bucket + "/" + self.key, filesystem=s3fs )
-        # very cursory estimate
-        size = dataset.fragments[0].count_rows() * len(dataset.fragments)
+        assert self.catalog_id is not None
         for target in self.targets:
-            self.cardinality[target] = size
+            predicate = sql_utils.label_sample_table_names(self.targets[target].predicate)
+            self.cardinality[target] = ray.get(catalog.estimate_cardinality.remote(self.catalog_id, predicate, self.predicate))
+        
     
     def lower(self, task_graph):
 
-        if self.key is None:
-            if self.output_sorted_reqs is not None:
-                assert len(self.output_sorted_reqs) == 1
-                key = list(self.output_sorted_reqs.keys())[0]
-                val = self.output_sorted_reqs[key]
-                parquet_reader = InputSortedEC2ParquetDataset(self.bucket, self.prefix, key, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate, mode=val)
-            else:
-                parquet_reader = InputEC2ParquetDataset(bucket = self.bucket, prefix = self.prefix, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate)
+        if self.output_sorted_reqs is not None:
+            assert len(self.output_sorted_reqs) == 1
+            key = list(self.output_sorted_reqs.keys())[0]
+            val = self.output_sorted_reqs[key]
+            parquet_reader = InputSortedEC2ParquetDataset(self.files, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate, mode=val)
         else:
-            parquet_reader = InputParquetDataset(self.bucket + "/" + self.key, mode = "s3", columns = list(self.projection) if self.projection is not None else None, filters = self.predicate)
+            parquet_reader = InputEC2ParquetDataset(self.files, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate)
         node = task_graph.new_input_reader_node(parquet_reader, self.stage, self.placement_strategy)
         return node
     
@@ -358,6 +312,13 @@ class InputDiskParquetNode(SourceNode):
         self.filepath = filepath
         self.predicate = predicate
         self.projection = projection
+    
+    def set_cardinality(self, catalog):
+
+        assert self.catalog_id is not None
+        for target in self.targets:
+            predicate = sql_utils.label_sample_table_names(self.targets[target].predicate)
+            self.cardinality[target] = ray.get(catalog.estimate_cardinality.remote(self.catalog_id, predicate, self.predicate))
 
     def lower(self, task_graph):
 

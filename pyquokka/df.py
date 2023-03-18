@@ -3,12 +3,14 @@ import copy
 import polars
 import pyquokka.sql_utils as sql_utils
 from pyquokka.datastream import * 
+from pyquokka.catalog import *
 import os
 
 class QuokkaContext:
     def __init__(self, cluster = None, io_per_node = 2, exec_per_node = 1) -> None:
 
-        self.config= {"optimize_joins" : True}
+        self.config= {"optimize_joins" : True, "s3_csv_materialize_threshold" : 10 * 1048576, "disk_csv_materialize_threshold" : 1048576,
+                      "s3_parquet_materialize_threshold" : 10 * 1048576, "disk_parquet_materialize_threshold" : 1048576}
 
         self.latest_node_id = 0
         self.nodes = {}
@@ -17,6 +19,7 @@ class QuokkaContext:
         self.exec_per_node = exec_per_node
 
         self.coordinator = Coordinator.options(num_cpus=0.001, max_concurrency = 2,resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote()
+        self.catalog = Catalog.options(num_cpus=0.001,resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote()
 
         self.task_managers = {}
         self.node_locs= {}
@@ -157,6 +160,25 @@ class QuokkaContext:
             ~~~
         """
 
+        def get_schema_from_bytes(resp):
+            first_newline = resp.find(bytes('\n', 'utf-8'))
+            if first_newline == -1:
+                raise Exception("could not detect the first line break with first 4 kb")
+            resp = resp[:first_newline]
+            if resp[-1] == sep:
+                resp = resp[:-1]
+            schema = resp.decode("utf-8").split(sep)
+            return schema
+    
+        def return_materialized_stream(where, my_schema = None):
+            if has_header:
+                df = polars.read_csv(where, has_header = True,sep = sep)
+            else:
+                df = polars.read_csv(where, new_columns = my_schema, has_header = False,sep = sep)
+            self.nodes[self.latest_node_id] = InputPolarsNode(df)
+            self.latest_node_id += 1
+            return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
+
         if schema is None:
             assert has_header, "if not provide schema, must have header."
         if schema is not None and has_header:
@@ -179,52 +201,41 @@ class QuokkaContext:
                     raise Exception("Wrong S3 path")
                 files = [i['Key'] for i in z['Contents']]
                 sizes = [i['Size'] for i in z['Contents']]
-                assert len(files) > 0
+                assert 'NextContinuationToken' not in z, "too many files in S3 bucket"
+                assert len(files) > 0, "no files under prefix"
 
                 if schema is None:
                     resp = s3.get_object(
                         Bucket=bucket, Key=files[0], Range='bytes={}-{}'.format(0, 4096))['Body'].read()
-                    first_newline = resp.find(bytes('\n', 'utf-8'))
-                    if first_newline == -1:
-                        raise Exception("could not detect the first line break with first 4 kb")
-                    resp = resp[:first_newline]
-                    if resp[-1] == sep:
-                        resp = resp[:-1]
-                    schema = resp.decode("utf-8").split(sep)
-                    
+                    schema = get_schema_from_bytes(resp)
 
-                if len(files) == 1 and sizes[0] < 10 * 1048576:
-                    df = polars.read_csv("s3://" + bucket + "/" + files[0], new_columns = schema, has_header = has_header,sep = sep)
-                    self.nodes[self.latest_node_id] = InputPolarsNode(df)
-                    self.latest_node_id += 1
-                    return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
+                # if there are more than one files, there could be header problems. just do one file right now
+                if len(files) == 1 and sizes[0] < self.config["s3_csv_materialize_threshold"]:
+                    return return_materialized_stream("s3://" + bucket + "/" + files[0], schema)
 
+                token = ray.get(self.catalog.register_s3_csv_source.remote(bucket, files[0], schema, sep, sum(sizes)))
                 self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, prefix, None, schema, sep, has_header)
+                self.nodes[self.latest_node_id].set_catalog_id(token)
+                
             else:
                 key = "/".join(table_location.split("/")[1:])
                 s3 = boto3.client('s3')
-                response = s3.head_object(Bucket= bucket, Key=key)
-                size = response['ContentLength']
+                try:
+                    response = s3.head_object(Bucket= bucket, Key=key)
+                    size = response['ContentLength']
+                except:
+                    raise Exception("CSV not found in S3!")
+                if schema is None:
+                    resp = s3.get_object(
+                        Bucket=bucket, Key=key, Range='bytes={}-{}'.format(0, 4096))['Body'].read()
+                    schema = get_schema_from_bytes(resp)
+
                 if size < 10 * 1048576:
-                    df = polars.read_csv("s3://" + table_location, new_columns = schema, has_header = has_header,sep = sep)
-                    self.nodes[self.latest_node_id] = InputPolarsNode(df)
-                    self.latest_node_id += 1
-                    return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
-                else:
-
-                    if schema is None:
-                        resp = s3.get_object(
-                            Bucket=bucket, Key=key, Range='bytes={}-{}'.format(0, 4096))['Body'].read()
-                        first_newline = resp.find(bytes('\n', 'utf-8'))
-                        if first_newline == -1:
-                            raise Exception("could not detect the first line break with first 4 kb")
-                        resp = resp[:first_newline]
-                        if resp[-1] == sep:
-                            resp = resp[:-1]
-                        schema = resp.decode("utf-8").split(sep)
-
-                    self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep, has_header)
-            # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
+                    return return_materialized_stream("s3://" + table_location, schema)
+                
+                token = ray.get(self.catalog.register_s3_csv_source.remote(bucket, key, schema, sep, size))
+                self.nodes[self.latest_node_id] = InputS3CSVNode(bucket, None, key, schema, sep, has_header)
+                self.nodes[self.latest_node_id].set_catalog_id(token)
         else:
 
             if type(self.cluster) == EC2Cluster:
@@ -238,49 +249,29 @@ class QuokkaContext:
                 except:
                     raise Exception("Tried to get list of files at ", table_location, " failed. Make sure specify absolute path")
                 assert len(files) > 0
-                if len(files) == 1:
-                    size = os.path.getsize(table_location + files[0])
-                    if size < 1 * 1048576:
-                        df = polars.read_csv(table_location + files[0], new_columns=schema, has_header=has_header, sep = sep)
-                        self.nodes[self.latest_node_id] = InputPolarsNode(df)
-                        self.latest_node_id += 1
-                        return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
-                
-                if schema is None:
-                    resp = open(table_location + files[0],"r").read(1024 * 4)
-                    first_newline = resp.find("\n")
-                    if first_newline == -1:
-                        raise Exception("could not detect the first line break within the first 4 kb")
-                    resp = resp[:first_newline]
-                    if resp[-1] == sep:
-                        resp = resp[:-1]
-                    schema = resp.split(sep)
 
+                if schema is None:
+                    resp = open(table_location + files[0],"rb").read(1024 * 4)
+                    schema = get_schema_from_bytes(resp)
+
+                if len(files) == 1 and os.path.getsize(table_location + files[0]) < self.config["disk_csv_materialize_threshold"]:
+                    return return_materialized_stream(table_location + files[0], schema)
+
+                token = ray.get(self.catalog.register_disk_csv_source.remote(table_location, schema, sep))
                 self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep, has_header)
+                self.nodes[self.latest_node_id].set_catalog_id(token)
             else:
                 size = os.path.getsize(table_location)
-                if size < 1 * 1048576:
-                    df = polars.read_csv(table_location, new_columns = schema, has_header = has_header,sep = sep)
-                    self.nodes[self.latest_node_id] = InputPolarsNode(df)
-                    self.latest_node_id += 1
-                    return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
-                else:
-                    
-                    if schema is None:
-                        resp = open(table_location,"r").read(1024 * 4)
-                        first_newline = resp.find("\n")
-                        if first_newline == -1:
-                            raise Exception("could not detect the first line break within the first 4 kb")
-                        resp = resp[:first_newline]
-                        if resp[-1] == sep:
-                            resp = resp[:-1]
-                        schema = resp.split(sep)
-
-                    self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep, has_header)
+                if schema is None:
+                    resp = open(table_location,"rb").read(1024 * 4)
+                    schema = get_schema_from_bytes(resp)
+                if size < self.config["disk_csv_materialize_threshold"]:
+                    return return_materialized_stream(table_location, schema)
+                
+                token = ray.get(self.catalog.register_disk_csv_source.remote(table_location, schema, sep))
+                self.nodes[self.latest_node_id] = InputDiskCSVNode(table_location, schema, sep, has_header)
+                self.nodes[self.latest_node_id].set_catalog_id(token)
             
-            # if local, you should not launch too many actors since not that many needed to saturate disk
-            # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
-
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
 
@@ -293,7 +284,7 @@ class QuokkaContext:
     After it has done these things, if the dataset is not materialized, we will instantiate a logical plan node and return a DataStream
     '''
 
-    def read_parquet(self, table_location: str, schema = None):
+    def read_parquet(self, table_location: str):
 
         """
         Read Parquet. It can be a single Parquet or a list of Parquets. It can be Parquet(s) on disk
@@ -323,6 +314,12 @@ class QuokkaContext:
             ~~~
         """
 
+        def return_materialized_stream(df):
+            self.nodes[self.latest_node_id] = InputPolarsNode(df)
+            self.latest_node_id += 1
+            return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
+
+        s3 = boto3.client('s3')
         if table_location[:5] == "s3://":
 
             if type(self.cluster) == LocalCluster:
@@ -331,51 +328,52 @@ class QuokkaContext:
             table_location = table_location[5:]
             bucket = table_location.split("/")[0]
             if "*" in table_location:
-                assert table_location[-1] == "*" , "wildcard can only be the last character in address string"
+                assert "*" not in table_location[:-1], "wildcard can only be the last character in address string"
                 table_location = table_location[:-1]
-                assert "*" not in table_location, "wildcard can only be the last character in address string"
                 prefix = "/".join(table_location[:-1].split("/")[1:])
-                s3 = boto3.client('s3')
+
                 z = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
                 if 'Contents' not in z:
                     raise Exception("Wrong S3 path")
-                files = [i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
+                files = [bucket + "/" + i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
                 sizes = [i['Size'] for i in z['Contents'] if i['Key'].endswith('.parquet')]
+                while 'NextContinuationToken' in z.keys():
+                    z = s3.list_objects_v2(
+                        Bucket=bucket, Prefix=prefix, ContinuationToken=z['NextContinuationToken'])
+                    files.extend([bucket + "/" + i['Key'] for i in z['Contents']
+                                    if i['Key'].endswith(".parquet")])
+                    sizes.extend([i['Size'] for i in z['Contents'] if i['Key'].endswith('.parquet')])
+
                 assert len(files) > 0, "could not find any parquet files. make sure they end with .parquet"
-                if sum(sizes) < 10 * 1048576:
-                    df = polars.read_parquet("s3://" + bucket + "/" + files[0])
-                    self.nodes[self.latest_node_id] = InputPolarsNode(df)
-                    self.latest_node_id += 1
-                    return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
+                if sum(sizes) < self.config["s3_parquet_materialize_threshold"] and len(files) == 1:
+                    df = polars.read_parquet("s3://" + files[0])
+                    return return_materialized_stream(df)
                 
-                if schema is None:
-                    try:
-                        s3 = S3FileSystem()
-                        f = pq.ParquetFile(s3.open_input_file(bucket + "/" + files[0]))
-                        schema = [k.name for k in f.schema_arrow]
-                    except:
-                        raise Exception("schema discovery failed for Parquet dataset at location ", table_location)
+                try:
+                    f = pq.ParquetFile(S3FileSystem().open_input_file(files[0]))
+                    schema = [k.name for k in f.schema_arrow]
+                except:
+                    raise Exception("schema discovery failed for Parquet dataset at location ", table_location)
                 
-                self.nodes[self.latest_node_id] = InputS3ParquetNode(bucket, prefix, None, schema)
+                token = ray.get(self.catalog.register_s3_parquet_source.remote(files[0], len(sizes)))
+                self.nodes[self.latest_node_id] = InputS3ParquetNode(files, schema)
+                self.nodes[self.latest_node_id].set_catalog_id(token)
             else:
-                if schema is None:
-                    try:
-                        s3 = S3FileSystem()
-                        f = pq.ParquetFile(s3.open_input_file(table_location))
-                        schema = [k.name for k in f.schema_arrow]
-                    except:
-                        raise Exception("schema discovery failed for Parquet dataset at location ", table_location)
+                try:
+                    f = pq.ParquetFile(S3FileSystem().open_input_file(table_location))
+                    schema = [k.name for k in f.schema_arrow]
+                except:
+                    raise Exception("schema discovery failed for Parquet dataset at location ", table_location)
                 key = "/".join(table_location.split("/")[1:])
-                s3 = boto3.client('s3')
                 response = s3.head_object(Bucket= bucket, Key=key)
                 size = response['ContentLength']
-                if size < 10 * 1048576:
+                if size < self.config["s3_parquet_materialize_threshold"]:
                     df = polars.read_parquet("s3://" + table_location)
-                    self.nodes[self.latest_node_id] = InputPolarsNode(df)
-                    self.latest_node_id += 1
-                    return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
-                else:
-                    self.nodes[self.latest_node_id] = InputS3ParquetNode(bucket, None, key, schema)
+                    return return_materialized_stream(df)
+                
+                token = ray.get(self.catalog.register_s3_parquet_source.remote(bucket + "/" + key, 1))
+                self.nodes[self.latest_node_id] = InputS3ParquetNode([table_location], schema)
+                self.nodes[self.latest_node_id].set_catalog_id(token)
 
             # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
         else:
@@ -390,17 +388,15 @@ class QuokkaContext:
                 except:
                     raise Exception("Tried to get list of parquet files at ", table_location, " failed. Make sure specify absolute path and filenames end with .parquet")
                 assert len(files) > 0
-                if schema is None:
-                    f = pq.ParquetFile(table_location + files[0])
-                    schema = [k.name for k in f.schema_arrow]
-                if len(files) == 1:
-                    size = os.path.getsize(table_location + files[0])
-                    if size < 1 * 871900:
-                        df = polars.read_parquet(table_location + files[0])
-                        self.nodes[self.latest_node_id] = InputPolarsNode(df)
-                        self.latest_node_id += 1
-                        return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
+                f = pq.ParquetFile(table_location + files[0])
+                schema = [k.name for k in f.schema_arrow]
+                if len(files) == 1 and os.path.getsize(table_location + files[0]) < self.config["disk_parquet_materialize_threshold"]:
+                    df = polars.read_parquet(table_location + files[0])
+                    return return_materialized_stream(df)
+                
+                token = ray.get(self.catalog.register_disk_parquet_source.remote(table_location))
                 self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
+                self.nodes[self.latest_node_id].set_catalog_id(token)
 
             else:
                 try:
@@ -408,19 +404,15 @@ class QuokkaContext:
                 except:
                     raise Exception("could not find the parquet file at ", table_location)
                 
-                if size < 1 * 871900:
+                if size < self.config["disk_parquet_materialize_threshold"]:
                     df = polars.read_parquet(table_location)
-                    self.nodes[self.latest_node_id] = InputPolarsNode(df)
-                    self.latest_node_id += 1
-                    return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
-                else:
-                    if schema is None:
-                        f = pq.ParquetFile(table_location)
-                        schema = [k.name for k in f.schema_arrow]
-                    self.nodes[self.latest_node_id] = self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
-
-            # if local, you should not launch too many actors since not that many needed to saturate disk
-            # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
+                    return return_materialized_stream(df)
+                
+                f = pq.ParquetFile(table_location)
+                schema = [k.name for k in f.schema_arrow]
+                token = ray.get(self.catalog.register_disk_parquet_source.remote(table_location))
+                self.nodes[self.latest_node_id] = InputDiskParquetNode(table_location, schema)
+                self.nodes[self.latest_node_id].set_catalog_id(token)
 
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
@@ -1078,7 +1070,7 @@ class QuokkaContext:
         parents = node.parents
 
         if issubclass(type(node), SourceNode):
-            node.set_cardinality()
+            node.set_cardinality(self.catalog)
             return
         else:
             for parent in parents:

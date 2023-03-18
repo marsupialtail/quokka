@@ -150,12 +150,9 @@ class InputEC2ParquetDataset:
     # might as well do the filtering at the Pandas step. Also you need to map filters to the DNF form of tuples, which could be
     # an interesting project in itself. Time for an intern?
 
-    def __init__(self, bucket = None, prefix = None, files = None, columns=None, filters=None) -> None:
+    def __init__(self, files = None, columns=None, filters=None) -> None:
 
-        self.bucket = bucket
-        self.prefix = prefix
         self.files = files
-        assert (self.bucket is not None and self.prefix is not None) or self.files is not None
 
         self.num_channels = None
         self.columns = columns
@@ -170,20 +167,7 @@ class InputEC2ParquetDataset:
 
     def get_own_state(self, num_channels):
         self.num_channels = num_channels
-        if self.files is None:
-            s3 = boto3.client('s3')
-            z = s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
-            self.files = [self.bucket + "/" + i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
-            # self.length += sum([i['Size'] for i in z['Contents'] if i['Key'].endswith(".parquet")])
-            while 'NextContinuationToken' in z.keys():
-                z = self.s3.list_objects_v2(
-                    Bucket=self.bucket, Prefix=self.prefix, ContinuationToken=z['NextContinuationToken'])
-                self.files.extend([self.bucket + "/" + i['Key'] for i in z['Contents']
-                                if i['Key'].endswith(".parquet")])
-                # self.length += sum([i['Size'] for i in z['Contents']
-                #                   if i['Key'].endswith(".parquet")])
-        else:
-            self.files = [i.replace("s3://", "") for i in self.files]
+        self.files = [i.replace("s3://", "") for i in self.files]
         channel_infos = {}
         for channel in range(num_channels):
             my_files = [self.files[k] for k in range(channel, len(self.files), self.num_channels)]
@@ -227,10 +211,9 @@ class InputEC2ParquetDataset:
 
 class InputSortedEC2ParquetDataset:
 
-    def __init__(self, bucket, prefix, partitioner, columns=None, filters=None, mode = "stride") -> None:
+    def __init__(self, files, partitioner, columns=None, filters=None, mode = "stride") -> None:
 
-        self.bucket = bucket
-        self.prefix = prefix
+        self.files = files
         self.partitioner = partitioner
         assert self.prefix is not None
 
@@ -255,7 +238,7 @@ class InputSortedEC2ParquetDataset:
         fragments = []
         self.num_channels = num_channels
         s3fs = S3FileSystem()
-        dataset = pq.ParquetDataset(self.bucket + "/" + self.prefix, filesystem=s3fs )
+        dataset = pq.ParquetDataset(self.files, filesystem=s3fs )
         for fragment in dataset.fragments:
             field_index = fragment.physical_schema.get_field_index(self.partitioner)
             metadata = fragment.metadata
