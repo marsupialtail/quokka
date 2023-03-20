@@ -573,7 +573,7 @@ class QuokkaContext:
 
     def lower(self, end_node_id, collect = True, dataset_schema = None):
 
-        start = time.time()
+        # start = time.time()
         task_graph = TaskGraph(self)
         node = self.execution_nodes[end_node_id]
         nodes = deque([node])
@@ -596,7 +596,7 @@ class QuokkaContext:
                 task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info)
 
         task_graph.create()
-        print("init time ", time.time() - start)
+        # print("init time ", time.time() - start)
         start = time.time()
         task_graph.run()
         print("run time ", time.time() - start)

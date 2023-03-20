@@ -78,13 +78,11 @@ class DataStream:
             >>> result = f.collect() # result will be a Polars dataframe, as if you did polars.read_csv("my_csv.csv")
             ~~~
         """
-        start = time.time()
         if self.materialized:
             return self._get_materialized_df()
 
         dataset = self.quokka_context.new_dataset(self, self.schema)
         result = self.quokka_context.execute_node(dataset.source_node_id)
-        print("Total query execution time: ", time.time() - start)
         return result
 
     def compute(self):

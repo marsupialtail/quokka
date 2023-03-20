@@ -23,7 +23,7 @@ else:
     raise Exception
 
 qc = QuokkaContext(cluster,2,2)
-qc.set_config("fault_tolerance", "false")
+qc.set_config("fault_tolerance", False)
 
 if mode == "DISK":
     if format == "csv":
@@ -601,29 +601,33 @@ def dataset_test():
     print(s)
     print(s.collect())
 
-# print(lineitem.count())
+def print_and_time(f):
+    start = time.time()
+    print(f())
+    end = time.time()
+    print("query execution time: ", end - start)
 
-print(do_1_sql())
-print(do_2())
-print(do_3_sql())
-print(do_4_sql())
-print(do_5_sql())
-print(do_6_sql())
-print(do_7_sql())
-print(do_8())
-print(do_9())
-print(do_10())
-print(do_11())
-print(do_12())
-print(do_13()) 
-print(do_14())
-print(do_15())
-print(do_16()) 
-print(do_17())
-print(do_18())
-print(do_19())
-print(do_20())
-print(do_22())
+print_and_time(do_1_sql)
+print_and_time(do_2)
+print_and_time(do_3_sql)
+print_and_time(do_4_sql)
+print_and_time(do_5_sql)
+print_and_time(do_6_sql)
+print_and_time(do_7_sql)
+print_and_time(do_8)
+print_and_time(do_9)
+print_and_time(do_10)
+print_and_time(do_11)
+print_and_time(do_12)
+print_and_time(do_13) 
+print_and_time(do_14)
+print_and_time(do_15)
+print_and_time(do_16) 
+print_and_time(do_17)
+print_and_time(do_18)
+print_and_time(do_19)
+print_and_time(do_20)
+print_and_time(do_22)
 
 
 # print(do_21()) # just wn't work on AWS
