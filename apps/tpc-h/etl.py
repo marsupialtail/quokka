@@ -5,7 +5,7 @@ mode = "S3"
 format = "csv"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
-s3_path_csv = "s3://tpc-h-csv-1tb/"
+s3_path_csv = "s3://tpc-h-csv-100/"
 s3_path_parquet = "s3://books-iceberg/tpch.db/"
 
 import pyarrow as pa
@@ -51,14 +51,14 @@ if mode == "DISK":
         raise Exception
 elif mode == "S3":
     if format == "csv":
-        lineitem = qc.read_csv(s3_path_csv + "lineitem/lineitem.tbl.1", lineitem_scheme, sep="|").drop(["null"])
-        orders = qc.read_csv(s3_path_csv + "orders/orders.tbl.1", order_scheme, sep="|").drop(["null"])
-        customer = qc.read_csv(s3_path_csv + "customer/customer.tbl.1",customer_scheme, sep = "|").drop(["null"])
-        part = qc.read_csv(s3_path_csv + "part/part.tbl.1", part_scheme, sep = "|").drop(["null"])
-        supplier = qc.read_csv(s3_path_csv + "supplier/supplier.tbl.1", supplier_scheme, sep = "|").drop(["null"])
-        partsupp = qc.read_csv(s3_path_csv + "partsupp/partsupp.tbl.1", partsupp_scheme, sep = "|").drop(["null"])
-        nation = qc.read_csv(s3_path_csv + "nation/nation.tbl", nation_scheme, sep = "|").drop(["null"])
-        region = qc.read_csv(s3_path_csv + "region/region.tbl", region_scheme, sep = "|").drop(["null"])
+        lineitem = qc.read_csv(s3_path_csv + "lineitem.tbl", lineitem_scheme, sep="|").drop(["null"])
+        orders = qc.read_csv(s3_path_csv + "orders.tbl", order_scheme, sep="|").drop(["null"])
+        customer = qc.read_csv(s3_path_csv + "customer.tbl",customer_scheme, sep = "|").drop(["null"])
+        part = qc.read_csv(s3_path_csv + "part.tbl", part_scheme, sep = "|").drop(["null"])
+        supplier = qc.read_csv(s3_path_csv + "supplier.tbl", supplier_scheme, sep = "|").drop(["null"])
+        partsupp = qc.read_csv(s3_path_csv + "partsupp.tbl", partsupp_scheme, sep = "|").drop(["null"])
+        nation = qc.read_csv(s3_path_csv + "nation.tbl", nation_scheme, sep = "|").drop(["null"])
+        region = qc.read_csv(s3_path_csv + "region.tbl", region_scheme, sep = "|").drop(["null"])
     elif format == "parquet":
         lineitem = qc.read_parquet(s3_path_parquet + "lineitem/data/*")
         #lineitem = qc.read_parquet("s3://yugan/tpc-h-out/*")
@@ -141,15 +141,21 @@ def do_4():
         .write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT)
 
 def do_5():
-    d = customer.join(orders, left_on = "c_custkey", right_on = "o_custkey")
-    d = d.join(lineitem, left_on = "o_orderkey", right_on = "l_orderkey")
-    d = d.join(supplier, left_on = "l_suppkey", right_on = "s_suppkey")
-    d = d.join(nation, left_on = "s_nationkey", right_on = "n_nationkey")
-    d = d.join(region, left_on = "n_regionkey", right_on = "r_regionkey")
-    d = d.filter("r_name IN ('ASIA', 'AMERICA', 'AFRICA') and l_returnflag = 'A'")
+    qc.set_config("optimize_joins", False)
+    asia = region.filter("r_name IN ('ASIA', 'AMERICA', 'AFRICA')")
+    asian_nations = nation.join(asia, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","r_name","n_nationkey"])
+    d = customer.join(asian_nations, left_on="c_nationkey", right_on="n_nationkey")
+    d = d.join(orders, left_on="c_custkey", right_on="o_custkey", suffix="_3")
+    d = d.join(lineitem, left_on="o_orderkey", right_on="l_orderkey", suffix="_4")
+    d = d.join(supplier, left_on="l_suppkey", right_on="s_suppkey", suffix="_5")
+    d = d.filter("l_returnflag = 'A'")
     d = d.select(["c_custkey", "c_name", "c_phone", "c_mktsegment", "o_orderkey", "o_orderstatus", "o_totalprice", "o_orderdate",
                   "l_quantity", "l_extendedprice", "l_discount", "l_tax", "l_returnflag", "l_linestatus", "l_shipdate", "l_commitdate", 
                   "l_receiptdate", "l_suppkey", "s_name", "s_acctbal", "s_phone", "n_name", "r_name"]).write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT)
+    d.explain()
+    result = d.collect()
+    qc.set_config("optimize_joins", True)
+    return result
 
 def do_6():
     d = lineitem.filter("""
@@ -191,12 +197,12 @@ def do_8():
     d = d.rename({"n_name" : "nation"})
     d.select(["o_year", "nation", "volume"]).write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT)
 
-do_1_1()
-do_1_2()
-do_2()
-do_3()
-do_4()
+# do_1_1()
+# do_1_2()
+# do_2()
+# do_3()
+# do_4()
 do_5()
-do_6()
-do_7()
-do_8()
+# do_6()
+# do_7()
+# do_8()
