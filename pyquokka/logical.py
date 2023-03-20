@@ -211,6 +211,7 @@ class InputDiskCSVNode(SourceNode):
         self.sep = sep
         self.has_header = has_header
         self.projection = projection
+
     
     def set_cardinality(self, catalog):
 

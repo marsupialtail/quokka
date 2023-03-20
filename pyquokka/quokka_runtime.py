@@ -51,6 +51,8 @@ class TaskGraph:
         # progress tracking stuff
         self.input_partitions = {}
 
+        self.limits = {}
+
     def get_total_channels_from_placement_strategy(self, placement_strategy, node_type):
 
         if type(placement_strategy) == SingleChannelStrategy:
@@ -132,6 +134,8 @@ class TaskGraph:
 
         count = 0
         channel_locs = {}
+
+        self.limits[self.current_actor] = 8
 
         if type(placement_strategy) == SingleChannelStrategy:
 
@@ -332,13 +336,29 @@ class TaskGraph:
         if len(assume_sorted) > 0:
             self.SAT.set(pipe, self.current_actor, pickle.dumps(assume_sorted))
 
+        lineages = []
+        
+        for df in input_reqs:
+            source_actor_id = df["source_actor_id"][0]
+            source_channels = df["source_channel_id"].to_list()
+            assert source_actor_id in self.limits 
+            for k in range(self.limits[source_actor_id]):
+                source_channel_seqs = {source_channel_id : [k] for source_channel_id in source_channels}
+                lineages.append((source_actor_id, source_channel_seqs))
+            
+            # source_channel_seqs = {source_channel_id : [k for k in range(self.limits[source_actor_id])] for source_channel_id in source_channels}
+            # lineages.append((source_actor_id, source_channel_seqs))
+
+        self.limits[self.current_actor] = len(lineages) + 1 # final one is for .done()
+
         channel_locs = {}
         if type(placement_strategy) == SingleChannelStrategy:
 
             node = self.context.leader_compute_nodes[0]
-            exec_task = ExecutorTask(self.current_actor, 0, 0, 0, input_reqs)
+            self.NTT.lpush(self.r, node, TapedExecutorTask(self.current_actor, 0, 0, 0, len(lineages) - 1).reduce())
+            vals = {pickle.dumps(('s', self.current_actor, 0, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
+            self.LT.mset(pipe, vals)
             channel_locs[0] = node
-            self.NTT.rpush(pipe, node, exec_task.reduce())
             self.CLT.set(pipe, pickle.dumps((self.current_actor, 0)), self.context.node_locs[node])
             self.IRT.set(pipe, pickle.dumps((self.current_actor, 0, -1)), pickle.dumps(input_reqs))
 
@@ -349,7 +369,9 @@ class TaskGraph:
                 for channel in range(placement_strategy.channels_per_node):
                     exec_task = ExecutorTask(self.current_actor, count, 0, 0, input_reqs)
                     channel_locs[count] = node
-                    self.NTT.rpush(pipe, node, exec_task.reduce())
+                    self.NTT.lpush(self.r, node, TapedExecutorTask(self.current_actor, count, 0, 0, len(lineages) - 1).reduce())
+                    vals = {pickle.dumps(('s', self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
+                    self.LT.mset(pipe, vals)
                     self.CLT.set(pipe, pickle.dumps((self.current_actor, count)), self.context.node_locs[node])
                     self.IRT.set(pipe, pickle.dumps((self.current_actor, count, -1)), pickle.dumps(input_reqs))
                     count += 1

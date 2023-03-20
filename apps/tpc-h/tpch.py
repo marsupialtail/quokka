@@ -629,6 +629,8 @@ print_and_time(do_19)
 print_and_time(do_20)
 print_and_time(do_22)
 
+# print(lineitem.count())
+
 
 # print(do_21()) # just wn't work on AWS
 
