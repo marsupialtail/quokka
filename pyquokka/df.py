@@ -20,6 +20,7 @@ class QuokkaContext:
 
         self.coordinator = Coordinator.options(num_cpus=0.001, max_concurrency = 2,resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote()
         self.catalog = Catalog.options(num_cpus=0.001,resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote()
+        self.dataset_manager = ArrowDataset.options(num_cpus = 0.001, resources={"node:" + str(self.cluster.leader_private_ip): 0.001}).remote()
 
         self.task_managers = {}
         self.node_locs= {}
@@ -576,6 +577,8 @@ class QuokkaContext:
                 nodes.append(self.execution_nodes[parent_id])
         reverse_sorted_nodes = reverse_sorted_nodes[::-1]
         task_graph_nodes = {}
+
+        lower_start = time.time()
         for node_id, node in reverse_sorted_nodes:
             if issubclass(type(node), SourceNode):
                 task_graph_nodes[node_id] = node.lower(task_graph)
@@ -583,7 +586,7 @@ class QuokkaContext:
                 parent_nodes = {parent_idx: task_graph_nodes[node.parents[parent_idx]] for parent_idx in node.parents}
                 target_info = {parent_idx: self.execution_nodes[node.parents[parent_idx]].targets[node_id] for parent_idx in node.parents}
                 task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info)
-
+        print("lower time ", time.time() - lower_start)
         task_graph.create()
         print("init time ", time.time() - start)
         start = time.time()
@@ -593,10 +596,10 @@ class QuokkaContext:
         # wipe the execution state
         self.execution_nodes = {}
         if collect:
-            return ray.get(result.to_df.remote())
+            return ray.get(self.dataset_manager.to_df.remote(result))
         else:
             assert dataset_schema is not None
-            return Dataset(dataset_schema, result)
+            return Dataset(dataset_schema, self.dataset_manager, result)
                     
 
     def execute_node(self, node_id, explain = False, mode = None, collect = True):

@@ -88,7 +88,6 @@ class Catalog:
         else:
             sql_statement = "select count(*) from sample where " + predicate.sql()
             con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
-            print(sql_statement)
             count = con.execute(sql_statement).fetchall()[0][0]
         
         estimated_cardinality = count * self.ratio[table_id]

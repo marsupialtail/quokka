@@ -6,9 +6,10 @@ import pyarrow as pa
 
 class Dataset:
 
-    def __init__(self, schema, wrapped_dataset) -> None:
+    def __init__(self, schema, wrapped_dataset, dataset_id) -> None:
         self.schema = schema
         self.wrapped_dataset = wrapped_dataset
+        self.dataset_id = dataset_id
         
     def __str__(self):
         return "DataSet[" + ",".join(self.schema) + "]"
@@ -22,20 +23,17 @@ class Dataset:
     def __deepcopy__(self, memo):
         return Dataset(self.schema, self.wrapped_dataset)
 
-    def to_list(self):
-        return ray.get(self.wrapped_dataset.to_list.remote())
-    
     def to_df(self):
-        return ray.get(self.wrapped_dataset.to_df.remote())
+        return ray.get(self.wrapped_dataset.to_df.remote(self.dataset_id))
     
     def to_dict(self):
-        return  ray.get(self.wrapped_dataset.to_dict.remote())
+        return  ray.get(self.wrapped_dataset.to_dict.remote(self.dataset_id))
     
     def to_arrow_refs(self):
-        return ray.get(self.wrapped_dataset.to_arrow_refs.remote())
+        return ray.get(self.wrapped_dataset.to_arrow_refs.remote(self.dataset_id))
 
     def length(self):
-        return ray.get(self.wrapped_dataset.length.remote())
+        return ray.get(self.wrapped_dataset.length.remote(self.dataset_id))
 
 # we need to figure out how to clean up dead objects on dead nodes.
 # not a big problem right now since Arrow Datasets are not fault tolerant anyway
@@ -44,37 +42,46 @@ class Dataset:
 class ArrowDataset:
 
     def __init__(self) -> None:
+        self.latest_dataset = 0
         self.objects = {}
-        self.metadata = {}
-        self.done = False
-        self.length = 0
+        self.done = {}
+        self.length = {}
     
-    def length(self):
-        return self.length
+    def length(self, dataset):
+        return self.length[dataset]
 
-    def to_dict(self):
-        return {ip: [ray.cloudpickle.dumps(object) for object in self.objects[ip]] for ip in self.objects}
+    def to_dict(self, dataset):
+        return {ip: [ray.cloudpickle.dumps(object) for object in self.objects[dataset][ip]] for ip in self.objects[dataset]}
 
-    def added_object(self, ip, object_handle):
-        if ip not in self.objects:
-            self.objects[ip] = []
-        self.objects[ip].append(object_handle[0])
-        self.length += object_handle[1]
-    
-    def get_objects(self):
-        assert self.is_complete()
-        return self.objects
+    def create_dataset(self):
+        self.latest_dataset += 1
+        self.done[self.latest_dataset] = False
+        self.length[self.latest_dataset] = 0
+        self.objects[self.latest_dataset] = {}
+        return self.latest_dataset
 
-    def to_arrow_refs(self):
+    def delete_dataset(self):
+        del self.done[self.latest_dataset]
+        del self.length[self.latest_dataset]
+        del self.objects[self.latest_dataset]
+
+    def added_object(self, dataset, ip, object_handle):
+        assert dataset in self.objects, "must create the dataset first!"
+        if ip not in self.objects[dataset]:
+            self.objects[dataset][ip] = []
+        self.objects[dataset][ip].append(object_handle[0])
+        self.length[dataset] += object_handle[1]
+
+    def to_arrow_refs(self, dataset):
         results = []
         for ip in self.objects:
-            results.extend(self.objects[ip])
+            results.extend(self.objects[dataset][ip])
         return results
 
-    def to_df(self):
+    def to_df(self, dataset):
         dfs = []
-        for ip in self.objects:
-            for object in self.objects[ip]:
+        for ip in self.objects[dataset]:
+            for object in self.objects[dataset][ip]:
                 dfs.append(ray.get(object))
         if len(dfs) > 0:
             arrow_table = pa.concat_tables(dfs)

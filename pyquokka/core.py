@@ -14,6 +14,7 @@ import types
 from functools import partial
 import concurrent.futures
 import duckdb
+import gc
 CHECKPOINT_INTERVAL = None
 MAX_SEQ = 1000000000
 DEBUG = False
@@ -56,6 +57,8 @@ An example:
 class TaskManager:
 
     def __init__(self, node_id : int, coordinator_ip : str, worker_ips:list, hbq_path = "/data/") -> None:
+
+        gc.disable()
 
         self.node_id = node_id
         self.mappings = {}
@@ -138,7 +141,9 @@ class TaskManager:
             self.dst = polars.from_dict({"source_actor_id": actor_ids, "source_channel_id": channel_ids, "done_seq": seqs})
 
     
-    def register_partition_function(self, source_actor_id, target_actor_id, number_target_channels):
+    def register_partition_function(self, source_actor_ids, target_actor_id, number_target_channels, mapping):
+
+        self.mappings[target_actor_id] = mapping
 
         def partition_fn(predicate_fn, partitioner_fn, batch_funcs, projection, num_target_channels, x, source_channel):
 
@@ -170,7 +175,7 @@ class TaskManager:
 
                 start = time.time()
                 if projection is not None:
-                    results[channel] =  payload[sorted(list(projection))]
+                    results[channel] = payload[sorted(list(projection))]
                 else:
                     results[channel] = payload[sorted(list(payload.columns))]
                 # print("selection time", time.time() - start)
@@ -179,31 +184,29 @@ class TaskManager:
         # this will include the predicate and the projection before the actual partition function, and all the batch functions afterwards.
         # for the moment let's assume that no autoscaling happens and this doesn't change.
 
-        target_info = ray.cloudpickle.loads(self.PFT.get(self.r, pickle.dumps((source_actor_id, target_actor_id))))
-        try:
-            target_info.predicate = sql_utils.evaluate(target_info.predicate)
-        except:
-            target_info.predicate = "select * from batch_arrow where " + target_info.predicate.sql() 
-        partition_function = partial(partition_fn, target_info.predicate, target_info.partitioner, target_info.batch_funcs, target_info.projection, number_target_channels)
+        for source_actor_id in source_actor_ids:
+            target_info = ray.cloudpickle.loads(self.PFT.get(self.r, pickle.dumps((source_actor_id, target_actor_id))))
+            try:
+                target_info.predicate = sql_utils.evaluate(target_info.predicate)
+            except:
+                target_info.predicate = "select * from batch_arrow where " + target_info.predicate.sql() 
+            partition_function = partial(partition_fn, target_info.predicate, target_info.partitioner, target_info.batch_funcs, target_info.projection, number_target_channels)
 
-        if source_actor_id not in self.partition_fns:
-            self.partition_fns[source_actor_id] = {target_actor_id: partition_function}
-        else:
-            self.partition_fns[source_actor_id][target_actor_id] = partition_function
-        
-        if source_actor_id not in self.target_count:
-            self.target_count[source_actor_id] = number_target_channels
-        else:
-            self.target_count[source_actor_id] += number_target_channels
+            if source_actor_id not in self.partition_fns:
+                self.partition_fns[source_actor_id] = {target_actor_id: partition_function}
+            else:
+                self.partition_fns[source_actor_id][target_actor_id] = partition_function
+            
+            if source_actor_id not in self.target_count:
+                self.target_count[source_actor_id] = number_target_channels
+            else:
+                self.target_count[source_actor_id] += number_target_channels
         
         return True
+
     
-    def register_mapping(self, actor_id, mapping):
-        self.mappings[actor_id] = mapping
-        return True
-    
-    def register_blocking(self, actor_id, transform_fn, dataset_object):
-        self.blocking_nodes[actor_id] = (transform_fn, dataset_object)
+    def register_blocking(self, actor_id, transform_fn, dataset_object, dataset_id):
+        self.blocking_nodes[actor_id] = (transform_fn, dataset_object, dataset_id)
         return True
 
     def check_in_recovery(self):
@@ -460,11 +463,11 @@ class ExecTaskManager(TaskManager):
                         time.sleep(0.2)
                         return -1
                 else:
-                    transform_fn, dataset = self.blocking_nodes[actor_id]
+                    transform_fn, dataset, dataset_id = self.blocking_nodes[actor_id]
                     if transform_fn is not None:
                         data = transform_fn(data)
                     if data is not None:
-                        ray.get(dataset.added_object.remote(ray._private.services.get_node_ip_address(), [ray.put(data.to_arrow(), _owner = dataset), len(data)]))
+                        ray.get(dataset.added_object.remote(dataset_id, ray._private.services.get_node_ip_address(), [ray.put(data.to_arrow(), _owner = dataset), len(data)]))
                 self.output_commit(transaction, actor_id, channel_id, out_seq, state_seq)
 
                 out_seq += 1

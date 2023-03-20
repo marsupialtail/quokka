@@ -71,6 +71,7 @@ class TaskGraph:
 
     def new_input_dataset_node(self, dataset, stage = 0):
 
+        start = time.time()
         self.actor_types[self.current_actor] = 'input'
 
         # this will be a dictionary of ip addresses to ray refs
@@ -109,10 +110,13 @@ class TaskGraph:
         
         pipe.execute()
         ray.get(self.context.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
+
+        print("new input dataset node", time.time() - start)
         return self.epilogue(stage, DatasetStrategy(len(channel_locs)))
 
     def new_input_reader_node(self, reader, stage = 0, placement_strategy = None):
 
+        start = time.time()
         self.actor_types[self.current_actor] = 'input'
         if placement_strategy is None:
             placement_strategy = CustomChannelsStrategy(1)
@@ -167,6 +171,7 @@ class TaskGraph:
         pipe.execute()
         ray.get(self.context.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
 
+        print('new input reader node took', time.time() - start)
         return self.epilogue(stage, placement_strategy)
     
     def get_default_partition(self, source_node_id, target_placement_strategy):
@@ -240,10 +245,12 @@ class TaskGraph:
         
         
         mapping = {}
+        sources = []
 
         for key in streams:
             assert key in source_target_info
             source = streams[key]
+            sources.append(source)
             mapping[source] = key
 
             target_info = source_target_info[key] 
@@ -264,17 +271,12 @@ class TaskGraph:
                 raise Exception("Partitioner not supported")
             
             target_info.lowered = True
-
             self.PFT.set(self.r, pickle.dumps((source, self.current_actor)), ray.cloudpickle.dumps(target_info))
 
             # TODO: figure out why you need to do this to make it work
             self.PFT.get(self.r, pickle.dumps((source, self.current_actor)))
-            
-            registered = ray.get([node.register_partition_function.remote(source, self.current_actor, self.get_total_channels_from_placement_strategy(placement_strategy, 'exec')) for node in (self.context.task_managers.values())])
-            assert all(registered)
-
         
-        registered = ray.get([node.register_mapping.remote(self.current_actor, mapping) for node in (self.context.task_managers.values())])
+        registered = ray.get([node.register_partition_function.remote(sources, self.current_actor, self.get_total_channels_from_placement_strategy(placement_strategy, 'exec'), mapping) for node in (self.context.task_managers.values())])
         assert all(registered)
 
         # consult the AST to figure out source stages
@@ -309,6 +311,7 @@ class TaskGraph:
 
     def new_non_blocking_node(self, streams, functionObject, stage = 0, placement_strategy = CustomChannelsStrategy(1), source_target_info = {}, assume_sorted = {}):
 
+        start = time.time()
         assert len(source_target_info) == len(streams)
         self.actor_types[self.current_actor] = 'exec'
 
@@ -319,7 +322,9 @@ class TaskGraph:
 
         self.FOT.set(pipe, self.current_actor, ray.cloudpickle.dumps(functionObject))
 
+        start = time.time()
         input_reqs = self.prologue(streams, placement_strategy, source_target_info)
+        print("prologue", time.time() - start)
         # print("input_reqs",self.current_actor, input_reqs)
 
         for key in assume_sorted:
@@ -356,7 +361,8 @@ class TaskGraph:
         
         pipe.execute()
         ray.get(self.context.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
-        
+
+        print("new_non_blocking_node", self.current_actor, time.time() - start)
         return self.epilogue(stage, placement_strategy)
 
     def new_blocking_node(self, streams, functionObject, stage = 0, placement_strategy = CustomChannelsStrategy(1), source_target_info = {}, transform_fn = None, assume_sorted = {}):
@@ -366,14 +372,11 @@ class TaskGraph:
 
         current_actor = self.new_non_blocking_node(streams, functionObject, stage, placement_strategy, source_target_info, assume_sorted)
         self.actor_types[current_actor] = 'exec'
-        total_channels = self.get_total_channels_from_placement_strategy(placement_strategy, 'exec')
+        dataset_id = ray.get(self.context.dataset_manager.create_dataset.remote())
 
-        output_dataset = ArrowDataset.options(num_cpus = 0.001, resources={"node:" + str(self.context.cluster.leader_private_ip): 0.001}).remote()
-        ray.get(output_dataset.ping.remote())
-
-        registered = ray.get([node.register_blocking.remote(current_actor , transform_fn, output_dataset) for node in list(self.context.task_managers.values())])
+        registered = ray.get([node.register_blocking.remote(current_actor , transform_fn, self.context.dataset_manager, dataset_id) for node in list(self.context.task_managers.values())])
         assert all(registered)
-        return output_dataset
+        return dataset_id
     
     def create(self):
 
