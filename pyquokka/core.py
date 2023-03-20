@@ -101,6 +101,11 @@ class TaskManager:
 
         # self.tasks = deque()
 
+    def set_config(self, key, value):
+        assert key in self.configs
+        self.configs[key] = value
+        return True
+
     def wipe_state(self):
         self.mappings = {}
         self.function_objects = {}

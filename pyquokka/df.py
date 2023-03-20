@@ -75,6 +75,7 @@ class QuokkaContext:
             self.sql_config[key] = value
         elif key in self.exec_config:
             self.exec_config[key] = value
+            assert all(ray.get([task_manager.set_config.remote(key, value) for task_manager in self.task_managers.values()]))
         else:
             raise Exception("key not found in config")
     
