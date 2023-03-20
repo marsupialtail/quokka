@@ -291,7 +291,6 @@ def do_7_sql():
     return f.collect().sort(["supp_nation","cust_nation","l_year"])
 
 def do_8():
-    qc.set_config("optimize_joins", False)
     america = region.filter("r_name = 'AMERICA'")
     american_nations = nation.join(america, left_on="n_regionkey",right_on="r_regionkey").select(["n_nationkey"])
     american_customers = customer.join(american_nations, left_on="c_nationkey", right_on="n_nationkey")
@@ -312,7 +311,6 @@ def do_8():
     f = d.groupby("o_year").aggregate(aggregations={"volume":"sum", "brazil_volume":"sum"})
     f.explain()
     result = f.collect().sort("o_year")
-    qc.set_config("optimize_joins", True)
     return result
 
 # join ordering will be hard for this one
@@ -445,7 +443,6 @@ def do_16():
     return result.collect()
 
 def do_17():
-    qc.set_config("optimize_joins", "false")
     u_0 = lineitem.groupby("l_partkey").agg_sql("0.2 * AVG(l_quantity) AS avg_quantity").compute()
     u_0 = qc.read_dataset(u_0)
     print(u_0)
@@ -455,7 +452,6 @@ def do_17():
     f = d.agg_sql("SUM(l_extendedprice) / 7.0 AS avg_yearly")
     f.explain()
     result = f.collect()
-    qc.set_config("optimize_joins", "true")
     return result
 
 def do_18():
@@ -604,11 +600,13 @@ def dataset_test():
     print(s)
     print(s.collect())
 
+# print(lineitem.count())
+
 # print(do_1_sql())
-# print(do_2())
+print(do_2())
 # print(do_3_sql())
 # print(do_4_sql())
-print(do_5_sql())
+# print(do_5_sql())
 # print(do_6_sql())
 # print(do_7_sql())
 # print(do_8())

@@ -18,10 +18,10 @@ class Dataset:
         return "DataSet[" + ",".join(self.schema) + "]"
     
     def __copy__(self):
-        return Dataset(self.schema, self.wrapped_dataset)
+        return Dataset(self.schema, self.wrapped_dataset, self.dataset_id)
     
     def __deepcopy__(self, memo):
-        return Dataset(self.schema, self.wrapped_dataset)
+        return Dataset(self.schema, self.wrapped_dataset, self.dataset_id)
 
     def to_df(self):
         return ray.get(self.wrapped_dataset.to_df.remote(self.dataset_id))
