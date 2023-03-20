@@ -565,7 +565,6 @@ class QuokkaContext:
 
         start = time.time()
         task_graph = TaskGraph(self)
-        print("setup time ", time.time() - start)
         node = self.execution_nodes[end_node_id]
         nodes = deque([node])
         reverse_sorted_nodes = [(end_node_id,node)]
@@ -578,7 +577,6 @@ class QuokkaContext:
         reverse_sorted_nodes = reverse_sorted_nodes[::-1]
         task_graph_nodes = {}
 
-        lower_start = time.time()
         for node_id, node in reverse_sorted_nodes:
             if issubclass(type(node), SourceNode):
                 task_graph_nodes[node_id] = node.lower(task_graph)
@@ -586,7 +584,7 @@ class QuokkaContext:
                 parent_nodes = {parent_idx: task_graph_nodes[node.parents[parent_idx]] for parent_idx in node.parents}
                 target_info = {parent_idx: self.execution_nodes[node.parents[parent_idx]].targets[node_id] for parent_idx in node.parents}
                 task_graph_nodes[node_id] = node.lower(task_graph, parent_nodes, target_info)
-        print("lower time ", time.time() - lower_start)
+
         task_graph.create()
         print("init time ", time.time() - start)
         start = time.time()
@@ -666,7 +664,10 @@ class QuokkaContext:
                     cardinality = None
                 logical_plan_graph.edge(
                     str(self.execution_nodes[node_id].parents[parent]), str(node_id), label = str(cardinality))
-            logical_plan_graph.view()
+            try:
+                logical_plan_graph.view()
+            except:
+                print("Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.")
 
     def _walk(self, node_id, graph):
         graph.node(str(node_id), str(node_id) + " " + str(self.execution_nodes[node_id]))

@@ -111,7 +111,6 @@ class TaskGraph:
         pipe.execute()
         ray.get(self.context.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
 
-        print("new input dataset node", time.time() - start)
         return self.epilogue(stage, DatasetStrategy(len(channel_locs)))
 
     def new_input_reader_node(self, reader, stage = 0, placement_strategy = None):
@@ -171,7 +170,6 @@ class TaskGraph:
         pipe.execute()
         ray.get(self.context.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
 
-        print('new input reader node took', time.time() - start)
         return self.epilogue(stage, placement_strategy)
     
     def get_default_partition(self, source_node_id, target_placement_strategy):
@@ -324,7 +322,6 @@ class TaskGraph:
 
         start = time.time()
         input_reqs = self.prologue(streams, placement_strategy, source_target_info)
-        print("prologue", time.time() - start)
         # print("input_reqs",self.current_actor, input_reqs)
 
         for key in assume_sorted:
@@ -362,7 +359,6 @@ class TaskGraph:
         pipe.execute()
         ray.get(self.context.coordinator.register_actor_location.remote(self.current_actor, channel_locs))
 
-        print("new_non_blocking_node", self.current_actor, time.time() - start)
         return self.epilogue(stage, placement_strategy)
 
     def new_blocking_node(self, streams, functionObject, stage = 0, placement_strategy = CustomChannelsStrategy(1), source_target_info = {}, transform_fn = None, assume_sorted = {}):

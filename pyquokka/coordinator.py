@@ -124,7 +124,7 @@ class Coordinator:
                 if stage == current_stage:
                     return
             
-            print("PROGRESSING STAGE TO ", current_stage + 1)
+            # print("PROGRESSING STAGE TO ", current_stage + 1)
             self.r.set("current-execution-stage", current_stage + 1)
 
 
