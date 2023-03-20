@@ -33,7 +33,8 @@ setup(
             'sqlglot',
             'graphviz',
             'tqdm',
-            'aiohttp'
+            'aiohttp',
+            's3fs'
             ], # add any additional packages that 
         extra_requires = {
                 "datalake" : ["pyiceberg", "deltalake"]

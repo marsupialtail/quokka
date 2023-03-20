@@ -9,8 +9,10 @@ import os
 class QuokkaContext:
     def __init__(self, cluster = None, io_per_node = 2, exec_per_node = 1) -> None:
 
-        self.config= {"optimize_joins" : True, "s3_csv_materialize_threshold" : 10 * 1048576, "disk_csv_materialize_threshold" : 1048576,
+        self.sql_config= {"optimize_joins" : True, "s3_csv_materialize_threshold" : 10 * 1048576, "disk_csv_materialize_threshold" : 1048576,
                       "s3_parquet_materialize_threshold" : 10 * 1048576, "disk_parquet_materialize_threshold" : 1048576}
+        self.exec_config = {"hbq_path": "/data/", "fault_tolerance": True, "memory_limit": 0.25, "max_pipeline_batches": 30, 
+                        "checkpoint_interval": None, "checkpoint_bucket": "quokka-checkpoint"}
 
         self.latest_node_id = 0
         self.nodes = {}
@@ -37,12 +39,12 @@ class QuokkaContext:
         for ip in private_ips:
             
             for k in range(1):
-                self.task_managers[count] = ReplayTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()))
+                self.task_managers[count] = ReplayTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()), self.exec_config)
                 self.replay_nodes.add(count)
                 self.node_locs[count] = ip
                 count += 1
             for k in range(io_per_node):
-                self.task_managers[count] = IOTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()))
+                self.task_managers[count] = IOTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()), self.exec_config)
                 self.io_nodes.add(count)
                 self.node_locs[count] = ip
                 count += 1
@@ -52,9 +54,9 @@ class QuokkaContext:
 
             for k in range(exec_per_node):
                 if type(self.cluster) == LocalCluster:
-                    self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()), None)
+                    self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()), self.exec_config)
                 elif type(self.cluster) == EC2Cluster:
-                    self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()), "quokka-checkpoint") 
+                    self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()), self.exec_config) 
                 else:
                     raise Exception
 
@@ -69,12 +71,20 @@ class QuokkaContext:
         ray.get(self.coordinator.register_node_ips.remote( self.node_locs ))
 
     def set_config(self, key, value):
-        assert key in self.config, "key not found in config"
-        self.config[key] = value
+        if key in self.sql_config:
+            self.sql_config[key] = value
+        elif key in self.exec_config:
+            self.exec_config[key] = value
+        else:
+            raise Exception("key not found in config")
     
     def get_config(self, key):
-        assert key in self.config, "key not found in config"
-        return self.config[key]
+        if key in self.sql_config:
+            return self.sql_config[key]
+        elif key in self.exec_config:
+            return self.exec_config[key]
+        else:
+            raise Exception("key not found in config")
 
     def read_files(self, table_location: str):
 
@@ -211,7 +221,7 @@ class QuokkaContext:
                     schema = get_schema_from_bytes(resp)
 
                 # if there are more than one files, there could be header problems. just do one file right now
-                if len(files) == 1 and sizes[0] < self.config["s3_csv_materialize_threshold"]:
+                if len(files) == 1 and sizes[0] < self.sql_config["s3_csv_materialize_threshold"]:
                     return return_materialized_stream("s3://" + bucket + "/" + files[0], schema)
 
                 token = ray.get(self.catalog.register_s3_csv_source.remote(bucket, files[0], schema, sep, sum(sizes)))
@@ -255,7 +265,7 @@ class QuokkaContext:
                     resp = open(table_location + files[0],"rb").read(1024 * 4)
                     schema = get_schema_from_bytes(resp)
 
-                if len(files) == 1 and os.path.getsize(table_location + files[0]) < self.config["disk_csv_materialize_threshold"]:
+                if len(files) == 1 and os.path.getsize(table_location + files[0]) < self.sql_config["disk_csv_materialize_threshold"]:
                     return return_materialized_stream(table_location + files[0], schema)
 
                 token = ray.get(self.catalog.register_disk_csv_source.remote(table_location, schema, sep))
@@ -266,7 +276,7 @@ class QuokkaContext:
                 if schema is None:
                     resp = open(table_location,"rb").read(1024 * 4)
                     schema = get_schema_from_bytes(resp)
-                if size < self.config["disk_csv_materialize_threshold"]:
+                if size < self.sql_config["disk_csv_materialize_threshold"]:
                     return return_materialized_stream(table_location, schema)
                 
                 token = ray.get(self.catalog.register_disk_csv_source.remote(table_location, schema, sep))
@@ -346,7 +356,7 @@ class QuokkaContext:
                     sizes.extend([i['Size'] for i in z['Contents'] if i['Key'].endswith('.parquet')])
 
                 assert len(files) > 0, "could not find any parquet files. make sure they end with .parquet"
-                if sum(sizes) < self.config["s3_parquet_materialize_threshold"] and len(files) == 1:
+                if sum(sizes) < self.sql_config["s3_parquet_materialize_threshold"] and len(files) == 1:
                     df = polars.read_parquet("s3://" + files[0])
                     return return_materialized_stream(df)
                 
@@ -368,7 +378,7 @@ class QuokkaContext:
                 key = "/".join(table_location.split("/")[1:])
                 response = s3.head_object(Bucket= bucket, Key=key)
                 size = response['ContentLength']
-                if size < self.config["s3_parquet_materialize_threshold"]:
+                if size < self.sql_config["s3_parquet_materialize_threshold"]:
                     df = polars.read_parquet("s3://" + table_location)
                     return return_materialized_stream(df)
                 
@@ -391,7 +401,7 @@ class QuokkaContext:
                 assert len(files) > 0
                 f = pq.ParquetFile(table_location + files[0])
                 schema = [k.name for k in f.schema_arrow]
-                if len(files) == 1 and os.path.getsize(table_location + files[0]) < self.config["disk_parquet_materialize_threshold"]:
+                if len(files) == 1 and os.path.getsize(table_location + files[0]) < self.sql_config["disk_parquet_materialize_threshold"]:
                     df = polars.read_parquet(table_location + files[0])
                     return return_materialized_stream(df)
                 
@@ -405,7 +415,7 @@ class QuokkaContext:
                 except:
                     raise Exception("could not find the parquet file at ", table_location)
                 
-                if size < self.config["disk_parquet_materialize_threshold"]:
+                if size < self.sql_config["disk_parquet_materialize_threshold"]:
                     df = polars.read_parquet(table_location)
                     return return_materialized_stream(df)
                 
@@ -543,7 +553,7 @@ class QuokkaContext:
         self.__push_filter__(node_id)
         self.__early_projection__(node_id)
         self.__fold_map__(node_id)
-        if self.config["optimize_joins"]:
+        if self.sql_config["optimize_joins"]:
             self.__merge_joins__(node_id)
         self.__propagate_cardinality__(node_id)
         self.__determine_stages__(node_id)

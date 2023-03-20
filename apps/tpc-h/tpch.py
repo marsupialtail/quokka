@@ -23,6 +23,7 @@ else:
     raise Exception
 
 qc = QuokkaContext(cluster,2,2)
+qc.set_config("fault_tolerance", "false")
 
 if mode == "DISK":
     if format == "csv":
@@ -602,27 +603,27 @@ def dataset_test():
 
 # print(lineitem.count())
 
-# print(do_1_sql())
+print(do_1_sql())
 print(do_2())
-# print(do_3_sql())
-# print(do_4_sql())
-# print(do_5_sql())
-# print(do_6_sql())
-# print(do_7_sql())
-# print(do_8())
-# print(do_9())
-# print(do_10())
-# print(do_11())
-# print(do_12())
-# print(do_13()) 
-# print(do_14())
-# print(do_15())
-# print(do_16()) 
-# print(do_17())
-# print(do_18())
-# print(do_19())
-# print(do_20())
-# print(do_22())
+print(do_3_sql())
+print(do_4_sql())
+print(do_5_sql())
+print(do_6_sql())
+print(do_7_sql())
+print(do_8())
+print(do_9())
+print(do_10())
+print(do_11())
+print(do_12())
+print(do_13()) 
+print(do_14())
+print(do_15())
+print(do_16()) 
+print(do_17())
+print(do_18())
+print(do_19())
+print(do_20())
+print(do_22())
 
 
 # print(do_21()) # just wn't work on AWS

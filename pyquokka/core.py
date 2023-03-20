@@ -15,13 +15,10 @@ from functools import partial
 import concurrent.futures
 import duckdb
 import gc
-CHECKPOINT_INTERVAL = None
+
 MAX_SEQ = 1000000000
 DEBUG = False
 PROFILE = False
-FT = True
-MEM_LIMIT = 0.25
-MAX_BATCHES = 30
 
 
 def print_if_debug(*x):
@@ -56,9 +53,10 @@ An example:
 
 class TaskManager:
 
-    def __init__(self, node_id : int, coordinator_ip : str, worker_ips:list, hbq_path = "/data/") -> None:
+    def __init__(self, node_id : int, coordinator_ip : str, worker_ips:list, configs = None) -> None:
 
         gc.disable()
+        self.configs = configs
 
         self.node_id = node_id
         self.mappings = {}
@@ -80,7 +78,7 @@ class TaskManager:
         self.flight_clients = {i: pyarrow.flight.connect("grpc://" + str(i) + ":5005") for i in worker_ips}
 
         #  Bytedance can write this.
-        self.HBQ = HBQ(hbq_path)
+        self.HBQ = HBQ(self.configs["hbq_path"])
   
         if coordinator_ip == "localhost":
             print("Warning: coordinator_ip set to localhost. This only makes sense for local deployment.")
@@ -242,7 +240,7 @@ class TaskManager:
     
     def set_flight_configs(self, client):
 
-        message = pyarrow.py_buffer(pickle.dumps({"mem_limit" : MEM_LIMIT, "max_batches" : MAX_BATCHES, "actor_stages": self.ast}))
+        message = pyarrow.py_buffer(pickle.dumps({"mem_limit" : self.configs["memory_limit"], "max_batches" : self.configs["max_pipeline_batches"], "actor_stages": self.ast}))
         action = pyarrow.flight.Action("set_configs", message)
         for result in list(client.do_action(action)):
             if result.body.to_pybytes().decode("utf-8") != "True":
@@ -300,7 +298,7 @@ class TaskManager:
                 outputs = partition_fn(output, source_channel_id)
                 print_if_profile("partitioner time", time.time() - start_part)
                 start_spill = time.time()
-                if FT:
+                if self.configs["fault_tolerance"]:
                     self.HBQ.put(source_actor_id, source_channel_id, seq, target_actor_id, outputs)
                 print_if_profile("disk spill time", time.time() - start_spill)
 
@@ -407,24 +405,24 @@ class TaskManager:
 
 @ray.remote
 class ExecTaskManager(TaskManager):
-    def __init__(self, node_id: int, coordinator_ip: str, worker_ips: list, checkpoint_bucket = "quokka-checkpoint") -> None:
-        super().__init__(node_id, coordinator_ip, worker_ips)
+    def __init__(self, node_id: int, coordinator_ip: str, worker_ips: list, configs = None) -> None:
+        super().__init__(node_id, coordinator_ip, worker_ips, configs = configs)
         self.LCT = LastCheckpointTable()
         self.EST = ExecutorStateTable()
         self.IRT = InputRequirementsTable()
         self.SAT = SortedActorsTable()
 
-        if checkpoint_bucket is not None and CHECKPOINT_INTERVAL is not None:
-            self.checkpoint_bucket = checkpoint_bucket
+        if self.configs["checkpoint_bucket"] is not None and self.configs["fault_tolerance"] and self.configs["checkpoint_interval"] is not None:
+            self.checkpoint_bucket = self.configs["checkpoint_bucket"]
             s3 = boto3.resource('s3')
-            bucket = s3.Bucket(checkpoint_bucket)
+            bucket = s3.Bucket(self.configs["checkpoint_bucket"])
             bucket.objects.all().delete()
 
         self.tape_input_reqs = {}
     
     def output_commit(self, transaction, actor_id, channel_id, out_seq, lineage):
 
-        if FT:
+        if self.configs["fault_tolerance"]:
             name_prefix = pickle.dumps((actor_id, channel_id, out_seq))
             
             self.NOT.sadd(transaction, str(self.node_id), name_prefix)
@@ -437,7 +435,7 @@ class ExecTaskManager(TaskManager):
     
     def state_commit(self, transaction, actor_id, channel_id, state_seq, lineage):
 
-        if FT:
+        if self.configs["fault_tolerance"]:
 
             name_prefix = pickle.dumps(('s', actor_id, channel_id, state_seq))
             self.LT.set(transaction, name_prefix, lineage)
@@ -592,7 +590,7 @@ class ExecTaskManager(TaskManager):
                         #  we need to guarantee that the resulting batches are still contiguous in terms of their sequence numbers
                         # this is true because only the last batch for every source channel can still be uncommitted.
 
-                        if FT and self.LT.get(self.r, pickle.dumps((source_actor_id, source_channel_id, seq))) is None:
+                        if self.configs["fault_tolerance"] and self.LT.get(self.r, pickle.dumps((source_actor_id, source_channel_id, seq))) is None:
                             # print("SKIPPING UNCOMMITED STUFF ", source_actor_id, source_channel_id, seq)
                             continue
 
@@ -662,7 +660,7 @@ class ExecTaskManager(TaskManager):
                             
                     next_task = None
 
-                if CHECKPOINT_INTERVAL is not None and state_seq % CHECKPOINT_INTERVAL == 0:
+                if self.configs["checkpoint_interval"] is not None and state_seq % self.configs["checkpoint_interval"] == 0:
                     self.function_objects[actor_id, channel_id].checkpoint(self.checkpoint_bucket, actor_id, channel_id, state_seq)
                     for source_channel_id in source_channel_ids:
                         for seq in source_channel_seqs[source_channel_id]:
@@ -779,7 +777,7 @@ class ExecTaskManager(TaskManager):
                     
                 if state_seq + 1 > candidate_task.last_state_seq:
                     next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, self.tape_input_reqs[actor_id, channel_id])
-                    print("finished exectape, next input requirement is ", self.tape_input_reqs[actor_id, channel_id])
+                    # print("finished exectape, next input requirement is ", self.tape_input_reqs[actor_id, channel_id])
 
                 else:
                     next_task = TapedExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, candidate_task.last_state_seq)
@@ -801,8 +799,8 @@ class ExecTaskManager(TaskManager):
 
 @ray.remote
 class IOTaskManager(TaskManager):
-    def __init__(self, node_id: int, coordinator_ip: str, worker_ips: list) -> None:
-        super().__init__(node_id, coordinator_ip, worker_ips)
+    def __init__(self, node_id: int, coordinator_ip: str, worker_ips: list, configs = None) -> None:
+        super().__init__(node_id, coordinator_ip, worker_ips, configs = configs)
         self.GIT = GeneratedInputTable()
         self.LIT = LastInputTable()
         self.delay = 0.1
@@ -830,7 +828,7 @@ class IOTaskManager(TaskManager):
     
     def output_commit(self, transaction, actor_id, channel_id, out_seq, lineage):
 
-        if FT:
+        if self.configs["fault_tolerance"]:
             name_prefix = pickle.dumps((actor_id, channel_id, out_seq))
             
             self.NOT.sadd(transaction, str(self.node_id), name_prefix)
@@ -921,7 +919,8 @@ class IOTaskManager(TaskManager):
                     # print("DONE", actor_id, channel_id)
                     self.DST.set(transaction, pickle.dumps((actor_id, channel_id)), seq)
                 if not all(transaction.execute()):
-                   print("COMMITING TRANSACTION FAILED")
+                    pass
+                   # print("COMMITING TRANSACTION FAILED")
                    # raise Exception
             
             # downstream failure detected, will start recovery soon, DO NOT COMMIT!
@@ -933,8 +932,8 @@ class IOTaskManager(TaskManager):
 
 @ray.remote
 class ReplayTaskManager(TaskManager):
-    def __init__(self, node_id: int, coordinator_ip: str, worker_ips: list) -> None:
-        super().__init__(node_id, coordinator_ip, worker_ips)
+    def __init__(self, node_id: int, coordinator_ip: str, worker_ips: list, configs = None) -> None:
+        super().__init__(node_id, coordinator_ip, worker_ips, configs = configs)
     
     def replay(self, source_actor_id, source_channel_id, plan):
 
