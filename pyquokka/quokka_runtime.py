@@ -352,7 +352,12 @@ class TaskGraph:
             for k in range(max_limit):
                 source_channel_seqs = {source_channel_id : [k] for source_channel_id in source_channels if k < self.limits[source_actor_id][source_channel_id]}
                 lineages.append((source_actor_id, source_channel_seqs))
-            
+            # for k in range(max_limit):
+            #     for source_channel_id in source_channels:
+            #         if k < self.limits[source_actor_id][source_channel_id]:
+            #             source_channel_seqs = {source_channel_id : [k]}
+            #             lineages.append((source_actor_id, source_channel_seqs))
+             
             # source_channel_seqs = {source_channel_id : [k for k in range(self.limits[source_actor_id][source_channel_id])] for source_channel_id in source_channels}
             # lineages.append((source_actor_id, source_channel_seqs))
 

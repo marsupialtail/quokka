@@ -560,6 +560,7 @@ class BuildProbeJoinExecutor(Executor):
         elif stream_id == 0:
             if self.state is None:
                 return
+            print(len(batch))
             # print("STATE LEN", len(self.state))
             if self.phase == "build":
                 self.state = self.state.sort(self.right_on)

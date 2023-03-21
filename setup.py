@@ -34,7 +34,7 @@ setup(
             'graphviz',
             'tqdm',
             'aiohttp',
-            's3fs'
+            'botocore==1.27.59'
             ], # add any additional packages that 
         extra_requires = {
                 "datalake" : ["pyiceberg", "deltalake"]
