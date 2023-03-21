@@ -6,7 +6,7 @@ format = "parquet"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
 s3_path_csv = "s3://tpc-h-csv/"
-s3_path_parquet = "s3://tpc-h-parquet-100/"
+s3_path_parquet = "s3://tpc-h-parquet-100-native/"
 
 import pyarrow as pa
 import pyarrow.compute as compute
@@ -23,7 +23,7 @@ else:
     raise Exception
 
 qc = QuokkaContext(cluster,2,2)
-qc.set_config("fault_tolerance", False)
+qc.set_config("fault_tolerance", True)
 
 if mode == "DISK":
     if format == "csv":

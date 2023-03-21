@@ -14,6 +14,8 @@ from pyquokka.utils import LocalCluster, EC2Cluster
 import pyquokka.sql_utils as sql_utils
 from functools import partial
 import ray.cloudpickle as pickle
+from copy import deepcopy
+
 
 class TaskGraph:
     # this keeps the logical dependency DAG between tasks 
@@ -343,24 +345,38 @@ class TaskGraph:
             self.SAT.set(pipe, self.current_actor, pickle.dumps(assume_sorted))
 
         lineages = []
-        
+        batched_source_channel_seqs = {}
+        batches = 0
+        B = 4
         for df in input_reqs:
             source_actor_id = df["source_actor_id"][0]
             source_channels = df["source_channel_id"].to_list()
             assert source_actor_id in self.limits 
             max_limit = max(self.limits[source_actor_id].values())
-            for k in range(max_limit):
-                source_channel_seqs = {source_channel_id : [k] for source_channel_id in source_channels if k < self.limits[source_actor_id][source_channel_id]}
-                lineages.append((source_actor_id, source_channel_seqs))
             # for k in range(max_limit):
-            #     for source_channel_id in source_channels:
-            #         if k < self.limits[source_actor_id][source_channel_id]:
-            #             source_channel_seqs = {source_channel_id : [k]}
-            #             lineages.append((source_actor_id, source_channel_seqs))
-             
+            #     source_channel_seqs = {source_channel_id : [k] for source_channel_id in source_channels if k < self.limits[source_actor_id][source_channel_id]}
+            #     lineages.append((source_actor_id, source_channel_seqs))
+            for k in range(max_limit):
+                for source_channel_id in source_channels:
+                    if k < self.limits[source_actor_id][source_channel_id]:
+                        if source_channel_id in batched_source_channel_seqs:
+                            batched_source_channel_seqs[source_channel_id].append(k)
+                        else:
+                            batched_source_channel_seqs[source_channel_id] = [k]
+                        batches += 1
+                        if batches == B:
+                            lineages.append((source_actor_id, deepcopy(batched_source_channel_seqs)))
+                            batches = 0
+                            batched_source_channel_seqs = {}
+            if len(batched_source_channel_seqs) > 0:
+                lineages.append((source_actor_id, deepcopy(batched_source_channel_seqs)))
+                batches = 0
+                batched_source_channel_seqs = {}
+            
             # source_channel_seqs = {source_channel_id : [k for k in range(self.limits[source_actor_id][source_channel_id])] for source_channel_id in source_channels}
             # lineages.append((source_actor_id, source_channel_seqs))
 
+        # print(lineages)
         channel_locs = {}
         if type(placement_strategy) == SingleChannelStrategy:
 

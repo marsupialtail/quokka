@@ -437,7 +437,7 @@ class ExecTaskManager(TaskManager):
             self.PT.set(transaction, name_prefix, str(self.node_id))
             # this probably doesn't have to be done transactionally, but why not.
 
-            self.LT.set(transaction, name_prefix, lineage)
+            # self.LT.set(transaction, name_prefix, lineage)
         else:
             pass
     
@@ -446,7 +446,7 @@ class ExecTaskManager(TaskManager):
         if self.configs["fault_tolerance"]:
 
             name_prefix = pickle.dumps(('s', actor_id, channel_id, state_seq))
-            self.LT.set(transaction, name_prefix, lineage)
+            # self.LT.set(transaction, name_prefix, lineage)
         else:
             pass
 
@@ -658,8 +658,8 @@ class IOTaskManager(TaskManager):
             self.PT.set(transaction, name_prefix, str(self.node_id))
             # this probably doesn't have to be done transactionally, but why not.
             # lineage can be None for taped tasks, since no need to put lineage anymore.
-            if lineage is not None:
-                self.LT.set(transaction, name_prefix, lineage)
+            # if lineage is not None:
+                # self.LT.set(transaction, name_prefix, lineage)
             self.GIT.sadd(transaction, pickle.dumps((actor_id, channel_id)), out_seq)
 
     def execute(self):
