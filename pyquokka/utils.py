@@ -86,6 +86,10 @@ class QuokkaClusterManager:
 
     def str_key_to_int(self, d):
         return {int(i):d[i] for i in d}
+    
+    def install_python_package(self, cluster, req):
+        assert type(cluster) == EC2Cluster
+        self.launch_all("pip3 install " + req, list(cluster.public_ips.values()), "Failed to install " + req)
 
     def launch_all(self, command, ips, error = "Error", ignore_error = False):
         commands = ["ssh -oStrictHostKeyChecking=no -oConnectTimeout=4 -i " + self.key_location + " ubuntu@" + str(ip) + " " + command for ip in ips]

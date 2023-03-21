@@ -26,14 +26,14 @@ create table nation (n_nationkey bigint, n_name char(25), n_regionkey bigint , n
 create table region (r_regionkey bigint, r_name varchar, r_comment varchar) WITH (format = 'parquet', external_location = 's3a://tpc-h-parquet-100/region.parquet/');
 
 
-create table lineitem using parquet location 's3://tpc-h-parquet-100/lineitem.parquet/';
-create table orders using parquet location 's3://tpc-h-parquet-100/orders.parquet/';
-create table customer using parquet location 's3://tpc-h-parquet-100/customer.parquet/';
-create table part using parquet location 's3://tpc-h-parquet-100/part.parquet/';
-create table supplier using parquet location 's3://tpc-h-parquet-100/supplier.parquet/';
-create table partsupp using parquet location 's3://tpc-h-parquet-100/partsupp.parquet/';
-create table nation using parquet location 's3://tpc-h-parquet-100/nation.parquet/';
-create table region using parquet location 's3://tpc-h-parquet-100/region.parquet/';
+create table lineitem using parquet location 's3://tpc-h-parquet-100-native/lineitem.parquet/';
+create table orders using parquet location 's3://tpc-h-parquet-100-native/orders.parquet/';
+create table customer using parquet location 's3://tpc-h-parquet-100-native/customer.parquet/';
+create table part using parquet location 's3://tpc-h-parquet-100-native/part.parquet/';
+create table supplier using parquet location 's3://tpc-h-parquet-100-native/supplier.parquet/';
+create table partsupp using parquet location 's3://tpc-h-parquet-100-native/partsupp.parquet/';
+create table nation using parquet location 's3://tpc-h-parquet-100-native/nation.parquet/';
+create table region using parquet location 's3://tpc-h-parquet-100-native/region.parquet/';
 
 analyze table lineitem compute statistics for all columns;
 analyze table orders compute statistics for all columns;
