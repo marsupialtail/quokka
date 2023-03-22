@@ -560,36 +560,6 @@ def word_count():
     f = counted.groupby("word").agg({"count":"sum"})
     return f.collect()
 
-def covariance():
-
-    class AggExecutor(Executor):
-        def __init__(self) -> None:
-            self.state = None
-        def execute(self,batches,stream_id, executor_id):
-            for batch in batches:
-                #print(batch)
-                if self.state is None:
-                    self.state = batch
-                else:
-                    self.state += batch
-        def done(self,executor_id):
-            return self.state
-
-    agg_executor = AggExecutor()
-    def udf2(x):
-        x = x.select(["l_quantity", "l_extendedprice", "l_discount", "l_tax"]).to_numpy()
-        product = np.dot(x.transpose(), x)
-        #print(product)
-        return polars.from_numpy(product, columns = ["a","b","c","d"])
-
-    d = lineitem.select(["l_quantity", "l_extendedprice", "l_discount", "l_tax"])
-    d = d.transform( udf2, new_schema = ["a","b","c","d"], required_columns = {"l_quantity", "l_extendedprice", "l_discount", "l_tax"}, foldable=True)
-
-    d = d.stateful_transform( agg_executor , ["a","b","c","d"], {"a","b","c","d"},
-                           partitioner=BroadcastPartitioner(), placement_strategy = SingleChannelStrategy())
-    
-    return  d.collect()
-
 def sort():
 
     return lineitem.drop("l_comment").sort("l_partkey", 200000000).write_parquet("s3://yugan/tpc-h-out/", output_line_limit = 5000000)
@@ -607,27 +577,33 @@ def print_and_time(f):
     end = time.time()
     print("query execution time: ", end - start)
 
-print_and_time(do_1_sql)
-print_and_time(do_2)
-print_and_time(do_3_sql)
-print_and_time(do_4_sql)
-print_and_time(do_5_sql)
-print_and_time(do_6_sql)
-print_and_time(do_7_sql)
-print_and_time(do_8)
-print_and_time(do_9)
-print_and_time(do_10)
-print_and_time(do_11)
-print_and_time(do_12)
-print_and_time(do_13) 
-print_and_time(do_14)
-print_and_time(do_15)
-print_and_time(do_16) 
-print_and_time(do_17)
-print_and_time(do_18)
-print_and_time(do_19)
-print_and_time(do_20)
-print_and_time(do_22)
+def covariance():
+
+    return lineitem.gramian(["l_quantity", "l_extendedprice", "l_discount", "l_tax"]).collect()
+
+print_and_time(covariance)
+
+# print_and_time(do_1_sql)
+# print_and_time(do_2)
+# print_and_time(do_3_sql)
+# print_and_time(do_4_sql)
+# print_and_time(do_5_sql)
+# print_and_time(do_6_sql)
+# print_and_time(do_7_sql)
+# print_and_time(do_8)
+# print_and_time(do_9)
+# print_and_time(do_10)
+# print_and_time(do_11)
+# print_and_time(do_12)
+# print_and_time(do_13) 
+# print_and_time(do_14)
+# print_and_time(do_15)
+# print_and_time(do_16) 
+# print_and_time(do_17)
+# print_and_time(do_18)
+# print_and_time(do_19)
+# print_and_time(do_20)
+# print_and_time(do_22)
 
 
 # print(do_21()) # just wn't work on AWS

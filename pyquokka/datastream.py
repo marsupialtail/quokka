@@ -563,6 +563,42 @@ class DataStream:
             
         )
     
+    def gramian(self, columns):
+
+        for col in columns:
+            assert col in self.schema
+
+        if self.materialized:
+            df = self._get_materialized_df()
+            stuff = df.select(columns).to_numpy()
+            product = np.dot(stuff.transpose(), stuff)
+            return self.quokka_context.from_polars(polars.from_numpy(product, columns = columns))
+
+        class AggExecutor(Executor):
+            def __init__(self) -> None:
+                self.state = None
+            def execute(self,batches,stream_id, executor_id):
+                for batch in batches:
+                    #print(batch)
+                    if self.state is None:
+                        self.state = polars.from_arrow(batch)
+                    else:
+                        self.state += polars.from_arrow(batch)
+            def done(self,executor_id):
+                return self.state
+
+        agg_executor = AggExecutor()
+        def udf2(x):
+            x = x.select(columns).to_numpy()
+            product = np.dot(x.transpose(), x)
+            return polars.from_numpy(product, columns = columns)
+
+        stream = self.select(columns)
+        stream = stream.transform( udf2, new_schema = columns, required_columns = set(columns), foldable=True)
+
+        return stream.stateful_transform( agg_executor , columns, required_columns = set(columns),
+                            partitioner=BroadcastPartitioner(), placement_strategy = SingleChannelStrategy())
+        
     def sql_transform(self, sql_expression, groupby = [], foldable = True, required_columns = None):
 
         """
