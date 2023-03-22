@@ -1,12 +1,13 @@
 from pyquokka.df import * 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
+
 mode = "S3"
 format = "csv"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
 s3_path_csv = "s3://tpc-h-csv-100/"
-s3_path_parquet = "s3://books-iceberg/tpch.db/"
+s3_path_parquet = "s3://tpc-h-parquet-100-native/"
 
 import pyarrow as pa
 import pyarrow.compute as compute
@@ -26,7 +27,7 @@ elif mode == "S3":
 else:
     raise Exception
 
-qc = QuokkaContext(cluster,4,2)
+qc = QuokkaContext(cluster,2,2)
 
 if mode == "DISK":
     if format == "csv":
@@ -89,8 +90,8 @@ def do_1_1():
         count(*)                                              AS count_order
         """
     )
-    d.write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT)
-
+    d = d.write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT)
+    return d.collect()
 
 def do_1_2():
     d = lineitem.filter("l_shipdate <= date '1998-09-02'")
@@ -106,14 +107,15 @@ def do_1_2():
         count(*)                                              AS count_order
         """
     )
-    d.write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT)
+    d = d.write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT)
+    return d.collect()
 
 def do_2():
     d = part.join(partsupp, left_on = "p_partkey", right_on = "ps_partkey")
     d = d.join(supplier, left_on = "ps_suppkey", right_on = "s_suppkey")
     d = d.join(nation, left_on = "s_nationkey", right_on = "n_nationkey")
     d = d.join(region, left_on = "n_regionkey", right_on = "r_regionkey")
-    d.select(["s_acctbal", "s_name", "n_name", "p_partkey", "p_mfgr", "s_address", "s_phone", "s_comment"]).write_parquet(output_path + "testing.parquet")
+    return d.select(["s_acctbal", "s_name", "n_name", "p_partkey", "p_mfgr", "s_address", "s_phone", "s_comment"]).write_parquet(output_path + "testing.parquet").collect()
 
 def do_3():
     d = customer.join(orders, left_on = "c_custkey", right_on = "o_custkey")
@@ -131,28 +133,27 @@ def do_3():
         count(*)                                              AS c
         """
     )
-    d.write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT)
+    return d.write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT).collect()
 
 def do_4():
     d = lineitem.filter("l_commitdate < l_receiptdate")
     d = orders.join(d, left_on="o_orderkey", right_on="l_orderkey", how = "semi")
     d = d.filter("o_orderdate >= date '1993-07-01'")
-    d.select(["o_orderkey", "o_custkey", "o_orderstatus", "o_totalprice", "o_orderdate", "o_orderpriority", "o_clerk", "o_shippriority", "o_comment"])\
-        .write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT)
+    return d.select(["o_orderkey", "o_custkey", "o_orderstatus", "o_totalprice", "o_orderdate", "o_orderpriority", "o_clerk", "o_shippriority", "o_comment"])\
+        .write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT).collect()
 
 def do_5():
     qc.set_config("optimize_joins", False)
-    asia = region.filter("r_name IN ('ASIA', 'AMERICA', 'AFRICA')")
-    asian_nations = nation.join(asia, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","r_name","n_nationkey"])
-    d = customer.join(asian_nations, left_on="c_nationkey", right_on="n_nationkey")
-    d = d.join(orders, left_on="c_custkey", right_on="o_custkey", suffix="_3")
-    d = d.join(lineitem, left_on="o_orderkey", right_on="l_orderkey", suffix="_4")
-    d = d.join(supplier, left_on="l_suppkey", right_on="s_suppkey", suffix="_5")
-    d = d.filter("l_returnflag = 'A'")
+    d = customer.join(orders, left_on = "c_custkey", right_on = "o_custkey")
+    d = d.join(lineitem, left_on = "o_orderkey", right_on = "l_orderkey")
+    d = d.join(supplier, left_on = "l_suppkey", right_on = "s_suppkey")
+    d = d.join(nation, left_on = "s_nationkey", right_on = "n_nationkey")
+    d = d.join(region, left_on = "n_regionkey", right_on = "r_regionkey")
+    d = d.filter("r_name IN ('ASIA', 'AMERICA', 'AFRICA') and l_returnflag = 'A'")
     d = d.select(["c_custkey", "c_name", "c_phone", "c_mktsegment", "o_orderkey", "o_orderstatus", "o_totalprice", "o_orderdate",
                   "l_quantity", "l_extendedprice", "l_discount", "l_tax", "l_returnflag", "l_linestatus", "l_shipdate", "l_commitdate", 
                   "l_receiptdate", "l_suppkey", "s_name", "s_acctbal", "s_phone", "n_name", "r_name"]).write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT)
-    d.explain()
+    d.explain(mode="text")
     result = d.collect()
     qc.set_config("optimize_joins", True)
     return result
@@ -163,10 +164,11 @@ def do_6():
             AND l_discount BETWEEN 0.05 AND 0.07
             AND l_quantity < 24
     """)
-    d.select(["l_orderkey", "l_partkey", "l_suppkey", "l_linenumber", "l_quantity", "l_extendedprice", 
+    d = d.select(["l_orderkey", "l_partkey", "l_suppkey", "l_linenumber", "l_quantity", "l_extendedprice", 
               "l_discount", "l_tax", "l_returnflag", "l_linestatus", "l_shipdate", "l_commitdate", 
               "l_receiptdate", "l_shipinstruct", "l_shipmode", "l_comment"]).write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT)
-
+    return d.collect()
+   
 def do_7():
     d1 = customer.join(nation, left_on = "c_nationkey", right_on = "n_nationkey")
     d1 = d1.join(orders, left_on = "c_custkey", right_on = "o_custkey", suffix = "_3")
@@ -178,7 +180,7 @@ def do_7():
     d = d.filter("""l_shipdate between date '1995-01-01' and date '1996-12-31'""")
     d = d.with_column("l_year", polars.col("l_shipdate").dt.year(), required_columns = {"l_shipdate"})
     d = d.with_column("volume", polars.col("l_extendedprice") * (1 - polars.col("l_discount")), required_columns = {"l_extendedprice", "l_discount"})
-    d.select(["l_year", "cust_nation", "supp_nation", "volume"]).write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT)
+    return d.select(["l_year", "cust_nation", "supp_nation", "volume"]).write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT).collect()
 
 def do_8():
     america = region.filter("r_name = 'AMERICA'")
@@ -195,14 +197,14 @@ def do_8():
     d = d.with_column("o_year", polars.col("o_orderdate").dt.year(), required_columns = {"o_orderdate"})
     d = d.with_column("volume", polars.col("l_extendedprice") * (1 - polars.col("l_discount")), required_columns = {"l_extendedprice", "l_discount"})
     d = d.rename({"n_name" : "nation"})
-    d.select(["o_year", "nation", "volume"]).write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT)
+    return d.select(["o_year", "nation", "volume"]).write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT).collect()
 
 # do_1_1()
 # do_1_2()
 # do_2()
 # do_3()
 # do_4()
-do_5()
-# do_6()
-# do_7()
-# do_8()
+# do_5()
+do_6()
+do_7()
+do_8()
