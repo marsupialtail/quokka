@@ -291,3 +291,75 @@ class QuokkaClusterManager:
         else:
             print("Cluster in an inconsistent state. Either only some machines are running or some machines have been terminated.")
             return False
+    
+    def get_cluster_from_ray(self, path_to_yaml, aws_access_key, aws_access_id, requirements = []):
+
+        import yaml
+        ec2 = boto3.client("ec2")
+        with open(path_to_yaml, 'r') as f:
+            config = yaml.safe_load(f)
+        
+    
+        tag_key = "ray-cluster-name"
+        cluster_name = config['cluster_name']
+        instance_type = config["available_node_types"]['ray.worker.default']["node_config"]["InstanceType"]
+        cpu_count = ec2.describe_instance_types(InstanceTypes=[instance_type])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
+
+        filters = [{'Name': 'instance-state-name', 'Values': ['running']},
+                   {'Name': f'tag:{tag_key}', 'Values': [cluster_name]}]
+        response = ec2.describe_instances(Filters=filters)
+        instance_ids = []
+        public_ips = []
+        private_ips = []
+
+        instance_ids = [instance['InstanceId'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+        public_ips = [instance['PublicIpAddress'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+        private_ips = [instance['PrivateIpAddress'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+
+        assert len(instance_ids) == len(public_ips) == len(private_ips)
+        print("Detected {} instances in running ray cluster {}".format(len(instance_ids), cluster_name))
+
+        leader_public_ip = public_ips[0]
+        print(public_ips)
+
+        self.launch_all("sudo apt update", public_ips, "Failed to apt-get update")
+        self.launch_all("sudo apt install -y python3-pip", public_ips, "Failed to install pip", ignore_error= False)
+        self.launch_all("sudo apt install -y awscli", public_ips, "Failed to install awscli", ignore_error=False)
+        self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
+        self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
+
+        # cluster must have same ray version as client.
+        requirements = ["ray==" + ray.__version__, "pyquokka"] + requirements
+        for req in requirements:
+            assert type(req) == str
+            try:
+                self.launch_all("pip3 install " + req, public_ips, "Failed to install " + req)
+            except:
+                pass
+
+        pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
+        script = pyquokka_loc + "/leader_startup.sh"
+        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + " 'sudo bash -s' < " + script)
+        self.launch_all("sudo mkdir /data", public_ips, "failed to make temp spill directory")
+        
+        # this is a bug, it will only work with python3.8!
+        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + 
+        " redis-server /home/ubuntu/.local/lib/python3.8/site-packages/pyquokka/redis.conf --port 6800 --protected-mode no&")
+
+        pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
+        flight_file = pyquokka_loc + "/flight.py"
+        print("attempting to copy flight server file")
+        self.copy_all(flight_file, public_ips, "Failed to copy flight server file.")
+        self.launch_all("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288", public_ips, "Failed to set malloc limit")
+
+        self.launch_all("python3 -u flight.py &", public_ips, "Failed to start flight servers on workers.")
+        print("Trying to set up spill dir.")
+        try:
+            self.launch_all("sudo mkfs.ext4 -E nodiscard /dev/nvme1n1;", public_ips, "failed to format nvme ssd")
+            self.launch_all("sudo mount /dev/nvme1n1 /data;", public_ips, "failed to mount nvme ssd")
+            self.launch_all("sudo chmod -R a+rw /data/", public_ips, "failed to give spill dir permissions")
+        except:
+            pass
+
+
+        return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count)
