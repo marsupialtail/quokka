@@ -83,7 +83,7 @@ class Catalog:
         if filters_list is not None:
             assert type(filters_list) == list
             sample = sample.filter(filters_to_expression(filters_list))
-        if predicate == sqlglot.exp.TRUE:
+        if predicate is None or predicate == sqlglot.exp.TRUE:
             count = len(sample)
         else:
             sql_statement = "select count(*) from sample where " + predicate.sql()

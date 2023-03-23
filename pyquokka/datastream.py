@@ -7,6 +7,8 @@ from pyquokka.utils import EC2Cluster, LocalCluster
 from pyquokka.sql_utils import required_columns_from_exp, label_sample_table_names
 from functools import partial
 import pyarrow as pa
+from pyquokka.expression import * 
+from sqlglot.dataframe.sql import functions as F
 
 
 class DataStream:
@@ -62,6 +64,10 @@ class DataStream:
 
     def __repr__(self):
         return "DataStream[" + ",".join(self.schema) + "]"
+    
+    def __getitem__(self, key):
+        assert key in self.schema, "Column " + key + " not in schema " + str(self.schema)
+        return Expression(F.col(key))
 
     def collect(self):
         """
@@ -258,6 +264,10 @@ class DataStream:
         )
 
         return name_stream
+    
+    # def filter(self, predicate: Expression):
+
+
 
     def filter(self, predicate: str):
 
@@ -283,24 +293,17 @@ class DataStream:
             A DataStream consisting of rows from the source DataStream that match the predicate.
         
         Examples:
-            ~~~python
             >>> f = qc.read_csv("lineitem.csv")
-
-            # filter for all the rows where l_orderkey smaller than 10 and l_partkey greater than 5
+            filter for all the rows where l_orderkey smaller than 10 and l_partkey greater than 5
             >>> f = f.filter("l_orderkey < 10 and l_partkey > 5") 
-
-            # nested conditions are supported
+            nested conditions are supported
             >>> f = f.filter("l_orderkey < 10 and (l_partkey > 5 or l_partkey < 1)") 
-
-            # most SQL features such as IN and date are supported.
+            most SQL features such as IN and date are supported.
             >>> f = f.filter("l_shipmode IN ('MAIL','SHIP') and l_receiptdate < date '1995-01-01'")
-
-            # you can do arithmetic in the predicate just like in SQL. 
+            you can do arithmetic in the predicate just like in SQL. 
             >>> f = f.filter("l_shipdate < date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01")
-
-            # this will fail! Assuming c_custkey is not in f.schema
+            this will fail! Assuming c_custkey is not in f.schema
             >>> f = f.filter("c_custkey > 10")
-            ~~~
         """
 
         predicate = sqlglot.parse_one(predicate)
