@@ -265,26 +265,61 @@ class DataStream:
 
         return name_stream
     
-    # def filter(self, predicate: Expression):
-
-
-
-    def filter(self, predicate: str):
+    def filter(self, predicate: Expression):
 
         """
-        This will filter the DataStream to contain only rows that match a certain predicate. Currently this predicate must be specified
-        in SQL syntax. You can write any SQL clause you would generally put in a WHERE statement containing arbitrary conjunctions and 
-        disjunctions. The identifiers however, must be in the schema of this DataStream! We aim to soon support a more Pythonic interface
-        that better resembles Pandas which allows you to do things like d = d[d.a > 10]. Please look at the examples below. 
+        This will filter the DataStream to contain only rows that match a certain predicate specified in SQL syntax. 
+        You can write any SQL clause you would generally put in a WHERE statement containing arbitrary conjunctions and 
+        disjunctions. The columns in your statement must be in the schema of this DataStream! 
 
-        Since a DataStream is implemented as a stream of batches, you might be tempted to think of a filtered DataStream as a stream of batches where each
-        batch directly results from a filter being applied to a batch in the source DataStream. While this certainly may be the case, filters
-        are aggressively optimized by Quokka and is most likely pushed all the way down to the input readers. As a result, you typically should
-        not see a filter node in a Quokka execution plan shown by `explain()`. 
+        Since a DataStream is implemented as a stream of batches, you might be tempted to think of a filtered DataStream
+        as a stream of batches where each batch directly results from a filter being applied to a batch in the source DataStream. 
+        While this certainly may be the case, filters are aggressively optimized by Quokka and is most likely pushed all the way down
+        to the input readers. As a result, you typically should not see a filter node in a Quokka execution plan shown by `explain()`. 
 
-        It is much better to think of a DataStream simply as a stream of rows that meet certain criteria, and who may be non-deterministically 
-        batched together by the Quokka runtime. Indeed, Quokka makes no guarantees on the sizes of these batches, which is determined at runtime. 
-        This flexibility is an important reason for Quokka's superior performance.
+        Args:
+            predicate (str): an Expression.
+
+        Return:
+            A DataStream consisting of rows from the source DataStream that match the predicate.
+        
+        Examples:
+
+            >>> f = qc.read_csv("lineitem.csv")
+
+            Filter for all the rows where l_orderkey smaller than 10 and l_partkey greater than 5
+            
+            >>> f = f.filter((f["l_orderkey"] < 10) & (f["l_partkey"] > 5")) 
+            
+            Nested conditions are supported.
+            
+            >>> f = f.filter(f["l_orderkey"] < 10 & (f["l_partkey"] > 5 or f["l_partkey"] < 1)) 
+            
+            You can do some really complicated stuff! For details on the .str and .dt namespaces see the API reference.
+            Quokka strives to support all the functionality of Polars, so if you see something you need that is not supported, please
+            file an issue on Github.
+            
+            >>> f = f.filter((f["l_shipdate"].str.strptime().dt.offset_by(1, "M").dt.week() == 3) & (f["l_orderkey"] < 1000))
+            
+            This will fail! Assuming c_custkey is not in f.schema
+            
+            >>> f = f.filter(f["c_custkey"] > 10)
+        """
+
+        assert type(predicate) == Expression, "Must supply an Expression."
+        return self.filter_sql(predicate.sql())
+
+    def filter_sql(self, predicate: str):
+
+        """
+        This will filter the DataStream to contain only rows that match a certain predicate specified in SQL syntax. 
+        You can write any SQL clause you would generally put in a WHERE statement containing arbitrary conjunctions and 
+        disjunctions. The columns in your statement must be in the schema of this DataStream! 
+
+        Since a DataStream is implemented as a stream of batches, you might be tempted to think of a filtered DataStream
+        as a stream of batches where each batch directly results from a filter being applied to a batch in the source DataStream. 
+        While this certainly may be the case, filters are aggressively optimized by Quokka and is most likely pushed all the way down
+        to the input readers. As a result, you typically should not see a filter node in a Quokka execution plan shown by `explain()`. 
 
         Args:
             predicate (str): a SQL WHERE clause, look at the examples.
@@ -293,19 +328,33 @@ class DataStream:
             A DataStream consisting of rows from the source DataStream that match the predicate.
         
         Examples:
+
+            Read in a CSV file into a DataStream f.
+
             >>> f = qc.read_csv("lineitem.csv")
-            filter for all the rows where l_orderkey smaller than 10 and l_partkey greater than 5
-            >>> f = f.filter("l_orderkey < 10 and l_partkey > 5") 
-            nested conditions are supported
-            >>> f = f.filter("l_orderkey < 10 and (l_partkey > 5 or l_partkey < 1)") 
-            most SQL features such as IN and date are supported.
-            >>> f = f.filter("l_shipmode IN ('MAIL','SHIP') and l_receiptdate < date '1995-01-01'")
-            you can do arithmetic in the predicate just like in SQL. 
-            >>> f = f.filter("l_shipdate < date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01")
-            this will fail! Assuming c_custkey is not in f.schema
-            >>> f = f.filter("c_custkey > 10")
+
+            Filter for all the rows where l_orderkey smaller than 10 and l_partkey greater than 5.
+            
+            >>> f = f.filter_sql("l_orderkey < 10 and l_partkey > 5") 
+            
+            Nested conditions are supported.
+            
+            >>> f = f.filter_sql("l_orderkey < 10 and (l_partkey > 5 or l_partkey < 1)") 
+            
+            Most SQL features such as IN and date are supported. Anything DuckDB supports should work.
+            
+            >>> f = f.filter_sql("l_shipmode IN ('MAIL','SHIP') and l_receiptdate < date '1995-01-01'")
+            
+            You can do arithmetic in the predicate just like in SQL. 
+            
+            >>> f = f.filter_sql("l_shipdate < date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01")
+            
+            This will fail! Assuming c_custkey is not in f.schema
+            
+            >>> f = f.filter_sql("c_custkey > 10")
         """
 
+        assert type(predicate) == str
         predicate = sqlglot.parse_one(predicate)
         # convert to CNF
         predicate = optimizer.normalize.normalize(predicate)
@@ -318,14 +367,14 @@ class DataStream:
         if self.materialized:
             batch_arrow = self._get_materialized_df().to_arrow()
             con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
-            df = polars.from_arrow(con.execute("select * from batch_arrow where " + predicate.sql()).arrow())
+            df = polars.from_arrow(con.execute("select * from batch_arrow where " + predicate.sql(dialect = "duckdb")).arrow())
             return self.quokka_context.from_polars(df)
 
         if not optimizer.normalize.normalized(predicate):
             def f(df):
                 batch_arrow = df.to_arrow()
                 con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
-                return polars.from_arrow(con.execute("select * from batch_arrow where " + predicate.sql()).arrow())
+                return polars.from_arrow(con.execute("select * from batch_arrow where " + predicate.sql(dialect = "duckdb")).arrow())
         
             transformed = self.transform(f, new_schema = self.schema, required_columns=self.schema)
             return transformed
@@ -565,44 +614,8 @@ class DataStream:
             schema=new_schema,
             
         )
-    
-    def gramian(self, columns):
-
-        for col in columns:
-            assert col in self.schema
-
-        if self.materialized:
-            df = self._get_materialized_df()
-            stuff = df.select(columns).to_numpy()
-            product = np.dot(stuff.transpose(), stuff)
-            return self.quokka_context.from_polars(polars.from_numpy(product, columns = columns))
-
-        class AggExecutor(Executor):
-            def __init__(self) -> None:
-                self.state = None
-            def execute(self,batches,stream_id, executor_id):
-                for batch in batches:
-                    #print(batch)
-                    if self.state is None:
-                        self.state = polars.from_arrow(batch)
-                    else:
-                        self.state += polars.from_arrow(batch)
-            def done(self,executor_id):
-                return self.state
-
-        agg_executor = AggExecutor()
-        def udf2(x):
-            x = x.select(columns).to_numpy()
-            product = np.dot(x.transpose(), x)
-            return polars.from_numpy(product, columns = columns)
-
-        stream = self.select(columns)
-        stream = stream.transform( udf2, new_schema = columns, required_columns = set(columns), foldable=True)
-
-        return stream.stateful_transform( agg_executor , columns, required_columns = set(columns),
-                            partitioner=BroadcastPartitioner(), placement_strategy = SingleChannelStrategy())
         
-    def sql_transform(self, sql_expression, groupby = [], foldable = True, required_columns = None):
+    def transform_sql(self, sql_expression, groupby = [], foldable = True):
 
         """
         Example sql expression:
@@ -623,8 +636,7 @@ class DataStream:
         enhanced_exp = label_sample_table_names(sqlglot.parse_one(enhanced_exp), 'batch_arrow').sql()
 
         sqlglot_node = sqlglot.parse_one(enhanced_exp)
-        if required_columns is None:
-            required_columns = required_columns_from_exp(sqlglot_node)
+        required_columns = required_columns_from_exp(sqlglot_node)
         if len(required_columns) == 0:
             # TODO: this is to make sure count works by picking a random column to download. 
             required_columns = {self.schema[1]}
@@ -667,17 +679,54 @@ class DataStream:
             sorted = self.sorted
             )
 
+    def gramian(self, columns):
+
+        for col in columns:
+            assert col in self.schema
+
+        if self.materialized:
+            df = self._get_materialized_df()
+            stuff = df.select(columns).to_numpy()
+            product = np.dot(stuff.transpose(), stuff)
+            return self.quokka_context.from_polars(polars.from_numpy(product, columns = columns))
+
+        class AggExecutor(Executor):
+            def __init__(self) -> None:
+                self.state = None
+            def execute(self,batches,stream_id, executor_id):
+                for batch in batches:
+                    #print(batch)
+                    if self.state is None:
+                        self.state = polars.from_arrow(batch)
+                    else:
+                        self.state += polars.from_arrow(batch)
+            def done(self,executor_id):
+                return self.state
+
+        agg_executor = AggExecutor()
+        def udf2(x):
+            x = x.select(columns).to_numpy()
+            product = np.dot(x.transpose(), x)
+            return polars.from_numpy(product, columns = columns)
+
+        stream = self.select(columns)
+        stream = stream.transform( udf2, new_schema = columns, required_columns = set(columns), foldable=True)
+
+        return stream.stateful_transform( agg_executor , columns, required_columns = set(columns),
+                            partitioner=BroadcastPartitioner(), placement_strategy = SingleChannelStrategy())
 
 
-    def with_column(self, new_column, f, required_columns=None, foldable=True):
+    def with_columns(self, new_columns: dict, required_columns=None, foldable=True):
 
         """
-        This will create new columns from certain columns in the dataframe. This is similar to pandas `df.apply()` that makes new columns. 
-        This is similar to Spark UDF or Pandas UDF, Polars `with_column`, Spark `with_column`, etc. Note that this function, like most Quokka DataStream
-        functions, are not in-place, and will return a new DataStream, with the new column.
+
+        This will create new columns from certain columns in the dataframe. This is similar to Polars `with_columns`, Spark `with_columns`, etc. As usual,
+        this function is not in-place, and will return a new DataStream, with the new column.
         
         This is a separate API from `transform` because the semantics allow for projection and predicate pushdown through this node, 
         since the original columns are all preserved. Use this instead of `transform` if possible.
+
+        The arguments are a bit different from Polars `with_columns`. You need to specify a 
 
         A DataStream is implemented as a stream of batches. In the runtime, your function will be applied to each of those batches. The function must
         take as input a Polars DataFrame and produce a Polars DataFrame. This is a different mental model from say Pandas `df.apply`, where the function is written
@@ -692,76 +741,6 @@ class DataStream:
         You can even use Polars LazyFrame abstractions inside of this function. Of course, for ultimate flexbility, you are more than welcome to convert 
         the Polars DataFrame to a Pandas DataFrame and use `df.apply`. Just remember to convert it back to a Polars DataFrame with only the result column in the end!
 
-
-        Args:
-            new_column (str): The name of the new column.
-            f (function): The apply function. This apply function must take as input a Polars DataFrame and output a Polars DataFrame. 
-                The apply function must not have expectations on the length of its input. The output must have the same length as the input.
-                The apply function must produce the same output columns for every possible input.
-            required_columns (list or set): The names of the columns that are required for your function. If this is not specified then Quokka assumes 
-                all the columns are required for your function. Early projection past this function becomes impossible. Long story short, if you can 
-                specify this argument, do it.
-            foldable (bool): Whether or not the function can be executed as part of the batch post-processing of the previous operation in the 
-                execution graph. This is set to True by default. Correctly setting this flag requires some insight into how Quokka works. Lightweight
-                functions generally benefit from being folded. Heavyweight functions or those whose efficiency improve with large input sizes 
-                might benefit from not being folded. 
-
-        Return:
-            A new DataStream with a new column made by the user defined function.
-        
-        Examples:
-            
-            ~~~python
-
-            >>> f = qc.read_csv("lineitem.csv")
-
-            # people who care about speed of execution make full use of Polars columnar APIs.
-
-            >>> d = d.with_column("high", lambda x:(x["o_orderpriority"] == "1-URGENT") | (x["o_orderpriority"] == "2-HIGH"), required_columns = {"o_orderpriority"})
-
-            # people who care about speed of development can do something that hurts my eyes.
-
-            def f(x):
-                y = x.to_pandas()
-                y["high"] = y.apply(lambda x:(x["o_orderpriority"] == "1-URGENT") | (x["o_orderpriority"] == "2-HIGH"), axis = 1)
-                return polars.from_pandas(y["high"])
-
-            >>> d = d.with_column("high", f, required_columns={"o_orderpriority"})
-            ~~~
-        """
-
-        if required_columns is None:
-            required_columns = set(self.schema)
-
-        assert type(required_columns) == set
-        assert new_column not in self.schema, "For now new columns cannot have same names as existing columns"
-
-        assert type(f) == type(lambda x:1) or type(f) == polars.internals.expr.expr.Expr            
-
-        def polars_func_lambda(func, batch):
-            return batch.with_columns(polars.Series(name=new_column, values=func(batch)))
-
-        def polars_func_expr(expr, batch):
-            return batch.with_columns(expr.alias(new_column))
-
-        return self.quokka_context.new_stream(
-            sources={0: self},
-            partitioners={0: PassThroughPartitioner()},
-            node=MapNode(
-                schema=self.schema+[new_column],
-                schema_mapping={
-                    **{new_column: (-1, new_column)}, **{col: (0, col) for col in self.schema}},
-                required_columns={0: required_columns},
-                function=partial(polars_func_lambda, f) if type(f) == type(lambda x:1) else partial(polars_func_expr, f),
-                foldable=foldable),
-            schema=self.schema + [new_column],
-            sorted = self.sorted
-            )
-
-
-    def with_columns(self, column_udfs : dict, required_columns=None, foldable=True):
-
-        """
         You can specify a dictionary of UDFs to create multiple columns at once. This is a convenience function that is equivalent to calling
         `with_column` multiple times. See `with_column` for more details.
 
@@ -817,6 +796,7 @@ class DataStream:
                 function=polars_func,
                 foldable=foldable),
             schema=self.schema + new_columns,
+            sorted = self.sorted
             )
 
     def stateful_transform(self, executor: Executor, new_schema: list, required_columns: set,

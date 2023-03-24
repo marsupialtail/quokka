@@ -1,4 +1,4 @@
-# Setting up Quokka for EC2
+# **Setting up Quokka for EC2**
 
 ## The easy way
 

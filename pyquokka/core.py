@@ -192,7 +192,7 @@ class TaskManager:
             try:
                 target_info.predicate = sql_utils.evaluate(target_info.predicate)
             except:
-                target_info.predicate = "select * from batch_arrow where " + target_info.predicate.sql() 
+                target_info.predicate = "select * from batch_arrow where " + target_info.predicate.sql(dialect = "duckdb") 
             partition_function = partial(partition_fn, target_info.predicate, target_info.partitioner, target_info.batch_funcs, target_info.projection, number_target_channels)
 
             if source_actor_id not in self.partition_fns:

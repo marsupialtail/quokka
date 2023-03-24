@@ -554,7 +554,7 @@ class FilterNode(TaskNode):
         self.predicate = predicate
     
     def __str__(self):
-        result = "filter node: " + self.predicate.sql()
+        result = "filter node: " + self.predicate.sql(dialect = "duckdb")
         return result
     
     def lower(self, task_graph, parent_nodes, parent_source_info):

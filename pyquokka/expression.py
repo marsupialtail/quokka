@@ -8,91 +8,163 @@ class Expression:
         self.sqlglot_expr = sqlglot_expr
 
     def sql(self) -> str:
-        return self.sqlglot_expr.sql()
+        return self.sqlglot_expr.sql(dialect = "duckdb")
 
     def __repr__(self):
-        return self.sql()
+        return "Expression({})".format(self.sql())
     
     def __str__(self):
-        return self.sql()
+        return "Expression({})".format(self.sql())
 
     def __eq__(self, other):  # type: ignore
-        return Expression(self.sqlglot_expr == other.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(self.sqlglot_expr == other.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr == other)
 
     def __ne__(self, other):  # type: ignore
-        return Expression(self.sqlglot_expr != other.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(self.sqlglot_expr != other.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr != other)
 
     def __gt__(self, other):
-        return Expression(self.sqlglot_expr > other.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(self.sqlglot_expr > other.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr > other)
 
     def __ge__(self, other):
-        return Expression(self.sqlglot_expr >= other.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(self.sqlglot_expr >= other.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr >= other)
 
     def __lt__(self, other):
-        return Expression(self.sqlglot_expr < other.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(self.sqlglot_expr < other.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr < other)
 
     def __le__(self, other):
-        return Expression(self.sqlglot_expr <= other.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(self.sqlglot_expr <= other.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr <= other)
 
     def __and__(self, other):
-        return Expression(self.sqlglot_expr & other.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(self.sqlglot_expr & other.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr & other)
 
     def __or__(self, other):
-        return Expression(self.sqlglot_expr | other.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(self.sqlglot_expr | other.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr | other)
 
     def __mod__(self, other):
-        return Expression(self.sqlglot_expr % other.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(self.sqlglot_expr % other.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr % other)
 
     def __add__(self, other):
-        return Expression(self.sqlglot_expr + other.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(self.sqlglot_expr + other.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr + other)
 
     def __sub__(self, other):
-        return Expression(self.sqlglot_expr - other.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(self.sqlglot_expr - other.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr - other)
 
     def __mul__(self, other):
-        return Expression(self.sqlglot_expr * other.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(self.sqlglot_expr * other.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr * other)
 
     def __truediv__(self, other):
-        return Expression(self.sqlglot_expr / other.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(self.sqlglot_expr / other.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr / other)
 
     def __div__(self, other):
-        return Expression(self.sqlglot_expr / other.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(self.sqlglot_expr / other.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr / other)
     
     def __neg__(self):
         return Expression(-self.sqlglot_expr)
 
     def __radd__(self, other):
-        return Expression(other.sqlglot_expr + self.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(other.sqlglot_expr + self.sqlglot_expr)
+        else:
+            return Expression(other + self.sqlglot_expr)
 
     def __rsub__(self, other):
-        return Expression(other.sqlglot_expr - self.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(other.sqlglot_expr - self.sqlglot_expr)
+        else:
+            return Expression(other - self.sqlglot_expr)
 
     def __rmul__(self, other):
-        return Expression(other.sqlglot_expr * self.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(other.sqlglot_expr * self.sqlglot_expr)
+        else:
+            return Expression(other * self.sqlglot_expr)
 
     def __rdiv__(self, other):
-        return Expression(other.sqlglot_expr / self.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(other.sqlglot_expr / self.sqlglot_expr)
+        else:
+            return Expression(other / self.sqlglot_expr)
 
     def __rtruediv__(self, other):
-        return Expression(other.sqlglot_expr / self.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(other.sqlglot_expr / self.sqlglot_expr)
+        else:
+            return Expression(other / self.sqlglot_expr)
 
     def __rmod__(self, other):
-        return Expression(other.sqlglot_expr % self.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(other.sqlglot_expr % self.sqlglot_expr)
+        else:
+            return Expression(other % self.sqlglot_expr)
 
     def __pow__(self, power):
-        return Expression(self.sqlglot_expr ** power.sqlglot_expr)
+        if isinstance(power, Expression):
+            return Expression(self.sqlglot_expr ** power.sqlglot_expr)
+        else:
+            return Expression(self.sqlglot_expr ** power)
 
     def __rpow__(self, power):
-        return Expression(power.sqlglot_expr ** self.sqlglot_expr)
+        if isinstance(power, Expression):
+            return Expression(power.sqlglot_expr ** self.sqlglot_expr)
+        else:
+            return Expression(power ** self.sqlglot_expr)
 
     def __invert__(self):
         return Expression(~self.sqlglot_expr)
 
     def __rand__(self, other):
-        return Expression(other.sqlglot_expr & self.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(other.sqlglot_expr & self.sqlglot_expr)
+        else:
+            return Expression(other & self.sqlglot_expr)
 
     def __ror__(self, other):
-        return Expression(other.sqlglot_expr | self.sqlglot_expr)
+        if isinstance(other, Expression):
+            return Expression(other.sqlglot_expr | self.sqlglot_expr)
+        else:
+            return Expression(other | self.sqlglot_expr)
     
     @property
     def str(self):
@@ -143,7 +215,7 @@ class ExprStringNameSpace:
         Args:
             format (str): "datetime" (default) | "date" | "time"
         """
-        return self.expr.sqlglot_expr.cast(format)
+        return Expression(self.expr.sqlglot_expr.cast(format))
 
     def hash(self):
         return Expression(F.hash(self.expr.sqlglot_expr))
@@ -169,20 +241,25 @@ class ExprDateTimeNameSpace:
         return Expression(sqlglot.dataframe.sql.Column(sqlglot.exp.Anonymous(this = "microsecond", expressions = [self.expr.sqlglot_expr.expression])))
     
     def weekday(self):
-        return Expression(F.dayofweek(self.expr.sqlglot_expr))
+        return Expression(sqlglot.dataframe.sql.Column(sqlglot.exp.Anonymous(this = "dayofweek", expressions = [self.expr.sqlglot_expr.expression])))
 
     def week(self):
-        return Expression(F.weekofyear(self.expr.sqlglot_expr))
+        return Expression(sqlglot.dataframe.sql.Column(sqlglot.exp.Anonymous(this = "weekofyear", expressions = [self.expr.sqlglot_expr.expression])))
 
     def month(self):
         return Expression(F.month(self.expr.sqlglot_expr))
+    
+    def year(self):
+        return Expression(F.year(self.expr.sqlglot_expr))
 
     def offset_by(self, num, unit):
-        assert type(unit) == str and unit in {"ms", "s", "m", "h", "d", "w", "M", "y"}, "unit must be one of 'ms', 's', 'm', 'h', 'd', 'w', 'M', 'y'"
+        assert type(unit) == str and unit in {"ms", "s", "m", "h", "d",  "M", "y"}, "unit must be one of 'ms', 's', 'm', 'h', 'd', 'M', 'y'"
+        mapping = {"ms": "millisecond", "s": "second", "m": "minute", "h": "hour", "d": "day", "M": "month", "y": "year"}
         if type(num) == int or type(num) == float:
-            return Expression(self.expr.sqlglot_expr + F.lit(num).cast("interval {}".format(unit)))
-        elif type(num) == Expression:
-            return Expression(self.expr.sqlglot_expr + num.sqlglot_expr.cast("interval {}".format(unit)))
+            return Expression(self.expr.sqlglot_expr + sqlglot.parse_one("interval {} {}".format(num, mapping[unit])))
         else:
-            raise Exception("num must be int, float or Expression")
+            raise Exception("num must be an int or float. Offseting by a column is not supported yet")
+    
+    def strftime(self):
+        return Expression(self.expr.sqlglot_expr.cast("string"))
     

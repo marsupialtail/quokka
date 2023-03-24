@@ -86,7 +86,7 @@ class Catalog:
         if predicate is None or predicate == sqlglot.exp.TRUE:
             count = len(sample)
         else:
-            sql_statement = "select count(*) from sample where " + predicate.sql()
+            sql_statement = "select count(*) from sample where " + predicate.sql(dialect = "duckdb")
             con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
             count = con.execute(sql_statement).fetchall()[0][0]
         

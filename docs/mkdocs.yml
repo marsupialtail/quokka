@@ -1,6 +1,7 @@
 site_name: Quokka
 repo_url: https://github.com/marsupialtail/quokka
 
+
 nav:
         - Home: index.md
         - Cartoons: started.md
@@ -9,11 +10,46 @@ nav:
         - How is Quokka different from ...?: different.md
         - Tutorials: 
                 - DataStream API (Use Quokka): simple.md
-                - TaskGraph API (Contribute to Quokka): tutorial.md
-        - Dataframe API reference: 
-                - QuokkaContext: quokka_context.md
-                - DataStream: datastream.md
+                - TaskGraph API (Contribute to Quokka): tutorial.md          
+        - QuokkaContext API Reference: 
+                - QuokkaContext.read_csv: quokka_context/read_csv.md
+                - QuokkaContext.read_parquet: quokka_context/read_parquet.md
+                - QuokkaContext.read_iceberg: quokka_context/read_iceberg.md
+                - QuokkaContext.read_delta: quokka_context/read_delta.md
+                - QuokkaContext.read_json: quokka_context/read_json.md
+        - DataStream API Reference: 
+                - DataStream.collect: datastream/collect.md
+                - DataStream.compute: datastream/compute.md
+                - DataStream.explain: datastream/explain.md
+                - DataStream.write_csv: datastream/write_csv.md
+                - DataStream.write_parquet: datastream/write_parquet.md
+                - DataStream.filter: datastream/filter.md
+                - DataStream.filter_sql: datastream/filter_sql.md
+                - DataStream.select: datastream/select.md
+                - DataStream.drop: datastream/drop.md
+                - DataStream.rename: datastream/rename.md
+                - DataStream.transform: datastream/transform.md
+                - DataStream.transform_sql: datastream/transform_sql.md
+                - DataStream.union: datastream/union.md
+        - OrderedStream API Reference:
+                - OrderedStream.stack: orderedstream/stack.md
+
+                
         
 
-theme: readthedocs
+theme: 
+  name: material
+  logo: quokka.png
+  favicon: quokka.png
 
+watch:
+  - /home/ziheng/quokka/pyquokka/
+
+plugins:
+  - search
+  - mkdocstrings :
+      handlers:
+        python:
+          setup_commands:
+            - import sys
+            - sys.path.append('../pyquokka/')
