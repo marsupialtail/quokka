@@ -7,6 +7,8 @@ import pyquokka
 import ray
 import json
 import signal
+import polars
+from pssh.clients import ParallelSSHClient
 
 def preexec_function():
     # Ignore the SIGINT signal by setting the handler to the standard
@@ -14,12 +16,13 @@ def preexec_function():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 class EC2Cluster:
-    def __init__(self, public_ips, private_ips, instance_ids, cpu_count_per_instance) -> None:
+    def __init__(self, public_ips, private_ips, instance_ids, cpu_count_per_instance, spill_dir = "/data") -> None:
         
         self.num_node = len(public_ips)
         self.public_ips = {}
         self.private_ips = {}
         self.instance_ids = {}
+        self.spill_dir = "/data"
 
         for node in range(self.num_node):
             self.public_ips[node] = public_ips[node]
@@ -37,9 +40,7 @@ class EC2Cluster:
                  runtime_env={"py_modules":[pyquokka_loc]})
     
     def to_json(self, output = "cluster.json"):
-        json.dump({"instance_ids":self.instance_ids,"cpu_count_per_instance":self.cpu_count},open(output,"w"))
-    
-
+        json.dump({"instance_ids":self.instance_ids,"cpu_count_per_instance":self.cpu_count, "spill_dir": self.spill_dir},open(output,"w"))
 
 
 class LocalCluster:
@@ -92,19 +93,17 @@ class QuokkaClusterManager:
         self.launch_all("pip3 install " + req, list(cluster.public_ips.values()), "Failed to install " + req)
 
     def launch_all(self, command, ips, error = "Error", ignore_error = False):
-        commands = ["ssh -oStrictHostKeyChecking=no -oConnectTimeout=4 -i " + self.key_location + " ubuntu@" + str(ip) + " " + command for ip in ips]
-        processes = [subprocess.Popen(command, close_fds=True, shell=True) for command in commands]
-        return_codes = [process.wait() for process in processes]
-        if sum(return_codes) != 0 and not ignore_error:
-            raise Exception(error)
-    
-    def launch_all_t(self, command, ips, error = "Error"):
-        commands = ["ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + str(ip) + " -t '" + command + "'" for ip in ips]
-        processes = [subprocess.Popen(command, close_fds=True, shell=True) for command in commands]
-        return_codes = [process.wait() for process in processes]
-        if sum(return_codes) != 0:
-            raise Exception(error)
-    
+
+        client = ParallelSSHClient(ips, user="ubuntu", pkey=self.key_location, timeout=2)
+        output = client.run_command(command)
+        result = []
+        for host_output in output:
+            for line in host_output.stdout:
+                result.append(line)
+            exit_code = host_output.exit_code
+            assert exit_code == 0 or ignore_error, exit_code
+        return result
+
     def copy_all(self, file_path, ips, error = "Error"):
         commands = ["scp -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " " + file_path + " ubuntu@" + str(ip) + ":. " for ip in ips]
         processes = [subprocess.Popen(command, close_fds=True, shell=True) for command in commands]
@@ -112,15 +111,19 @@ class QuokkaClusterManager:
         if sum(return_codes) != 0:
             raise Exception(error)
 
-    def check_instance_alive(self, public_ip):
-        z = os.system("ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + public_ip)
-        if z == 0:
-            return False
-        else:
-            return True
+    def check_instance_alive(self, public_ips):
+        count = 0
+        while True:
+            z = [os.system("ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + public_ip +" time") for public_ip in public_ips]
+            if sum(z) == 0:
+                break
+            else:
+                count += 1
+                if count == 6:
+                    raise Exception("Couldn't connect to new instance in 30 seconds.")
+                time.sleep(5)
     
-    def _initialize_instances(self, instance_ids):
-        num_instances = len(instance_ids)
+    def _initialize_instances(self, instance_ids, spill_dir):
         ec2 = boto3.client("ec2")
         waiter = ec2.get_waiter('instance_running')
         waiter.wait(InstanceIds=instance_ids)
@@ -131,86 +134,30 @@ class QuokkaClusterManager:
         leader_public_ip = public_ips[0]
         leader_private_ip = private_ips[0]
 
-        count = 0
-        while True:
-            z = [os.system("ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + public_ip +" time") for public_ip in public_ips]
-            if sum(z) == 0:
-                break
-            else:
-                count += 1
-                if count == 6:
-                    raise Exception("Couldn't connect to new instance in 30 seconds.")
-                time.sleep(5)
+        self.check_instance_alive(public_ips)
 
-        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + 
-        """ /home/ubuntu/.local/bin/ray start --disable-usage-stats --head --port=6380 --object-store-memory 5000000000
-        --system-config='{"automatic_object_spilling_enabled":true,"max_io_workers":4,"object_spilling_config":"{\"type\":\"filesystem\",\"params\":{\"directory_path\":\"/data\"}}"}""")
+        self.set_up_spill_dir(public_ips, spill_dir)
+        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + " 'bash -s' < " + pyquokka.__file__.replace("__init__.py","leader_startup.sh"))
         print(z)
-        # this is a bug, it will only work with python3.8!
-        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + 
-        " redis-server /home/ubuntu/.local/lib/python3.8/site-packages/pyquokka/redis.conf --port 6800 --protected-mode no&")
-        # if z != 0:
-        #     raise Exception("failed to start ray head node")
-        print(leader_private_ip)
-        time.sleep(1)
+        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + " 'bash -s' < " + pyquokka.__file__.replace("__init__.py","leader_start_ray.sh"))
+        print(z)
+
         command ="/home/ubuntu/.local/bin/ray start --address='" + str(leader_private_ip) + ":6380' --redis-password='5241590000000000'"
         self.launch_all(command, public_ips, "ray workers failed to connect to ray head node")
 
-        pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
-        flight_file = pyquokka_loc + "/flight.py"
-        print("attempting to copy flight server file")
-        self.copy_all(flight_file, public_ips, "Failed to copy flight server file.")
-        self.launch_all("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288", public_ips, "Failed to set malloc limit")
-        #self.launch_all("touch /home/ubuntu/flight-log", public_ips, "Failed to create flight log file.")
-        #self.launch_all("python3 flight.py >> /home/ubuntu/flight-log  &", public_ips, "Failed to start flight servers on workers.")
-        #self.launch_all_t("nohup python3 -u flight.py >> /home/ubuntu/flight-log &", public_ips, "Failed to start flight servers on workers.")
-        self.launch_all("python3 -u flight.py &", public_ips, "Failed to start flight servers on workers.")
-        print("Trying to set up spill dir.")
-        try:
-            self.launch_all("sudo mkfs.ext4 -E nodiscard /dev/nvme1n1;", public_ips, "failed to format nvme ssd")
-            self.launch_all("sudo mount /dev/nvme1n1 /data;", public_ips, "failed to mount nvme ssd")
-            self.launch_all("sudo chmod -R a+rw /data/", public_ips, "failed to give spill dir permissions")
-        except:
-            pass
+        self.copy_and_launch_flight(public_ips)
 
-    def create_cluster(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = []):
+    def set_up_envs(self, public_ips, requirements, aws_access_key, aws_access_id):
 
-        start_time = time.time()
-        ec2 = boto3.client("ec2")
-        vcpu_per_node = ec2.describe_instance_types(InstanceTypes=[instance_type])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
-        waiter = ec2.get_waiter('instance_running')
-
-        # important 2 things:
-        # this instance needs to have all the things installed on it
-        # this instance needs to have the right tcp permissions
-        # don't trust me with the AMI? https://cloud-images.ubuntu.com/locator/ This is amazon default ubuntu20.04. Needs 20.04 since python 3.8
-        res = ec2.run_instances(ImageId=ami, InstanceType = instance_type, SecurityGroupIds = [self.security_group], KeyName=self.key_name ,MaxCount=num_instances, MinCount=num_instances)
-        instance_ids = [res['Instances'][i]['InstanceId'] for i in range(num_instances)] 
-        waiter.wait(InstanceIds=instance_ids)
-        a = ec2.describe_instances(InstanceIds = instance_ids)
-        public_ips = [a['Reservations'][0]['Instances'][i]['PublicIpAddress'] for i in range(num_instances)]
-        private_ips = [a['Reservations'][0]['Instances'][i]['PrivateIpAddress'] for i in range(num_instances)]
-        leader_public_ip = public_ips[0]
-
-        count = 0
-        while True:
-            z = [os.system("ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + public_ip +" time") for public_ip in public_ips]
-            if sum(z) == 0:
-                break
-            else:
-                count += 1
-                if count == 6:
-                    raise Exception("Couldn't connect to new instance in 30 seconds.")
-                time.sleep(5)
-
-        self.launch_all("sudo apt update", public_ips, "Failed to apt-get update")
-        self.launch_all("sudo apt install -y python3-pip", public_ips, "Failed to install pip", ignore_error= False)
-        self.launch_all("sudo apt install -y awscli", public_ips, "Failed to install awscli", ignore_error=False)
+        for public_ip in public_ips:
+            # doesn't jibe so well with pssh it seems
+            z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + public_ip + " 'bash -s' < " + pyquokka.__file__.replace("__init__.py","common_startup.sh"))
+            print(z)
         self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
         self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
 
         # cluster must have same ray version as client.
-        requirements = ["ray==" + ray.__version__, "pyquokka"] + requirements
+        requirements = ["ray==" + ray.__version__, "polars==" + polars.__version__,  "pyquokka"] + requirements
         for req in requirements:
             assert type(req) == str
             try:
@@ -218,15 +165,45 @@ class QuokkaClusterManager:
             except:
                 pass
 
-        pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
-        script = pyquokka_loc + "/leader_startup.sh"
-        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + " 'sudo bash -s' < " + script)
-        self.launch_all("sudo mkdir /data", public_ips, "failed to make temp spill directory")
-        self._initialize_instances(instance_ids)
+    def copy_and_launch_flight(self, public_ips):
         
+        self.copy_all(pyquokka.__file__.replace("__init__.py","flight.py"), public_ips, "Failed to copy flight server file.")
+        self.launch_all("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288", public_ips, "Failed to set malloc limit")
+        self.launch_all("nohup python3 -u flight.py > foo.out 2> foo.err < /dev/null &", public_ips, "Failed to start flight servers on workers.")
 
-        # I can't think of a better way to do this. This is the way to launch the flight server on each worker:
-        # first find the flight.py locally, copy it to each of the machines, and run all of them. 
+    def set_up_spill_dir(self, public_ips, spill_dir):
+        print("Trying to set up spill dir.")   
+        result = self.launch_all("sudo nvme list", public_ips, "failed to list nvme devices")
+        devices = [sentence.split(" ")[0] for sentence in result if "Amazon EC2 NVMe Instance Storage" in sentence]
+        assert all([device == devices[0] for device in devices]), "All instances must have same nvme device location. Raise Github issue if you see this."
+        device = devices[0]
+        print("Found nvme device: ", device)
+        
+        try:
+            self.launch_all("sudo mkfs.ext4 -E nodiscard {};".format(device), public_ips, "failed to format nvme ssd")
+            self.launch_all("sudo mount {} {};".format(device, spill_dir), public_ips, "failed to mount nvme ssd")
+            self.launch_all("sudo chmod -R a+rw {}".format(spill_dir), public_ips, "failed to give spill dir permissions")
+        except:
+            pass
+
+    def create_cluster(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = [], spill_dir = "/data"):
+
+        start_time = time.time()
+        ec2 = boto3.client("ec2")
+        vcpu_per_node = ec2.describe_instance_types(InstanceTypes=[instance_type])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
+        waiter = ec2.get_waiter('instance_running')
+        res = ec2.run_instances(ImageId=ami, InstanceType = instance_type, SecurityGroupIds = [self.security_group], KeyName=self.key_name ,MaxCount=num_instances, MinCount=num_instances)
+        instance_ids = [res['Instances'][i]['InstanceId'] for i in range(num_instances)] 
+        waiter.wait(InstanceIds=instance_ids)
+        a = ec2.describe_instances(InstanceIds = instance_ids)
+        public_ips = [a['Reservations'][0]['Instances'][i]['PublicIpAddress'] for i in range(num_instances)]
+        private_ips = [a['Reservations'][0]['Instances'][i]['PrivateIpAddress'] for i in range(num_instances)]
+
+        self.check_instance_alive(public_ips)
+
+        self.set_up_envs(public_ips, requirements, aws_access_key, aws_access_id)
+        self.launch_all("sudo mkdir /data", public_ips, "failed to make temp spill directory")
+        self._initialize_instances(instance_ids, spill_dir)
 
         print("Launching of Quokka cluster used: ", time.time() - start_time)
 
@@ -269,6 +246,7 @@ class QuokkaClusterManager:
         
         stuff = json.load(open(json_file,"r"))
         cpu_count = int(stuff["cpu_count_per_instance"])
+        spill_dir = stuff["spill_dir"]
         instance_ids = self.str_key_to_int(stuff["instance_ids"])
         instance_ids = [instance_ids[i] for i in range(len(instance_ids))]
         a = ec2.describe_instances(InstanceIds = instance_ids)
@@ -277,7 +255,7 @@ class QuokkaClusterManager:
 
         if sum([i=="stopped" for i in states]) == len(states):
             ec2.start_instances(InstanceIds = instance_ids)
-            self._initialize_instances(instance_ids)
+            self._initialize_instances(instance_ids, spill_dir)
             a = ec2.describe_instances(InstanceIds = instance_ids)
 
             public_ips = [k['PublicIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
@@ -292,7 +270,7 @@ class QuokkaClusterManager:
             print("Cluster in an inconsistent state. Either only some machines are running or some machines have been terminated.")
             return False
     
-    def get_cluster_from_ray(self, path_to_yaml, aws_access_key, aws_access_id, requirements = []):
+    def get_cluster_from_ray(self, path_to_yaml, aws_access_key, aws_access_id, requirements = [], spill_dir = "/data"):
 
         import yaml
         ec2 = boto3.client("ec2")
@@ -312,54 +290,32 @@ class QuokkaClusterManager:
         public_ips = []
         private_ips = []
 
+        instance_names = [[k for k in instance['Tags'] if k['Key'] == 'ray-user-node-type'][0]['Value'] for reservation in response['Reservations'] for instance in reservation['Instances']]
         instance_ids = [instance['InstanceId'] for reservation in response['Reservations'] for instance in reservation['Instances']]
         public_ips = [instance['PublicIpAddress'] for reservation in response['Reservations'] for instance in reservation['Instances']]
         private_ips = [instance['PrivateIpAddress'] for reservation in response['Reservations'] for instance in reservation['Instances']]
 
+        try:
+            head_index = instance_names.index("ray.head.default")
+        except:
+            print("No head node found. Please make sure that the cluster is running.")
+            return False
+    
+        # rotate instance_ids, public_ips, private_ips so that head is first
+        instance_ids = instance_ids[head_index:] + instance_ids[:head_index]
+        public_ips = public_ips[head_index:] + public_ips[:head_index]
+        private_ips = private_ips[head_index:] + private_ips[:head_index]
+
         assert len(instance_ids) == len(public_ips) == len(private_ips)
         print("Detected {} instances in running ray cluster {}".format(len(instance_ids), cluster_name))
 
-        leader_public_ip = public_ips[0]
         print(public_ips)
+        self.set_up_envs(public_ips, requirements, aws_access_key, aws_access_id)
+        self.launch_all("sudo mkdir {}".format(spill_dir), public_ips, "failed to make temp spill directory", ignore_error = True)
+        self.set_up_spill_dir(public_ips, spill_dir)
 
-        self.launch_all("sudo apt update", public_ips, "Failed to apt-get update")
-        self.launch_all("sudo apt install -y python3-pip", public_ips, "Failed to install pip", ignore_error= False)
-        self.launch_all("sudo apt install -y awscli", public_ips, "Failed to install awscli", ignore_error=False)
-        self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
-        self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
+        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + public_ips[0] + " 'bash -s' < " + pyquokka.__file__.replace("__init__.py","leader_startup.sh"))
+        print(z)
 
-        # cluster must have same ray version as client.
-        requirements = ["ray==" + ray.__version__, "pyquokka"] + requirements
-        for req in requirements:
-            assert type(req) == str
-            try:
-                self.launch_all("pip3 install " + req, public_ips, "Failed to install " + req)
-            except:
-                pass
-
-        pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
-        script = pyquokka_loc + "/leader_startup.sh"
-        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + " 'sudo bash -s' < " + script)
-        self.launch_all("sudo mkdir /data", public_ips, "failed to make temp spill directory")
-        
-        # this is a bug, it will only work with python3.8!
-        z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + 
-        " redis-server /home/ubuntu/.local/lib/python3.8/site-packages/pyquokka/redis.conf --port 6800 --protected-mode no&")
-
-        pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
-        flight_file = pyquokka_loc + "/flight.py"
-        print("attempting to copy flight server file")
-        self.copy_all(flight_file, public_ips, "Failed to copy flight server file.")
-        self.launch_all("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288", public_ips, "Failed to set malloc limit")
-
-        self.launch_all("python3 -u flight.py &", public_ips, "Failed to start flight servers on workers.")
-        print("Trying to set up spill dir.")
-        try:
-            self.launch_all("sudo mkfs.ext4 -E nodiscard /dev/nvme1n1;", public_ips, "failed to format nvme ssd")
-            self.launch_all("sudo mount /dev/nvme1n1 /data;", public_ips, "failed to mount nvme ssd")
-            self.launch_all("sudo chmod -R a+rw /data/", public_ips, "failed to give spill dir permissions")
-        except:
-            pass
-
-
+        self.copy_and_launch_flight(public_ips)
         return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count)

@@ -6,7 +6,7 @@ echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://pack
 
 sudo apt-get update
 sudo apt-get install -y redis
-redis-server /home/ubuntu/.local/lib/python3.8/site-packages/pyquokka/redis.conf --port 6800 --protected-mode no&
+
+redis-server $(python3 -c 'import pyquokka; print(pyquokka.__file__.replace("__init__.py", "redis.conf"))') --port 6800 --protected-mode no&
 
 echo '* hard nofile 65536\n* soft nofile 65536\n* hard core unlimited\n* soft core unlimited' | sudo tee /etc/security/limits.conf
-
