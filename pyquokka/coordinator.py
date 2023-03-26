@@ -193,6 +193,10 @@ class Coordinator:
                 execute_handles = {worker: execute_handles[worker] for worker in alive_nodes}
                 execute_handles_list = list(execute_handles.values())
             
+            except Exception as e:
+                print(e)
+                raise e
+            
 
     '''
     The strategy here is that we are going to guarantee that every current running task or future task will have inputs pushed to them.

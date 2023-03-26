@@ -11,14 +11,14 @@ class QuokkaContext:
 
         self.sql_config= {"optimize_joins" : True, "s3_csv_materialize_threshold" : 10 * 1048576, "disk_csv_materialize_threshold" : 1048576,
                       "s3_parquet_materialize_threshold" : 10 * 1048576, "disk_parquet_materialize_threshold" : 1048576}
-        self.exec_config = {"hbq_path": "/data/", "fault_tolerance": False, "memory_limit": 0.25, "max_pipeline_batches": 30, 
+        self.exec_config = {"hbq_path": "/data/", "fault_tolerance": True, "memory_limit": 0.25, "max_pipeline_batches": 30, 
                         "checkpoint_interval": None, "checkpoint_bucket": "quokka-checkpoint"}
 
         self.latest_node_id = 0
         self.nodes = {}
         self.cluster = LocalCluster() if cluster is None else cluster
         if type(self.cluster) == LocalCluster:
-            assert self.exec_config["fault_tolerance"] == False, "Fault tolerance is not supported in local mode"
+            self.exec_config["fault_tolerance"] = False, "Fault tolerance is not supported in local mode, turning it off"
         self.io_per_node = io_per_node
         self.exec_per_node = exec_per_node
 
@@ -367,7 +367,7 @@ class QuokkaContext:
                     f = pq.ParquetFile(S3FileSystem().open_input_file(files[0]))
                     schema = [k.name for k in f.schema_arrow]
                 except:
-                    raise Exception("schema discovery failed for Parquet dataset at location ", table_location)
+                    raise Exception("schema discovery failed for Parquet dataset at location {}. Please raise Github issue.".format(table_location))
                 
                 token = ray.get(self.catalog.register_s3_parquet_source.remote(files[0], len(sizes)))
                 self.nodes[self.latest_node_id] = InputS3ParquetNode(files, schema)
@@ -377,7 +377,9 @@ class QuokkaContext:
                     f = pq.ParquetFile(S3FileSystem().open_input_file(table_location))
                     schema = [k.name for k in f.schema_arrow]
                 except:
-                    raise Exception("schema discovery failed for Parquet dataset at location ", table_location)
+                    raise Exception("""schema discovery failed for Parquet dataset at location {}. 
+                                    Note if you are specifying a prefix to many parquet files, must use asterix. E.g.
+                                    qc.read_parquet("s3://rottnest/happy.parquet/*")""".format(table_location))
                 key = "/".join(table_location.split("/")[1:])
                 response = s3.head_object(Bucket= bucket, Key=key)
                 size = response['ContentLength']
@@ -512,7 +514,7 @@ class QuokkaContext:
                 partitioners={k: PassThroughPartitioner() for k in sources},
                 node=StatefulNode(
                     schema=new_schema,
-                    schema_mapping={col: (-1, col) for col in new_schema},
+                    schema_mapping={col: {-1: col} for col in new_schema},
                     required_columns=required_cols,
                     operator= operator),
                 schema=new_schema)
@@ -531,7 +533,7 @@ class QuokkaContext:
         is entirely drained by this node before the other input stream starts to be processed. This can be used to implement build-probe join, e.g.
         implementing this is a priority.
     '''
-    def new_stream(self, sources: dict, partitioners: dict, node: Node, schema: list, sorted = None, materialized = False):
+    def new_stream(self, sources: dict, partitioners: dict, node, schema: list, sorted = None, materialized = False):
         self.nodes[self.latest_node_id] = node
         for source in sources:
             source_datastream = sources[source]
@@ -775,18 +777,22 @@ class QuokkaContext:
                     for conjunct in conjuncts:
                         columns = set(i.name for i in conjunct.find_all(
                             sqlglot.expressions.Column))
-                        parents = set(
-                            node.schema_mapping[col][0] for col in columns)
-                        # the schema mapping also tells you what this column is called in the parent
-                        rename_dict = {col: node.schema_mapping[col][1] for col in columns if col != node.schema_mapping[col][1]}
-                        # all the columns are from one parent, and not from yourself.
-                        if len(parents) == 1 and -1 not in parents:
-                            for identifier in conjunct.find_all(sqlglot.exp.Identifier):
-                                if identifier.name in rename_dict:
-                                    identifier.replace(sqlglot.exp.to_identifier(rename_dict[identifier.name]))
-                            parent_id = node.parents[parents.pop()]
-                            parent = self.execution_nodes[parent_id]
-                            parent.targets[node_id].and_predicate(conjunct)
+                        conjunct_schema_mappings = { col : node.schema_mapping[col] for col in columns }
+                        # each value here will be a dict of parent ids that have this column and what this column is called in the parent
+                        conjunct_parents = {col: set(conjunct_schema_mappings[col].keys()) for col in columns}
+                        # we need to make sure that all the values in conjunct_parents are the same, otherwise we cannot push this predicate down
+                        parents = conjunct_parents[list(conjunct_parents.keys())[0]]
+                        
+                        if all([parents == conjunct_parents[col] for col in conjunct_parents]) and -1 not in parents:
+                            for parent in parents:
+                                copied_conjunct = copy.deepcopy(conjunct)
+                                rename_dict = {col: node.schema_mapping[col][parent] for col in columns if col != node.schema_mapping[col][parent]}
+                                for identifier in copied_conjunct.find_all(sqlglot.exp.Identifier):
+                                    if identifier.name in rename_dict:
+                                        identifier.replace(sqlglot.exp.to_identifier(rename_dict[identifier.name]))
+                                parent_id = node.parents[parent]
+                                parent = self.execution_nodes[parent_id]
+                                parent.targets[node_id].and_predicate(copied_conjunct)
                         else:
                             new_conjuncts.append(conjunct)
                     predicate = sqlglot.exp.TRUE
@@ -896,17 +902,19 @@ class QuokkaContext:
 
                 # figure out which parent each pushable column came from
                 for col in pushable_projections:
-                    parent_idx, parent_col = node.schema_mapping[col]
+                    parent_dict = node.schema_mapping[col]
 
                     # this column is generated from this node you can't push this beyond yourself
-                    if parent_idx == -1:
+                    if -1 in parent_dict:
                         continue
 
-                    parent_id = node.parents[parent_idx]
-                    if parent_id in pushed_projections:
-                        pushed_projections[parent_id].add(parent_col)
-                    else:
-                        pushed_projections[parent_id] = {parent_col}
+                    for parent_idx in parent_dict:
+                        parent_col = parent_dict[parent_idx]
+                        parent_id = node.parents[parent_idx]
+                        if parent_id in pushed_projections:
+                            pushed_projections[parent_id].add(parent_col)
+                        else:
+                            pushed_projections[parent_id] = {parent_col}
 
                 for parent_idx in node.parents:
                     parent_id = node.parents[parent_idx]

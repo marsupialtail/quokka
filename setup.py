@@ -17,7 +17,7 @@ setup(
         description=DESCRIPTION,
         long_description=LONG_DESCRIPTION,
         packages=find_packages(),
-        package_data = {"":["redis.conf", "leader_startup.sh"]},
+        package_data = {"":["redis.conf", "leader_startup.sh", "common_startup.sh", "leader_start_ray.sh"]},
         install_requires=['pyarrow',
             'duckdb>=0.6.0',
             'redis',
@@ -34,7 +34,8 @@ setup(
             'graphviz',
             'tqdm',
             'aiohttp',
-            'botocore==1.27.59'
+            'botocore==1.27.59',
+            'parallel-ssh'
             ], # add any additional packages that 
         extra_requires = {
                 "datalake" : ["pyiceberg", "deltalake"]

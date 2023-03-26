@@ -1,5 +1,6 @@
 from sqlglot.dataframe.sql import functions as F
 import sqlglot
+import pyquokka.sql_utils as sql_utils
 
 class Expression:
     def __init__(self, sqlglot_expr) -> None:
@@ -9,6 +10,9 @@ class Expression:
 
     def sql(self) -> str:
         return self.sqlglot_expr.sql(dialect = "duckdb")
+    
+    def required_columns(self) -> set:
+        return sql_utils.required_columns_from_exp(self.sqlglot_expr.expression)
 
     def __repr__(self):
         return "Expression({})".format(self.sql())

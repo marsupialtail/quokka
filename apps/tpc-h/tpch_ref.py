@@ -1,5 +1,5 @@
 import polars
-
+polars.Config().set_tbl_cols(10)
 lineitem = polars.read_csv("/home/ziheng/tpc-h/lineitem.tbl", sep = "|", has_header=True).to_arrow()
 orders = polars.read_csv("/home/ziheng/tpc-h/orders.tbl", sep = "|", has_header=True).to_arrow()
 customer = polars.read_csv("/home/ziheng/tpc-h/customer.tbl", sep = "|", has_header=True).to_arrow()
@@ -753,4 +753,5 @@ def do_22_duckdb():
     """).arrow()
 
 
-print(polars.from_arrow(do_13_duckdb()))
+#print(polars.from_arrow(do_13_duckdb()))
+print(polars.from_arrow(do_1_duckdb()))

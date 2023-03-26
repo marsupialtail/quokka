@@ -159,7 +159,7 @@ class InputEC2ParquetDataset:
         self.filters = filters
 
         self.length = 0
-        self.workers = 2
+        self.workers = 4
 
         self.s3 = None
         self.iterator = None

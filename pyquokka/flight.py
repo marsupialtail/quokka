@@ -17,13 +17,6 @@ def print_if_debug(*x):
         print(*x)
 
 
-class DiskFile:
-    def __init__(self,filename) -> None:
-        self.filename = filename
-    def delete(self):
-        os.remove(self.filename)
-
-
 class FlightServer(pyarrow.flight.FlightServerBase):
     def __init__(self, host="localhost", location=None):
         super(FlightServer, self).__init__(location)
@@ -213,16 +206,14 @@ class FlightServer(pyarrow.flight.FlightServerBase):
                 # there could be some subtle bugs here but we can worry about that once we raise $50M from Sequoia. Spark still has fault tolerance bugs, right?
 
                 min_stage = exec_plan["stage"].min()
-                exec_plan = exec_plan.lazy().filter(polars.col("stage") == min_stage).sort("seq").limit(self.config_dict["max_batches"])\
-                                                .select(["source_actor_id", "source_channel_id", "seq", "partition_fn", "min_seq"])\
-                                                .collect()
-                
+                exec_plan = exec_plan.filter(polars.col("stage") == min_stage).sort("seq").limit(self.config_dict["max_batches"])\
+                                                .select(["source_actor_id", "source_channel_id", "seq", "partition_fn", "min_seq"])                
                 if len(exec_plan) == 0:
                     self.flights_lock.release()
                     return pyarrow.flight.GeneratorStream(pyarrow.schema([]), self.number_batches([]))
 
                 # pick the source with the most batches to give.
-                source_actor_id = exec_plan.lazy().groupby("source_actor_id").agg(polars.count()).sort("count",descending=True).limit(1).collect().to_dicts()[0]["source_actor_id"]
+                source_actor_id = exec_plan.groupby("source_actor_id").agg(polars.count()).sort("count",descending=True).limit(1).to_dicts()[0]["source_actor_id"]
                 
                 # we need to sort the exec plan!
                 # exec_plan = exec_plan.filter(polars.col("source_actor_id") == source_actor_id).sort(["source_channel_id","seq"])

@@ -387,37 +387,36 @@ class TaskGraph:
         
     def run(self):
 
-        def progress():
-            from tqdm import tqdm
+        from tqdm import tqdm
 
-            input_partitions = {}
-            pbars = {k: tqdm(total = self.input_partitions[k]) for k in self.input_partitions}
-            curr_source = 0
-            for k in pbars:
-                pbars[k].set_description("Processing input source " + str(curr_source))
-                input_partitions[k] = self.input_partitions[k]
-                curr_source += 1
+        execute_handle = self.context.coordinator.execute.remote()          
 
-            while True:
-                time.sleep(0.5)
-                current_partitions = {k : 0 for k in input_partitions}
-                ntt = self.NTT.to_dict(self.r)
-                ios = {k: ntt[k] for k in ntt if 'input' in str(ntt[k])}
-                for node in ios:
-                    for task in ios[node]:
-                        actor_id = task[1][0]
-                        current_partitions[actor_id] += len(task[1][2])
-                for k in current_partitions:
-                    pbars[k].update(input_partitions[k] - current_partitions[k])
-                input_partitions = current_partitions
-                if not any(input_partitions.values()):
+        input_partitions = {}
+        pbars = {k: tqdm(total = self.input_partitions[k]) for k in self.input_partitions}
+        curr_source = 0
+        for k in pbars:
+            pbars[k].set_description("Processing input source " + str(curr_source))
+            input_partitions[k] = self.input_partitions[k]
+            curr_source += 1
+
+        while True:
+            time.sleep(0.1)
+            try:
+                finished, unfinished = ray.wait([execute_handle], timeout= 0.01)
+                if len(finished) > 0:
+                    ray.get(execute_handle)
                     break
-
-
-        import threading
-        if not PROFILE:
-            new_thread = threading.Thread(target = progress)
-            new_thread.start()
-        ray.get(self.context.coordinator.execute.remote())
-        if not PROFILE:
-            new_thread.join()
+            except:
+                raise Exception("Error in execution")
+            current_partitions = {k : 0 for k in input_partitions}
+            ntt = self.NTT.to_dict(self.r)
+            ios = {k: ntt[k] for k in ntt if 'input' in str(ntt[k])}
+            for node in ios:
+                for task in ios[node]:
+                    actor_id = task[1][0]
+                    current_partitions[actor_id] += len(task[1][2])
+            for k in current_partitions:
+                pbars[k].update(input_partitions[k] - current_partitions[k])
+            input_partitions = current_partitions
+            # if not any(input_partitions.values()):
+            #     break

@@ -3,13 +3,12 @@ from pyquokka.dataset import *
 from pyquokka.logical import *
 from pyquokka.target_info import *
 from pyquokka.quokka_runtime import *
+from pyquokka.expression import * 
 from pyquokka.utils import EC2Cluster, LocalCluster
 from pyquokka.sql_utils import required_columns_from_exp, label_sample_table_names
 from functools import partial
 import pyarrow as pa
-from pyquokka.expression import * 
 from sqlglot.dataframe.sql import functions as F
-
 
 class DataStream:
 
@@ -72,17 +71,20 @@ class DataStream:
     def collect(self):
         """
         This will trigger the execution of computational graph, similar to Spark collect(). 
-        The result will be a Polars DataFrame on the master
+        The result will be a Polars DataFrame returned to the client. 
+        Like Spark, this will be slow or cause OOM if the result is very large!
+        
+        If you want to compute a temporary result that will be used in a future computation, try to use 
+        the `compute()` method instead.
 
         Return:
             Polars DataFrame. 
         
         Examples:
-            ~~~python
-            >>> f = qc.read_csv("my_csv.csv")
+            Result will be a Polars DataFrame, as if you did polars.read_csv("my_csv.csv")
 
-            >>> result = f.collect() # result will be a Polars dataframe, as if you did polars.read_csv("my_csv.csv")
-            ~~~
+            >>> f = qc.read_csv("my_csv.csv")
+            >>> result = f.collect()  
         """
         if self.materialized:
             return self._get_materialized_df()
@@ -93,7 +95,7 @@ class DataStream:
 
     def compute(self):
         """
-        This will trigger the execution of computational graph, similar to Spark collect
+        This will trigger the execution of computational graph, but store the result cached across the cluster.
         The result will be a Quokka DataSet, which you can then call to_df() or call to_stream() to initiate another computation.
 
         Return:
@@ -181,7 +183,7 @@ class DataStream:
             node=StatefulNode(
                 schema=["filename"],
                 # this is a stateful node, but predicates and projections can be pushed down.
-                schema_mapping={"filename": (-1, "filename")},
+                schema_mapping={"filename": {-1: "filename"}},
                 required_columns={0: set(self.schema)},
                 operator=executor
             ),
@@ -255,7 +257,7 @@ class DataStream:
             node=StatefulNode(
                 schema=["filename"],
                 # this is a stateful node, but predicates and projections can be pushed down.
-                schema_mapping={"filename": (-1, "filename")},
+                schema_mapping={"filename": {-1: "filename"}},
                 required_columns={0: set(self.schema)},
                 operator=executor
             ),
@@ -357,7 +359,7 @@ class DataStream:
         assert type(predicate) == str
         predicate = sqlglot.parse_one(predicate)
         # convert to CNF
-        predicate = optimizer.normalize.normalize(predicate)
+        predicate = optimizer.normalize.normalize(predicate, dnf = False)
 
         columns = set(i.name for i in predicate.find_all(
             sqlglot.expressions.Column))
@@ -376,7 +378,7 @@ class DataStream:
                 con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
                 return polars.from_arrow(con.execute("select * from batch_arrow where " + predicate.sql(dialect = "duckdb")).arrow())
         
-            transformed = self.transform(f, new_schema = self.schema, required_columns=self.schema)
+            transformed = self.transform(f, new_schema = self.schema, required_columns=required_columns_from_exp(predicate))
             return transformed
         else:
             return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=FilterNode(self.schema, predicate),
@@ -505,10 +507,10 @@ class DataStream:
                       for col in self.schema]
         schema_mapping = {}
         for key in rename_dict:
-            schema_mapping[rename_dict[key]] = (0, key)
+            schema_mapping[rename_dict[key]] = {0: key}
         for key in self.schema:
             if key not in rename_dict:
-                schema_mapping[key] = (0, key)
+                schema_mapping[key] = {0: key}
 
         def f(x): return x.rename(rename_dict)
 
@@ -606,7 +608,7 @@ class DataStream:
             partitioners={0: PassThroughPartitioner()},
             node=MapNode(
                 schema=new_schema,
-                schema_mapping={col: (-1, col) for col in new_schema},
+                schema_mapping={col: {-1: col} for col in new_schema},
                 required_columns={0: required_columns},
                 function=f,
                 foldable=foldable
@@ -671,13 +673,49 @@ class DataStream:
             node=MapNode(
                 schema=groupby + new_columns,
                 schema_mapping={
-                    **{new_column: (-1, new_column) for new_column in new_columns}, **{col: (0, col) for col in self.schema}},
+                    **{new_column: {-1: new_column} for new_column in new_columns}, **{col: {0: col} for col in self.schema}},
                 required_columns={0: required_columns},
                 function=partial(duckdb_func, enhanced_exp),
                 foldable=foldable),
             schema= groupby + new_columns,
             sorted = self.sorted
             )
+    
+    def union(self, other):
+
+        """
+        The union of two streams is a stream that contains all the elements of both streams.
+        The two streams must have the same schema.
+        """
+
+        assert self.schema == other.schema
+        assert self.sorted == other.sorted
+
+        class UnionExecutor(Executor):
+            def __init__(self) -> None:
+                self.state = None
+            def execute(self,batches,stream_id, executor_id):
+                return pa.concat_tables(batches)
+            def done(self,executor_id):
+                return
+        
+        executor = UnionExecutor()
+
+        node = StatefulNode(
+            schema=self.schema,
+            # cannot push through any predicates or projections!
+            schema_mapping={col: {0: col, 1: col} for col in self.schema},
+            required_columns={0: set(), 1: set()},
+            operator=executor
+        )
+
+        return self.quokka_context.new_stream(
+            sources={0: self, 1: other},
+            partitioners={0: PassThroughPartitioner(), 1: PassThroughPartitioner()},
+            node=node,
+            schema=self.schema,
+            sorted=None
+        )
 
     def gramian(self, columns):
 
@@ -716,7 +754,52 @@ class DataStream:
                             partitioner=BroadcastPartitioner(), placement_strategy = SingleChannelStrategy())
 
 
-    def with_columns(self, new_columns: dict, required_columns=None, foldable=True):
+    def with_columns_sql(self, new_columns: str, foldable = True):
+
+        """
+        This is the SQL analog of with_columns. 
+
+        Examples:
+
+            >>> d = qc.read_csv("lineitem.csv")
+
+            You can use Polars APIs inside of custom lambda functions: 
+
+            >>> d = d.with_columns_sql('o_orderpriority = "1-URGENT" or o_orderpriority = 2-HIGH as high, 
+            ...                        o_orderpriority = "3-MEDIUM" or o_orderpriority = 4-NOT SPECIFIED" as low')
+        
+        """
+
+        statements = new_columns.split(",")
+        sql_statement = "select *, " + new_columns + " from batch_arrow"
+        new_column_names = []
+        required_columns = set()
+        for statement in statements:
+            node = sqlglot.parse_one(statement)
+            assert type(node) == sqlglot.exp.Alias, "must provide new name for each column: x1 as some_compute, x2 as some_compute, etc."
+            new_column_names.append(node.alias)
+            required_columns = required_columns.union(required_columns_from_exp(node.this))
+
+        def polars_func(batch):
+            con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
+            batch_arrow = batch.to_arrow()
+            return polars.from_arrow(con.execute(sql_statement).arrow())
+
+        return self.quokka_context.new_stream(
+            sources={0: self},
+            partitioners={0: PassThroughPartitioner()},
+            node=MapNode(
+                schema=self.schema+ new_column_names,
+                schema_mapping={
+                    **{new_column: {-1: new_column} for new_column in new_column_names}, **{col: {0: col} for col in self.schema}},
+                required_columns={0: required_columns},
+                function=polars_func,
+                foldable=foldable),
+            schema=self.schema + new_column_names,
+            sorted = self.sorted
+            )
+
+    def with_columns(self, new_columns: dict, required_columns=set(), foldable=True):
 
         """
 
@@ -726,29 +809,32 @@ class DataStream:
         This is a separate API from `transform` because the semantics allow for projection and predicate pushdown through this node, 
         since the original columns are all preserved. Use this instead of `transform` if possible.
 
-        The arguments are a bit different from Polars `with_columns`. You need to specify a 
+        The arguments are a bit different from Polars `with_columns`. You need to specify a dictionary where key is new column name and value is either a Quokka
+        Expression or a Python function (lambda function or regular function). I think this is better than the Polars way and removes the possibility of having 
+        column names colliding.
+        
+        The preferred way is to supply Quokka Expressions for things that the Expression syntax supports. 
+        In case a function is supplied, it must assume a single input, which is a Polars DataFrame. Please look at the examples. 
 
         A DataStream is implemented as a stream of batches. In the runtime, your function will be applied to each of those batches. The function must
-        take as input a Polars DataFrame and produce a Polars DataFrame. This is a different mental model from say Pandas `df.apply`, where the function is written
-        for each row. There are two restrictions. First, your result must only have one column, and it should have 
-        the same name as your `new_column` argument. Second, your result must have the same length as the input Polars DataFrame. 
-
+        take as input a Polars DataFrame and produce a Polars DataFrame. This is a different mental model from Pandas or Polars `df.apply`, 
+        where the function is written for each row. **The function's output must be a Polars Series (or DataFrame with one column)! **
+        Of course you can call Polars or Pandas apply inside of this function if you have to do things row by row.
+        
         You can use whatever libraries you have installed in your Python environment in this function. If you are using this on a
         cloud cluster, you have to make sure the necessary libraries are installed on each machine. You can use the `utils` package in pyquokka to help
-        you do this.
+        you do this, in particular you can use `mananger.install_python_package(cluster, package_name)`.
         
         Importantly, your function can take full advantage of Polars' columnar APIs to make use of SIMD and other forms of speedy goodness. 
         You can even use Polars LazyFrame abstractions inside of this function. Of course, for ultimate flexbility, you are more than welcome to convert 
         the Polars DataFrame to a Pandas DataFrame and use `df.apply`. Just remember to convert it back to a Polars DataFrame with only the result column in the end!
 
-        You can specify a dictionary of UDFs to create multiple columns at once. This is a convenience function that is equivalent to calling
-        `with_column` multiple times. See `with_column` for more details.
-
         Args:
-            column_udfs (dict): A dictionary of column names to UDFs. The UDFs must take as input a Polars DataFrame and output a Polars DataFrame.
-                The UDFs must not have expectations on the length of its input. The output must have the same length as the input.
+            column_udfs (dict): A dictionary of column names to UDFs or Expressions. The UDFs must take as input a Polars DataFrame and output a Polars DataFrame.
+                The UDFs must not have expectations on the length of its input.
             reqired_columns (list or set): The names of the columns that are required for all your function. If this is not specified then Quokka assumes
-                all the columns are required for your function. Early projection past this function becomes impossible. Long story short, if you can
+                all the columns are required for your function. Early projection past this function becomes impossible. If you specify this and you got it wrong,
+                you will get an error at runtime. This is only required for UDFs. If you use Quokka Expressions, then Quokka will automatically figure out the required columns.
             foldable (bool): Whether or not the function can be executed as part of the batch post-processing of the previous operation in the
                 execution graph. This is set to True by default. Correctly setting this flag requires some insight into how Quokka works. Lightweight
 
@@ -756,46 +842,69 @@ class DataStream:
             A new DataStream with new columns made by the user defined functions.
         
         Examples:
-            
-            ~~~python
 
-            >>> f = qc.read_csv("lineitem.csv")
+            >>> d = qc.read_csv("lineitem.csv")
 
-            # people who care about speed of execution make full use of Polars columnar APIs.
+            You can use Polars APIs inside of custom lambda functions: 
 
             >>> d = d.with_columns({"high": lambda x:(x["o_orderpriority"] == "1-URGENT") | (x["o_orderpriority"] == "2-HIGH"), 
                 \"low": lambda x:(x["o_orderpriority"] == "5-LOW") | (x["o_orderpriority"] == "4-NOT SPECIFIED")}, 
                 \required_columns = {"o_orderpriority"})
-        """
 
-        if required_columns is None:
-            required_columns = set(self.schema)
+            You can also use Quokka Expressions. You don't need to specify required columns if you use only Quokka Expressions:
+
+            >>> d = d.with_columns({"high": (d["o_orderpriority"] == "1-URGENT") | (d["o_orderpriority"] == "2-HIGH"), 
+                \"low": (d["o_orderpriority"] == "5-LOW") | (d["o_orderpriority"] == "4-NOT SPECIFIED")})
+            
+            Or mix the two. You then have to specify required columns again. It is the set of columns required for *all* your functions.
+
+            >>> d = d.with_columns({"high": (lambda x:(x["o_orderpriority"] == "1-URGENT") | (x["o_orderpriority"] == "2-HIGH"), 
+                \"low": (d["o_orderpriority"] == "5-LOW") | (d["o_orderpriority"] == "4-NOT SPECIFIED")}, 
+                \required_columns = {"o_orderpriority"})
+        """
 
         assert type(required_columns) == set
 
         # fix the new column ordering
-        new_columns = list(column_udfs.keys())
+        new_column_names = list(new_columns.keys())
 
-        for new_column in column_udfs:
+        sql_statement = "select *"
+
+        for new_column in new_columns:
             assert new_column not in self.schema, "For now new columns cannot have same names as existing columns"
+            transform = new_columns[new_column]
+            assert type(transform) == type(lambda x:1) or type(transform) == Expression, "Transform must be a function or a Quokka Expression"
+            if type(transform) == Expression:
+                required_columns = required_columns.union(transform.required_columns())
+                sql_statement += ", " + transform.sql() + " as " + new_column 
+                
+            else:
+                # detected an arbitrary function. If required columns are not specified, assume all columns are required
+                if len(required_columns) == 0:
+                    required_columns = set(self.schema)
 
+        print(sql_statement, required_columns)
         def polars_func(batch):
-            for column_name in new_columns:
-                func = column_udfs[column_name]
-                batch = batch.with_column(polars.Series(name=column_name, values=func(batch)))
+
+            con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
+            if sql_statement != "select *": # if there are any columns to add
+                batch_arrow = batch.to_arrow()
+                batch = polars.from_arrow(con.execute(sql_statement + " from batch_arrow").arrow())
+            
+            batch = batch.with_columns([polars.Series(name=column_name, values=new_columns[column_name](batch)) for column_name in new_column_names if type(new_columns[column_name]) == type(lambda x:1)])
             return batch
 
         return self.quokka_context.new_stream(
             sources={0: self},
             partitioners={0: PassThroughPartitioner()},
             node=MapNode(
-                schema=self.schema+ new_columns,
+                schema=self.schema+ new_column_names,
                 schema_mapping={
-                    **{new_column: (-1, new_column) for new_column in new_columns}, **{col: (0, col) for col in self.schema}},
+                    **{new_column: {-1: new_column} for new_column in new_column_names}, **{col: {0: col} for col in self.schema}},
                 required_columns={0: required_columns},
                 function=polars_func,
                 foldable=foldable),
-            schema=self.schema + new_columns,
+            schema=self.schema + new_column_names,
             sorted = self.sorted
             )
 
@@ -841,7 +950,7 @@ class DataStream:
         custom_node = StatefulNode(
             schema=new_schema,
             # cannot push through any predicates or projections!
-            schema_mapping={col: (-1, col) for col in new_schema},
+            schema_mapping={col: {-1: col} for col in new_schema},
             required_columns={0: required_columns},
             operator=executor
         )
@@ -896,7 +1005,7 @@ class DataStream:
             node=StatefulNode(
                 schema=[key],
                 # this is a stateful node, but predicates and projections can be pushed down.
-                schema_mapping={col: (0, col) for col in [key]},
+                schema_mapping={col: {0: col} for col in [key]},
                 required_columns={0: set([key])},
                 operator=DistinctExecutor([key])
             ),
@@ -981,9 +1090,9 @@ class DataStream:
 
         new_schema = self.schema.copy()
         if self.materialized:
-            schema_mapping = {col: (-1, col) for col in self.schema}
+            schema_mapping = {col: {-1: col} for col in self.schema}
         else:
-            schema_mapping = {col: (0, col) for col in self.schema}
+            schema_mapping = {col: {0: col} for col in self.schema}
 
         # if the right table is already materialized, the schema mapping should forget about it since we can't push anything down anyways.
         # an optimization could be to push down the predicate directly to the materialized Polars DataFrame in the BroadcastJoinExecutor
@@ -1004,11 +1113,11 @@ class DataStream:
                     suffix not in new_schema, (
                         "the suffix was not enough to guarantee unique col names", col + suffix, new_schema)
                 new_schema.append(col + suffix)
-                schema_mapping[col+suffix] = (right_table_id, col + suffix)
+                schema_mapping[col+suffix] = {right_table_id: col + suffix}
                 rename_dict[col] = col + suffix
             else:
                 new_schema.append(col)
-                schema_mapping[col] = (right_table_id, col)
+                schema_mapping[col] = {right_table_id: col}
         
         # you only need the key column on the RHS! select overloads in DataStream or Polars DataFrame runtime polymorphic
         if how == "semi" or how == "anti":
@@ -1158,7 +1267,7 @@ class DataStream:
         node = StatefulNode(
                 schema=new_schema,
                 # cannot push through any predicates or projections!
-                schema_mapping={col: (-1, col) for col in new_schema},
+                schema_mapping={col: {-1: col} for col in new_schema},
                 required_columns={0: required_columns},
                 operator=operator,
                 assume_sorted={0:True}
@@ -1211,7 +1320,7 @@ class DataStream:
         
         topk_node = StatefulNode(
             schema=self.schema,
-            schema_mapping={col: (0, col) for col in self.schema},
+            schema_mapping={col: {0: col} for col in self.schema},
             required_columns={0: set(columns)},
             operator=ConcatThenSQLExecutor(sql_statement)
         )
@@ -1249,7 +1358,7 @@ class DataStream:
         agg_node = StatefulNode(
             schema=groupby + new_schema,
             schema_mapping={
-                    **{new_column: (-1, new_column) for new_column in new_schema}, **{col: (0, col) for col in groupby}},
+                    **{new_column: {-1: new_column} for new_column in new_schema}, **{col: {0: col} for col in groupby}},
             required_columns={0: set(groupby + [count_col])},
             operator=ConcatThenSQLExecutor(sql_statement),
         )
@@ -1282,13 +1391,13 @@ class DataStream:
         clauses = aggregations.split(",")
         assert all(["as" in clause or "AS" in clause for clause in clauses]), "must provide alias for each aggregation"
 
-        agged = self.sql_transform(batch_agg, groupby)
+        agged = self.transform_sql(batch_agg, groupby)
 
         # now we need to groupby and aggregate the final_agg
         agg_node = StatefulNode(
             schema=groupby + new_schema,
             schema_mapping={
-                    **{new_column: (-1, new_column) for new_column in new_schema}, **{col: (0, col) for col in groupby}},
+                    **{new_column: {-1: new_column} for new_column in new_schema}, **{col: {0: col} for col in groupby}},
             required_columns={0: set(agged.schema)},
             operator=SQLAggExecutor(groupby, orderby, final_agg)
         )
@@ -1470,7 +1579,7 @@ class GroupedDataStream:
         assert self.groupby[0] == right.groupby[0], "must be grouped by the same key"
         copartitioner = self.groupby[0]
 
-        schema_mapping={col: (-1, col) for col in new_schema}
+        schema_mapping={col: {-1: col} for col in new_schema}
 
         if required_cols_left is None:
             required_cols_left = set(self.source_data_stream.schema)
