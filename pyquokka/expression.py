@@ -9,7 +9,14 @@ class Expression:
         self.sqlglot_expr = sqlglot_expr
 
     def sql(self) -> str:
-        return self.sqlglot_expr.sql(dialect = "duckdb")
+        def dfs(node):
+            for k, v in node.iter_expressions():
+                dfs(v)
+            if isinstance(node, sqlglot.exp.Binary):
+                node.replace(sqlglot.exp.Paren(this = node.copy()))
+        
+        dfs(self.sqlglot_expr.expression)
+        return self.sqlglot_expr.expression.sql(dialect = "duckdb")
     
     def required_columns(self) -> set:
         return sql_utils.required_columns_from_exp(self.sqlglot_expr.expression)
