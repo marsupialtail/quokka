@@ -245,7 +245,7 @@ class TaskManager:
     
     def set_flight_configs(self, client):
 
-        message = pyarrow.py_buffer(pickle.dumps({"mem_limit" : self.configs["memory_limit"], "max_batches" : self.configs["max_pipeline_batches"], "actor_stages": self.ast}))
+        message = pyarrow.py_buffer(pickle.dumps({"mem_limit" : self.configs["memory_limit"], "max_batches" : self.configs["max_pipeline_batches"], "actor_stages": self.ast, "batch_attempt": self.configs["batch_attempt"]}))
         action = pyarrow.flight.Action("set_configs", message)
         for result in list(client.do_action(action)):
             if result.body.to_pybytes().decode("utf-8") != "True":

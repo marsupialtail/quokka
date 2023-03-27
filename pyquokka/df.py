@@ -12,7 +12,7 @@ class QuokkaContext:
         self.sql_config= {"optimize_joins" : True, "s3_csv_materialize_threshold" : 10 * 1048576, "disk_csv_materialize_threshold" : 1048576,
                       "s3_parquet_materialize_threshold" : 10 * 1048576, "disk_parquet_materialize_threshold" : 1048576}
         self.exec_config = {"hbq_path": "/data/", "fault_tolerance": True, "memory_limit": 0.25, "max_pipeline_batches": 30, 
-                        "checkpoint_interval": None, "checkpoint_bucket": "quokka-checkpoint"}
+                        "checkpoint_interval": None, "checkpoint_bucket": "quokka-checkpoint", "batch_attempt": 5}
 
         self.latest_node_id = 0
         self.nodes = {}

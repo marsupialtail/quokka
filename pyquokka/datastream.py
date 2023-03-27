@@ -883,7 +883,6 @@ class DataStream:
                 if len(required_columns) == 0:
                     required_columns = set(self.schema)
 
-        print(sql_statement, required_columns)
         def polars_func(batch):
 
             con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
