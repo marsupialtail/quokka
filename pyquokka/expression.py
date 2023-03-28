@@ -31,85 +31,85 @@ class Expression:
         if isinstance(other, Expression):
             return Expression(self.sqlglot_expr == other.sqlglot_expr)
         else:
-            return Expression(self.sqlglot_expr == other)
+            return Expression(self.sqlglot_expr == F.lit(other))
 
     def __ne__(self, other):  # type: ignore
         if isinstance(other, Expression):
             return Expression(self.sqlglot_expr != other.sqlglot_expr)
         else:
-            return Expression(self.sqlglot_expr != other)
+            return Expression(self.sqlglot_expr != F.lit(other))
 
     def __gt__(self, other):
         if isinstance(other, Expression):
             return Expression(self.sqlglot_expr > other.sqlglot_expr)
         else:
-            return Expression(self.sqlglot_expr > other)
+            return Expression(self.sqlglot_expr > F.lit(other))
 
     def __ge__(self, other):
         if isinstance(other, Expression):
             return Expression(self.sqlglot_expr >= other.sqlglot_expr)
         else:
-            return Expression(self.sqlglot_expr >= other)
+            return Expression(self.sqlglot_expr >= F.lit(other))
 
     def __lt__(self, other):
         if isinstance(other, Expression):
             return Expression(self.sqlglot_expr < other.sqlglot_expr)
         else:
-            return Expression(self.sqlglot_expr < other)
+            return Expression(self.sqlglot_expr < F.lit(other))
 
     def __le__(self, other):
         if isinstance(other, Expression):
             return Expression(self.sqlglot_expr <= other.sqlglot_expr)
         else:
-            return Expression(self.sqlglot_expr <= other)
+            return Expression(self.sqlglot_expr <= F.lit(other))
 
     def __and__(self, other):
         if isinstance(other, Expression):
             return Expression(self.sqlglot_expr & other.sqlglot_expr)
         else:
-            return Expression(self.sqlglot_expr & other)
+            return Expression(self.sqlglot_expr & F.lit(other))
 
     def __or__(self, other):
         if isinstance(other, Expression):
             return Expression(self.sqlglot_expr | other.sqlglot_expr)
         else:
-            return Expression(self.sqlglot_expr | other)
+            return Expression(self.sqlglot_expr | F.lit(other))
 
     def __mod__(self, other):
         if isinstance(other, Expression):
             return Expression(self.sqlglot_expr % other.sqlglot_expr)
         else:
-            return Expression(self.sqlglot_expr % other)
+            return Expression(self.sqlglot_expr % F.lit(other))
 
     def __add__(self, other):
         if isinstance(other, Expression):
             return Expression(self.sqlglot_expr + other.sqlglot_expr)
         else:
-            return Expression(self.sqlglot_expr + other)
+            return Expression(self.sqlglot_expr + F.lit(other))
 
     def __sub__(self, other):
         if isinstance(other, Expression):
             return Expression(self.sqlglot_expr - other.sqlglot_expr)
         else:
-            return Expression(self.sqlglot_expr - other)
+            return Expression(self.sqlglot_expr - F.lit(other))
 
     def __mul__(self, other):
         if isinstance(other, Expression):
             return Expression(self.sqlglot_expr * other.sqlglot_expr)
         else:
-            return Expression(self.sqlglot_expr * other)
+            return Expression(self.sqlglot_expr * F.lit(other))
 
     def __truediv__(self, other):
         if isinstance(other, Expression):
             return Expression(self.sqlglot_expr / other.sqlglot_expr)
         else:
-            return Expression(self.sqlglot_expr / other)
+            return Expression(self.sqlglot_expr / F.lit(other))
 
     def __div__(self, other):
         if isinstance(other, Expression):
             return Expression(self.sqlglot_expr / other.sqlglot_expr)
         else:
-            return Expression(self.sqlglot_expr / other)
+            return Expression(self.sqlglot_expr / F.lit(other))
     
     def __neg__(self):
         return Expression(-self.sqlglot_expr)
@@ -118,37 +118,37 @@ class Expression:
         if isinstance(other, Expression):
             return Expression(other.sqlglot_expr + self.sqlglot_expr)
         else:
-            return Expression(other + self.sqlglot_expr)
+            return Expression(F.lit(other) + self.sqlglot_expr)
 
     def __rsub__(self, other):
         if isinstance(other, Expression):
             return Expression(other.sqlglot_expr - self.sqlglot_expr)
         else:
-            return Expression(other - self.sqlglot_expr)
+            return Expression(F.lit(other) - self.sqlglot_expr)
 
     def __rmul__(self, other):
         if isinstance(other, Expression):
             return Expression(other.sqlglot_expr * self.sqlglot_expr)
         else:
-            return Expression(other * self.sqlglot_expr)
+            return Expression(F.lit(other) * self.sqlglot_expr)
 
     def __rdiv__(self, other):
         if isinstance(other, Expression):
             return Expression(other.sqlglot_expr / self.sqlglot_expr)
         else:
-            return Expression(other / self.sqlglot_expr)
+            return Expression(F.lit(other) / self.sqlglot_expr)
 
     def __rtruediv__(self, other):
         if isinstance(other, Expression):
             return Expression(other.sqlglot_expr / self.sqlglot_expr)
         else:
-            return Expression(other / self.sqlglot_expr)
+            return Expression(F.lit(other) / self.sqlglot_expr)
 
     def __rmod__(self, other):
         if isinstance(other, Expression):
             return Expression(other.sqlglot_expr % self.sqlglot_expr)
         else:
-            return Expression(other % self.sqlglot_expr)
+            return Expression(F.lit(other) % self.sqlglot_expr)
 
     def __pow__(self, power):
         if isinstance(power, Expression):
@@ -169,13 +169,13 @@ class Expression:
         if isinstance(other, Expression):
             return Expression(other.sqlglot_expr & self.sqlglot_expr)
         else:
-            return Expression(other & self.sqlglot_expr)
+            return Expression(F.lit(other) & self.sqlglot_expr)
 
     def __ror__(self, other):
         if isinstance(other, Expression):
             return Expression(other.sqlglot_expr | self.sqlglot_expr)
         else:
-            return Expression(other | self.sqlglot_expr)
+            return Expression(F.lit(other) | self.sqlglot_expr)
     
     @property
     def str(self):

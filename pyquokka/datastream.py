@@ -96,10 +96,17 @@ class DataStream:
     def compute(self):
         """
         This will trigger the execution of computational graph, but store the result cached across the cluster.
-        The result will be a Quokka DataSet, which you can then call to_df() or call to_stream() to initiate another computation.
+        The result will be a Quokka DataSet. You can read a DataSet `x` back into a DataStream via `qc.read_dataset(x)`.
+        This is similar to Spark's `persist()` method.
 
         Return:
-            Quokka Quokka DataSet. Currently this is going to be just a list of objects distributed across the Redis servers on the workers.
+            Quokka DataSet. This can be thought of as a list of objects cached in memory/disk across the cluster.
+        
+        Examples:
+
+            >>> f = qc.read_csv("my_csv.csv")
+            >>> result = f.collect()  
+            >>> d = qc.read_dataset(result)
         """
         dataset = self.quokka_context.new_dataset(self, self.schema)
         return self.quokka_context.execute_node(dataset.source_node_id, collect=False)
@@ -117,8 +124,7 @@ class DataStream:
 
     def write_csv(self, table_location, output_line_limit=1000000):
         """
-        This will write out the entire contents of the DataStream to a list of CSVs. This is a blocking operation, and will
-        call `collect()` under the hood.
+        This will write out the entire contents of the DataStream to a list of CSVs. 
 
         Args:
             table_lcation (str): the root directory to write the output CSVs to. Similar to Spark, Quokka by default
@@ -129,16 +135,15 @@ class DataStream:
                 this many rows in memory instead of using file appends, so you should have enough memory!
 
         Return:
-            Polars DataFrame containing the filenames of the CSVs that were produced. 
+            DataStream containing the filenames of the CSVs that were produced. 
         
         Examples:
-            ~~~python
+
             >>> f = qc.read_csv("lineitem.csv")
-
             >>> f = f.filter("l_orderkey < 10 and l_partkey > 5")
-
-            >>> f.write_csv("/home/user/test-out") # you should create the directory before hand.
-            ~~~
+            >>> f.write_csv("/home/user/test-out") 
+            
+            Make sure to create the directory first! This will write out a list of CSVs to /home/user/test-out.
         """
 
         assert "*" not in table_location, "* not supported, just supply the path."
@@ -196,8 +201,7 @@ class DataStream:
     def write_parquet(self, table_location, output_line_limit=5000000):
 
         """
-        This will write out the entire contents of the DataStream to a list of Parquets. This is a blocking operation, and will
-        call `collect()` under the hood. By default, each output Parquet file will contain one row group.
+        This will write out the entire contents of the DataStream to a list of Parquets. 
 
         Args:
             table_lcation (str): the root directory to write the output Parquets to. Similar to Spark, Quokka by default
@@ -207,16 +211,16 @@ class DataStream:
             output_line_limit (int): the row group size in each output file.
 
         Return:
-            Polars DataFrame containing the filenames of the Parquets that were produced. 
+            DataStream containing the filenames of the Parquets that were produced. 
         
         Examples:
-            ~~~python
+
             >>> f = qc.read_csv("lineitem.csv")
-
             >>> f = f.filter("l_orderkey < 10 and l_partkey > 5")
-
-            >>> f.write_parquet("/home/user/test-out") # you should create the directory before hand.
-            ~~~
+            >>> f.write_parquet("/home/user/test-out") 
+            
+            You should create the directory before hand! This will write out a list of Parquets to /home/user/test-out.
+            
         """
 
         if self.materialized:
@@ -280,7 +284,7 @@ class DataStream:
         to the input readers. As a result, you typically should not see a filter node in a Quokka execution plan shown by `explain()`. 
 
         Args:
-            predicate (str): an Expression.
+            predicate (Expression): an Expression.
 
         Return:
             A DataStream consisting of rows from the source DataStream that match the predicate.
@@ -378,7 +382,7 @@ class DataStream:
                 con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
                 return polars.from_arrow(con.execute("select * from batch_arrow where " + predicate.sql(dialect = "duckdb")).arrow())
         
-            transformed = self.transform(f, new_schema = self.schema, required_columns=required_columns_from_exp(predicate))
+            transformed = self.transform(f, new_schema = self.schema, required_columns=self.schema)
             return transformed
         else:
             return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=FilterNode(self.schema, predicate),
@@ -405,15 +409,16 @@ class DataStream:
             A DataStream consisting of only the columns selected.
         
         Examples:
-            ~~~python
+
             >>> f = qc.read_csv("lineitem.csv")
 
-            # select only the l_orderdate and l_orderkey columns
+            Select only the l_orderdate and l_orderkey columns
+
             >>> f = f.select(["l_orderdate", "l_orderkey"])
 
-            # this will now fail, since f's schema now consists of only two columns.
+            This will now fail, since f's schema now consists of only two columns.
+
             >>> f = f.select(["l_linenumber"])
-            ~~~
         """
 
         assert type(columns) == set or type(columns) == list
@@ -446,15 +451,15 @@ class DataStream:
             A DataStream consisting of all columns in the source DataStream that are not in `cols_to_drop`.
         
         Examples:
-            ~~~python
             >>> f = qc.read_csv("lineitem.csv")
 
-            # select only the l_orderdate and l_orderkey columns
+            Drop the l_orderdate and l_orderkey columns
+
             >>> f = f.drop(["l_orderdate", "l_orderkey"])
 
-            # this will now fail, since you dropped l_orderdate
+            This will now fail, since you dropped l_orderdate
+
             >>> f = f.select(["l_orderdate"])
-            ~~~
         """
         assert type(cols_to_drop) == list
         actual_cols_to_drop = []
@@ -480,13 +485,24 @@ class DataStream:
         The keys you supply in rename_dict must be present in the schema, and the rename operation
         must not lead to duplicate column names.
 
-        Note this will lead to a physical operation at runtime. 
+        Note this will lead to a physical operation at runtime. This might also complicate join reodering, so should be avoided if possible.
 
         Args:
             rename_dict (dict): key is old column name, value is new column name.
 
         Return:
             A DataStream with new schema according to rename. 
+        
+        Examples:
+            >>> f = qc.read_csv("lineitem.csv")
+
+            Rename the l_orderdate and l_orderkey columns
+
+            >>> f = f.rename({"l_orderdate": "orderdate", "l_orderkey": "orderkey"})
+
+            This will now fail, since you renamed l_orderdate
+
+            >>> f = f.select(["l_orderdate"])
         """
 
         new_sorted = {}
@@ -537,19 +553,19 @@ class DataStream:
         The new batch can have completely different schema or even length as the original batch, and the original data is considered lost,
         or consumed by this transformation function. This could be used to implement user-defined-aggregation-functions (UDAFs). Note in
         cases where you are simply generating a new column from other columns for each row, i.e. UDF, you probably want to use the 
-        `with_column` method instead. 
+        `with_columns` method instead. 
 
         A DataStream is implemented as a stream of batches. In the runtime, your transformation function will be applied to each of those batches.
         However, there are no guarantees whatsoever on the sizes of these batches! You should probably make sure your logic is correct
-        regardless of the sizes of the batches. For example, if your DataStream consists of a column of numbers, and you wish to compute the sum
+        regardless of the sizes of the batches. 
+        
+        For example, if your DataStream consists of a column of numbers, and you wish to compute the sum
         of those numbers, you could first transform the DataStream to return just the sum of each batch, and then hook this DataStream up to 
         a stateful operator that adds up all the sums. 
 
         You can use whatever libraries you have installed in your Python environment in this transformation function. If you are using this on a
         cloud cluster, you have to make sure the necessary libraries are installed on each machine. You can use the `utils` package in pyquokka to help
-        you do this.
-
-        This is very similar to Spark's seldom used `combineByKey` feature. 
+        you do this, in particular, check out `manager.install_python_package`.
 
         Note a transformation in the logical plan basically precludes any predicate pushdown or early projection past it, since the original columns 
         are assumed to be lost, and we cannot directly establish correspendences between the input columns to a transformation and its output 
@@ -561,7 +577,7 @@ class DataStream:
                 The transformation function must not have expectations on the length of its input. Similarly, the transformation function does not 
                 have to emit outputs of a specific size. The transformation function must produce the same output columns for every possible input.
             new_schema (list): The names of the columns of the Polars DataFrame that the transformation function produces. 
-            required_columns (list or set): The names of the columns that are required for this transformation. This argument is made mandatory
+            required_columns (set): The names of the columns that are required for this transformation. This argument is made mandatory
                 because it's often trivial to supply and can often greatly speed things up.
             foldable (bool): Whether or not the transformation can be executed as part of the batch post-processing of the previous operation in the 
                 execution graph. This is set to True by default. Correctly setting this flag requires some insight into how Quokka works. Lightweight
@@ -572,25 +588,26 @@ class DataStream:
             A new transformed DataStream with the supplied schema.
         
         Examples:
-            ~~~python
 
-            # a user defined function that takes in a Polars DataFrame with a single column "text", converts it to a Pyarrow table,
-            # and uses nice Pyarrow compute functions to perform the word count on this Polars DataFrame. Note 1) we have to convert it 
-            # back to a Polars DataFrame afterwards, 2) the function works regardless of input length and 3) the output columns are the 
-            # same regardless of the input.
-            def udf2(x):
-                x = x.to_arrow()
-                da = compute.list_flatten(compute.ascii_split_whitespace(x["text"]))
-                c = da.value_counts().flatten()
-                return polars.from_arrow(pa.Table.from_arrays([c[0], c[1]], names=["word","count"]))
+            Let's define a user defined function that takes in a Polars DataFrame with a single column "text", converts it to a Pyarrow table,
+            and uses nice Pyarrow compute functions to perform the word count on this Polars DataFrame. Note 1) we have to convert it 
+            back to a Polars DataFrame afterwards, 2) the function works regardless of input length and 3) the output columns are the 
+            same regardless of the input.
 
-            # this is a trick to read in text files, just use read_csv with a separator you know won't appear.
-            # the result will just be DataStream with one column. 
+            >>> def udf2(x):
+            >>>    x = x.to_arrow()
+            >>>    da = compute.list_flatten(compute.ascii_split_whitespace(x["text"]))
+            >>>    c = da.value_counts().flatten()
+            >>>    return polars.from_arrow(pa.Table.from_arrays([c[0], c[1]], names=["word","count"]))
+
+            This is a trick to read in text files, just use read_csv with a separator you know won't appear -- the result will just be DataStream with one column. 
+            
             >>> words = qc.read_csv("random_words.txt", ["text"], sep = "|")
 
-            # transform words to counts
+            Now transform words to counts. The result will be a DataStream with two columns, "word" and "count". 
+
             >>> counted = words.transform( udf2, new_schema = ["word", "count"], required_columns = {"text"}, foldable=True)
-            ~~~
+
         """
         if type(required_columns) == list:
             required_columns = set(required_columns)
@@ -620,12 +637,24 @@ class DataStream:
     def transform_sql(self, sql_expression, groupby = [], foldable = True):
 
         """
+
+        This is a SQL version of the `transform` method. It allows you to write SQL expressions that can be applied to each batch in the DataStream.
+        This is the X in `select X from Y`. The Y is the DataStream. The X can be any SQL expression, including aggregation functions.
         Example sql expression:
             "
             sum(l_quantity) as sum_qty,
             sum(l_extendedprice) as sum_base_price,
             sum(l_extendedprice * (1 - l_discount)) as sum_disc_price,
             sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)) as sum_charge"
+
+        You must supply an alias for each transformation. Any syntax that is supported by DuckDB can be used. 
+        You can optionally also specify groupby columns. This will apply the SQL expression `select X from Y group by Z` to each batch in the DataStream.
+
+        Args:
+            sql_expression (str): The SQL expression to apply to each batch in the DataStream.
+            groupby (list): The list of columns to group by.
+            foldable (bool): Whether or not the transformation can be executed as part of the batch post-processing of the previous operation in the
+                execution graph. This is set to True by default. Probably should be True.
         
         """
 
@@ -686,6 +715,20 @@ class DataStream:
         """
         The union of two streams is a stream that contains all the elements of both streams.
         The two streams must have the same schema.
+        Note: since DataStreams are not ordered, you should not make any assumptions on the ordering of the rows in the result.
+
+        Args:
+            other (DataStream): another DataStream of the same schema.
+
+        Return:
+            A new DataStream of the same schema as the two streams, with rows from both.
+
+        Examples:
+
+            >>> d = qc.read_csv("lineitem.csv")
+            >>> d1 = qc.read_csv("lineitem1.csv")
+            >>> d1 = d.union(d1)
+
         """
 
         assert self.schema == other.schema
@@ -718,6 +761,27 @@ class DataStream:
         )
 
     def gramian(self, columns):
+
+        """
+        This will compute DataStream[columns]^T * DataStream[columns]. The result will be len(columns) * len(columns), with schema same as columns.
+
+        Args:
+            columns (list): List of columns.
+
+        Return:
+            A new DataStream of shape len(columns) * len(columns) which is DataStream[columns]^T * DataStream[columns].
+
+        Examples:
+
+            >>> d = qc.read_csv("lineitem.csv")
+
+            Now create two columns high and low using SQL.
+
+            >>> d = d.gramian(["l_quantity", "l_extendedprice"])
+
+            Result will be a 2x2 matrix.
+        
+        """
 
         for col in columns:
             assert col in self.schema
@@ -759,14 +823,29 @@ class DataStream:
         """
         This is the SQL analog of with_columns. 
 
+        Args:
+            new_columns (str): A SQL expression X as in 'SELECT *, X from DataStream'. You can specify multiple columns by separating them with commas.
+                You must provide an alias for each column. Please look at the examples.
+            foldable (bool): Whether or not the function can be executed as part of the batch post-processing of the previous operation in the
+                execution graph. This is set to True by default. Correctly setting this flag requires some insight into how Quokka works. Lightweight
+
+        Return:
+            A new DataStream with new columns made by the user defined functions.
+
         Examples:
 
             >>> d = qc.read_csv("lineitem.csv")
 
-            You can use Polars APIs inside of custom lambda functions: 
+            Now create two columns high and low using SQL.
 
             >>> d = d.with_columns_sql('o_orderpriority = "1-URGENT" or o_orderpriority = 2-HIGH as high, 
             ...                        o_orderpriority = "3-MEDIUM" or o_orderpriority = 4-NOT SPECIFIED" as low')
+
+            Another example.
+
+            >>> d = d.with_columns_sql('high + low as total')
+
+            You must provide aliases for your columns, and separate the column defintiions with commas.
         
         """
 
@@ -830,7 +909,7 @@ class DataStream:
         the Polars DataFrame to a Pandas DataFrame and use `df.apply`. Just remember to convert it back to a Polars DataFrame with only the result column in the end!
 
         Args:
-            column_udfs (dict): A dictionary of column names to UDFs or Expressions. The UDFs must take as input a Polars DataFrame and output a Polars DataFrame.
+            new_columns (dict): A dictionary of column names to UDFs or Expressions. The UDFs must take as input a Polars DataFrame and output a Polars DataFrame.
                 The UDFs must not have expectations on the length of its input.
             reqired_columns (list or set): The names of the columns that are required for all your function. If this is not specified then Quokka assumes
                 all the columns are required for your function. Early projection past this function becomes impossible. If you specify this and you got it wrong,
@@ -882,6 +961,8 @@ class DataStream:
                 # detected an arbitrary function. If required columns are not specified, assume all columns are required
                 if len(required_columns) == 0:
                     required_columns = set(self.schema)
+        
+        print("required columns", required_columns)
 
         def polars_func(batch):
 

@@ -7,7 +7,15 @@ from functools import partial, reduce
 import operator
 import polars
 
-
+def handle_literal(node):
+    if node.is_string:
+        return node.this
+    else:
+        if "." in node.this:
+            return float(node.this)
+        else:
+            return int(node.this)
+            
 def is_cast_to_date(x):
     return type(x) == exp.Cast and type(x.args['to']) == exp.DataType
 
@@ -160,9 +168,8 @@ def evaluate(node):
         return polars.when(predicate).then(if_true).otherwise(default)
     elif type(node) == sqlglot.expressions.In:
 
-        # the types should work out even without conversion, is_in with polars work if the list is string and the type is int.
         lf = evaluate(node.this)
-        l = [k.name for k in node.args['expressions']]
+        l = [handle_literal(k) for k in node.args['expressions']]
         return lf.is_in(l)
 
     elif type(node) == sqlglot.expressions.Between:
@@ -220,15 +227,6 @@ def parquet_condition_decomp(condition):
     def key_to_symbol(k):
         mapping = {"eq":"==","neq":"!=","lt":"<","lte":"<=","gt":">","gte":">=","in":"in"}
         return mapping[k]
-    
-    def handle_literal(node):
-        if node.is_string:
-            return node.this
-        else:
-            if "." in node.this:
-                return float(node.this)
-            else:
-                return int(node.this)
     
     conjuncts = list(
                         condition.flatten()

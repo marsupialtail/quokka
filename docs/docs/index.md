@@ -29,10 +29,12 @@ You develop with Quokka locally, and deploy to cloud (currently AWS) with a sing
 
 ## **Bug Bounty**
 
-If you see any bugs, please raise a Github issue. I will reward you with a $10 Amazon gift card if you find a bug that I can't fix within a week. If you fix the bug yourself and make a PR, you will get another reward: 
+If you see any bugs, please raise a Github issue. There is a $10 reward if you find a bug that I can't fix within a week. If you fix the bug yourself and make a PR, you will get another reward: 
 
-- $10 for a bug that results in a runtime error.
-- $50 for a bug that results in a silent error, e.g. produces wrong results.
+- $50 for a bug that results in a runtime error.
+- $100 for a bug that results in a silent error, e.g. produces wrong results.
+
+I am a PhD student and have finite resources. So this program will be shut down after I lose $1000.
 
 ## **Contact**
 If you are interested in trying out Quokka or hit any problems at all, please contact me at zihengw@stanford.edu or [Discord](https://discord.gg/6ujVV9HAg3). I will try my best to make Quokka work for you.

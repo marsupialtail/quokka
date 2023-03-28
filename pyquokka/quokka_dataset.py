@@ -31,6 +31,9 @@ class Dataset:
     
     def to_arrow_refs(self):
         return ray.get(self.wrapped_dataset.to_arrow_refs.remote(self.dataset_id))
+    
+    def to_ray_dataset(self):
+        return ray.data.from_arrow_refs(self.to_arrow_refs())
 
     def length(self):
         return ray.get(self.wrapped_dataset.length.remote(self.dataset_id))
@@ -74,7 +77,7 @@ class ArrowDataset:
 
     def to_arrow_refs(self, dataset):
         results = []
-        for ip in self.objects:
+        for ip in self.objects[dataset]:
             results.extend(self.objects[dataset][ip])
         return results
 

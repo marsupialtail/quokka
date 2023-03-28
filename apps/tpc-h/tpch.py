@@ -10,8 +10,6 @@ s3_path_parquet = "s3://tpc-h-parquet-100-native/"
 
 import pyarrow as pa
 import pyarrow.compute as compute
-import numpy as np
-from pyquokka.executors import Executor
 import polars
 polars.Config().set_tbl_cols(10)
 
@@ -313,8 +311,9 @@ def do_9():
     d = d.join(lineitem, left_on="ps_partkey", right_on="l_partkey")
     d = d.filter_sql("s_suppkey = l_suppkey and p_name like '%green%'")
     d = d.join(orders, left_on = "l_orderkey", right_on = "o_orderkey")
-    d = d.with_column("o_year", lambda x: x["o_orderdate"].dt.year(), required_columns = {"o_orderdate"})
-    d = d.with_column("amount", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]) - x["ps_supplycost"] * x["l_quantity"], required_columns = {"l_extendedprice", "l_discount", "ps_supplycost", "l_quantity"})
+    d = d.with_columns({"o_year": lambda x: x["o_orderdate"].dt.year(), 
+                        "amount": d["l_extendedprice"] * (1 - d["l_discount"]) - d["ps_supplycost"] * d["l_quantity"]}, 
+                        required_columns = {"o_orderdate"})
     d = d.rename({"n_name" : "nation"})
     f = d.groupby(["nation", "o_year"]).aggregate(aggregations = {"amount":"sum"})
     f.explain()
@@ -344,7 +343,6 @@ def do_11():
     temp = qc.read_dataset(d)
     val = (temp.sum("value") * 0.0001)[0,0]
     return temp.groupby("ps_partkey").aggregate(aggregations={"value":"sum"}).filter_sql("value_sum > " + str(val)).collect()# .sort('value_sum',reverse=True)
-    
 
 def do_12():
     
@@ -353,8 +351,8 @@ def do_12():
     d = d.filter_sql("l_shipmode IN ('MAIL','SHIP') and l_commitdate < l_receiptdate and l_shipdate < l_commitdate and \
         l_receiptdate >= date '1994-01-01' and l_receiptdate < date '1995-01-01'")
 
-    d = d.with_column("high", lambda x: (x["o_orderpriority"] == "1-URGENT") | (x["o_orderpriority"] == "2-HIGH"), required_columns={"o_orderpriority"})
-    d = d.with_column("low", lambda x: (x["o_orderpriority"] != "1-URGENT") & (x["o_orderpriority"] != "2-HIGH"), required_columns={"o_orderpriority"})
+    d = d.with_columns({"high": (d["o_orderpriority"] == "1-URGENT") | (d["o_orderpriority"] == "2-HIGH"), 
+                        "low": (d["o_orderpriority"] != "1-URGENT") & (d["o_orderpriority"] != "2-HIGH")})
 
     f = d.groupby("l_shipmode").aggregate(aggregations={'high':['sum'], 'low':['sum']})
     return f.collect()
@@ -378,7 +376,6 @@ def do_13():
     d = d.filter_sql("o_comment not like '%special%requests%'")
     c_orders = d.groupby("c_custkey").agg_sql("count(o_orderkey) as c_count")
     result = c_orders.groupby("c_count").aggregate(aggregations={"*":"count"}).collect().sort('count')
-
     return result
 
 def do_14():
@@ -396,7 +393,7 @@ def do_15():
 
     # first compute the revenue
     d = lineitem.filter_sql("l_shipdate >= date '1996-01-01' and l_shipdate < date '1996-01-01' + interval '3' month")
-    d = d.with_column("revenue", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]), required_columns={"l_extendedprice", "l_discount"})
+    d = d.with_columns({"revenue": lambda x: x["l_extendedprice"] * (1 - x["l_discount"])}, required_columns={"l_extendedprice", "l_discount"})
     revenue = d.groupby("l_suppkey").aggregate(aggregations={"revenue":"sum"})
     revenue = revenue.compute()
     print(revenue)
@@ -469,7 +466,7 @@ def do_19():
                     and p_size between 1 and 15
                 )
     """)
-    d = d.with_column("revenue", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]), required_columns={"l_extendedprice", "l_discount"})
+    d = d.with_columns({"revenue": d["l_extendedprice"] * (1 - d["l_discount"])})
     result = d.aggregate(aggregations={"revenue":"sum"})
     result.explain()
     return result.collect()
@@ -514,7 +511,7 @@ def do_22():
         AND SUBSTRING(c_phone, 1, 2) IN ('13', '31', '23', '29', '30', '18', '17')
     """).agg_sql("AVG(c_acctbal) AS _col_0").collect()[0,0]
 
-    d = customer.with_column("cntrycode", lambda x: x["c_phone"].str.slice(0, 2), required_columns={"c_phone"})
+    d = customer.with_columns({"cntrycode": lambda x: x["c_phone"].str.slice(0, 2)}, required_columns={"c_phone"})
     d = d.filter_sql("cntrycode IN ('13', '31', '23', '29', '30', '18', '17') and c_acctbal > " + str(u_0))
     d = d.join(orders, left_on="c_custkey", right_on="o_custkey", how="anti")
     d = d.groupby("cntrycode").agg_sql("count(*) AS numcust, sum(c_acctbal) AS totacctbal")
@@ -533,10 +530,6 @@ def word_count():
     counted = lineitem.transform( udf2, new_schema = ["word", "count"], required_columns = {"l_comment"}, foldable=True)
     f = counted.groupby("word").agg({"count":"sum"})
     return f.collect()
-
-def sort():
-
-    return lineitem.drop("l_comment").sort("l_partkey", 200000000).write_parquet("s3://yugan/tpc-h-out/", output_line_limit = 5000000)
 
 def dataset_test():
     z = orders.join(lineitem, left_on = "o_orderkey", right_on = "l_orderkey").filter_sql("o_orderkey > 100").select(["o_orderkey", "o_custkey"]).compute()
@@ -567,8 +560,8 @@ def covariance():
 # print_and_time(do_5_sql)
 # print_and_time(do_6_sql)
 # print_and_time(do_7_sql)
-print_and_time(do_8)
-print_and_time(do_9)
+# print_and_time(do_8)
+# print_and_time(do_9)
 # print_and_time(do_10)
 # print_and_time(do_11)
 # print_and_time(do_12)
@@ -579,9 +572,9 @@ print_and_time(do_9)
 # print_and_time(do_16) 
 # print_and_time(do_17)
 # print_and_time(do_18)
-# print_and_time(do_19)
-# print_and_time(do_20)
-# print_and_time(do_22)
+print_and_time(do_19)
+print_and_time(do_20)
+print_and_time(do_22)
 
 
 # print(do_21()) # just wn't work on AWS

@@ -30,14 +30,16 @@ nav:
                 - DataStream.rename: datastream/rename.md
                 - DataStream.transform: datastream/transform.md
                 - DataStream.transform_sql: datastream/transform_sql.md
+                - DataStream.with_columns: datastream/with_columns.md
+                - DataStream.with_columns_sql: datastream/with_columns_sql.md
                 - DataStream.union: datastream/union.md
-        - OrderedStream API Reference:
-                - OrderedStream.stack: orderedstream/stack.md
-
+        - Visit Rottnest: https://www.rottnestisland.com
                 
         
 
 theme: 
+  palette:
+    primary: light green
   name: material
   logo: quokka.png
   favicon: quokka.png

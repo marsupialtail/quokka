@@ -16,13 +16,13 @@ def preexec_function():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 class EC2Cluster:
-    def __init__(self, public_ips, private_ips, instance_ids, cpu_count_per_instance, spill_dir = "/data") -> None:
+    def __init__(self, public_ips, private_ips, instance_ids, cpu_count_per_instance, spill_dir) -> None:
         
         self.num_node = len(public_ips)
         self.public_ips = {}
         self.private_ips = {}
         self.instance_ids = {}
-        self.spill_dir = "/data"
+        self.spill_dir = spill_dir
 
         for node in range(self.num_node):
             self.public_ips[node] = public_ips[node]
@@ -202,12 +202,12 @@ class QuokkaClusterManager:
         self.check_instance_alive(public_ips)
 
         self.set_up_envs(public_ips, requirements, aws_access_key, aws_access_id)
-        self.launch_all("sudo mkdir /data", public_ips, "failed to make temp spill directory")
+        self.launch_all("sudo mkdir {}".format(spill_dir), public_ips, "failed to make temp spill directory")
         self._initialize_instances(instance_ids, spill_dir)
 
         print("Launching of Quokka cluster used: ", time.time() - start_time)
 
-        return EC2Cluster(public_ips, private_ips, instance_ids, vcpu_per_node)  
+        return EC2Cluster(public_ips, private_ips, instance_ids, vcpu_per_node, spill_dir)  
         
 
     def stop_cluster(self, quokka_cluster):
@@ -261,11 +261,11 @@ class QuokkaClusterManager:
             public_ips = [k['PublicIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
             private_ips = [k['PrivateIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
 
-            return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count)
+            return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count, spill_dir)
         if sum([i=="running" for i in states]) == len(states):
             public_ips = [k['PublicIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
             private_ips = [k['PrivateIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
-            return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count)
+            return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count, spill_dir)
         else:
             print("Cluster in an inconsistent state. Either only some machines are running or some machines have been terminated.")
             return False
@@ -318,4 +318,4 @@ class QuokkaClusterManager:
         print(z)
 
         self.copy_and_launch_flight(public_ips)
-        return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count)
+        return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count, spill_dir)

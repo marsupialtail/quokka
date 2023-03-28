@@ -449,17 +449,26 @@ class QuokkaContext:
         self.latest_node_id += 1
         return DataStream(self, dataset.schema, self.latest_node_id - 1)
 
-    def _from_ray_dataset(self, dataset, get_size = True):
-        my_dataset = ArrowDataset.options(num_cpus = 0.001, resources={"node:" + str(self.context.cluster.leader_private_ip): 0.001}).remote()
+    def read_ray_dataset(self, dataset, get_size = True):
+        dataset_id = ray.get(self.dataset_manager.create_dataset.remote())
+        my_dataset = Dataset(dataset.schema().names, self.dataset_manager, dataset_id)
         arrow_refs = dataset.to_arrow_refs()
         if get_size:
             size = dataset.count() // len(arrow_refs)
         else:
             size = None
         handles = []
-        for arrow_ref in dataset.to_arrow_refs():
-            handles.append(dataset.added_object.remote(ray._private.services.get_node_ip_address(), [ray.put(data.to_arrow(), _owner = dataset), len(data)]))
+        nodes = ray.nodes()
+        for arrow_ref in arrow_refs:
+            my_node = ray.experimental.get_object_locations([arrow_ref])[arrow_ref]['node_ids']
+            assert len(my_node) == 1, "arrow ref should only be on one node, please raise Github issue."
+            my_node = my_node[0]
+            node_ip = [i['NodeManagerAddress'] for i in nodes if i['NodeID'] == my_node]
+            assert len(node_ip) == 1, "node id should only be on one IP, please raise Github issue."
+            node_ip = node_ip[0]
+            handles.append(self.dataset_manager.added_object.remote(dataset_id, node_ip, [arrow_ref, size]))
         ray.get(handles)
+        return self.read_dataset(my_dataset)
 
 
     def from_polars(self, df):

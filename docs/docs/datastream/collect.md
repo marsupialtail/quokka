@@ -1,3 +1,3 @@
-# DataStream.collect
+## **DataStream.collect**
 
 ::: pyquokka.datastream.DataStream.collect
