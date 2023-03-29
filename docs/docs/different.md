@@ -1,4 +1,4 @@
-#How is Quokka different from ... ?
+#**How is Quokka different from ... ?**
 
 ##Spark
 
@@ -8,9 +8,9 @@ Now that I have paid homage to my forebearers, let me say that Quokka and Spark 
 
 ![Quokka Stream](tpch-parquet.svg)
 
-Quokka's DataStream API resembles Spark's DataFrame API, however is not feature complete yet. Importantly, Quokka doesn't yet support SQL input, though it will in the near future. Like Spark, Quokka's API is lazy. Like Spark, Quokka has a logical plan optimizer, though it is truly a baby compared to the gorilla-sized Spark Catalyst Optimizer.
+Quokka's DataStream API resembles Spark's DataFrame API. However it is not feature complete yet. Importantly, Quokka doesn't yet have mature support for SQL inputs. Like Spark, Quokka's API is lazy. Like Spark, Quokka has a logical plan optimizer, though it is truly a baby compared to the gorilla-sized Spark Catalyst Optimizer.
 
-Quokka is written in Python completely on top of Ray, and integrates with Ray Data. I am collaborating with Ray Data team. If you are **running complicated Python UDFs, your SQL-ish pipeline doesn't fit Spark well (e.g. time series/feature engineering workloads) or already use Ray**, Quokka might be worth keeping on your radar.
+Quokka is written in Python completely on top of Ray, and integrates with Ray Data. 
 
 Like Spark, Quokka is fault tolerant and can handle worker failures, but not coordinator failures.  
 
@@ -22,14 +22,13 @@ Eventually, Quokka aims to be synergistic to Spark by supporting workloads the S
 
 Quokka is a lot faster, or aims to be. I don't have benchmark numbers here, though I have found these systems to be slower than Spark. 
 
-On the other hand, Quokka does not aim to support things like machine learning training (Dask), or dataframe pivots (Modin). Quokka also doesn't seek to religiously obey the Pandas API, whose eager execution model I think is incompatible with performance in modern systems. Dr. Petersohn will say Quokka then doesn't offer a "dataframe" API. I agree -- that's not Quokka's goal.
+On the other hand, Quokka does not aim to support things like machine learning training (Dask), or dataframe pivots (Modin). Quokka also doesn't seek to religiously obey the Pandas API, whose eager execution model I think is incompatible with performance in modern systems. 
 
 ##Pandas/Polars/DuckDB
 
-You should be using these solutions if you have less than 100GB of data. Pandas is the starter pack for data scientists, but I really encorage people to check out Polars, which is a Rust/Arrow-based implementation with pretty much the same API that's **A LOT FASTER**. I sponsor Polars on Github, and maybe you should too. Of course if all you want to do is SQL, then DuckDB can be a good choice.
+You should be using these solutions if you have less than 100GB of data. Pandas is the starter pack for data scientists, but I really encorage people to check out Polars, which is a Rust/Arrow-based implementation with pretty much the same API that's **A LOT FASTER**. Of course if all you want to do is SQL, then DuckDB can be a good choice.
 
-Quokka is heavily integrated with Polars. Indeed in Quokka, if you attempt to read a data source with less than 10MB of data, it will be materialized directly as a Polars Dataframe because that's probably what you want to do anyways. Quokka's core abstraction is simply a stream of Polars Dataframes.
-
+Quokka is heavily integrated with Polars. It also uses a lot of DuckDB for single node computation.
 
 ##Ray Data/DaFt/PetaStorm
 

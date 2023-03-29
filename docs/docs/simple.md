@@ -2,11 +2,11 @@
 
 This section is for learning how to use Quokka's DataStream API. **Quokka's DataStream API is basically a dataframe API.** It takes heavy inspiration from SparkSQL and Polars, and adopts a lazy execution model. This means that in contrast to Pandas, your operations are not executed immediately after you define them. Instead, Quokka builds a logical plan under the hood and executes it only when the user wants to "collect" the result, just like Spark. 
 
-For the first part of our tutorial, we are going to go through implementing a few SQL queries in the TPC-H benchmark suite. You can download the data [here](https://drive.google.com/file/d/19hgYxZ4u28Cxe0s616Q3yAfkuRdQlmvO/view?usp=sharing). It is about 1GB unzipped. Please download the data (should take 2 minutes) and extract it to some directory locally. If you are testing this on a VM where clicking the link can't work, try this command after pip installing gdown: `~/.local/bin/gdown https://drive.google.com/uc?id=19hgYxZ4u28Cxe0s616Q3yAfkuRdQlmvO`. The SQL queries themselves can be found on this awesome [interface](https://umbra-db.com/interface/).
+For the first part of our tutorial, we are going to go through implementing a few SQL queries in the TPC-H benchmark suite. You can download the data [here](https://drive.google.com/file/d/14yDfWZUAxifM5i7kf7CFvOQCIrU7sRXP/view?usp=sharing). It is about 1GB unzipped. Please download the data (should take 2 minutes) and extract it to some directory locally. If you are testing this on a VM where clicking the link can't work, try this command after pip installing gdown: `gdown https://drive.google.com/uc?id=14yDfWZUAxifM5i7kf7CFvOQCIrU7sRXP`. The SQL queries themselves can be found on this awesome [interface](https://umbra-db.com/interface/).
 
 These tutorials will use your local machine. They shouldn't take too long to run. It would be great if you can follow along, not just for fun -- **if you find a bug in this tutorial I will buy you a cup of coffee!**
 
-For an extensive API reference, please refer to [here](datastream.md).
+You can also refer to the API reference on the index.
 
 ## Lesson -1: Things
 
@@ -80,7 +80,7 @@ Currently, `qc.read_csv` and `qc.read_parquet` will either return a DataStream o
 Now that we have read the data, let's do things with it. First, why don't we count how many rows there are in the `lineitem` table.
 
 ~~~python
->>> lineitem.count()
+lineitem.count()
 ~~~
 
 If you don't see the number 6001215 after a while, something is very wrong. Please send me an email, I will help you fix things (and buy you a coffee): zihengw@stanford.edu.
@@ -102,7 +102,7 @@ def do_1():
 
 Quokka supports filtering DataStreams by `DataStream.filter()`. Filters can be specified in SQL syntax. The columns in the SQL expression must exist in the schema of the DataStream. A more Pythonic way of doing this like `b = b[b.a < 5]` isn't supported yet, mainly due to the finickiness surrounding date types etc. The result of a `filter()` is another DataStream whose Polars DataFrames will only contain rows that respect the predicate.
 
-On the plus side, Quokka uses the amazing [SQLGlot](https://github.com/tobymao/sqlglot) library to support most ANSI-SQL compliant predicates, including dates, between, IN, even arithmetic in conditions. Try out some different [predicates](datastream.md#filter)! Please give SQLGlot a star when you're at it. For example, you can specify this super complicated predicate for [TPC-H query 6](https://github.com/dragansah/tpch-dbgen/blob/master/tpch-queries/6.sql):
+On the plus side, Quokka uses the amazing [SQLGlot](https://github.com/tobymao/sqlglot) library to support most ANSI-SQL compliant predicates, including dates, between, IN, even arithmetic in conditions. Try out some different [predicates](datastream/filter.md)! Please give SQLGlot a star when you're at it. For example, you can specify this super complicated predicate for [TPC-H query 6](https://github.com/dragansah/tpch-dbgen/blob/master/tpch-queries/6.sql):
 
 ~~~python
 def do_6():

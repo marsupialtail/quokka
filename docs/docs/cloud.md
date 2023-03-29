@@ -1,10 +1,39 @@
 # **Setting up Quokka for EC2**
 
-## The easy way
-
 To use Quokka for EC2, you need to *at minimum* have an AWS account with permissions to launch instances. You will probably run into issues since everybody's AWS setup is a little bit different, so please email: zihengw@stanford.edu or [Discord](https://discord.gg/6ujVV9HAg3). 
 
 First if you haven't already, you must run `aws configure` on your local machine, i.e. the machine you are using to spin up a Quokka cluster and submit jobs to the cluster.
+
+## Connecting to an existing Ray cluster
+
+This is the easiest way. It assumes you have already started a cluster with a Ray cluster YAML, and the cluster is already in a **running state**. You can use the `QuokkaClusterManager` in `pyquokka.utils` to connect to the cluster. You need to specify the path to the Ray cluster YAML, your AWS access key and secret key. You can optionally specify a spill directory on the machines in the cluster. 
+
+~~~python
+from pyquokka.utils import *
+from pyquokka.df import * 
+manager = QuokkaClusterManager()
+
+# Assume you created a Ray cluster with my_cluster.yaml. You need to pick a spill directory on the machines in the cluster. If you don't know what this is, just use /data. If /data doesn't work, try something else random like /data1. You can also specify pip requirements here for things you think you will need, like numpy.
+
+cluster = manager.get_cluster_from_ray("my_cluster.yaml", aws_access_key, aws_access_id, requirements = ["numpy", "pandas"], spill_dir = "/data")
+from pyquokka.df import QuokkaContext
+qc = QuokkaContext(cluster)
+cluster.to_json("my_cluster.json")
+~~~
+
+It is recommended to do the above only once and save the cluster object to a json file using `EC2Cluster.to_json` and then use `QuokkaClusterManager.get_cluster_from_json` to connect to the cluster. Now you can start a new Python session and just use the json.
+
+~~~python
+cluster = manager.get_cluster_from_json("my_cluster.json")
+qc = QuokkaContext(cluster)
+
+lineitem = qc.read_parquet("s3://my-bucket/lineitem.parquet")
+...
+~~~
+
+If this doesn't work, please join the [Discord](https://discord.gg/6ujVV9HAg3) and ask for help, or raise a Github issue.
+
+## Creating an EC2 cluster without using `ray up`
 
 Quokka requires a security group that allows inbound and outbound connections for Arrow Flight, Ray, Redis and SSH. For simplicity, you can just enable all inbound and outbound connections from all IP addresses. You can make a security group like this: 
 
@@ -58,7 +87,7 @@ This will work if the cluster is either fully stopped or fully running, i.e. eve
 
 Quokka also plans to extend support to Docker/Kubernetes based deployments based on KubeRay. (Contributions welcome!) Of course, there are plans to support GCP and Azure. The best way to make sure that happens is by sending me a message on email or [Discord](https://discord.gg/YKbK2TVk). 
 
-## The hard way
+## The hard way, DIY
 
 Of course, you might wonder if you can set up the cluster yourself without using `pyquokka.utils`. Indeed you might not trust my setup -- am I stealing your data? Apart from reassuring you that I have little interest in your data, you can also try to manually setup the cluster yourself.
 

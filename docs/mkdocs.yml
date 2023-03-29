@@ -25,7 +25,7 @@ nav:
                 - QuokkaContext.from_polars: quokka_context/from_polars.md
                 - QuokkaContext.from_pandas: quokka_context/from_pandas.md
                 - QuokkaContext.from_arrow: quokka_context/from_arrow.md
-          - DataStream API Reference: 
+          - DataStream API Reference:  
                 - DataStream.collect: datastream/collect.md
                 - DataStream.compute: datastream/compute.md
                 - DataStream.explain: datastream/explain.md
@@ -60,6 +60,7 @@ nav:
                 - GroupedDataStream.aggregate: datastream/grouped_agg.md
                 - GroupedDataStream.agg_sql: datastream/grouped_agg_sql.md
                 - GroupedDataStream.count_distinct: datastream/grouped_count_distinct.md
+                
 
           - DataSet API Reference:
                 - DataSet.to_df: dataset/to_df.md

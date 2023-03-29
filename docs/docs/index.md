@@ -24,7 +24,7 @@ You develop with Quokka locally, and deploy to cloud (currently AWS) with a sing
 
 ## **Roadmap**
 
-1. **Streaming support.** Although Quokka follows a streaming model, it currently does not support "streaming" computations from Kafka, Kinesis etc. They will soon be supported. This will allow batch data pipelines to be deployed to production with one line code change. Target Q2 2023.
+1. **Ordered data support.** Quokka's goal is to become a TB-scale feature framework for time series data. Currently Quokka DataStreams are unordered, but that is going to change in the next few months! Expect to see blazing fast `asof_join` and `window_transforms` on TBs of time-series data. The operators have already been impelemented, mostly working out the high level API. If you are interested in this, please contact me.
 2. **Better SQL support.** Currently Quokka has very rudimentary SQL support in the form of qc.sql(SQL_QUERY). It will loudly complain if it sees some SQL that it doesn't understand, e.g. complicated nested subqueries etc. I am working with [SQLGlot](https://github.com/tobymao/sqlglot) to enhancing SQL support. Target pass TPC-H and say 75% of TPC-DS Q2 2023.
 
 ## **Bug Bounty**
@@ -34,7 +34,7 @@ If you see any bugs, please raise a Github issue. There is a $10 reward if you f
 - $50 for a bug that results in a runtime error.
 - $100 for a bug that results in a silent error, e.g. produces wrong results.
 
-I am a PhD student and have finite resources. So this program will be shut down after I lose $1000.
+I am a PhD student and have finite resources. So this program will be shut down after I lose $2000.
 
 ## **Contact**
 If you are interested in trying out Quokka or hit any problems at all, please contact me at zihengw@stanford.edu or [Discord](https://discord.gg/6ujVV9HAg3). I will try my best to make Quokka work for you.
