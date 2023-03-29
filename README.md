@@ -6,6 +6,9 @@
 <a href="https://marsupialtail.github.io/quokka/">
     <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/badge.svg" alt="rust docs"/>
 </a>
+<a href="https://pypi.org/project/pyquokka/">
+    <img src="https://img.shields.io/pypi/v/pyquokka.svg" alt="PyPi Latest Release"/>
+</a>
 
 ## What?
 
