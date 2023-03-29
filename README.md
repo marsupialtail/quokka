@@ -2,10 +2,10 @@
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/quokka-banner.png?raw=true" alt="Title"/>
 </p>
 
-<a href="https://marsupialtail.github.io/quokka/">
-    <img src="https://docs.rs/polars/badge.svg" alt="rust docs"/>
-</a>
 [![Join Discord](https://img.shields.io/badge/-Join%20Quokka%20Discord-blue?logo=discord)](https://discord.gg/6ujVV9HAg3)
+<a href="https://marsupialtail.github.io/quokka/">
+    <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/badge.svg" alt="rust docs"/>
+</a>
 
 ## What?
 
