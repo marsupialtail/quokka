@@ -288,15 +288,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#the-easy-way" class="md-nav__link">
-    The easy way
+  <a href="#connecting-to-an-existing-ray-cluster" class="md-nav__link">
+    Connecting to an existing Ray cluster
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-hard-way" class="md-nav__link">
-    The hard way
+  <a href="#creating-an-ec2-cluster-without-using-ray-up" class="md-nav__link">
+    Creating an EC2 cluster without using ray up
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-hard-way-diy" class="md-nav__link">
+    The hard way, DIY
   </a>
   
 </li>
@@ -941,7 +948,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../datastream/count_distinct.md" class="md-nav__link">
+      <a href="../datastream/count_distinct/" class="md-nav__link">
         DataStream.count_distinct
       </a>
     </li>
@@ -955,7 +962,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../datastream/agg.md" class="md-nav__link">
+      <a href="../datastream/agg/" class="md-nav__link">
         DataStream.agg
       </a>
     </li>
@@ -969,7 +976,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../datastream/agg.md" class="md-nav__link">
+      <a href="../datastream/agg/" class="md-nav__link">
         DataStream.aggregate
       </a>
     </li>
@@ -983,7 +990,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../datastream/agg_sql.md" class="md-nav__link">
+      <a href="../datastream/agg_sql/" class="md-nav__link">
         DataStream.agg_sql
       </a>
     </li>
@@ -997,7 +1004,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../datastream/count.md" class="md-nav__link">
+      <a href="../datastream/count/" class="md-nav__link">
         DataStream.count
       </a>
     </li>
@@ -1011,7 +1018,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../datastream/sum.md" class="md-nav__link">
+      <a href="../datastream/sum/" class="md-nav__link">
         DataStream.sum
       </a>
     </li>
@@ -1025,7 +1032,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../datastream/mean.md" class="md-nav__link">
+      <a href="../datastream/mean/" class="md-nav__link">
         DataStream.mean
       </a>
     </li>
@@ -1039,7 +1046,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../datastream/min.md" class="md-nav__link">
+      <a href="../datastream/min/" class="md-nav__link">
         DataStream.min
       </a>
     </li>
@@ -1053,7 +1060,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../datastream/max.md" class="md-nav__link">
+      <a href="../datastream/max/" class="md-nav__link">
         DataStream.max
       </a>
     </li>
@@ -1067,7 +1074,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../datastream/grouped_agg.md" class="md-nav__link">
+      <a href="../datastream/grouped_agg/" class="md-nav__link">
         GroupedDataStream.agg
       </a>
     </li>
@@ -1081,7 +1088,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../datastream/grouped_agg.md" class="md-nav__link">
+      <a href="../datastream/grouped_agg/" class="md-nav__link">
         GroupedDataStream.aggregate
       </a>
     </li>
@@ -1095,7 +1102,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../datastream/grouped_agg_sql.md" class="md-nav__link">
+      <a href="../datastream/grouped_agg_sql/" class="md-nav__link">
         GroupedDataStream.agg_sql
       </a>
     </li>
@@ -1109,7 +1116,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../datastream/grouped_count_distinct.md" class="md-nav__link">
+      <a href="../datastream/grouped_count_distinct/" class="md-nav__link">
         GroupedDataStream.count_distinct
       </a>
     </li>
@@ -1870,15 +1877,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#the-easy-way" class="md-nav__link">
-    The easy way
+  <a href="#connecting-to-an-existing-ray-cluster" class="md-nav__link">
+    Connecting to an existing Ray cluster
   </a>
   
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-hard-way" class="md-nav__link">
-    The hard way
+  <a href="#creating-an-ec2-cluster-without-using-ray-up" class="md-nav__link">
+    Creating an EC2 cluster without using ray up
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-hard-way-diy" class="md-nav__link">
+    The hard way, DIY
   </a>
   
 </li>
@@ -1904,9 +1918,30 @@
 
 
 <h1 id="setting-up-quokka-for-ec2"><strong>Setting up Quokka for EC2</strong></h1>
-<h2 id="the-easy-way">The easy way</h2>
 <p>To use Quokka for EC2, you need to <em>at minimum</em> have an AWS account with permissions to launch instances. You will probably run into issues since everybody's AWS setup is a little bit different, so please email: zihengw@stanford.edu or <a href="https://discord.gg/6ujVV9HAg3">Discord</a>. </p>
 <p>First if you haven't already, you must run <code>aws configure</code> on your local machine, i.e. the machine you are using to spin up a Quokka cluster and submit jobs to the cluster.</p>
+<h2 id="connecting-to-an-existing-ray-cluster">Connecting to an existing Ray cluster</h2>
+<p>This is the easiest way. It assumes you have already started a cluster with a Ray cluster YAML, and the cluster is already in a <strong>running state</strong>. You can use the <code>QuokkaClusterManager</code> in <code>pyquokka.utils</code> to connect to the cluster. You need to specify the path to the Ray cluster YAML, your AWS access key and secret key. You can optionally specify a spill directory on the machines in the cluster. </p>
+<pre><code class="language-python">from pyquokka.utils import *
+from pyquokka.df import * 
+manager = QuokkaClusterManager()
+
+# Assume you created a Ray cluster with my_cluster.yaml. You need to pick a spill directory on the machines in the cluster. If you don't know what this is, just use /data. If /data doesn't work, try something else random like /data1. You can also specify pip requirements here for things you think you will need, like numpy.
+
+cluster = manager.get_cluster_from_ray(&quot;my_cluster.yaml&quot;, aws_access_key, aws_access_id, requirements = [&quot;numpy&quot;, &quot;pandas&quot;], spill_dir = &quot;/data&quot;)
+from pyquokka.df import QuokkaContext
+qc = QuokkaContext(cluster)
+cluster.to_json(&quot;my_cluster.json&quot;)
+</code></pre>
+<p>It is recommended to do the above only once and save the cluster object to a json file using <code>EC2Cluster.to_json</code> and then use <code>QuokkaClusterManager.get_cluster_from_json</code> to connect to the cluster. Now you can start a new Python session and just use the json.</p>
+<pre><code class="language-python">cluster = manager.get_cluster_from_json(&quot;my_cluster.json&quot;)
+qc = QuokkaContext(cluster)
+
+lineitem = qc.read_parquet(&quot;s3://my-bucket/lineitem.parquet&quot;)
+...
+</code></pre>
+<p>If this doesn't work, please join the <a href="https://discord.gg/6ujVV9HAg3">Discord</a> and ask for help, or raise a Github issue.</p>
+<h2 id="creating-an-ec2-cluster-without-using-ray-up">Creating an EC2 cluster without using <code>ray up</code></h2>
 <p>Quokka requires a security group that allows inbound and outbound connections for Arrow Flight, Ray, Redis and SSH. For simplicity, you can just enable all inbound and outbound connections from all IP addresses. You can make a security group like this: </p>
 <pre><code class="language-bash">#!/bin/bash
 
@@ -1944,7 +1979,7 @@ cluster = manager.get_cluster_from_json(&quot;config.json&quot;)
 </code></pre>
 <p>This will work if the cluster is either fully stopped or fully running, i.e. every machine must be in either stopped or running state. If the cluster is running, this assumes it was started by running the <code>get_cluster_from_json</code> command! <strong>Please do not manually start the instances and try to use <code>get_cluster_from_json</code> to connect to a cluster.</strong></p>
 <p>Quokka also plans to extend support to Docker/Kubernetes based deployments based on KubeRay. (Contributions welcome!) Of course, there are plans to support GCP and Azure. The best way to make sure that happens is by sending me a message on email or <a href="https://discord.gg/YKbK2TVk">Discord</a>. </p>
-<h2 id="the-hard-way">The hard way</h2>
+<h2 id="the-hard-way-diy">The hard way, DIY</h2>
 <p>Of course, you might wonder if you can set up the cluster yourself without using <code>pyquokka.utils</code>. Indeed you might not trust my setup -- am I stealing your data? Apart from reassuring you that I have little interest in your data, you can also try to manually setup the cluster yourself.</p>
 <p>Well it shouldn't be so hard to do this. These are the steps you have to follow: </p>
 <ul>

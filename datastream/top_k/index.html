@@ -938,7 +938,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../count_distinct.md" class="md-nav__link">
+      <a href="../count_distinct/" class="md-nav__link">
         DataStream.count_distinct
       </a>
     </li>
@@ -952,7 +952,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../agg.md" class="md-nav__link">
+      <a href="../agg/" class="md-nav__link">
         DataStream.agg
       </a>
     </li>
@@ -966,7 +966,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../agg.md" class="md-nav__link">
+      <a href="../agg/" class="md-nav__link">
         DataStream.aggregate
       </a>
     </li>
@@ -980,7 +980,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../agg_sql.md" class="md-nav__link">
+      <a href="../agg_sql/" class="md-nav__link">
         DataStream.agg_sql
       </a>
     </li>
@@ -994,7 +994,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../count.md" class="md-nav__link">
+      <a href="../count/" class="md-nav__link">
         DataStream.count
       </a>
     </li>
@@ -1008,7 +1008,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../sum.md" class="md-nav__link">
+      <a href="../sum/" class="md-nav__link">
         DataStream.sum
       </a>
     </li>
@@ -1022,7 +1022,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mean.md" class="md-nav__link">
+      <a href="../mean/" class="md-nav__link">
         DataStream.mean
       </a>
     </li>
@@ -1036,7 +1036,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../min.md" class="md-nav__link">
+      <a href="../min/" class="md-nav__link">
         DataStream.min
       </a>
     </li>
@@ -1050,7 +1050,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../max.md" class="md-nav__link">
+      <a href="../max/" class="md-nav__link">
         DataStream.max
       </a>
     </li>
@@ -1064,7 +1064,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../grouped_agg.md" class="md-nav__link">
+      <a href="../grouped_agg/" class="md-nav__link">
         GroupedDataStream.agg
       </a>
     </li>
@@ -1078,7 +1078,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../grouped_agg.md" class="md-nav__link">
+      <a href="../grouped_agg/" class="md-nav__link">
         GroupedDataStream.aggregate
       </a>
     </li>
@@ -1092,7 +1092,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../grouped_agg_sql.md" class="md-nav__link">
+      <a href="../grouped_agg_sql/" class="md-nav__link">
         GroupedDataStream.agg_sql
       </a>
     </li>
@@ -1106,7 +1106,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../grouped_count_distinct.md" class="md-nav__link">
+      <a href="../grouped_count_distinct/" class="md-nav__link">
         GroupedDataStream.count_distinct
       </a>
     </li>
@@ -1905,12 +1905,65 @@
       <p>This is a topk function that effectively performs select * from stream order by columns limit k.
 The strategy is to take k rows from each batch coming in and do a final sort and limit k in a stateful executor.</p>
 
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>columns</code></td>
+          <td>
+                <code>str or list</code>
+          </td>
+          <td><p>a column or a list of columns to sort on.</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>k</code></td>
+          <td>
+                <code>int</code>
+          </td>
+          <td><p>the number of rows to return.</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>descending</code></td>
+          <td>
+                <code>bool or list</code>
+          </td>
+          <td><p>a boolean or a list of booleans indicating whether to sort in descending order. If a list, the length must be the same as the length of <code>columns</code>.</p></td>
+          <td>
+                <code>None</code>
+          </td>
+        </tr>
+    </tbody>
+  </table>
+
+<details class="return">
+  <summary>Return</summary>
+  <p>A DataStream object with the specified top k rows.</p>
+</details>
+<p><strong>Examples:</strong></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">lineitem</span> <span class="o">=</span> <span class="n">qc</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="s2">&quot;lineitem.csv&quot;</span><span class="p">)</span>
+</code></pre></div>
+    <p><code>result</code> will be a DataStream.</p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">result</span> <span class="o">=</span> <span class="n">lineitem</span><span class="o">.</span><span class="n">top_k</span><span class="p">(</span><span class="s2">&quot;l_orderkey&quot;</span><span class="p">,</span> <span class="mi">10</span><span class="p">)</span>
+<span class="gp">&gt;&gt;&gt; </span><span class="n">result</span> <span class="o">=</span> <span class="n">lineitem</span><span class="o">.</span><span class="n">top_k</span><span class="p">([</span><span class="s2">&quot;l_orderkey&quot;</span><span class="p">,</span> <span class="s2">&quot;l_orderdate&quot;</span><span class="p">],</span> <span class="mi">10</span><span class="p">,</span> <span class="n">descending</span> <span class="o">=</span> <span class="p">[</span><span class="kc">True</span><span class="p">,</span> <span class="kc">False</span><span class="p">])</span>
+</code></pre></div>
+
       <details class="quote">
         <summary>Source code in <code>pyquokka/datastream.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1365</span>
-<span class="normal">1366</span>
-<span class="normal">1367</span>
-<span class="normal">1368</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1368</span>
 <span class="normal">1369</span>
 <span class="normal">1370</span>
 <span class="normal">1371</span>
@@ -1955,10 +2008,47 @@ The strategy is to take k rows from each batch coming in and do a final sort and
 <span class="normal">1410</span>
 <span class="normal">1411</span>
 <span class="normal">1412</span>
-<span class="normal">1413</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">top_k</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">columns</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">descending</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="normal">1413</span>
+<span class="normal">1414</span>
+<span class="normal">1415</span>
+<span class="normal">1416</span>
+<span class="normal">1417</span>
+<span class="normal">1418</span>
+<span class="normal">1419</span>
+<span class="normal">1420</span>
+<span class="normal">1421</span>
+<span class="normal">1422</span>
+<span class="normal">1423</span>
+<span class="normal">1424</span>
+<span class="normal">1425</span>
+<span class="normal">1426</span>
+<span class="normal">1427</span>
+<span class="normal">1428</span>
+<span class="normal">1429</span>
+<span class="normal">1430</span>
+<span class="normal">1431</span>
+<span class="normal">1432</span>
+<span class="normal">1433</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">top_k</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">columns</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">descending</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    This is a topk function that effectively performs select * from stream order by columns limit k.</span>
 <span class="sd">    The strategy is to take k rows from each batch coming in and do a final sort and limit k in a stateful executor.</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        columns (str or list): a column or a list of columns to sort on.</span>
+<span class="sd">        k (int): the number of rows to return.</span>
+<span class="sd">        descending (bool or list): a boolean or a list of booleans indicating whether to sort in descending order. If a list, the length must be the same as the length of `columns`.</span>
+
+<span class="sd">    Return:</span>
+<span class="sd">        A DataStream object with the specified top k rows.</span>
+
+<span class="sd">    Examples:</span>
+
+<span class="sd">        &gt;&gt;&gt; lineitem = qc.read_csv(&quot;lineitem.csv&quot;)</span>
+
+<span class="sd">        `result` will be a DataStream.</span>
+
+<span class="sd">        &gt;&gt;&gt; result = lineitem.top_k(&quot;l_orderkey&quot;, 10)</span>
+<span class="sd">        &gt;&gt;&gt; result = lineitem.top_k([&quot;l_orderkey&quot;, &quot;l_orderdate&quot;], 10, descending = [True, False])</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">columns</span><span class="p">)</span> <span class="o">==</span> <span class="nb">str</span><span class="p">:</span>
         <span class="n">columns</span> <span class="o">=</span> <span class="p">[</span><span class="n">columns</span><span class="p">]</span>
@@ -2045,13 +2135,13 @@ The strategy is to take k rows from each batch coming in and do a final sort and
       
       
         
-        <a href="../../dataset/to_df/" class="md-footer__link md-footer__link--next" aria-label="Next: DataSet.to_df" rel="next">
+        <a href="../count_distinct/" class="md-footer__link md-footer__link--next" aria-label="Next: DataStream.count_distinct" rel="next">
           <div class="md-footer__title">
             <div class="md-ellipsis">
               <span class="md-footer__direction">
                 Next
               </span>
-              DataSet.to_df
+              DataStream.count_distinct
             </div>
           </div>
           <div class="md-footer__button md-icon">

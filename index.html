@@ -955,7 +955,7 @@
   
   
     <li class="md-nav__item">
-      <a href="datastream/count_distinct.md" class="md-nav__link">
+      <a href="datastream/count_distinct/" class="md-nav__link">
         DataStream.count_distinct
       </a>
     </li>
@@ -969,7 +969,7 @@
   
   
     <li class="md-nav__item">
-      <a href="datastream/agg.md" class="md-nav__link">
+      <a href="datastream/agg/" class="md-nav__link">
         DataStream.agg
       </a>
     </li>
@@ -983,7 +983,7 @@
   
   
     <li class="md-nav__item">
-      <a href="datastream/agg.md" class="md-nav__link">
+      <a href="datastream/agg/" class="md-nav__link">
         DataStream.aggregate
       </a>
     </li>
@@ -997,7 +997,7 @@
   
   
     <li class="md-nav__item">
-      <a href="datastream/agg_sql.md" class="md-nav__link">
+      <a href="datastream/agg_sql/" class="md-nav__link">
         DataStream.agg_sql
       </a>
     </li>
@@ -1011,7 +1011,7 @@
   
   
     <li class="md-nav__item">
-      <a href="datastream/count.md" class="md-nav__link">
+      <a href="datastream/count/" class="md-nav__link">
         DataStream.count
       </a>
     </li>
@@ -1025,7 +1025,7 @@
   
   
     <li class="md-nav__item">
-      <a href="datastream/sum.md" class="md-nav__link">
+      <a href="datastream/sum/" class="md-nav__link">
         DataStream.sum
       </a>
     </li>
@@ -1039,7 +1039,7 @@
   
   
     <li class="md-nav__item">
-      <a href="datastream/mean.md" class="md-nav__link">
+      <a href="datastream/mean/" class="md-nav__link">
         DataStream.mean
       </a>
     </li>
@@ -1053,7 +1053,7 @@
   
   
     <li class="md-nav__item">
-      <a href="datastream/min.md" class="md-nav__link">
+      <a href="datastream/min/" class="md-nav__link">
         DataStream.min
       </a>
     </li>
@@ -1067,7 +1067,7 @@
   
   
     <li class="md-nav__item">
-      <a href="datastream/max.md" class="md-nav__link">
+      <a href="datastream/max/" class="md-nav__link">
         DataStream.max
       </a>
     </li>
@@ -1081,7 +1081,7 @@
   
   
     <li class="md-nav__item">
-      <a href="datastream/grouped_agg.md" class="md-nav__link">
+      <a href="datastream/grouped_agg/" class="md-nav__link">
         GroupedDataStream.agg
       </a>
     </li>
@@ -1095,7 +1095,7 @@
   
   
     <li class="md-nav__item">
-      <a href="datastream/grouped_agg.md" class="md-nav__link">
+      <a href="datastream/grouped_agg/" class="md-nav__link">
         GroupedDataStream.aggregate
       </a>
     </li>
@@ -1109,7 +1109,7 @@
   
   
     <li class="md-nav__item">
-      <a href="datastream/grouped_agg_sql.md" class="md-nav__link">
+      <a href="datastream/grouped_agg_sql/" class="md-nav__link">
         GroupedDataStream.agg_sql
       </a>
     </li>
@@ -1123,7 +1123,7 @@
   
   
     <li class="md-nav__item">
-      <a href="datastream/grouped_count_distinct.md" class="md-nav__link">
+      <a href="datastream/grouped_count_distinct/" class="md-nav__link">
         GroupedDataStream.count_distinct
       </a>
     </li>
@@ -1948,7 +1948,7 @@
 <p>You develop with Quokka locally, and deploy to cloud (currently AWS) with a single line of code change. You can spin up a new cluster or connect to an existing Ray cluster. Kubernetes can be supported through setting up a Ray cluster with <a href="https://github.com/ray-project/kuberay">KubeRay</a>. Like Spark, Quokka can <strong>recover from worker failures</strong>, but expects a reliable coordinator node that doesn't fail throughout the duration of the job. Like Spark, Quokka benefits from having plenty of RAM, and fast SSDs for spilling if needed. </p>
 <h2 id="roadmap"><strong>Roadmap</strong></h2>
 <ol>
-<li><strong>Streaming support.</strong> Although Quokka follows a streaming model, it currently does not support "streaming" computations from Kafka, Kinesis etc. They will soon be supported. This will allow batch data pipelines to be deployed to production with one line code change. Target Q2 2023.</li>
+<li><strong>Ordered data support.</strong> Quokka's goal is to become a TB-scale feature framework for time series data. Currently Quokka DataStreams are unordered, but that is going to change in the next few months! Expect to see blazing fast <code>asof_join</code> and <code>window_transforms</code> on TBs of time-series data. The operators have already been impelemented, mostly working out the high level API. If you are interested in this, please contact me.</li>
 <li><strong>Better SQL support.</strong> Currently Quokka has very rudimentary SQL support in the form of qc.sql(SQL_QUERY). It will loudly complain if it sees some SQL that it doesn't understand, e.g. complicated nested subqueries etc. I am working with <a href="https://github.com/tobymao/sqlglot">SQLGlot</a> to enhancing SQL support. Target pass TPC-H and say 75% of TPC-DS Q2 2023.</li>
 </ol>
 <h2 id="bug-bounty"><strong>Bug Bounty</strong></h2>
@@ -1957,7 +1957,7 @@
 <li>$50 for a bug that results in a runtime error.</li>
 <li>$100 for a bug that results in a silent error, e.g. produces wrong results.</li>
 </ul>
-<p>I am a PhD student and have finite resources. So this program will be shut down after I lose $1000.</p>
+<p>I am a PhD student and have finite resources. So this program will be shut down after I lose $2000.</p>
 <h2 id="contact"><strong>Contact</strong></h2>
 <p>If you are interested in trying out Quokka or hit any problems at all, please contact me at zihengw@stanford.edu or <a href="https://discord.gg/6ujVV9HAg3">Discord</a>. I will try my best to make Quokka work for you.</p>
 

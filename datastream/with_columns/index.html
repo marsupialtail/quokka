@@ -938,7 +938,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../count_distinct.md" class="md-nav__link">
+      <a href="../count_distinct/" class="md-nav__link">
         DataStream.count_distinct
       </a>
     </li>
@@ -952,7 +952,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../agg.md" class="md-nav__link">
+      <a href="../agg/" class="md-nav__link">
         DataStream.agg
       </a>
     </li>
@@ -966,7 +966,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../agg.md" class="md-nav__link">
+      <a href="../agg/" class="md-nav__link">
         DataStream.aggregate
       </a>
     </li>
@@ -980,7 +980,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../agg_sql.md" class="md-nav__link">
+      <a href="../agg_sql/" class="md-nav__link">
         DataStream.agg_sql
       </a>
     </li>
@@ -994,7 +994,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../count.md" class="md-nav__link">
+      <a href="../count/" class="md-nav__link">
         DataStream.count
       </a>
     </li>
@@ -1008,7 +1008,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../sum.md" class="md-nav__link">
+      <a href="../sum/" class="md-nav__link">
         DataStream.sum
       </a>
     </li>
@@ -1022,7 +1022,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mean.md" class="md-nav__link">
+      <a href="../mean/" class="md-nav__link">
         DataStream.mean
       </a>
     </li>
@@ -1036,7 +1036,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../min.md" class="md-nav__link">
+      <a href="../min/" class="md-nav__link">
         DataStream.min
       </a>
     </li>
@@ -1050,7 +1050,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../max.md" class="md-nav__link">
+      <a href="../max/" class="md-nav__link">
         DataStream.max
       </a>
     </li>
@@ -1064,7 +1064,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../grouped_agg.md" class="md-nav__link">
+      <a href="../grouped_agg/" class="md-nav__link">
         GroupedDataStream.agg
       </a>
     </li>
@@ -1078,7 +1078,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../grouped_agg.md" class="md-nav__link">
+      <a href="../grouped_agg/" class="md-nav__link">
         GroupedDataStream.aggregate
       </a>
     </li>
@@ -1092,7 +1092,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../grouped_agg_sql.md" class="md-nav__link">
+      <a href="../grouped_agg_sql/" class="md-nav__link">
         GroupedDataStream.agg_sql
       </a>
     </li>
@@ -1106,7 +1106,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../grouped_count_distinct.md" class="md-nav__link">
+      <a href="../grouped_count_distinct/" class="md-nav__link">
         GroupedDataStream.count_distinct
       </a>
     </li>
@@ -1945,7 +1945,7 @@ The UDFs must not have expectations on the length of its input.</p></td>
           </td>
         </tr>
         <tr>
-          <td><code>reqired_columns</code></td>
+          <td><code>required_columns</code></td>
           <td>
                 <code>list or set</code>
           </td>
@@ -1953,7 +1953,7 @@ The UDFs must not have expectations on the length of its input.</p></td>
 all the columns are required for your function. Early projection past this function becomes impossible. If you specify this and you got it wrong,
 you will get an error at runtime. This is only required for UDFs. If you use Quokka Expressions, then Quokka will automatically figure out the required columns.</p></td>
           <td>
-              <em>required</em>
+                <code>set()</code>
           </td>
         </tr>
         <tr>
@@ -2137,7 +2137,7 @@ execution graph. This is set to True by default. Correctly setting this flag req
 <span class="sd">    Args:</span>
 <span class="sd">        new_columns (dict): A dictionary of column names to UDFs or Expressions. The UDFs must take as input a Polars DataFrame and output a Polars DataFrame.</span>
 <span class="sd">            The UDFs must not have expectations on the length of its input.</span>
-<span class="sd">        reqired_columns (list or set): The names of the columns that are required for all your function. If this is not specified then Quokka assumes</span>
+<span class="sd">        required_columns (list or set): The names of the columns that are required for all your function. If this is not specified then Quokka assumes</span>
 <span class="sd">            all the columns are required for your function. Early projection past this function becomes impossible. If you specify this and you got it wrong,</span>
 <span class="sd">            you will get an error at runtime. This is only required for UDFs. If you use Quokka Expressions, then Quokka will automatically figure out the required columns.</span>
 <span class="sd">        foldable (bool): Whether or not the function can be executed as part of the batch post-processing of the previous operation in the</span>

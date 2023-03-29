@@ -938,7 +938,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../count_distinct.md" class="md-nav__link">
+      <a href="../count_distinct/" class="md-nav__link">
         DataStream.count_distinct
       </a>
     </li>
@@ -952,7 +952,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../agg.md" class="md-nav__link">
+      <a href="../agg/" class="md-nav__link">
         DataStream.agg
       </a>
     </li>
@@ -966,7 +966,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../agg.md" class="md-nav__link">
+      <a href="../agg/" class="md-nav__link">
         DataStream.aggregate
       </a>
     </li>
@@ -980,7 +980,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../agg_sql.md" class="md-nav__link">
+      <a href="../agg_sql/" class="md-nav__link">
         DataStream.agg_sql
       </a>
     </li>
@@ -994,7 +994,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../count.md" class="md-nav__link">
+      <a href="../count/" class="md-nav__link">
         DataStream.count
       </a>
     </li>
@@ -1008,7 +1008,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../sum.md" class="md-nav__link">
+      <a href="../sum/" class="md-nav__link">
         DataStream.sum
       </a>
     </li>
@@ -1022,7 +1022,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../mean.md" class="md-nav__link">
+      <a href="../mean/" class="md-nav__link">
         DataStream.mean
       </a>
     </li>
@@ -1036,7 +1036,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../min.md" class="md-nav__link">
+      <a href="../min/" class="md-nav__link">
         DataStream.min
       </a>
     </li>
@@ -1050,7 +1050,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../max.md" class="md-nav__link">
+      <a href="../max/" class="md-nav__link">
         DataStream.max
       </a>
     </li>
@@ -1064,7 +1064,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../grouped_agg.md" class="md-nav__link">
+      <a href="../grouped_agg/" class="md-nav__link">
         GroupedDataStream.agg
       </a>
     </li>
@@ -1078,7 +1078,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../grouped_agg.md" class="md-nav__link">
+      <a href="../grouped_agg/" class="md-nav__link">
         GroupedDataStream.aggregate
       </a>
     </li>
@@ -1092,7 +1092,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../grouped_agg_sql.md" class="md-nav__link">
+      <a href="../grouped_agg_sql/" class="md-nav__link">
         GroupedDataStream.agg_sql
       </a>
     </li>
@@ -1106,7 +1106,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../grouped_count_distinct.md" class="md-nav__link">
+      <a href="../grouped_count_distinct/" class="md-nav__link">
         GroupedDataStream.count_distinct
       </a>
     </li>
@@ -1946,17 +1946,15 @@ Eventually the GroupedDataStream object will also support different kinds of win
   <p>A GroupedDataStream object with the specified grouping and the current DataStream.</p>
 </details>
 <p><strong>Examples:</strong></p>
-    <p>~~~python</p>
     <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">lineitem</span> <span class="o">=</span> <span class="n">qc</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="s2">&quot;lineitem.csv&quot;</span><span class="p">)</span>
 </code></pre></div>
+    <p><code>result</code> will be a GroupedDataStream.</p>
     <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">result</span> <span class="o">=</span> <span class="n">lineitem</span><span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s2">&quot;l_orderkey&quot;</span><span class="p">,</span><span class="s2">&quot;l_orderdate&quot;</span><span class="p">],</span> <span class="n">orderby</span> <span class="o">=</span> <span class="p">[(</span><span class="s2">&quot;l_orderkey&quot;</span><span class="p">,</span> <span class="s2">&quot;asc&quot;</span><span class="p">),</span> <span class="p">(</span><span class="s2">&quot;l_orderdate&quot;</span><span class="p">,</span> <span class="s2">&quot;desc&quot;</span><span class="p">)])</span>
-<span class="go">~~~</span>
 </code></pre></div>
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/datastream.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1270</span>
-<span class="normal">1271</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1271</span>
 <span class="normal">1272</span>
 <span class="normal">1273</span>
 <span class="normal">1274</span>
@@ -1996,7 +1994,10 @@ Eventually the GroupedDataStream object will also support different kinds of win
 <span class="normal">1308</span>
 <span class="normal">1309</span>
 <span class="normal">1310</span>
-<span class="normal">1311</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">groupby</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">groupby</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="n">orderby</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="normal">1311</span>
+<span class="normal">1312</span>
+<span class="normal">1313</span>
+<span class="normal">1314</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">groupby</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">groupby</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="n">orderby</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Group a DataStream on a list of columns, optionally specifying an ordering requirement.</span>
@@ -2013,11 +2014,13 @@ Eventually the GroupedDataStream object will also support different kinds of win
 <span class="sd">        A GroupedDataStream object with the specified grouping and the current DataStream.</span>
 
 <span class="sd">    Examples:</span>
-<span class="sd">        ~~~python</span>
+
 <span class="sd">        &gt;&gt;&gt; lineitem = qc.read_csv(&quot;lineitem.csv&quot;)</span>
 
+<span class="sd">        `result` will be a GroupedDataStream.</span>
+
 <span class="sd">        &gt;&gt;&gt; result = lineitem.groupby([&quot;l_orderkey&quot;,&quot;l_orderdate&quot;], orderby = [(&quot;l_orderkey&quot;, &quot;asc&quot;), (&quot;l_orderdate&quot;, &quot;desc&quot;)])</span>
-<span class="sd">        ~~~</span>
+
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">groupby</span><span class="p">)</span> <span class="o">==</span> <span class="nb">str</span><span class="p">:</span>
