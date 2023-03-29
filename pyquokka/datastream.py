@@ -1018,7 +1018,7 @@ class DataStream:
             A transformed DataStream.
         
         Examples:
-            Forthcoming.
+            Check the code for the `gramian` function.
         """
 
         assert type(required_columns) == set
@@ -1045,7 +1045,7 @@ class DataStream:
             
         )
     
-    def distinct(self, key: str):
+    def distinct(self, keys: list):
 
         """
         Return a new DataStream with specified columns and unique rows. This is like `SELECT DISTINCT(KEYS) FROM ...` in SQL.
@@ -1063,33 +1063,36 @@ class DataStream:
             A transformed DataStream whose columns are in keys and whose rows are unique.
         
         Examples:
-            ~~~python
+            
             >>> f = qc.read_csv("lineitem.csv")
 
-            # select only the l_orderdate and l_orderkey columns, return only unique rows.
+            Select only the l_orderdate and l_orderkey columns, return only unique rows.
+            
             >>> f = f.distinct(["l_orderdate", "l_orderkey"])
 
-            # this will now fail, since l_comment is no longer in f's schema.
+            This will now fail, since l_comment is no longer in f's schema.
+
             >>> f = f.select(["l_comment"])
-            ~~~
         """
 
-        assert type(key) == str
-        assert key in self.schema
+        if type(keys) == str:
+            keys = [keys]
+        assert type(keys) == list, "keys must be a list of column names"
+        assert all([key in self.schema for key in keys]), "keys must be a subset of the columns in the DataStream"
 
-        select_stream = self.select([key])
+        select_stream = self.select(keys)
 
         return self.quokka_context.new_stream(
             sources={0: select_stream},
-            partitioners={0: HashPartitioner(key)},
+            partitioners={0: HashPartitioner(keys[0])},
             node=StatefulNode(
-                schema=[key],
+                schema=keys,
                 # this is a stateful node, but predicates and projections can be pushed down.
-                schema_mapping={col: {0: col} for col in [key]},
-                required_columns={0: set([key])},
-                operator=DistinctExecutor([key])
+                schema_mapping={col: {0: col} for col in keys},
+                required_columns={0: set(keys)},
+                operator=DistinctExecutor(keys)
             ),
-            schema=[key],
+            schema=keys,
             
         )
 
@@ -1118,16 +1121,14 @@ class DataStream:
             except for `right_on` from the right side. 
         
         Examples:
-            ~~~python
+
             >>> lineitem = qc.read_csv("lineitem.csv")
 
             >>> orders = qc.read_csv("orders.csv")
 
             >>> result = lineitem.join(orders, left_on = "l_orderkey", right_on = "o_orderkey")
 
-            # this will now fail, since o_orderkey is not in the joined DataStream.
             >>> result = result.select(["o_orderkey"])
-            ~~~
         """
 
         assert how in {"inner", "left", "semi", "anti"}
@@ -1284,11 +1285,13 @@ class DataStream:
             A GroupedDataStream object with the specified grouping and the current DataStream.
         
         Examples:
-            ~~~python
+
             >>> lineitem = qc.read_csv("lineitem.csv")
 
+            `result` will be a GroupedDataStream.
+
             >>> result = lineitem.groupby(["l_orderkey","l_orderdate"], orderby = [("l_orderkey", "asc"), ("l_orderdate", "desc")])
-            ~~~
+            
         """
 
         if type(groupby) == str:
@@ -1366,6 +1369,23 @@ class DataStream:
         """
         This is a topk function that effectively performs select * from stream order by columns limit k.
         The strategy is to take k rows from each batch coming in and do a final sort and limit k in a stateful executor.
+
+        Args:
+            columns (str or list): a column or a list of columns to sort on.
+            k (int): the number of rows to return.
+            descending (bool or list): a boolean or a list of booleans indicating whether to sort in descending order. If a list, the length must be the same as the length of `columns`.
+
+        Return:
+            A DataStream object with the specified top k rows.
+
+        Examples:
+
+            >>> lineitem = qc.read_csv("lineitem.csv")
+
+            `result` will be a DataStream.
+
+            >>> result = lineitem.top_k("l_orderkey", 10)
+            >>> result = lineitem.top_k(["l_orderkey", "l_orderdate"], 10, descending = [True, False])
         """
         if type(columns) == str:
             columns = [columns]
@@ -1530,6 +1550,14 @@ class DataStream:
 
     def count_distinct(self, col):
 
+        """
+        Count the number of distinct values of a column. This may result in out of memory. This is not approximate.
+
+        Args:
+            col (str): the column to count distinct values of
+        
+        """
+
         return self._grouped_count_distinct([], col)
 
     def agg(self, aggregations):
@@ -1554,17 +1582,18 @@ class DataStream:
             aggregation, so might as well as materialize it right now.
         
         Examples:
-            ~~~python
+            
             >>> lineitem = qc.read_csv("lineitem.csv")
             
             >>> d = lineitem.filter("l_shipdate <= date '1998-12-01' - interval '90' day")
             
             >>> d = d.with_column("disc_price", lambda x:x["l_extendedprice"] * (1 - x["l_discount"]), required_columns ={"l_extendedprice", "l_discount"})
             
-            # I want the sum and average of the l_quantity column and the l_extendedprice colum, the sum of the disc_price column, the minimum of the l_discount
-            # column, and oh give me the total row count as well.
+            I want the sum and average of the l_quantity column and the l_extendedprice colum, the sum of the disc_price column, the minimum of the l_discount
+            column, and oh give me the total row count as well.
+            
             >>> f = d.agg({"l_quantity":["sum","avg"], "l_extendedprice":["sum","avg"], "disc_price":"sum", "l_discount":"min","*":"count"})
-            ~~~
+            
         """
 
         return self._grouped_aggregate([], aggregations, None)
@@ -1592,6 +1621,9 @@ class DataStream:
 
         """
         Return the sums of the specified columns.
+
+        Args:
+            columns (str or list): the column name or a list of column names to sum.
         """
 
         assert type(columns) == str or type(columns) == list
@@ -1605,6 +1637,9 @@ class DataStream:
 
         """
         Return the maximum values of the specified columns.
+
+        Args:
+            columns (str or list): the column name or a list of column names.
         """
 
         assert type(columns) == str or type(columns) == list
@@ -1618,6 +1653,9 @@ class DataStream:
 
         """
         Return the minimum values of the specified columns.
+
+        Args:
+            columns (str or list): the column name or a list of column names.
         """
 
         assert type(columns) == str or type(columns) == list
@@ -1631,6 +1669,9 @@ class DataStream:
 
         """
         Return the mean values of the specified columns.
+
+        Args:
+            columns (str or list): the column name or a list of column names.
         """
 
         assert type(columns) == str or type(columns) == list
@@ -1718,7 +1759,7 @@ class GroupedDataStream:
             aggregation, so might as well as materialize it right now.
         
         Examples:
-            ~~~python
+            
             >>> lineitem = qc.read_csv("lineitem.csv")
             
             >>> d = lineitem.filter("l_shipdate <= date '1998-12-01' - interval '90' day")
@@ -1728,7 +1769,6 @@ class GroupedDataStream:
             # I want the sum and average of the l_quantity column and the l_extendedprice colum, the sum of the disc_price column, the minimum of the l_discount
             # column, and oh give me the total row count as well, of each unique combination of l_returnflag and l_linestatus
             >>> f = d.groupby(["l_returnflag", "l_linestatus"]).agg({"l_quantity":["sum","avg"], "l_extendedprice":["sum","avg"], "disc_price":"sum", "l_discount":"min","*":"count"})
-            ~~~
         """
 
         return self.source_data_stream._grouped_aggregate(self.groupby, aggregations, self.orderby)

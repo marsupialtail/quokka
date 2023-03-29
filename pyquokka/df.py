@@ -9,9 +9,56 @@ import os
 class QuokkaContext:
     def __init__(self, cluster = None, io_per_node = 2, exec_per_node = 1) -> None:
 
+        """
+        Creates a QuokkaContext object. Needed to do basically anything. Similar to SparkContext.
+
+        Args:
+            cluster (Cluster): Cluster object. If None, a LocalCluster will be created.
+            io_per_node (int): Number of IO nodes to launch per machine. Default is 2. This controls the number of IO thread pools to use per machine.
+            exec_per_node (int): Number of compute nodes to launch per machine. Default is 1. This controls the number of compute thread pools to use per machine.
+        
+        Returns:
+            QuokkaContext object
+        
+        Examples:
+
+            >>> from pyquokka.df import QuokkaContext
+
+            This will create a QuokkaContext object with a LocalCluster to execute locally. Useful for testing and exploration.
+
+            >>> qc = QuokkaContext()
+
+            If you want to connect to a remote Ray cluster, you can do this.
+
+            >>> manager = QuokkaClusterManager()
+            >>> cluster = manager.get_cluster_from_ray("my_cluster.yaml", aws_access_key, aws_access_id, requirements = ["numpy", "pandas"], spill_dir = "/data")
+            >>> from pyquokka.df import QuokkaContext
+            >>> qc = QuokkaContext(cluster)
+
+            Or you can spin up a new cluster:
+
+            >>> manager =  QuokkaClusterManager(key_name = "my_key", key_location = "/home/ubuntu/.ssh/my_key.pem", security_group = "my_security_group")
+            >>> cluster = manager.create_cluster(aws_access_key, aws_access_id, num_instances = 2, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = ["numpy", "pandas"])
+            >>> qc = QuokkaContext(cluster)
+
+            Or you can connect to a stopped cluster that was saved to json.
+
+            >>> from pyquokka.utils import *
+            >>> manager =  QuokkaClusterManager(key_name = "my_key", key_location = "/home/ubuntu/.ssh/my_key.pem", security_group = "my_security_group")
+            >>> cluster = manager.create_cluster(aws_access_key, aws_access_id, num_instances = 2, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = ["numpy", "pandas"])
+            >>> cluster.to_json("my_cluster.json")
+
+            You can now close this Python session. In a new Python session you can connect to this cluster by doing:
+
+            >>> from pyquokka.utils import *
+            >>> manager = QuokkaClusterManager(key_name = "my_key", key_location = "/home/ubuntu/.ssh/my_key.pem", security_group = "my_security_group")
+            >>> cluster = manager.from_json("my_cluster.json")
+
+        """
+
         self.sql_config= {"optimize_joins" : True, "s3_csv_materialize_threshold" : 10 * 1048576, "disk_csv_materialize_threshold" : 1048576,
                       "s3_parquet_materialize_threshold" : 10 * 1048576, "disk_parquet_materialize_threshold" : 1048576}
-        self.exec_config = {"hbq_path": "/data/", "fault_tolerance": True, "memory_limit": 0.25, "max_pipeline_batches": 30, 
+        self.exec_config = {"hbq_path": "/data/", "fault_tolerance": False, "memory_limit": 0.25, "max_pipeline_batches": 30, 
                         "checkpoint_interval": None, "checkpoint_bucket": "quokka-checkpoint", "batch_attempt": 5}
 
         self.latest_node_id = 0
@@ -73,6 +120,48 @@ class QuokkaContext:
         ray.get(self.coordinator.register_node_ips.remote( self.node_locs ))
 
     def set_config(self, key, value):
+
+        """
+        This sets a config value for the entire cluster. You should do this at the very start of your program generally speaking.
+
+        The following keys are supported:
+
+        1. optimize_joins: bool, whether to optimize joins based on cardinality estimates. Default to True
+
+        2. s3_csv_materialize_threshold: int, the threshold in bytes for when to materialize a CSV file in S3
+
+        3. disk_csv_materialize_threshold: int, the threshold in bytes for when to materialize a CSV file on disk
+
+        4. s3_parquet_materialize_threshold: int, the threshold in bytes for when to materialize a Parquet file in S3
+
+        5. disk_parquet_materialize_threshold: int, the threshold in bytes for when to materialize a Parquet file on disk
+
+        6. hbq_path: str, the disk spill directory. Default to "/data"
+        
+        7. fault_tolerance: bool, whether to enable fault tolerance. Default to False
+
+        Args:
+            key (str): the key to set
+            value (any): the value to set
+
+        Returns:
+            None
+        
+        Examples:
+
+            >>> from pyquokka.df import *
+            >>> qc = QuokkaContext()
+
+            Turn on join order optimization.
+
+            >>> qc.set_config("optimize_joins", True)
+
+            Turn off fault tolerance. 
+
+            >>> qc.set_config("fault_tolerance", False)
+        
+        """
+
         if key in self.sql_config:
             self.sql_config[key] = value
         elif key in self.exec_config:
@@ -82,6 +171,24 @@ class QuokkaContext:
             raise Exception("key not found in config")
     
     def get_config(self, key):
+
+        """
+        Gets a config value for the entire cluster.
+
+        Args:
+            key (str): the key to get
+
+        Returns:
+            any: the value of the key
+
+        Examples:
+
+            >>> from pyquokka.df import *
+            >>> qc = QuokkaContext()
+            >>> qc.get_config("optimize_joins")
+        
+        """
+
         if key in self.sql_config:
             return self.sql_config[key]
         elif key in self.exec_config:
@@ -144,7 +251,7 @@ class QuokkaContext:
 
         """
         Read in a CSV file or files from a table location. It can be a single CSV or a list of CSVs. It can be CSV(s) on disk
-        or CSV(s) on S3. Currently other cloud sare not supported. The CSVs can have a predefined schema using a list of 
+        or CSV(s) on S3. Currently other clouds are not supported. The CSVs can have a predefined schema using a list of 
         column names in the schema argument, or you can specify the CSV has a header row and Quokka will read the schema 
         from it. You should also specify the CSV's separator. 
 
@@ -156,20 +263,20 @@ class QuokkaContext:
             sep (str): default to ',' but could be something else, like '|' for TPC-H tables
 
         Return:
-            A new DataStream if the CSV file is larger than 10MB, otherwise a Polars DataFrame. 
+            A DataStream.
         
         Examples:
-            ~~~python
-            # read a single CSV. It's better always to specify the absolute path.
+
+            Read a single CSV. It's better always to specify the absolute path.
             >>> lineitem = qc.read_csv("/home/ubuntu/tpch/lineitem.csv")
 
-            # read a directory of CSVs 
+            Read a directory of CSVs 
             >>> lineitem = qc.read_csv("/home/ubuntu/tpch/lineitem/*")
 
-            # read a single CSV from S3
+            Read a single CSV from S3
             >>> lineitem = qc.read_csv("s3://tpc-h-csv/lineitem/lineitem.tbl.1")
 
-            # read CSVs from S3 bucket with prefix
+            Read CSVs from S3 bucket with prefix
             >>> lineitem = qc.read_csv("s3://tpc-h-csv/lineitem/*")
             ~~~
         """
@@ -289,43 +396,31 @@ class QuokkaContext:
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
 
-    '''
-    The API layer for read_parquet does four things:
-    - Detect if it's a S3 location of a local location
-    - Detect if it's a list of files or a single file
-    - Detect the schema. This is not expected to be supplied by the user. This is not needed by the reader but is needed by the logical plan optimizer.
-    - Detect if the data is small enough (< 10MB and single file) to be immediately materialized into a Polars dataframe.
-    After it has done these things, if the dataset is not materialized, we will instantiate a logical plan node and return a DataStream
-    '''
-
     def read_parquet(self, table_location: str):
 
         """
         Read Parquet. It can be a single Parquet or a list of Parquets. It can be Parquet(s) on disk
-        or Parquet(s) on S3. Currently other cloud sare not supported. You don't really have to supply the schema
-        since you can get it from the metadata always, but you can if you want.
+        or Parquet(s) on S3. Currently other clouds are not supported. 
 
         Args:
             table_location (str): where the Parquet(s) are. This mostly mimics Spark behavior. Look at the examples.
-            schema (list): list of column names. This is optional. If you do supply it, please make sure it's correct!
 
         Return:
-            A new DataStream if the Parquet file is larger than 10MB, otherwise a Polars DataFrame. 
+            DataStream.
         
         Examples:
-            ~~~python
-            # read a single Parquet. It's better always to specify the absolute path.
+            
+            Read a single Parquet. It's better always to specify the absolute path.
             >>> lineitem = qc.read_parquet("/home/ubuntu/tpch/lineitem.parquet")
 
-            # read a directory of Parquets 
+            Read a directory of Parquets 
             >>> lineitem = qc.read_parquet("/home/ubuntu/tpch/lineitem/*")
 
-            # read a single Parquet from S3
+            Read a single Parquet from S3
             >>> lineitem = qc.read_parquet("s3://tpc-h-parquet/lineitem.parquet")
 
-            # read Parquets from S3 bucket with prefix
-            >>> lineitem = qc.read_parquet("s3://tpc-h-parquet/lineitem/*")
-            ~~~
+            Read Parquets from S3 bucket with prefix
+            >>> lineitem = qc.read_parquet("s3://tpc-h-parquet/lineitem.parquet/*")
         """
 
         def return_materialized_stream(df):
@@ -445,6 +540,27 @@ class QuokkaContext:
         return DataStream(self, schema, self.latest_node_id - 1)
 
     def read_dataset(self, dataset):
+
+        """
+        Convert a DataSet back to a DataStream to process it.
+
+        Args:
+            dataset (DataSet): The dataset to read from. Note this is a Quokka DataSet, not a Ray Data dataset!
+
+        Returns:
+            DataStream: The data stream.
+
+        Examples:
+
+            >>> ds = qc.read_parquet("s3://my-bucket/my-data.parquet").compute()
+
+            `ds` will be a DataSet, i.e. a collection of Ray ObjectRefs. 
+
+            >>> ds = qc.read_dataset(ds)
+
+            `ds` will now be a DataStream.
+        """
+
         self.nodes[self.latest_node_id] = InputRayDatasetNode(dataset)
         self.latest_node_id += 1
         return DataStream(self, dataset.schema, self.latest_node_id - 1)
@@ -472,16 +588,78 @@ class QuokkaContext:
 
 
     def from_polars(self, df):
+
+        """
+        Create a DataStream from a polars DataFrame. The DataFrame will be materialized. If you don't know what this means, don't worry about it.
+
+        Args:
+            df (Polars DataFrame): The polars DataFrame to create the DataStream from.
+        
+        Returns:
+            DataStream: The DataStream created from the polars DataFrame.
+        
+        Examples:
+
+            >>> import polars as pl
+            >>> from pyquokka.df import QuokkaContext
+            >>> qc = QuokkaContext()
+            >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+            >>> stream = qc.from_polars(df)
+            >>> stream.count()
+        """
+
         self.nodes[self.latest_node_id] = InputPolarsNode(df)
         self.latest_node_id += 1
         return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
 
     def from_pandas(self, df):
+
+        """
+        Create a DataStream from a pandas DataFrame. The DataFrame will be materialized. If you don't know what this means, don't worry about it.
+
+        Args:
+            df (Pandas DataFrame): The pandas DataFrame to create the DataStream from.
+
+        Returns:
+            DataStream: The DataStream created from the pandas DataFrame.
+
+        Examples:
+
+            >>> import pandas as pd
+            >>> from pyquokka.df import QuokkaContext
+            >>> qc = QuokkaContext()
+            >>> df = pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+            >>> stream = qc.from_pandas(df)
+            >>> stream.count()
+
+        """
+
         self.nodes[self.latest_node_id] = InputPolarsNode(polars.from_pandas(df))
         self.latest_node_id += 1
         return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
 
     def from_arrow(self, df):
+
+        """
+        Create a DataStream for a pyarrow Table. The DataFrame will be materialized. If you don't know what this means, don't worry about it.
+
+        Args:
+            df (PyArrow Table): The polars DataFrame to create the DataStream from.
+        
+        Returns:
+            DataStream: The DataStream created from the polars DataFrame.
+        
+        Examples:
+
+            >>> import polars as pl
+            >>> from pyquokka.df import QuokkaContext
+            >>> qc = QuokkaContext()
+            >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).to_arrow()
+            >>> stream = qc.from_arrow(df)
+            >>> stream.count()
+        
+        """
+
         self.nodes[self.latest_node_id] = InputPolarsNode(polars.from_arrow(df))
         self.latest_node_id += 1
         return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
@@ -499,6 +677,24 @@ class QuokkaContext:
         return stream
 
     def read_iceberg(self, table, snapshot = None):
+
+        """
+        Must have pyiceberg installed on the client. This is a new API. This only supports AWS Glue catalog so far. 
+
+        Args:
+            table (str): The table name to read from. This is the full table name, not just the table name. For example, if the table is in the database "default" and the table name is "my_table", then the table name should be "default.my_table".
+            snapshot (int): The snapshot ID to read from. If this is not specified, the latest snapshot will be read from.
+        
+        Returns:
+            DataStream: The DataStream created from the iceberg table.
+        
+        Examples:
+
+            >>> from pyquokka.df import QuokkaContext
+            >>> qc = QuokkaContext()
+            >>> stream = qc.read_iceberg("default.my_table")
+        """
+
         from pyiceberg.catalog import load_catalog
         catalog = load_catalog("glue", **{"type":"glue"})
         try:

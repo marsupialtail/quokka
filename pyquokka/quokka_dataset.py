@@ -24,15 +24,37 @@ class Dataset:
         return Dataset(self.schema, self.wrapped_dataset, self.dataset_id)
 
     def to_df(self):
+
+        """
+        This is a blocking call. It will collect all the data from the cluster and return a Polars DataFrame to the calling Python session (could be your local machine, be careful of OOM!).
+        
+        Return:
+            Polars DataFrame
+        """
+
         return ray.get(self.wrapped_dataset.to_df.remote(self.dataset_id))
     
     def to_dict(self):
         return  ray.get(self.wrapped_dataset.to_dict.remote(self.dataset_id))
     
     def to_arrow_refs(self):
+
+        """
+        This will return a list of Ray ObjectRefs to Arrow Tables. This is a blocking call. It will NOT move data to your local machine.
+
+        Return:
+            List of Ray ObjectRefs to Arrow Tables
+        """
         return ray.get(self.wrapped_dataset.to_arrow_refs.remote(self.dataset_id))
     
     def to_ray_dataset(self):
+
+        """
+        This will convert the Quokka Dataset to a Ray Dataset. This is a blocking call. It will NOT move data to your local machine.
+
+        Return:
+            Ray Dataset
+        """
         return ray.data.from_arrow_refs(self.to_arrow_refs())
 
     def length(self):

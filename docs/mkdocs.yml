@@ -11,13 +11,21 @@ nav:
         - Tutorials: 
                 - DataStream API (Use Quokka): simple.md
                 - TaskGraph API (Contribute to Quokka): tutorial.md          
-        - QuokkaContext API Reference: 
+        - API Reference:
+          - QuokkaContext API Reference: 
+                - QuokkaContext: quokka_context/quokka_context.md
+                - QuokkaContext.set_config: quokka_context/set_config.md
+                - QuokkaContext.get_config: quokka_context/get_config.md
                 - QuokkaContext.read_csv: quokka_context/read_csv.md
                 - QuokkaContext.read_parquet: quokka_context/read_parquet.md
                 - QuokkaContext.read_iceberg: quokka_context/read_iceberg.md
                 - QuokkaContext.read_delta: quokka_context/read_delta.md
-                - QuokkaContext.read_json: quokka_context/read_json.md
-        - DataStream API Reference: 
+                - QuokkaContext.read_dataset: quokka_context/read_dataset.md
+                - QuokkaContext.read_ray_dataset: quokka_context/read_ray_dataset.md
+                - QuokkaContext.from_polars: quokka_context/from_polars.md
+                - QuokkaContext.from_pandas: quokka_context/from_pandas.md
+                - QuokkaContext.from_arrow: quokka_context/from_arrow.md
+          - DataStream API Reference: 
                 - DataStream.collect: datastream/collect.md
                 - DataStream.compute: datastream/compute.md
                 - DataStream.explain: datastream/explain.md
@@ -33,6 +41,66 @@ nav:
                 - DataStream.with_columns: datastream/with_columns.md
                 - DataStream.with_columns_sql: datastream/with_columns_sql.md
                 - DataStream.union: datastream/union.md
+                - DataStream.distinct: datastream/distinct.md
+                - DataStream.gramian: datastream/gramian.md
+                - DataStream.stateful_transform: datastream/stateful_transform.md
+                - DataStream.join: datastream/join.md
+                - DataStream.groupby: datastream/groupby.md
+                - DataStream.top_k: datastream/top_k.md
+                - DataStream.count_distinct: datastream/count_distinct.md
+                - DataStream.agg: datastream/agg.md
+                - DataStream.aggregate: datastream/agg.md
+                - DataStream.agg_sql: datastream/agg_sql.md
+                - DataStream.count: datastream/count.md
+                - DataStream.sum: datastream/sum.md
+                - DataStream.mean: datastream/mean.md
+                - DataStream.min: datastream/min.md
+                - DataStream.max: datastream/max.md
+                - GroupedDataStream.agg: datastream/grouped_agg.md
+                - GroupedDataStream.aggregate: datastream/grouped_agg.md
+                - GroupedDataStream.agg_sql: datastream/grouped_agg_sql.md
+                - GroupedDataStream.count_distinct: datastream/grouped_count_distinct.md
+
+          - DataSet API Reference:
+                - DataSet.to_df: dataset/to_df.md
+                - DataSet.to_ray_dataset: dataset/to_ray_dataset.md
+                - DataSet.to_arrow_refs: dataset/to_arrow_refs.md
+          - Expression API Reference:
+                - Strings: 
+                  - Expression.str.to_uppercase: expression/str_to_uppercase.md
+                  - Expression.str.to_lowercase: expression/str_to_lowercase.md
+                  - Expression.str.contains: expression/str_contains.md
+                  - Expression.str.starts_with: expression/str_starts_with.md
+                  - Expression.str.ends_with: expression/str_ends_with.md
+                  - Expression.str.length: expression/str_length.md
+                  - Expression.str.json_extract: expression/str_json_extract.md
+                  - Expression.str.strptime: expression/str_strptime.md
+                  - Expression.str.hash: expression/str_hash.md
+                - Temporal:
+                  - Expression.dt.hour: expression/dt_hour.md
+                  - Expression.dt.minute: expression/dt_minute.md
+                  - Expression.dt.second: expression/dt_second.md
+                  - Expression.dt.weekday: expression/dt_weekday.md
+                  - Expression.dt.millisecond: expression/dt_millisecond.md
+                  - Expression.dt.microsecond: expression/dt_microsecond.md
+                  - Expression.dt.week: expression/dt_week.md
+                  - Expression.dt.month: expression/dt_month.md
+                  - Expression.dt.year: expression/dt_year.md
+                  - Expression.dt.offset_by: expression/dt_offset_by.md
+                  - Expression.dt.strftime: expression/dt_strftime.md
+          - QuokkaClusterManager API Reference: 
+                - EC2Cluster:
+                  - EC2Cluster.to_json: utils/ec2cluster_to_json.md
+                - LocalCluster:
+                  - LocalCluster: utils/localcluster.md
+                - QuokkaClusterManager:
+                  - QuokkaClusterManager: utils/quokka_cluster_manager.md
+                  - QuokkaClusterManager.create_cluster: utils/create_cluster.md
+                  - QuokkaClusterManager.stop_cluster: utils/stop_cluster.md
+                  - QuokkaClusterManager.terminate_cluster: utils/terminate_cluster.md
+                  - QuokkaClusterManager.get_cluster_from_json: utils/get_cluster_from_json.md
+                  - QuokkaClusterManager.get_cluster_from_ray: utils/get_cluster_from_ray.md
+                
         - Visit Rottnest: https://www.rottnestisland.com
                 
         

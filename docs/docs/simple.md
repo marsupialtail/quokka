@@ -91,10 +91,12 @@ This is how you would write it in Quokka. This is very similar to how you'd writ
 
 ~~~python
 def do_1():
-    d = lineitem.filter("l_shipdate <= date '1998-12-01' - interval '90' day")
-    d = d.with_column("disc_price", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]), required_columns ={"l_extendedprice", "l_discount"})
-    d = d.with_column("charge", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]) * (1 + x["l_tax"]), required_columns={"l_extendedprice", "l_discount", "l_tax"})
-    f = d.groupby(["l_returnflag", "l_linestatus"], orderby=["l_returnflag","l_linestatus"]).agg({"l_quantity":["sum","avg"], "l_extendedprice":["sum","avg"], "disc_price":"sum", "charge":"sum", "l_discount":"avg","*":"count"})
+    d = lineitem.filter_sql("l_shipdate <= date '1998-12-01' - interval '90' day")
+    d = d.with_columns({"disc_price": d["l_extendedprice"] * (1 - d["l_discount"]), 
+                        "charge": d["l_extendedprice"] * (1 - d["l_discount"]) * (1 + d["l_tax"])})
+    
+    f = d.groupby(["l_returnflag", "l_linestatus"], orderby=["l_returnflag","l_linestatus"]).agg({"l_quantity":["sum","avg"], "l_extendedprice":["sum","avg"], "disc_price":"sum", 
+        "charge":"sum", "l_discount":"avg","*":"count"})
     return f.collect()
 ~~~
 
@@ -105,16 +107,16 @@ On the plus side, Quokka uses the amazing [SQLGlot](https://github.com/tobymao/s
 ~~~python
 def do_6():
     d = lineitem.filter("l_shipdate >= date '1994-01-01' and l_shipdate < date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01 and l_quantity < 24")
-    d = d.with_column("revenue", lambda x: x["l_extendedprice"] * x["l_discount"], required_columns={"l_extendedprice", "l_discount"})
+    d = d.with_columns({"revenue": lambda x: x["l_extendedprice"] * x["l_discount"]}, required_columns={"l_extendedprice", "l_discount"})
     f = d.aggregate({"revenue":["sum"]})
     return f.collect()
 ~~~
 
-Quokka supports creating new columns in DataStreams with `with_column`. Read more about how this works [here](datastream.md#with_column). This is in principle similar to Spark `df.with_column` and Pandas UDFs. The main thing to keep in mind is that the function you supply will be applied to each batch in the DataStream, instead of row by row. As a result, you can make use of fast vectorized execution with Polars. The mental model here is that we have a DataStream `d` of Polars DataFrames, each of which have rows from the lineitem table satisfying the filter predicate. Then, each Polars DataFrame is transformed by our functions to add the columns `disk_price` and `charge`. 
+Quokka supports creating new columns in DataStreams with `with_columns`. Read more about how this works [here](datastream/with_columns.md). This is in principle similar to Spark `df.with_column` and Pandas UDFs. You can also use `with_columns_sql`, documented [here](datastream/with_columns_sql.md).
 
-Like most Quokka operations, `with_column` will produce a new DataStream with an added column and is not inplace. This means that the command is lazy, and won't trigger the runtime to produce the actual data. It simply builds a logical plan of what to do in the background, which can be optimized when the user specifically ask for the result.
+Like most Quokka operations, `with_columns` will produce a new DataStream with an added column and is not inplace. This means that the command is lazy, and won't trigger the runtime to produce the actual data. It simply builds a logical plan of what to do in the background, which can be optimized when the user specifically ask for the result.
 
-Finally, we can group the DataStream and aggregate it to get the result. Read more about aggregation syntax [here](datastream.md#agg). The aggregation will produce another DataStream, which we call `collect()` on, to convert it to a Polars DataFrame in your Python terminal.
+Finally, we can group the DataStream and aggregate it to get the result. Read more about aggregation syntax [here](datastream/grouped_agg.md). The aggregation will produce another DataStream, which we call `collect()` on, to convert it to a Polars DataFrame in your Python terminal.
 
 When you call `.collect()`, the logical plan you have built is actually optimized and executed. This is exactly how Spark works. To view the optimized logical plan and learn more about what Quokka is doing, you can do `f.explain()` which will produce a graph, or `f.explain(mode="text")` which will produce a textual explanation.
 
@@ -124,9 +126,10 @@ def do_12():
     d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
     d = d.filter("l_shipmode IN ('MAIL','SHIP') and l_commitdate < l_receiptdate and l_shipdate < l_commitdate and \
         l_receiptdate >= date '1994-01-01' and l_receiptdate < date '1995-01-01'")
-    d = d.with_column("high", lambda x: (x["o_orderpriority"] == "1-URGENT") | (x["o_orderpriority"] == "2-HIGH"), required_columns={"o_orderpriority"})
-    d = d.with_column("low", lambda x: (x["o_orderpriority"] != "1-URGENT") & (x["o_orderpriority"] != "2-HIGH"), required_columns={"o_orderpriority"})
-    f = d.groupby("l_shipmode").aggregate(aggregations={'high':['sum'], 'low':['sum']})
+    f = d.groupby("l_shipmode").agg_sql("""
+        sum(case when o_orderpriority = '1-URGENT' or o_orderpriority = '2-HIGH' then 1 else 0 end) as high_line_count,
+        sum(case when o_orderpriority <> '1-URGENT' and o_orderpriority <> '2-HIGH' then 1 else 0 end) as low_line_count
+    """)
     return f.collect()
 ~~~
 
@@ -137,7 +140,7 @@ def do_3():
     d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
     d = customer.join(d,left_on="c_custkey", right_on="o_custkey")
     d = d.filter("c_mktsegment = 'BUILDING' and o_orderdate < date '1995-03-15' and l_shipdate > date '1995-03-15'")
-    d = d.with_column("revenue", lambda x: x["l_extendedprice"] * ( 1 - x["l_discount"]) , required_columns={"l_extendedprice", "l_discount"})
+    d = d.with_columns({"revenue": d["l_extendedprice"] * ( 1 - d["l_discount"])})
     f = d.groupby(["l_orderkey","o_orderdate","o_shippriority"]).agg({"revenue":["sum"]})
     return f.collect()
 ~~~
@@ -146,7 +149,7 @@ Note unlike some SQL engines, Quokka currently will not try to figure out the op
 
 An important thing to note is that Quokka currently only support inner joins. Other kinds of joins are coming soon.
 
-Feel free to look at some other queries in the Quokka [github](https://github.com/marsupialtail/quokka/tree/master/apps), or browse the [API reference](datastream.md). While you are there, please give Quokka a star!
+Feel free to look at some other queries in the Quokka [github](https://github.com/marsupialtail/quokka/tree/master/apps), or browse the API references. While you are there, please give Quokka a star!
 
 ##Lesson 2: Writing Things
 So far, we have just learned about how to read things into DataStreams and do things to DataStreams. You can also write out DataStreams to persistent storage like disk or S3 to record all the amazing things we did with them.

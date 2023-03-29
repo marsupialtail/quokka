@@ -17,6 +17,10 @@ def preexec_function():
 
 class EC2Cluster:
     def __init__(self, public_ips, private_ips, instance_ids, cpu_count_per_instance, spill_dir) -> None:
+
+        """
+        Not meant to be called directly. Use QuokkaClusterManager to create a cluster.
+        """
         
         self.num_node = len(public_ips)
         self.public_ips = {}
@@ -40,11 +44,58 @@ class EC2Cluster:
                  runtime_env={"py_modules":[pyquokka_loc]})
     
     def to_json(self, output = "cluster.json"):
+
+        """
+        Creates JSON representation of this cluster that can be used to connect to the cluster again.
+
+        Args:
+            output (str, optional): Path to output file. Defaults to "cluster.json".
+
+        Return:
+            None
+
+        Examples:
+
+            >>> from pyquokka.utils import *
+            >>> manager =  QuokkaClusterManager(key_name = "my_key", key_location = "/home/ubuntu/.ssh/my_key.pem", security_group = "my_security_group")
+            >>> cluster = manager.create_cluster(aws_access_key, aws_access_id, num_instances = 2, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = ["numpy", "pandas"])
+            >>> cluster.to_json("my_cluster.json")
+
+            You can now close this Python session. In a new Python session you can connect to this cluster by doing:
+
+            >>> from pyquokka.utils import *
+            >>> manager = QuokkaClusterManager(key_name = "my_key", key_location = "/home/ubuntu/.ssh/my_key.pem", security_group = "my_security_group")
+            >>> cluster = manager.from_json("my_cluster.json")
+        
+        """
+
         json.dump({"instance_ids":self.instance_ids,"cpu_count_per_instance":self.cpu_count, "spill_dir": self.spill_dir},open(output,"w"))
 
 
 class LocalCluster:
     def __init__(self) -> None:
+
+        """
+        Creates a local cluster on your machine. This is useful for testing purposes. This not should be necessary because `QuokkaContext` will automatically
+        make one for you.
+
+        Return:
+            LocalCluster: A LocalCluster object.
+
+        Examples:
+
+            >>> from pyquokka.utils import *
+            >>> cluster = LocalCluster()
+            >>> from pyquokka.df import QuokkaContext
+            >>> qc = QuokkaContext(cluster)
+
+            But the following is equivalent:
+
+            >>> from pyquokka.df import QuokkaContext
+            >>> qc = QuokkaContext()
+            
+        """
+
         print("Initializing local Quokka cluster.")
         self.num_node = 1
         self.cpu_count = multiprocessing.cpu_count()
@@ -80,7 +131,35 @@ class LocalCluster:
 
 class QuokkaClusterManager:
 
-    def __init__(self, key_name = "oregon-neurodb", key_location = "/home/ziheng/Downloads/oregon-neurodb.pem", security_group= "sg-0f01d7c338d22dfa5") -> None:
+    def __init__(self, key_name = None, key_location = None, security_group= None) -> None:
+        
+        """
+        Create a QuokkaClusterManager object. This object is used to create Ray clusters on AWS EC2 configured with Quokka or connecting to existing Ray clusters.
+        This requires you to have an AWS key pair for logging into instances. 
+
+        Args:
+            key_name (str, optional): The name of the key pair to use. This is a required argument if you want to call `create_cluster`.
+            key_location (str, optional): The location of the key pair to use. You must specify this argument.
+            security_group (str, optional): The security group to use. 
+        
+        Return:
+            QuokkaClusterManager: A QuokkaClusterManager object.
+        
+        Examples:
+
+            >>> from pyquokka.utils import *
+            >>> manager = QuokkaClusterManager(key_name = "my_key", key_location = "/home/ubuntu/.ssh/my_key.pem", security_group = "my_security_group")
+            >>> cluster = manager.create_cluster(aws_access_key, aws_access_id, num_instances = 2, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = ["numpy", "pandas"])
+            >>> cluster.to_json("my_cluster.json")
+
+            You can now close this Python session. In a new Python session you can connect to this cluster by doing:
+
+            >>> from pyquokka.utils import *
+            >>> manager = QuokkaClusterManager(key_name = "my_key", key_location = "/home/ubuntu/.ssh/my_key.pem", security_group = "my_security_group")
+            >>> cluster = manager.from_json("my_cluster.json")
+        """
+
+        assert key_location is not None
         self.key_name = key_name
         self.key_location = key_location
         self.security_group = security_group
@@ -186,7 +265,34 @@ class QuokkaClusterManager:
         except:
             pass
 
-    def create_cluster(self, aws_access_key, aws_access_id, num_instances = 1, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = [], spill_dir = "/data"):
+    def create_cluster(self, aws_access_key, aws_access_id, num_instances, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = [], spill_dir = "/data"):
+
+        """
+        Create a Ray cluster configured to run Quokka applications.
+
+        Args:
+            aws_access_key (str): AWS access key.
+            aws_access_id (str): AWS access id.
+            num_instances (int): Number of instances to create.
+            instance_type (str): Instance type to use, defaults to i3.2xlarge.
+            ami (str): AMI to use, defaults to "ami-0530ca8899fac469f", which is us-west-2 ubuntu 20.04. Please change accordingly for your region and OS.
+            requirements (list): List of requirements to install on cluster, defaults to empty list.
+            spill_dir (str): Directory to use for spill directory, defaults to "/data". Quokka will detect if your instance have NVME SSD and mount it to this directory.
+
+        Return:
+            EC2Cluster object. See EC2Cluster for more details.
+        
+        Examples:
+
+            >>> from pyquokka.utils import * 
+            >>> manager = QuokkaClusterManager()
+            >>> cluster = manager.create_cluster(aws_access_key, aws_access_id, num_instances = 2, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = ["numpy", "pandas"])
+            >>> cluster.to_json("my_cluster.json")
+            >>> from pyquokka.df import QuokkaContext
+            >>> qc = QuokkaContext(cluster)
+            >>> df = qc.read_csv("s3://my_bucket/my_file.csv")
+                    
+        """
 
         start_time = time.time()
         ec2 = boto3.client("ec2")
@@ -211,6 +317,26 @@ class QuokkaClusterManager:
         
 
     def stop_cluster(self, quokka_cluster):
+
+        """
+        Stops a cluster, does not terminate it. If the cluster had been saved to json, can use `get_cluster_from_json` to restart the cluster.
+
+        Args:
+            quokka_cluster (EC2Cluster): Cluster to stop.
+
+        Return:
+            None
+
+        Examples:
+
+            >>> from pyquokka.utils import *
+            >>> manager = QuokkaClusterManager()
+            >>> cluster = manager.create_cluster(aws_access_key, aws_access_id, num_instances = 2, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = ["numpy", "pandas"])
+            >>> cluster.to_json("my_cluster.json")
+            >>> manager.stop_cluster(cluster)
+        
+        """
+
         ec2 = boto3.client("ec2")
         instance_ids = list(quokka_cluster.instance_ids.values())
         ec2.stop_instances(InstanceIds = instance_ids)
@@ -226,6 +352,25 @@ class QuokkaClusterManager:
         
         
     def terminate_cluster(self, quokka_cluster):
+
+        """
+        Terminate a cluster.
+
+        Args:
+            quokka_cluster (EC2Cluster): Cluster to terminate.
+
+        Return:
+            None
+
+        Examples:
+
+            >>> from pyquokka.utils import *
+            >>> manager = QuokkaClusterManager()
+            >>> cluster = manager.create_cluster(aws_access_key, aws_access_id, num_instances = 2, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = ["numpy", "pandas"])
+            >>> manager.terminate_cluster(cluster)
+
+        """
+
         ec2 = boto3.client("ec2")
         instance_ids = list(quokka_cluster.instance_ids.values())
         ec2.terminate_instances(InstanceIds = instance_ids)
@@ -241,6 +386,29 @@ class QuokkaClusterManager:
 
     
     def get_cluster_from_json(self, json_file):
+
+        """
+        Get an EC2Cluster object from a json file. The json file must have been created by `EC2Cluster.to_json`.
+        This will restart the cluster if all the instances have been stopped and set up the Quokka runtime. 
+        If the cluster is running, the Quokka runtime will not be set up again. So this will break if you manually turned on the instances.
+
+        Args:
+            json_file (str): Path to json file, must have been created by `EC2Cluster.to_json`. You can also manually create this json based on the 
+                format of the json file created by `EC2Cluster.to_json`, but this is not recommended.
+
+        Return:
+            EC2Cluster: Cluster object.
+
+        Examples:
+
+            >>> from pyquokka.utils import *
+            >>> manager = QuokkaClusterManager()
+            >>> cluster = manager.get_cluster_from_json("my_cluster.json")
+            >>> from pyquokka.df import QuokkaContext 
+            >>> qc = QuokkaContext(cluster)
+            >>> df = qc.read_csv("s3://my_bucket/my_file.csv")
+        
+        """
         
         ec2 = boto3.client("ec2")
         
@@ -271,6 +439,41 @@ class QuokkaClusterManager:
             return False
     
     def get_cluster_from_ray(self, path_to_yaml, aws_access_key, aws_access_id, requirements = [], spill_dir = "/data"):
+
+        """
+        Connect to a Ray cluster. This will set up the Quokka runtime on the cluster. The Ray cluster must be in a running state and created by 
+        the `ray up` command. The `ray up` command creates a yaml file that is used to connect to the cluster. This function will read the yaml file
+        and connect to the cluster.
+
+        Make sure all the instances are running before calling this function! Best wait for a few minutes after calling `ray up` before calling this function.
+
+        Args:
+            path_to_yaml (str): Path to the yaml file used by `ray up`.
+            aws_access_key (str): AWS access key.
+            aws_access_id (str): AWS access id.
+            requirements (list): List of python packages to install on the cluster.
+            spill_dir (str): Directory to use for spill files. This is the directory where the Quokka runtime will write spill files.
+                Quokka will detect if your instance have NVME SSD and mount it to this directory.
+        
+        Return:
+            EC2Cluster: Cluster object.
+
+        Examples:
+
+            You have `us_west_2.yaml`. You call `ray up us-west-2.yaml`. You can then connect to the cluster **after all the instances are running** by doing:
+
+            >>> from pyquokka.utils import *
+            >>> manager = QuokkaClusterManager()
+            >>> cluster = manager.get_cluster_from_ray("my_cluster.yaml", aws_access_key, aws_access_id, requirements = ["numpy", "pandas"], spill_dir = "/data")
+            >>> from pyquokka.df import QuokkaContext
+            >>> qc = QuokkaContext(cluster)
+
+            It is recommended to do this only once and save the cluster object to a json file using `EC2Cluster.to_json` and then use `QuokkaClusterManager.get_cluster_from_json` to connect to the cluster.
+
+            >>> cluster.to_json("my_cluster.json")
+            >>> cluster = manager.get_cluster_from_json("my_cluster.json")
+        
+        """
 
         import yaml
         ec2 = boto3.client("ec2")
