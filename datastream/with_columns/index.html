@@ -2102,9 +2102,7 @@ execution graph. This is set to True by default. Correctly setting this flag req
 <span class="normal">984</span>
 <span class="normal">985</span>
 <span class="normal">986</span>
-<span class="normal">987</span>
-<span class="normal">988</span>
-<span class="normal">989</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">with_columns</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_columns</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">required_columns</span><span class="o">=</span><span class="nb">set</span><span class="p">(),</span> <span class="n">foldable</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+<span class="normal">987</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">with_columns</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_columns</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">required_columns</span><span class="o">=</span><span class="nb">set</span><span class="p">(),</span> <span class="n">foldable</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 
@@ -2187,8 +2185,6 @@ execution graph. This is set to True by default. Correctly setting this flag req
             <span class="c1"># detected an arbitrary function. If required columns are not specified, assume all columns are required</span>
             <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">required_columns</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
                 <span class="n">required_columns</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="p">)</span>
-
-    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;required columns&quot;</span><span class="p">,</span> <span class="n">required_columns</span><span class="p">)</span>
 
     <span class="k">def</span> <span class="nf">polars_func</span><span class="p">(</span><span class="n">batch</span><span class="p">):</span>
 
