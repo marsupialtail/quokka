@@ -1,5 +1,6 @@
 # Launching Quokka: Distributed Polars on Ray
-**Mar-30-2023** Fun fact: 97 years ago today Ikea was founded. I believe the principles of Ikea lends itself well to building modern distributed systems on top of reliable components.
+**Mar-30-2023** 
+Fun fact: 97 years ago today Ikea was founded. I believe the principles of Ikea lends itself well to building modern distributed systems on top of reliable components.
 
 ## What is Quokka?
 
