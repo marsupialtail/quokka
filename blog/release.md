@@ -1,6 +1,18 @@
 # Launching Quokka: Distributed Polars on Ray
 **Mar-30-2023** 
 
+<div align="center">
+
+[![Join Discord](https://img.shields.io/badge/-Join%20Quokka%20Discord-blue?logo=discord)](https://discord.gg/6ujVV9HAg3)
+<a href="https://marsupialtail.github.io/quokka/">
+    <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/badge.svg" alt="rust docs"/>
+</a>
+<a href="https://pypi.org/project/pyquokka/">
+    <img src="https://img.shields.io/pypi/v/pyquokka.svg" alt="PyPi Latest Release"/>
+</a>
+
+</div>
+
 
 **Fun fact**: 97 years ago today Ikea was founded. I believe the principles of Ikea lends itself well to building modern distributed systems on top of reliable components.
 
