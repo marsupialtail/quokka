@@ -52,7 +52,7 @@ A key novelty of Quokka is that it maintains the fault tolerance properties of S
 
 ## How to use Quokka?
 
-Quokka can be easily installed: `pip3 install pyquokka`. It requires `polars>=0.16.15` and `ray>=2.0.0`. While I can not guarantee that Quokka does not have bugs today, I can guarantee that I will pay you money if you find [bugs](https://marsupialtail.github.io/quokka/). Since I am a poor grad student, unfortunately I can only fund up to $2000. 
+Quokka can be easily installed: `pip3 install pyquokka`. It requires `polars>=0.16.15` and `ray>=2.0.0`. **While I can not guarantee that Quokka does not have bugs today, I can guarantee that I will pay you money if you find [bugs](https://marsupialtail.github.io/quokka/)**. Since I am a poor grad student, unfortunately I can only fund up to $2000. 
 
 Quokka is heavily integrated with Ray. You can deploy it by setting up a dedicated Ray cluster, running it on an existing Ray cluster, or locally on your laptop. The local option is more for testing and development. For production single-machine workloads, you should just use Polars or DuckDB. 
 
