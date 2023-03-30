@@ -1,5 +1,5 @@
 # Launching Quokka: Distributed Polars on Ray
-**Apr-01-2023**
+**Mar-30-2023** Fun fact: 97 years ago today Ikea was founded. I believe the principles of Ikea lends itself well to building modern distributed systems on top of reliable components.
 
 ## What is Quokka?
 
@@ -7,9 +7,9 @@ Today I am happy to announce that after more than a year and half since the conc
 
 I posted a [progress report](https://github.com/marsupialtail/quokka/blob/master/blog/why.md) on Quokka at the end of last year, and was surprised and honored to make it to Hacker News top ranked for a day. 
 
-Some of the motivations for why I built Quokka is described in the [progress report](https://github.com/marsupialtail/quokka/blob/master/blog/why.md). Quick recap: it is my belief that the data world is (or should be) moving away from JVM-based legacy tools to Python-native stacks on top of Rust or C. The Python + Rust/C stack offers both the ease-of-use of an interpreted language that executes line by line and no-GC, no-JIT, no-JVM, no-BS bare metal performance.
+Quick recap of the report: I believe the data world should be moving away from JVM-based legacy tools to Python-native stacks on top of Rust or C. Proper use of the Python + Rust/C stack offers both the *ease-of-use* of an interpreted language that executes line by line and the *performance* of no-GC, no-JIT, no-JVM, no-BS binaries.
 
-On single machine, most tools are now Python + Rust/C: Pandas, Polars, DuckDB, NumPy, Tensorflow, PyTorch... It truly pains my heart that we are stuck with things like SparkSQL on JVM once we need a distributed data solution. It pained the creators of SparkSQL too, who came up with the impressive Photon engine. Unfortunately, it is not open source and out of reach for people who aren't using Databricks. 
+On single machine, most data tools are now Python + Rust/C: Pandas, Polars, DuckDB, NumPy, Tensorflow, PyTorch... It pains my heart that we are stuck with things like SparkSQL on JVM once we need a distributed data solution. It pained the creators of SparkSQL too, who came up with the impressive Photon engine. Unfortunately, it is not open source and requires Databricks. 
 
 There have been prior efforts to bring the PyData stack to distributed settings. [Modin](https://github.com/modin-project/modin) and [Dask](https://github.com/dask/dask) are the best known examples. I have used them both in my previous jobs and personal projects, but have found their performance to be unsatisfactory compared to SparkSQL (>5x slower) on queries that do more than apply an embarassingly parallel UDF, especially on queries that involve heavy data shuffles, aka joins.
 
@@ -19,13 +19,13 @@ So naturally I had to write my own framework, Quokka, based on [Polars](https://
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/tpch-parquet.svg?raw=true" alt="Title"/>
 </p>
 
-At least on this benchmark (less queries 20, and 21 which OOMs), Quokka achieves what I set out to do: a Python + Rust/C framework that beats SparkSQL on join-heavy SQL workloads. The Quokka code for these queries can be found [here](https://github.com/marsupialtail/quokka/blob/master/apps/tpc-h/tpch.py). 
+At least on this benchmark (less queries 20, and 21 which OOMs), Quokka achieves what I set out to do: a Python + Rust/C framework that beats SparkSQL on join-heavy SQL workloads. The Quokka code for these queries can be found [here](https://github.com/marsupialtail/quokka/blob/master/apps/tpc-h/tpch.py). Similar to Spark, Quokka is fault tolerant (mostly).
 
 ## Why is Quokka fast?
 
-**Firstly, like Polars and unlike Modin, Quokka intentionally deviates from the Pandas API**. Judging from the ChatGPT-like rise in popularity of [Polars](https://github.com/pola-rs/polars/stargazers), I do not think people are that attached to the Pandas API itself. If there is a clean and performant alternative, people will happily switch (like I did). The key culprit for Pandas' poor performance is lazy (or eager) execution. This precludes any kind of sophisticated optimizations that could drastically reduce the amount of IO or compute. For example, if I type `a = pd.read_csv("test.csv")`, Pandas will read in all of the CSV file into memory, even if you are only going to use the first ten rows.
+**Firstly, like Polars and unlike Modin, Quokka intentionally deviates from the Pandas API**. Judging from the ChatGPT-like rise in popularity of [Polars](https://github.com/pola-rs/polars/stargazers), I do not think people are that attached to the Pandas API itself. If there is a clean and performant alternative, people will happily switch (like I did). The key culprit for Pandas' poor performance is lazy (or eager) execution. A statement is executed immediately after it's written. This precludes any kind of sophisticated optimizations that could drastically reduce the amount of IO or compute. For example, if I type `a = pd.read_csv("test.csv")`, Pandas will read in all of the CSV file into memory, even if you are only going to use the first ten rows.
 
-Any kind of performance-oriented DataFrame library has to take a lazy approach, like Polars LazyFrame and PySpark DataFrames. The Quokka API tries to emulate the Polars API as much as possible. If you are already a Polars user, switching to the Quokka API for distributed workloads should feel seamless. While Polars still let's you use eager semantics, that is heavily discouraged in Quokka.
+Any kind of performance-oriented DataFrame library has to take a lazy approach, like Polars LazyFrames and PySpark DataFrames. The Quokka API tries to emulate the Polars API as much as possible. If you are already a Polars user, switching to the Quokka API for distributed workloads should feel seamless. While Polars still let's you use eager semantics, you have to really go out of your way to do that in Quokka.
 
 I don't claim to offer 100% of the functionality of Polars (yet), but I think the most important things should be there: `filter`, `select`, `join`, `union`, `with_columns` etc. I also offer SQL analogs of these functions such as `filter_sql` where the user can supply a SQL predicate directly, like `d.filter_sql("l_orderkey > 10 and l_tax between 0.1 and 0.3")`. 
 
@@ -40,11 +40,11 @@ However, most analytical SQL query engines in the past decade have shifted towar
 - Enables pipeline parallelism between many stages, overlapping IO and compute
 - Avoids the need to materialize potentially immense intermediate datasets in memory/disk. 
 
-If you'd like to learn more about this way of executing SQL queries, I'd encourage you to read more about DuckDB's [philosphy](https://db.in.tum.de/~leis/papers/morsels.pdf). Quokka subscribes to this execution model, and by default executes many stages in parallel in a deep pipeline. 
+If you'd like to learn more about this way of executing SQL queries, I'd encourage you to read [more](https://db.in.tum.de/~leis/papers/morsels.pdf) about it. Quokka subscribes to this execution model, and by default executes many stages in parallel in a deep pipeline. 
 
-Of course, Quokka also benefits from Polars and DuckDB's heavily optimized Rust and C++ kernels for aggregations, filtering and joining which make heavy use of SIMD and cache optimizations. This makes Quokka up to 3x faster on aggregation-only queries such as TPC-H 1.
+Of course, Quokka also benefits from Polars and DuckDB's heavily optimized Rust and C++ kernels for aggregations, filtering and joining which make heavy use of SIMD and cache optimizations. This makes Quokka up to 3x faster on aggregation-only queries such as TPC-H 1. We are exploring integrating [Velox](https://github.com/facebookincubator/velox) as well.
 
-A key novelty of Quokka is that it maintains the fault tolerance properties of Spark in this pipelined execution model. Quokka does so through the notion of dynamic lineage. In Spark, 
+A key novelty of Quokka is that it maintains the fault tolerance properties of Spark in this pipelined execution model. Quokka does so through the notion of dynamic lineage. In engines such as SparkSQL, Trino and MapReduce, the inputs and outputs of tasks are fixed before the program starts executing. In Quokka, all these are dynamically determined at runtime to maximize performance, and consistently logged to provide fault recovery.
 
 ## How to use Quokka?
 
@@ -73,9 +73,9 @@ You can explore Quokka's current API in the [tutorial](https://marsupialtail.git
 >>> dataset = d.to_ray_dataset()
 ```
 
-Quokka is meant to complement Ray Data. As a result I am not going to prioritize implementing things that Ray Data already does very well, like sorting or random shuffling. I will focus more on improving the performance and stability of the terabyte-scale joins that typically precede such operations.
+Quokka is meant to complement Ray Data. As a result I am not going to prioritize implementing things that Ray Data already does very well, like sorting or random shuffling. I will focus more on improving the performance and stability of the terabyte-scale joins that typically precede such operations. 
 
-Quokka is currently mostly fault tolerant. It will be fully fault tolerant when Ray allows programmatic controls of object replication in its object store. Without getting into more details, let's just say you should not rely on its fault tolerance mechanism in production. If this is an issue for you, I'd love to [hear]((https://discord.gg/6ujVV9HAg3) ) from you.
+Quokka is currently mostly fault tolerant to spot worker failures. It will be fully fault tolerant when Ray allows programmatic controls of object replication in its object store. Without getting into more details, let's just say you should not rely on its fault tolerance mechanism in production. If this is an issue for you, I'd love to [hear]((https://discord.gg/6ujVV9HAg3) ) from you.
 
 ## Credits
 [Apache Arrow](https://github.com/apache/arrow), [Ray](https://github.com/ray-project/ray), [Polars](https://github.com/pola-rs/polars), [DuckDB](https://github.com/duckdb/duckdb), [SQLGlot](https://github.com/tobymao/sqlglot), [Redis](https://github.com/redis/redis). 
