@@ -23,7 +23,7 @@ So naturally I had to write my own framework, Quokka, based on [Polars](https://
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/tpch-parquet.svg?raw=true" alt="Title"/>
 </p>
 
-At least on this benchmark (less queries 20, and 21 which OOMs), Quokka achieves what I set out to do: a Python + Rust/C framework that beats SparkSQL on join-heavy SQL workloads. The Quokka code for these queries can be found [here](https://github.com/marsupialtail/quokka/blob/master/apps/tpc-h/tpch.py). Similar to Spark, Quokka is fault tolerant (mostly).
+At least on this benchmark (less queries 20, and 21 which OOMs), Quokka achieves what I set out to do: a Python + Rust/C framework that beats SparkSQL on join-heavy SQL workloads. The Quokka code for these queries can be found [here](https://github.com/marsupialtail/quokka/blob/master/apps/tpc-h/tpch.py). Similar to Spark, Quokka is fault tolerant to worker failures (mostly).
 
 ## Why is Quokka fast?
 
