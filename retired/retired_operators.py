@@ -745,3 +745,217 @@ class DuckAggExecutor(Executor):
             self.state = self.state.drop(self.count_col)
         
         return self.state
+
+class XJoinExecutor(Executor):
+    # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
+    # batch func must return a list of dfs too
+    def __init__(self, on = None, left_on = None, right_on = None, how = "inner"):
+
+        self.state0 = None
+        self.state1 = None
+
+        if on is not None:
+            assert left_on is None and right_on is None
+            self.left_on = on
+            self.right_on = on
+        else:
+            assert left_on is not None and right_on is not None
+            self.left_on = left_on
+            self.right_on = right_on
+        
+        assert how in {"inner", "left",  "semi"}
+        self.how = how
+        if how == "inner":
+            self.batch_how = "inner"
+        elif how == "semi":
+            self.batch_how = "semi"
+        elif how == "left":
+            self.batch_how = "inner"
+        
+        if how == "left" or how =="semi":
+            self.left_null = None
+            self.first_row_right = None # this is a hack to produce the left join NULLs at the end.
+            self.left_null_last_ckpt = 0
+
+        # keys that will never be seen again, safe to delete from the state on the other side
+
+        self.state0_last_ckpt = 0
+        self.state1_last_ckpt = 0
+        self.s3fs = None
+    
+    def checkpoint(self, bucket, actor_id, channel_id, seq):
+        # redis.Redis('localhost',port=6800).set(pickle.dumps(("ckpt", actor_id, channel_id, seq)), pickle.dumps((self.state0, self.state1)))
+        
+        if self.s3fs is None:
+            self.s3fs = S3FileSystem()
+
+        if self.state0 is not None:
+            state0_to_ckpt = self.state0[self.state0_last_ckpt : ]
+            self.state0_last_ckpt += len(state0_to_ckpt)
+            pq.write_table(self.state0.to_arrow(), bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-0.parquet", filesystem=self.s3fs)
+
+        if self.state1 is not None:
+            state1_to_ckpt = self.state1[self.state1_last_ckpt : ]
+            self.state1_last_ckpt += len(state1_to_ckpt)
+            pq.write_table(self.state1.to_arrow(), bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-1.parquet", filesystem=self.s3fs)
+        
+    
+    def restore(self, bucket, actor_id, channel_id, seq):
+        # self.state0, self.state1 = pickle.loads(redis.Redis('localhost',port=6800).get(pickle.dumps(("ckpt", actor_id, channel_id, seq))))
+        
+        if self.s3fs is None:
+            self.s3fs = S3FileSystem()
+        try:
+            print(bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-0.parquet")
+            self.state0 = polars.from_arrow(pq.read_table(bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-0.parquet", filesystem=self.s3fs))
+            print(self.state0)
+        except:
+            self.state0 = None
+        try:
+            print(bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-1.parquet")
+            self.state1 = polars.from_arrow(pq.read_table(bucket + "/" + str(actor_id) + "-" + str(channel_id) + "-" + str(seq) + "-1.parquet", filesystem=self.s3fs))
+            print(self.state1)
+        except:
+            self.state1 = None
+
+    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
+    def execute(self,batches, stream_id, executor_id):
+        # state compaction
+        batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
+        if len(batches) == 0:
+            return
+        batch = polars.concat(batches)
+
+        result = None
+        new_left_null = None
+
+        # if random.random() > 0.9 and redis.Redis('172.31.54.141',port=6800).get("input_already_failed") is None:
+        #     redis.Redis('172.31.54.141',port=6800).set("input_already_failed", 1)
+        #     ray.actor.exit_actor()
+        # if random.random() > 0.9 and redis.Redis('localhost',port=6800).get("input_already_failed") is None:
+        #     redis.Redis('localhost',port=6800).set("input_already_failed", 1)
+        #     ray.actor.exit_actor()
+
+        if stream_id == 0:
+            if self.state1 is not None:
+                result = batch.join(self.state1,left_on = self.left_on, right_on = self.right_on ,how=self.batch_how)
+                if self.how == "left" or self.how == "semi":
+                    new_left_null = batch.join(self.state1, left_on = self.left_on, right_on= self.right_on, how = "anti")
+            else:
+                if self.how == "left" or self.how == "semi":
+                    new_left_null = batch
+
+            if self.how != "semi":
+                if self.state0 is None:
+                    self.state0 = batch
+                else:
+                    self.state0.vstack(batch, in_place = True)
+
+            if (self.how == "left" or self.how == "semi") and new_left_null is not None and len(new_left_null) > 0:
+                if self.left_null is None:
+                    self.left_null = new_left_null
+                else:
+                    self.left_null.vstack(new_left_null, in_place= True)
+             
+        elif stream_id == 1:
+
+            if self.state0 is not None and self.how != "semi":
+                result = self.state0.join(batch,left_on = self.left_on, right_on = self.right_on ,how=self.batch_how)
+                
+            if self.how == "semi" and self.left_null is not None:
+                result = self.left_null.join(batch, left_on = self.left_on, right_on = self.right_on, how = "semi")
+            
+            if (self.how == "left" or self.how == "semi") and self.left_null is not None:
+                self.left_null = self.left_null.join(batch, left_on = self.left_on, right_on = self.right_on, how = "anti")
+
+            if self.state1 is None:
+                if self.how == "left":
+                    self.first_row_right = batch[0]
+                self.state1 = batch
+            else:
+                self.state1.vstack(batch, in_place = True)
+        
+        if result is not None and len(result) > 0:
+            return result
+    
+    def update_sources(self, remaining_sources):
+        #print(remaining_sources)
+        if self.how == "inner":
+            if 0 not in remaining_sources:
+                #print("DROPPING STATE!")
+                self.state1 = None
+            if 1 not in remaining_sources:
+                #print("DROPPING STATE!")
+                self.state0 = None
+    
+    def done(self,executor_id):
+        self.update_sources({})
+        #print(len(self.state0),len(self.state1))
+        #print("done join ", executor_id)
+        if self.how == "left" and self.left_null is not None and len(self.left_null) > 0:
+            assert self.first_row_right is not None, "empty RHS"
+            return self.left_null.join(self.first_row_right, left_on= self.left_on, right_on= self.right_on, how = "left")
+
+        # print("DONE", executor_id)
+
+class AntiJoinExecutor(Executor):
+    # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
+    # batch func must return a list of dfs too
+    def __init__(self, on = None, left_on = None, right_on = None, suffix="_right"):
+
+        self.left_null = None
+        self.state1 = None
+        self.ckpt_start0 = 0
+        self.ckpt_start1 = 0
+        self.suffix = suffix
+
+        if on is not None:
+            assert left_on is None and right_on is None
+            self.left_on = on
+            self.right_on = on
+        else:
+            assert left_on is not None and right_on is not None
+            self.left_on = left_on
+            self.right_on = right_on
+        
+        self.batch_size = 1000000
+        
+        # keys that will never be seen again, safe to delete from the state on the other side
+    
+    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
+    def execute(self,batches, stream_id, executor_id):
+        # state compaction
+        batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
+        if len(batches) == 0:
+            return
+        batch = polars.concat(batches)
+
+        new_left_null = None
+
+        if stream_id == 0:
+            if self.state1 is not None:
+                new_left_null = batch.join(self.state1, left_on = self.left_on, right_on= self.right_on, how = "anti", suffix = self.suffix)
+            else:
+                new_left_null = batch
+
+            if new_left_null is not None and len(new_left_null) > 0:
+                if self.left_null is None:
+                    self.left_null = new_left_null
+                else:
+                    self.left_null.vstack(new_left_null, in_place= True)
+             
+        elif stream_id == 1:
+            if self.left_null is not None:
+                self.left_null = self.left_null.join(batch, left_on = self.left_on, right_on = self.right_on, how = "anti", suffix = self.suffix)
+            
+            if self.state1 is None:
+                self.state1 = batch
+            else:
+                self.state1.vstack(batch, in_place = True)
+    
+    def done(self,executor_id):
+        #print(len(self.state0),len(self.state1))
+        #print("done join ", executor_id)
+        if self.left_null is not None and len(self.left_null) > 0:
+            for i in range(0, len(self.left_null), self.batch_size):
+                yield self.left_null[i: i + self.batch_size]

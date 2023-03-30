@@ -60,8 +60,6 @@ You can use Quokka as a way to slice and dice a TB-scale remote dataset on S3 in
 
 You can explore Quokka's current API in the [tutorial](https://marsupialtail.github.io/quokka/simple/) or the API references. If you find it lacking, please join the Quokka [Discord](https://discord.gg/6ujVV9HAg3) where you can bug me constantly for new features. Here is a quick code snippet that reads a few tables from Parquet files in S3, join them and produces a Ray Dataset: 
 ```
-# assume we have initialized EC2 cluster, check API reference for QuokkaClusterManager
->>> qc = QuokkaContext(cluster)
 >>> lineitem = qc.read_parquet(s3_path_parquet + "lineitem.parquet/*")
 >>> orders = qc.read_parquet(s3_path_parquet + "orders.parquet/*")
 # filter with dataframe syntax

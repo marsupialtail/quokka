@@ -33,9 +33,7 @@ Quokka requires Redis > 6.2. You can install latest Redis using:
 
 ~~~bash
 curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
-
 echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list
-
 sudo apt-get update
 sudo apt-get install redis
 ~~~
@@ -50,17 +48,20 @@ pip3 install pyquokka
 Quokka offers a DataStream API that resembles Spark's DataFrame API:
 
 ~~~python
-from pyquokka.df import QuokkaContext
-qc = QuokkaContext()
-lineitem = qc.read_csv("lineitem.tbl.named", sep="|", has_header=True)
-d = lineitem.filter("l_shipdate <= date '1998-12-01' - interval '90' day")
-d = d.with_column("disc_price", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]), required_columns ={"l_extendedprice", "l_discount"})
-d = d.with_column("charge", lambda x: x["l_extendedprice"] * (1 - x["l_discount"]) * (1 + x["l_tax"]), required_columns={"l_extendedprice", "l_discount", "l_tax"})
-f = d.groupby(["l_returnflag", "l_linestatus"], orderby=["l_returnflag","l_linestatus"]).agg({"l_quantity":["sum","avg"], "l_extendedprice":["sum","avg"], "disc_price":"sum", "charge":"sum", "l_discount":"avg","*":"count"})
-return f.collect()
+>>> lineitem = qc.read_parquet(s3_path_parquet + "lineitem.parquet/*")
+>>> orders = qc.read_parquet(s3_path_parquet + "orders.parquet/*")
+# filter with dataframe syntax
+>>> d = lineitem.filter(lineitem["l_commitdate"] < lineitem["l_receiptdate"])
+>>> d = orders.join(d, left_on="o_orderkey", right_on="l_orderkey", how = "semi")
+# filter with SQL syntax
+>>> d = d.filter_sql("o_orderdate >= date '1993-07-01'")
+>>> d = d.select(["o_orderkey", "o_custkey", "o_orderstatus", "o_totalprice", "o_orderdate", "o_orderpriority", "o_clerk", "o_shippriority"])
+>>> d.explain() # this will produce a PDF execution graph you can visualize 
+>>> d = d.compute()
+>>> dataset = d.to_ray_dataset()
 ~~~
 
-Currently Quokka supports reading data from CSV/Parquet on disk/S3, though theoretically any data source can be supported: Apache Iceberg/DeltaLake/Hudi, S3 bucket of images, Ethereum blockchain through web3 APIs, transactional database CDC endpoints etc. If you have some esoteric data source that you want to run analytics on, please send me a challenge as a Github issue. 
+Currently Quokka supports reading data from CSV/Parquet on disk/S3 and Apache Iceberg through Glue, though theoretically any data source can be supported: Delta Lake/Hudi, S3 bucket of images, Ethereum blockchain through web3 APIs, transactional database CDC endpoints etc. If you have some esoteric data source that you want to run analytics on, please send me a challenge as a Github issue. 
 
 ## Fineprint
 

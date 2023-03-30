@@ -137,9 +137,9 @@ def do_3():
     return d.collect()
 
 def do_4():
-    d = lineitem.filter("l_commitdate < l_receiptdate")
+    d = lineitem.filter(lineitem["l_commitdate"] < lineitem["l_receiptdate"])
     d = orders.join(d, left_on="o_orderkey", right_on="l_orderkey", how = "semi")
-    d = d.filter("o_orderdate >= date '1993-07-01'")
+    d = d.filter_sql("o_orderdate >= '1993-07-01'")
     d = d.select(["o_orderkey", "o_custkey", "o_orderstatus", "o_totalprice", "o_orderdate", "o_orderpriority", "o_clerk", "o_shippriority", "o_comment"])\
         .write_parquet(output_path + "testing.parquet", output_line_limit = OUTPUT_LINE_LIMIT)
     return d.collect()

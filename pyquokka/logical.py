@@ -549,7 +549,7 @@ class FilterNode(TaskNode):
     def __init__(self, schema, predicate: sqlglot.Expression) -> None:
         super().__init__(
             schema = schema, 
-            schema_mapping = {column: [(0, column)] for column in schema}, 
+            schema_mapping = {column: {0: column} for column in schema}, 
             required_columns = {0:set(i.name for i in predicate.find_all(sqlglot.expressions.Column))})
         self.predicate = predicate
     
@@ -567,7 +567,7 @@ class ProjectionNode(TaskNode):
     def __init__(self, projection: set) -> None:
         super().__init__(
             schema = projection, 
-            schema_mapping = {column: [(0, column)] for column in projection}, 
+            schema_mapping = {column: {0: column} for column in projection}, 
             required_columns = {0:projection})
         self.projection = projection
     

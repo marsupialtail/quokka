@@ -127,7 +127,7 @@ class DataStream:
         This will write out the entire contents of the DataStream to a list of CSVs. 
 
         Args:
-            table_lcation (str): the root directory to write the output CSVs to. Similar to Spark, Quokka by default
+            table_location (str): the root directory to write the output CSVs to. Similar to Spark, Quokka by default
                 writes out a directory of CSVs instead of dumping all the results to a single CSV so the output can be
                 done in parallel. If your dataset is small and you want a single file, you can adjust the output_line_limit
                 parameter. Example table_locations: s3://bucket/prefix for cloud, absolute path /home/user/files for disk.
@@ -204,7 +204,7 @@ class DataStream:
         This will write out the entire contents of the DataStream to a list of Parquets. 
 
         Args:
-            table_lcation (str): the root directory to write the output Parquets to. Similar to Spark, Quokka by default
+            table_location (str): the root directory to write the output Parquets to. Similar to Spark, Quokka by default
                 writes out a directory of Parquets instead of dumping all the results to a single Parquet so the output can be
                 done in parallel. If your dataset is small and you want a single file, you can adjust the output_line_limit
                 parameter. Example table_locations: s3://bucket/prefix for cloud, absolute path /home/user/files for disk.
@@ -911,7 +911,7 @@ class DataStream:
         Args:
             new_columns (dict): A dictionary of column names to UDFs or Expressions. The UDFs must take as input a Polars DataFrame and output a Polars DataFrame.
                 The UDFs must not have expectations on the length of its input.
-            reqired_columns (list or set): The names of the columns that are required for all your function. If this is not specified then Quokka assumes
+            required_columns (list or set): The names of the columns that are required for all your function. If this is not specified then Quokka assumes
                 all the columns are required for your function. Early projection past this function becomes impossible. If you specify this and you got it wrong,
                 you will get an error at runtime. This is only required for UDFs. If you use Quokka Expressions, then Quokka will automatically figure out the required columns.
             foldable (bool): Whether or not the function can be executed as part of the batch post-processing of the previous operation in the
@@ -962,8 +962,6 @@ class DataStream:
                 if len(required_columns) == 0:
                     required_columns = set(self.schema)
         
-        print("required columns", required_columns)
-
         def polars_func(batch):
 
             con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
@@ -1099,16 +1097,14 @@ class DataStream:
     def join(self, right, on=None, left_on=None, right_on=None, suffix="_2", how="inner", maintain_sort_order=None):
 
         """
-        Join a DataStream with another DataStream or a **small** Polars DataFrame (<10MB). If you have a Polars DataFrame bigger
-        than this, the best solution right now is to write it out to a file and have Quokka read it back in as a DataStream. I 
-        realize this is perhaps suboptimal, and this will be improved.
+        Join a DataStream with another DataStream. This may result in a distributed hash join or a broadcast join depending on cardinality estimates.
 
-        A streaming two-sided distributed join will be executed for two DataStream joins and a streaming broadcast join
-        will be executed for DataStream joined with Polars DataFrame. Joins are obviously very important, and we are constantly improving
-        how we do joins. Eventually we will support out of core joins, when @savebuffer merges his PR into Arrow 10.0.
+
+
+        
 
         Args:
-            right (DataStream or Polars DataFrame): the DataStream or Polars DataFrame to join to.
+            right (DataStream): the DataStream to join to.
             on (str): You could either specify this, if the join column has the same name in this DataStream and `right`, or `left_on` and `right_on` 
                 if the join columns don't have the same name.
             left_on (str): the name of the join column in this DataStream.
@@ -1185,6 +1181,8 @@ class DataStream:
 
         rename_dict = {}
 
+        # import pdb;pdb.set_trace()
+
         right_cols = right.schema if how not in {"semi", "anti"} else [right_on]
         for col in right_cols:
             if col == right_on:
@@ -1232,19 +1230,28 @@ class DataStream:
         elif self.materialized and not right.materialized:
 
             assert how in {"inner"}
-            
-            return self.quokka_context.new_stream(
-                sources={0: right},
-                partitioners={0: PassThroughPartitioner()},
+
+            new_schema.remove(left_on)
+            new_schema = [right_on] + new_schema
+            del schema_mapping[left_on]
+            schema_mapping[right_on] = {1: right_on}
+                        
+            new_stream = self.quokka_context.new_stream(
+                sources={1: right},
+                partitioners={1: PassThroughPartitioner()},
                 node=BroadcastJoinNode(
                     schema=new_schema,
                     schema_mapping=schema_mapping,
-                    required_columns={0: {right_on}},
+                    required_columns={1: {right_on}},
                     operator=BroadcastJoinExecutor(
                         self._get_materialized_df(), small_on=left_on, big_on=right_on, suffix=suffix, how=how)
                 ),
                 schema=new_schema,
                 )
+            if right_on == left_on:
+                return new_stream
+            else:
+                return new_stream.rename({right_on: left_on})
 
         elif not self.materialized and right.materialized:
             
@@ -1462,6 +1469,7 @@ class DataStream:
             required_columns={0: set(groupby + [count_col])},
             operator=ConcatThenSQLExecutor(sql_statement),
         )
+        
         if len(groupby) > 0:
             aggregated_stream = self.quokka_context.new_stream(
                 sources={0: self},
@@ -1578,8 +1586,6 @@ class DataStream:
 
         Return:
             A DataStream object that holds the aggregation result. It will only emit one batch, which is the result when it's done. 
-            You should call `.collect()` or `.compute()` on it as it is impossible to pipeline past an 
-            aggregation, so might as well as materialize it right now.
         
         Examples:
             
@@ -1599,6 +1605,31 @@ class DataStream:
         return self._grouped_aggregate([], aggregations, None)
 
     def agg_sql(self, aggregations: str):
+
+        """
+        This is the SQL version of `agg`. It takes a SQL statement as input instead of a dictionary. The SQL statement must be a valid SQL statement.
+        The requirements are similar to what you need for `transform_sql`. Please look at the examples. Exotic SQL statements may not work, such as `count_distinct`, `percentile` etc.
+        Please limit your aggregations to mean/max/min/sum/avg/count for now. 
+
+        Args:
+            aggregations (str): a valid SQL statement. The requirements are similar to what you need for `transform_sql`. 
+        
+        Return:
+            A DataStream object that holds the aggregation result. It will only emit one batch, which is the result when it's done.
+        
+        Examples:
+
+            >>> d = d.agg_sql("sum(l_extendedprice * (1 - l_discount)) as revenue")
+
+            >>> f = d.agg_sql("count(*) as count_order")
+
+            >>>  f = d.agg_sql("
+            >>>        sum(case when o_orderpriority = '1-URGENT' or o_orderpriority = '2-HIGH' then 1 else 0 end) as high_line_count,
+            >>>        sum(case when o_orderpriority <> '1-URGENT' and o_orderpriority <> '2-HIGH' then 1 else 0 end) as low_line_count
+            >>>    ")
+        
+        """
+
         return self._grouped_aggregate_sql([], aggregations, None)
 
     def aggregate(self, aggregations):
@@ -1735,6 +1766,15 @@ class GroupedDataStream:
             raise NotImplementedError
 
     def count_distinct(self, col: str):
+
+        """
+        Count the number of distinct values of a column for each group. This may result in out of memory. This is not approximate.
+
+        Args:
+            col (str): the column to count distinct values of
+        
+        """
+
         return self.source_data_stream._grouped_count_distinct(self.groupby, col, self.orderby)
 
     def agg(self, aggregations: dict):
@@ -1766,14 +1806,38 @@ class GroupedDataStream:
             
             >>> d = d.with_column("disc_price", lambda x:x["l_extendedprice"] * (1 - x["l_discount"]), required_columns ={"l_extendedprice", "l_discount"})
             
-            # I want the sum and average of the l_quantity column and the l_extendedprice colum, the sum of the disc_price column, the minimum of the l_discount
-            # column, and oh give me the total row count as well, of each unique combination of l_returnflag and l_linestatus
+            I want the sum and average of the l_quantity column and the l_extendedprice colum, the sum of the disc_price column, the minimum of the l_discount
+            column, and oh give me the total row count as well, of each unique combination of l_returnflag and l_linestatus
+            
             >>> f = d.groupby(["l_returnflag", "l_linestatus"]).agg({"l_quantity":["sum","avg"], "l_extendedprice":["sum","avg"], "disc_price":"sum", "l_discount":"min","*":"count"})
         """
 
         return self.source_data_stream._grouped_aggregate(self.groupby, aggregations, self.orderby)
 
     def agg_sql(self, aggregations: str):
+
+        """
+        The SQL version of `agg`. Look at the examples.
+
+        Args:
+            aggregations (str): a string that is a valid SQL aggregation expression. Look at the examples.
+
+        Return:
+            A DataStream object that holds the aggregation result. It will only emit one batch, which is the result when it's done.
+
+        Examples:
+
+            >>> d = d.groupby(["l_orderkey","o_orderdate","o_shippriority"]).agg_sql("sum(l_extendedprice * (1 - l_discount)) as revenue")
+
+            >>> f = d.groupby("o_orderpriority").agg_sql("count(*) as count_order")
+
+            >>>  f = d.groupby("l_shipmode").agg_sql("
+            >>>        sum(case when o_orderpriority = '1-URGENT' or o_orderpriority = '2-HIGH' then 1 else 0 end) as high_line_count,
+            >>>        sum(case when o_orderpriority <> '1-URGENT' and o_orderpriority <> '2-HIGH' then 1 else 0 end) as low_line_count
+            >>>    ")
+
+        """
+
         return self.source_data_stream._grouped_aggregate_sql(self.groupby, aggregations, self.orderby)
 
     def aggregate(self, aggregations: dict):

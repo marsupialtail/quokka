@@ -1,8 +1,8 @@
 from pyquokka.df import * 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
-mode = "S3"
-format = "parquet"
+mode = "DISK"
+format = "csv"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
 s3_path_csv = "s3://tpc-h-csv/"
@@ -410,9 +410,10 @@ def do_16():
     d = partsupp.join(bad_suppliers, left_on="ps_suppkey", right_on="s_suppkey", how="anti")
     d = d.join(part, left_on="ps_partkey", right_on="p_partkey", how="inner")
     d = d.filter_sql("p_brand != 'Brand#45' and p_type not like 'MEDIUM POLISHED%' and p_size in (49, 14, 23, 45, 19, 3, 36, 9)")
-    result = d.groupby(["p_brand", "p_type", "p_size"]).count_distinct("ps_supplycost")
+    result = d.groupby(["p_brand", "p_type", "p_size"]).count_distinct("ps_suppkey")
     result.explain()
-    return result.collect()
+    result = result.collect().sort(["ps_suppkey", "p_brand", "p_type", "p_size" ], descending = [True, False, False, False])
+    return result
 
 def do_17():
     u_0 = lineitem.groupby("l_partkey").agg_sql("0.2 * AVG(l_quantity) AS avg_quantity").compute()
@@ -569,12 +570,12 @@ def covariance():
 # print_and_time(do_13) 
 # print_and_time(do_14)
 # print_and_time(do_15)
-# print_and_time(do_16) 
+print_and_time(do_16) 
 # print_and_time(do_17)
 # print_and_time(do_18)
-print_and_time(do_19)
-print_and_time(do_20)
-print_and_time(do_22)
+# print_and_time(do_19)
+# print_and_time(do_20)
+# print_and_time(do_22)
 
 
 # print(do_21()) # just wn't work on AWS

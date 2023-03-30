@@ -301,7 +301,7 @@ def do_9_duckdb():
     order by
             nation,
             o_year desc
-    """)
+    """).arrow()
 
 def do_10_duckdb():
 
@@ -488,7 +488,7 @@ def do_15_duckdb():
                 )
         order by
                 s_suppkey
-    """)
+    """).arrow()
 
 def do_16_duckdb():
 
@@ -497,7 +497,8 @@ def do_16_duckdb():
         p_brand,
         p_type,
         p_size,
-        count(distinct ps_suppkey) as supplier_cnt
+        ps_suppkey
+        -- count( ps_suppkey) as supplier_cnt
     from
             partsupp,
             part
@@ -514,16 +515,7 @@ def do_16_duckdb():
                     where
                             s_comment like '%Customer%Complaints%'
             )
-    group by
-            p_brand,
-            p_type,
-            p_size
-    order by
-            supplier_cnt desc,
-            p_brand,
-            p_type,
-            p_size
-    """)
+    """).arrow()
 
 def do_17_duckdb():
 
@@ -754,4 +746,5 @@ def do_22_duckdb():
 
 
 #print(polars.from_arrow(do_13_duckdb()))
-print(polars.from_arrow(do_1_duckdb()))
+# print(polars.from_arrow(do_16_duckdb()))
+polars.from_arrow(do_16_duckdb())

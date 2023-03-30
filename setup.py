@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.1.5' 
+VERSION = '0.2.0' 
 DESCRIPTION = 'Quokka'
 LONG_DESCRIPTION = """
 Dope way to do cloud analytics\n
@@ -22,8 +22,8 @@ setup(
             'duckdb>=0.6.0',
             'redis',
             'boto3',
-            'pandas',
             'numpy',
+            'pandas',
             #'protobuf==3.20.*', uncomment if Ray does not work on Apple
             'protobuf',
             'ray>=2.0.0',
@@ -34,7 +34,7 @@ setup(
             'graphviz',
             'tqdm',
             'aiohttp',
-            'botocore==1.27.59',
+            'botocore',
             'parallel-ssh'
             ], # add any additional packages that 
         extra_requires = {

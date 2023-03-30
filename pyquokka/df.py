@@ -1,9 +1,10 @@
-import graphviz
 import copy
 import polars
 import pyquokka.sql_utils as sql_utils
 from pyquokka.datastream import * 
 from pyquokka.catalog import *
+import pyarrow.parquet as pq
+from pyarrow.fs import S3FileSystem
 import os
 
 class QuokkaContext:
@@ -137,7 +138,7 @@ class QuokkaContext:
         5. disk_parquet_materialize_threshold: int, the threshold in bytes for when to materialize a Parquet file on disk
 
         6. hbq_path: str, the disk spill directory. Default to "/data"
-        
+
         7. fault_tolerance: bool, whether to enable fault tolerance. Default to False
 
         Args:
@@ -455,7 +456,7 @@ class QuokkaContext:
 
                 assert len(files) > 0, "could not find any parquet files. make sure they end with .parquet"
                 if sum(sizes) < self.sql_config["s3_parquet_materialize_threshold"] and len(files) == 1:
-                    df = polars.read_parquet("s3://" + files[0])
+                    df = polars.from_arrow(pq.read_table(files[0], filesystem = S3FileSystem()))
                     return return_materialized_stream(df)
                 
                 try:
@@ -479,7 +480,7 @@ class QuokkaContext:
                 response = s3.head_object(Bucket= bucket, Key=key)
                 size = response['ContentLength']
                 if size < self.sql_config["s3_parquet_materialize_threshold"]:
-                    df = polars.read_parquet("s3://" + table_location)
+                    df = polars.from_arrow(pq.read_table(table_location, filesystem = S3FileSystem()))
                     return return_materialized_stream(df)
                 
                 token = ray.get(self.catalog.register_s3_parquet_source.remote(bucket + "/" + key, 1))
@@ -980,9 +981,11 @@ class QuokkaContext:
                     )
                     new_conjuncts = []
                     for conjunct in conjuncts:
+                        
                         columns = set(i.name for i in conjunct.find_all(
                             sqlglot.expressions.Column))
                         conjunct_schema_mappings = { col : node.schema_mapping[col] for col in columns }
+
                         # each value here will be a dict of parent ids that have this column and what this column is called in the parent
                         conjunct_parents = {col: set(conjunct_schema_mappings[col].keys()) for col in columns}
                         # we need to make sure that all the values in conjunct_parents are the same, otherwise we cannot push this predicate down
