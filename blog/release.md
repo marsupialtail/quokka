@@ -96,4 +96,4 @@ Quokka is currently mostly fault tolerant to spot worker failures. It will be fu
 ## Credits
 [Apache Arrow](https://github.com/apache/arrow), [Ray](https://github.com/ray-project/ray), [Polars](https://github.com/pola-rs/polars), [DuckDB](https://github.com/duckdb/duckdb), [SQLGlot](https://github.com/tobymao/sqlglot), [Redis](https://github.com/redis/redis). 
 
-Shoutouts: [Alex Aiken](https://www.linkedin.com/in/alex-aiken-575aa7b7/), [Tim Tully](https://www.linkedin.com/in/timothytully/), [Toby Mao](https://www.linkedin.com/in/toby-mao/), [Peter Kraft](https://www.linkedin.com/in/peter-kraft-110318b0/), [Qian Li](https://www.linkedin.com/in/qianli15/), [Sarah Fujimori](https://www.linkedin.com/in/sarah-fujimori/), [Emanuel Adamiak](https://www.linkedin.com/in/emanuel-adamiak-699a27236/), [Fabio Ibanez](https://www.linkedin.com/in/fabioibanez/). 
+Shoutouts: Alex Aiken, Tim Tully, Toby Mao, Peter Kraft, Qian Li, Sarah Fujimori, Emanuel Adamiak, Fabio Ibanez. 
