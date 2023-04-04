@@ -1993,10 +1993,7 @@ Quokka will detect if your instance have NVME SSD and mount it to this directory
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/utils.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">441</span>
-<span class="normal">442</span>
-<span class="normal">443</span>
-<span class="normal">444</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">444</span>
 <span class="normal">445</span>
 <span class="normal">446</span>
 <span class="normal">447</span>
@@ -2076,7 +2073,10 @@ Quokka will detect if your instance have NVME SSD and mount it to this directory
 <span class="normal">521</span>
 <span class="normal">522</span>
 <span class="normal">523</span>
-<span class="normal">524</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">get_cluster_from_ray</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path_to_yaml</span><span class="p">,</span> <span class="n">aws_access_key</span><span class="p">,</span> <span class="n">aws_access_id</span><span class="p">,</span> <span class="n">requirements</span> <span class="o">=</span> <span class="p">[],</span> <span class="n">spill_dir</span> <span class="o">=</span> <span class="s2">&quot;/data&quot;</span><span class="p">):</span>
+<span class="normal">524</span>
+<span class="normal">525</span>
+<span class="normal">526</span>
+<span class="normal">527</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">get_cluster_from_ray</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path_to_yaml</span><span class="p">,</span> <span class="n">aws_access_key</span><span class="p">,</span> <span class="n">aws_access_id</span><span class="p">,</span> <span class="n">requirements</span> <span class="o">=</span> <span class="p">[],</span> <span class="n">spill_dir</span> <span class="o">=</span> <span class="s2">&quot;/data&quot;</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Connect to a Ray cluster. This will set up the Quokka runtime on the cluster. The Ray cluster must be in a running state and created by </span>

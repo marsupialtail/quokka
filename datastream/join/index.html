@@ -1902,12 +1902,7 @@
 <a id="pyquokka.datastream.DataStream.join"></a>
   <div class="doc doc-contents first">
   
-      <p>Join a DataStream with another DataStream or a <strong>small</strong> Polars DataFrame (&lt;10MB). If you have a Polars DataFrame bigger
-than this, the best solution right now is to write it out to a file and have Quokka read it back in as a DataStream. I 
-realize this is perhaps suboptimal, and this will be improved.</p>
-<p>A streaming two-sided distributed join will be executed for two DataStream joins and a streaming broadcast join
-will be executed for DataStream joined with Polars DataFrame. Joins are obviously very important, and we are constantly improving
-how we do joins. Eventually we will support out of core joins, when @savebuffer merges his PR into Arrow 10.0.</p>
+      <p>Join a DataStream with another DataStream. This may result in a distributed hash join or a broadcast join depending on cardinality estimates.</p>
 
   <p><strong>Parameters:</strong></p>
   <table>
@@ -1923,9 +1918,9 @@ how we do joins. Eventually we will support out of core joins, when @savebuffer 
         <tr>
           <td><code>right</code></td>
           <td>
-                <code>DataStream or Polars DataFrame</code>
+                <code><span title="pyquokka.datastream.DataStream">DataStream</span></code>
           </td>
-          <td><p>the DataStream or Polars DataFrame to join to.</p></td>
+          <td><p>the DataStream to join to.</p></td>
           <td>
               <em>required</em>
           </td>
@@ -2001,7 +1996,12 @@ except for <code>right_on</code> from the right side. </p>
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/datastream.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1097</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1092</span>
+<span class="normal">1093</span>
+<span class="normal">1094</span>
+<span class="normal">1095</span>
+<span class="normal">1096</span>
+<span class="normal">1097</span>
 <span class="normal">1098</span>
 <span class="normal">1099</span>
 <span class="normal">1100</span>
@@ -2171,19 +2171,26 @@ except for <code>right_on</code> from the right side. </p>
 <span class="normal">1264</span>
 <span class="normal">1265</span>
 <span class="normal">1266</span>
-<span class="normal">1267</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">join</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">right</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">left_on</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">right_on</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;_2&quot;</span><span class="p">,</span> <span class="n">how</span><span class="o">=</span><span class="s2">&quot;inner&quot;</span><span class="p">,</span> <span class="n">maintain_sort_order</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="normal">1267</span>
+<span class="normal">1268</span>
+<span class="normal">1269</span>
+<span class="normal">1270</span>
+<span class="normal">1271</span>
+<span class="normal">1272</span>
+<span class="normal">1273</span>
+<span class="normal">1274</span>
+<span class="normal">1275</span>
+<span class="normal">1276</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">join</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">right</span><span class="p">,</span> <span class="n">on</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">left_on</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">right_on</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="s2">&quot;_2&quot;</span><span class="p">,</span> <span class="n">how</span><span class="o">=</span><span class="s2">&quot;inner&quot;</span><span class="p">,</span> <span class="n">maintain_sort_order</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Join a DataStream with another DataStream or a **small** Polars DataFrame (&lt;10MB). If you have a Polars DataFrame bigger</span>
-<span class="sd">    than this, the best solution right now is to write it out to a file and have Quokka read it back in as a DataStream. I </span>
-<span class="sd">    realize this is perhaps suboptimal, and this will be improved.</span>
+<span class="sd">    Join a DataStream with another DataStream. This may result in a distributed hash join or a broadcast join depending on cardinality estimates.</span>
 
-<span class="sd">    A streaming two-sided distributed join will be executed for two DataStream joins and a streaming broadcast join</span>
-<span class="sd">    will be executed for DataStream joined with Polars DataFrame. Joins are obviously very important, and we are constantly improving</span>
-<span class="sd">    how we do joins. Eventually we will support out of core joins, when @savebuffer merges his PR into Arrow 10.0.</span>
+
+
+
 
 <span class="sd">    Args:</span>
-<span class="sd">        right (DataStream or Polars DataFrame): the DataStream or Polars DataFrame to join to.</span>
+<span class="sd">        right (DataStream): the DataStream to join to.</span>
 <span class="sd">        on (str): You could either specify this, if the join column has the same name in this DataStream and `right`, or `left_on` and `right_on` </span>
 <span class="sd">            if the join columns don&#39;t have the same name.</span>
 <span class="sd">        left_on (str): the name of the join column in this DataStream.</span>
@@ -2260,6 +2267,8 @@ except for <code>right_on</code> from the right side. </p>
 
     <span class="n">rename_dict</span> <span class="o">=</span> <span class="p">{}</span>
 
+    <span class="c1"># import pdb;pdb.set_trace()</span>
+
     <span class="n">right_cols</span> <span class="o">=</span> <span class="n">right</span><span class="o">.</span><span class="n">schema</span> <span class="k">if</span> <span class="n">how</span> <span class="ow">not</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;semi&quot;</span><span class="p">,</span> <span class="s2">&quot;anti&quot;</span><span class="p">}</span> <span class="k">else</span> <span class="p">[</span><span class="n">right_on</span><span class="p">]</span>
     <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">right_cols</span><span class="p">:</span>
         <span class="k">if</span> <span class="n">col</span> <span class="o">==</span> <span class="n">right_on</span><span class="p">:</span>
@@ -2282,7 +2291,12 @@ except for <code>right_on</code> from the right side. </p>
     <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">rename_dict</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">:</span>
         <span class="n">right</span> <span class="o">=</span> <span class="n">right</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">rename_dict</span><span class="p">)</span>
 
-    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">materialized</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">right</span><span class="o">.</span><span class="n">materialized</span><span class="p">:</span>
+    <span class="k">if</span> <span class="p">(</span><span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">materialized</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">right</span><span class="o">.</span><span class="n">materialized</span><span class="p">)</span> <span class="ow">or</span> <span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">materialized</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">right</span><span class="o">.</span><span class="n">materialized</span> <span class="ow">and</span> <span class="n">how</span> <span class="o">!=</span> <span class="s2">&quot;inner&quot;</span><span class="p">):</span>
+
+        <span class="c1"># if self.materialized, rewrite the schema_mapping</span>
+        <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="n">schema_mapping</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">list</span><span class="p">(</span><span class="n">schema_mapping</span><span class="p">[</span><span class="n">col</span><span class="p">]</span><span class="o">.</span><span class="n">keys</span><span class="p">())[</span><span class="mi">0</span><span class="p">]</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>
+                <span class="n">schema_mapping</span><span class="p">[</span><span class="n">col</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="mi">0</span><span class="p">:</span> <span class="n">col</span><span class="p">}</span>
 
         <span class="k">if</span> <span class="n">maintain_sort_order</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
             <span class="n">assume_sorted</span> <span class="o">=</span> <span class="p">{}</span>
@@ -2308,18 +2322,27 @@ except for <code>right_on</code> from the right side. </p>
 
         <span class="k">assert</span> <span class="n">how</span> <span class="ow">in</span> <span class="p">{</span><span class="s2">&quot;inner&quot;</span><span class="p">}</span>
 
-        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">quokka_context</span><span class="o">.</span><span class="n">new_stream</span><span class="p">(</span>
-            <span class="n">sources</span><span class="o">=</span><span class="p">{</span><span class="mi">0</span><span class="p">:</span> <span class="n">right</span><span class="p">},</span>
-            <span class="n">partitioners</span><span class="o">=</span><span class="p">{</span><span class="mi">0</span><span class="p">:</span> <span class="n">PassThroughPartitioner</span><span class="p">()},</span>
+        <span class="n">new_schema</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">left_on</span><span class="p">)</span>
+        <span class="n">new_schema</span> <span class="o">=</span> <span class="p">[</span><span class="n">right_on</span><span class="p">]</span> <span class="o">+</span> <span class="n">new_schema</span>
+        <span class="k">del</span> <span class="n">schema_mapping</span><span class="p">[</span><span class="n">left_on</span><span class="p">]</span>
+        <span class="n">schema_mapping</span><span class="p">[</span><span class="n">right_on</span><span class="p">]</span> <span class="o">=</span> <span class="p">{</span><span class="mi">1</span><span class="p">:</span> <span class="n">right_on</span><span class="p">}</span>
+
+        <span class="n">new_stream</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">quokka_context</span><span class="o">.</span><span class="n">new_stream</span><span class="p">(</span>
+            <span class="n">sources</span><span class="o">=</span><span class="p">{</span><span class="mi">1</span><span class="p">:</span> <span class="n">right</span><span class="p">},</span>
+            <span class="n">partitioners</span><span class="o">=</span><span class="p">{</span><span class="mi">1</span><span class="p">:</span> <span class="n">PassThroughPartitioner</span><span class="p">()},</span>
             <span class="n">node</span><span class="o">=</span><span class="n">BroadcastJoinNode</span><span class="p">(</span>
                 <span class="n">schema</span><span class="o">=</span><span class="n">new_schema</span><span class="p">,</span>
                 <span class="n">schema_mapping</span><span class="o">=</span><span class="n">schema_mapping</span><span class="p">,</span>
-                <span class="n">required_columns</span><span class="o">=</span><span class="p">{</span><span class="mi">0</span><span class="p">:</span> <span class="p">{</span><span class="n">right_on</span><span class="p">}},</span>
+                <span class="n">required_columns</span><span class="o">=</span><span class="p">{</span><span class="mi">1</span><span class="p">:</span> <span class="p">{</span><span class="n">right_on</span><span class="p">}},</span>
                 <span class="n">operator</span><span class="o">=</span><span class="n">BroadcastJoinExecutor</span><span class="p">(</span>
                     <span class="bp">self</span><span class="o">.</span><span class="n">_get_materialized_df</span><span class="p">(),</span> <span class="n">small_on</span><span class="o">=</span><span class="n">left_on</span><span class="p">,</span> <span class="n">big_on</span><span class="o">=</span><span class="n">right_on</span><span class="p">,</span> <span class="n">suffix</span><span class="o">=</span><span class="n">suffix</span><span class="p">,</span> <span class="n">how</span><span class="o">=</span><span class="n">how</span><span class="p">)</span>
             <span class="p">),</span>
             <span class="n">schema</span><span class="o">=</span><span class="n">new_schema</span><span class="p">,</span>
             <span class="p">)</span>
+        <span class="k">if</span> <span class="n">right_on</span> <span class="o">==</span> <span class="n">left_on</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">new_stream</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">new_stream</span><span class="o">.</span><span class="n">rename</span><span class="p">({</span><span class="n">right_on</span><span class="p">:</span> <span class="n">left_on</span><span class="p">})</span>
 
     <span class="k">elif</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">materialized</span> <span class="ow">and</span> <span class="n">right</span><span class="o">.</span><span class="n">materialized</span><span class="p">:</span>
 

@@ -2006,10 +2006,7 @@
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/utils.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">268</span>
-<span class="normal">269</span>
-<span class="normal">270</span>
-<span class="normal">271</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">271</span>
 <span class="normal">272</span>
 <span class="normal">273</span>
 <span class="normal">274</span>
@@ -2054,7 +2051,10 @@
 <span class="normal">313</span>
 <span class="normal">314</span>
 <span class="normal">315</span>
-<span class="normal">316</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">create_cluster</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">aws_access_key</span><span class="p">,</span> <span class="n">aws_access_id</span><span class="p">,</span> <span class="n">num_instances</span><span class="p">,</span> <span class="n">instance_type</span> <span class="o">=</span> <span class="s2">&quot;i3.2xlarge&quot;</span><span class="p">,</span> <span class="n">ami</span><span class="o">=</span><span class="s2">&quot;ami-0530ca8899fac469f&quot;</span><span class="p">,</span> <span class="n">requirements</span> <span class="o">=</span> <span class="p">[],</span> <span class="n">spill_dir</span> <span class="o">=</span> <span class="s2">&quot;/data&quot;</span><span class="p">):</span>
+<span class="normal">316</span>
+<span class="normal">317</span>
+<span class="normal">318</span>
+<span class="normal">319</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">create_cluster</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">aws_access_key</span><span class="p">,</span> <span class="n">aws_access_id</span><span class="p">,</span> <span class="n">num_instances</span><span class="p">,</span> <span class="n">instance_type</span> <span class="o">=</span> <span class="s2">&quot;i3.2xlarge&quot;</span><span class="p">,</span> <span class="n">ami</span><span class="o">=</span><span class="s2">&quot;ami-0530ca8899fac469f&quot;</span><span class="p">,</span> <span class="n">requirements</span> <span class="o">=</span> <span class="p">[],</span> <span class="n">spill_dir</span> <span class="o">=</span> <span class="s2">&quot;/data&quot;</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Create a Ray cluster configured to run Quokka applications.</span>

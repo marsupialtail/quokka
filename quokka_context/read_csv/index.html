@@ -1983,10 +1983,7 @@ this can still be True. Quokka will just ignore the header row.</p></td>
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/df.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">250</span>
-<span class="normal">251</span>
-<span class="normal">252</span>
-<span class="normal">253</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">253</span>
 <span class="normal">254</span>
 <span class="normal">255</span>
 <span class="normal">256</span>
@@ -2130,7 +2127,10 @@ this can still be True. Quokka will just ignore the header row.</p></td>
 <span class="normal">394</span>
 <span class="normal">395</span>
 <span class="normal">396</span>
-<span class="normal">397</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">read_csv</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_location</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">schema</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">has_header</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s2">&quot;,&quot;</span><span class="p">):</span>
+<span class="normal">397</span>
+<span class="normal">398</span>
+<span class="normal">399</span>
+<span class="normal">400</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">read_csv</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_location</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">schema</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">has_header</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">sep</span><span class="o">=</span><span class="s2">&quot;,&quot;</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Read in a CSV file or files from a table location. It can be a single CSV or a list of CSVs. It can be CSV(s) on disk</span>

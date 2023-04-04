@@ -1949,10 +1949,7 @@ or Parquet(s) on S3. Currently other clouds are not supported. </p>
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/df.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">399</span>
-<span class="normal">400</span>
-<span class="normal">401</span>
-<span class="normal">402</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">402</span>
 <span class="normal">403</span>
 <span class="normal">404</span>
 <span class="normal">405</span>
@@ -2079,7 +2076,10 @@ or Parquet(s) on S3. Currently other clouds are not supported. </p>
 <span class="normal">526</span>
 <span class="normal">527</span>
 <span class="normal">528</span>
-<span class="normal">529</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">read_parquet</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_location</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
+<span class="normal">529</span>
+<span class="normal">530</span>
+<span class="normal">531</span>
+<span class="normal">532</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">read_parquet</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_location</span><span class="p">:</span> <span class="nb">str</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Read Parquet. It can be a single Parquet or a list of Parquets. It can be Parquet(s) on disk</span>
@@ -2138,7 +2138,7 @@ or Parquet(s) on S3. Currently other clouds are not supported. </p>
 
             <span class="k">assert</span> <span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">,</span> <span class="s2">&quot;could not find any parquet files. make sure they end with .parquet&quot;</span>
             <span class="k">if</span> <span class="nb">sum</span><span class="p">(</span><span class="n">sizes</span><span class="p">)</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">sql_config</span><span class="p">[</span><span class="s2">&quot;s3_parquet_materialize_threshold&quot;</span><span class="p">]</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">files</span><span class="p">)</span> <span class="o">==</span> <span class="mi">1</span><span class="p">:</span>
-                <span class="n">df</span> <span class="o">=</span> <span class="n">polars</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s2">&quot;s3://&quot;</span> <span class="o">+</span> <span class="n">files</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+                <span class="n">df</span> <span class="o">=</span> <span class="n">polars</span><span class="o">.</span><span class="n">from_arrow</span><span class="p">(</span><span class="n">pq</span><span class="o">.</span><span class="n">read_table</span><span class="p">(</span><span class="n">files</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">filesystem</span> <span class="o">=</span> <span class="n">S3FileSystem</span><span class="p">()))</span>
                 <span class="k">return</span> <span class="n">return_materialized_stream</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 
             <span class="k">try</span><span class="p">:</span>
@@ -2162,7 +2162,7 @@ or Parquet(s) on S3. Currently other clouds are not supported. </p>
             <span class="n">response</span> <span class="o">=</span> <span class="n">s3</span><span class="o">.</span><span class="n">head_object</span><span class="p">(</span><span class="n">Bucket</span><span class="o">=</span> <span class="n">bucket</span><span class="p">,</span> <span class="n">Key</span><span class="o">=</span><span class="n">key</span><span class="p">)</span>
             <span class="n">size</span> <span class="o">=</span> <span class="n">response</span><span class="p">[</span><span class="s1">&#39;ContentLength&#39;</span><span class="p">]</span>
             <span class="k">if</span> <span class="n">size</span> <span class="o">&lt;</span> <span class="bp">self</span><span class="o">.</span><span class="n">sql_config</span><span class="p">[</span><span class="s2">&quot;s3_parquet_materialize_threshold&quot;</span><span class="p">]:</span>
-                <span class="n">df</span> <span class="o">=</span> <span class="n">polars</span><span class="o">.</span><span class="n">read_parquet</span><span class="p">(</span><span class="s2">&quot;s3://&quot;</span> <span class="o">+</span> <span class="n">table_location</span><span class="p">)</span>
+                <span class="n">df</span> <span class="o">=</span> <span class="n">polars</span><span class="o">.</span><span class="n">from_arrow</span><span class="p">(</span><span class="n">pq</span><span class="o">.</span><span class="n">read_table</span><span class="p">(</span><span class="n">table_location</span><span class="p">,</span> <span class="n">filesystem</span> <span class="o">=</span> <span class="n">S3FileSystem</span><span class="p">()))</span>
                 <span class="k">return</span> <span class="n">return_materialized_stream</span><span class="p">(</span><span class="n">df</span><span class="p">)</span>
 
             <span class="n">token</span> <span class="o">=</span> <span class="n">ray</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">catalog</span><span class="o">.</span><span class="n">register_s3_parquet_source</span><span class="o">.</span><span class="n">remote</span><span class="p">(</span><span class="n">bucket</span> <span class="o">+</span> <span class="s2">&quot;/&quot;</span> <span class="o">+</span> <span class="n">key</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>

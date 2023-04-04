@@ -1969,10 +1969,7 @@ This requires you to have an AWS key pair for logging into instances. </p>
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/utils.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">134</span>
-<span class="normal">135</span>
-<span class="normal">136</span>
-<span class="normal">137</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">137</span>
 <span class="normal">138</span>
 <span class="normal">139</span>
 <span class="normal">140</span>
@@ -2000,7 +1997,10 @@ This requires you to have an AWS key pair for logging into instances. </p>
 <span class="normal">162</span>
 <span class="normal">163</span>
 <span class="normal">164</span>
-<span class="normal">165</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key_name</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">key_location</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">security_group</span><span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="normal">165</span>
+<span class="normal">166</span>
+<span class="normal">167</span>
+<span class="normal">168</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">key_name</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">key_location</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">security_group</span><span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Create a QuokkaClusterManager object. This object is used to create Ray clusters on AWS EC2 configured with Quokka or connecting to existing Ray clusters.</span>

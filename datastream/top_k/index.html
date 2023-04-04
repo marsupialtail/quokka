@@ -1963,16 +1963,7 @@ The strategy is to take k rows from each batch coming in and do a final sort and
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/datastream.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1366</span>
-<span class="normal">1367</span>
-<span class="normal">1368</span>
-<span class="normal">1369</span>
-<span class="normal">1370</span>
-<span class="normal">1371</span>
-<span class="normal">1372</span>
-<span class="normal">1373</span>
-<span class="normal">1374</span>
-<span class="normal">1375</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1375</span>
 <span class="normal">1376</span>
 <span class="normal">1377</span>
 <span class="normal">1378</span>
@@ -2028,7 +2019,16 @@ The strategy is to take k rows from each batch coming in and do a final sort and
 <span class="normal">1428</span>
 <span class="normal">1429</span>
 <span class="normal">1430</span>
-<span class="normal">1431</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">top_k</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">columns</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">descending</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+<span class="normal">1431</span>
+<span class="normal">1432</span>
+<span class="normal">1433</span>
+<span class="normal">1434</span>
+<span class="normal">1435</span>
+<span class="normal">1436</span>
+<span class="normal">1437</span>
+<span class="normal">1438</span>
+<span class="normal">1439</span>
+<span class="normal">1440</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">top_k</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">columns</span><span class="p">,</span> <span class="n">k</span><span class="p">,</span> <span class="n">descending</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    This is a topk function that effectively performs select * from stream order by columns limit k.</span>
 <span class="sd">    The strategy is to take k rows from each batch coming in and do a final sort and limit k in a stateful executor.</span>

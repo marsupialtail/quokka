@@ -1954,16 +1954,7 @@ Eventually the GroupedDataStream object will also support different kinds of win
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/datastream.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1269</span>
-<span class="normal">1270</span>
-<span class="normal">1271</span>
-<span class="normal">1272</span>
-<span class="normal">1273</span>
-<span class="normal">1274</span>
-<span class="normal">1275</span>
-<span class="normal">1276</span>
-<span class="normal">1277</span>
-<span class="normal">1278</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1278</span>
 <span class="normal">1279</span>
 <span class="normal">1280</span>
 <span class="normal">1281</span>
@@ -1997,7 +1988,16 @@ Eventually the GroupedDataStream object will also support different kinds of win
 <span class="normal">1309</span>
 <span class="normal">1310</span>
 <span class="normal">1311</span>
-<span class="normal">1312</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">groupby</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">groupby</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="n">orderby</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
+<span class="normal">1312</span>
+<span class="normal">1313</span>
+<span class="normal">1314</span>
+<span class="normal">1315</span>
+<span class="normal">1316</span>
+<span class="normal">1317</span>
+<span class="normal">1318</span>
+<span class="normal">1319</span>
+<span class="normal">1320</span>
+<span class="normal">1321</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">groupby</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">groupby</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="n">orderby</span><span class="o">=</span><span class="kc">None</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Group a DataStream on a list of columns, optionally specifying an ordering requirement.</span>
