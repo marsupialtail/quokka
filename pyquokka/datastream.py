@@ -926,20 +926,15 @@ class DataStream:
 
             You can use Polars APIs inside of custom lambda functions: 
 
-            >>> d = d.with_columns({"high": lambda x:(x["o_orderpriority"] == "1-URGENT") | (x["o_orderpriority"] == "2-HIGH"), 
-                \"low": lambda x:(x["o_orderpriority"] == "5-LOW") | (x["o_orderpriority"] == "4-NOT SPECIFIED")}, 
-                \required_columns = {"o_orderpriority"})
+            >>> d = d.with_columns({"high": lambda x:(x["o_orderpriority"] == "1-URGENT") | (x["o_orderpriority"] == "2-HIGH"), "low": lambda x:(x["o_orderpriority"] == "5-LOW") | (x["o_orderpriority"] == "4-NOT SPECIFIED")}, required_columns = {"o_orderpriority"})
 
             You can also use Quokka Expressions. You don't need to specify required columns if you use only Quokka Expressions:
 
-            >>> d = d.with_columns({"high": (d["o_orderpriority"] == "1-URGENT") | (d["o_orderpriority"] == "2-HIGH"), 
-                \"low": (d["o_orderpriority"] == "5-LOW") | (d["o_orderpriority"] == "4-NOT SPECIFIED")})
+            >>> d = d.with_columns({"high": (d["o_orderpriority"] == "1-URGENT") | (d["o_orderpriority"] == "2-HIGH"), "low": (d["o_orderpriority"] == "5-LOW") | (d["o_orderpriority"] == "4-NOT SPECIFIED")})
             
             Or mix the two. You then have to specify required columns again. It is the set of columns required for *all* your functions.
 
-            >>> d = d.with_columns({"high": (lambda x:(x["o_orderpriority"] == "1-URGENT") | (x["o_orderpriority"] == "2-HIGH"), 
-                \"low": (d["o_orderpriority"] == "5-LOW") | (d["o_orderpriority"] == "4-NOT SPECIFIED")}, 
-                \required_columns = {"o_orderpriority"})
+            >>> d = d.with_columns({"high": (lambda x:(x["o_orderpriority"] == "1-URGENT") | (x["o_orderpriority"] == "2-HIGH"), "low": (d["o_orderpriority"] == "5-LOW") | (d["o_orderpriority"] == "4-NOT SPECIFIED")}, required_columns = {"o_orderpriority"})
         """
 
         assert type(required_columns) == set
@@ -1205,7 +1200,12 @@ class DataStream:
         if len(rename_dict) > 0:
             right = right.rename(rename_dict)
 
-        if not self.materialized and not right.materialized:
+        if (not self.materialized and not right.materialized) or (self.materialized and not right.materialized and how != "inner"):
+
+            # if self.materialized, rewrite the schema_mapping
+            for col in schema_mapping:
+                if list(schema_mapping[col].keys())[0] == -1:
+                    schema_mapping[col] = {0: col}
 
             if maintain_sort_order is None:
                 assume_sorted = {}

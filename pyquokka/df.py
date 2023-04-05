@@ -1,5 +1,7 @@
+import graphviz
 import copy
 import polars
+import pyarrow.csv as csv
 import pyquokka.sql_utils as sql_utils
 from pyquokka.datastream import * 
 from pyquokka.catalog import *

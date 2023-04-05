@@ -37,7 +37,7 @@ class EC2Cluster:
         self.cpu_count = cpu_count_per_instance
         self.leader_public_ip = self.public_ips[0]
         self.leader_private_ip = self.private_ips[0]
-
+        print("EC2 Cluster leader public IP", self.leader_public_ip, "private IP", self.leader_private_ip)
         pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
         # connect to that ray cluster
         ray.init(address='ray://' + str(self.leader_public_ip) + ':10001', 
@@ -129,6 +129,9 @@ class LocalCluster:
             self.redis_process.kill()
 
 
+def execute_script(key_location, x):
+    return os.system("ssh -oStrictHostKeyChecking=no -i {} ubuntu@{} 'bash -s' < {}".format(key_location, x, pyquokka.__file__.replace("__init__.py", "common_startup.sh")))
+
 class QuokkaClusterManager:
 
     def __init__(self, key_name = None, key_location = None, security_group= None) -> None:
@@ -173,7 +176,7 @@ class QuokkaClusterManager:
 
     def launch_all(self, command, ips, error = "Error", ignore_error = False):
 
-        client = ParallelSSHClient(ips, user="ubuntu", pkey=self.key_location, timeout=2)
+        client = ParallelSSHClient(ips, user="ubuntu", pkey=self.key_location, timeout=5)
         output = client.run_command(command)
         result = []
         for host_output in output:
@@ -227,11 +230,11 @@ class QuokkaClusterManager:
         self.copy_and_launch_flight(public_ips)
 
     def set_up_envs(self, public_ips, requirements, aws_access_key, aws_access_id):
+            
+        import multiprocessing
+        pool = multiprocessing.Pool(multiprocessing.cpu_count())        
+        pool.starmap(execute_script, [(self.key_location, public_ip) for public_ip in public_ips])
 
-        for public_ip in public_ips:
-            # doesn't jibe so well with pssh it seems
-            z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + public_ip + " 'bash -s' < " + pyquokka.__file__.replace("__init__.py","common_startup.sh"))
-            print(z)
         self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
         self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
 
@@ -259,7 +262,7 @@ class QuokkaClusterManager:
         print("Found nvme device: ", device)
         
         try:
-            self.launch_all("sudo mkfs.ext4 -E nodiscard {};".format(device), public_ips, "failed to format nvme ssd")
+            self.launch_all("sudo mkfs.ext4 -F -E nodiscard {};".format(device), public_ips, "failed to format nvme ssd")
             self.launch_all("sudo mount {} {};".format(device, spill_dir), public_ips, "failed to mount nvme ssd")
             self.launch_all("sudo chmod -R a+rw {}".format(spill_dir), public_ips, "failed to give spill dir permissions")
         except:
