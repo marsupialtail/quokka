@@ -271,6 +271,18 @@ class InputS3IcebergNode(SourceNode):
         for target in self.targets:
             result += "\n\t" + str(target) + " " + str(self.targets[target])
         return result
+    
+class InputLanceNode(SourceNode):
+    def __init__(self, uri, schema, predicate = None, projection = None, query_vectors = None, k = None) -> None:
+        super().__init__(schema)
+        self.uri = uri
+        self.predicate = predicate
+        self.projection = projection
+        self.query_vectors = query_vectors
+        self.k = k
+    
+    def set_cardinality(self, catalog):
+        return super().set_cardinality(catalog)
 
 class InputS3ParquetNode(SourceNode):
     def __init__(self, files, schema, predicate = None, projection = None) -> None:
@@ -560,6 +572,26 @@ class FilterNode(TaskNode):
     def lower(self, task_graph, parent_nodes, parent_source_info):
         print("Tried to lower a filter node. This means the optimization probably failed and something bad is happening.")
         raise NotImplementedError
+
+class NearestNeighborFilterNode(TaskNode):
+
+    def __init__(self, schema: list, vec_column: str, query_vectors: np.ndarray, k: int) -> None:
+        super().__init__(
+            schema = schema,
+            schema_mapping = {column: {0: column} for column in schema},
+            required_columns = {0: {vec_column}})
+        self.vec_column = vec_column
+        self.query_vectors = query_vectors
+        self.k = k
+    
+    def __str__(self):
+        result = "nearest neighbor filter node on vec column {} with {} query vectors".format(self.vec_column, len(self.query_vectors))
+        return result
+    
+    def lower(self, task_graph, parent_nodes, parent_source_info):
+        print("Tried to lower a nearest neighbor filter node. This means the optimization probably failed and something bad is happening.")
+        raise NotImplementedError
+
 
 class ProjectionNode(TaskNode):
 

@@ -16,9 +16,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# C extensions
-*.so
-
 # Pushing all rendered docs to `docs` branch in GH actions
 docs/_build/*
 

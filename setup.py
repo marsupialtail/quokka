@@ -17,8 +17,10 @@ setup(
         description=DESCRIPTION,
         long_description=LONG_DESCRIPTION,
         packages=find_packages(),
-        package_data = {"":["redis.conf", "leader_startup.sh", "common_startup.sh", "leader_start_ray.sh"]},
-        install_requires=['pyarrow',
+        package_data = {"":["ldb.so", "redis.conf", "leader_startup.sh", "common_startup.sh", "leader_start_ray.sh"]},
+        install_requires=[
+            'cffi',
+            'pyarrow',
             'duckdb>=0.6.0',
             'redis',
             'boto3',

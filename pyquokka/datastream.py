@@ -10,6 +10,7 @@ from functools import partial
 import pyarrow as pa
 from sqlglot.dataframe.sql import functions as F
 
+
 class DataStream:
 
     """
@@ -388,6 +389,14 @@ class DataStream:
             return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=FilterNode(self.schema, predicate),
                                               schema=self.schema, sorted = self.sorted)
 
+
+    def filter_ann(self, vec_column, query_vectors, k):
+
+        """
+        This will filter the DataStream where the vec_column is a 
+        
+        """
+
     def select(self, columns: list):
 
         """
@@ -759,6 +768,58 @@ class DataStream:
             schema=self.schema,
             sorted=None
         )
+
+    def approximate_quantile(self, columns, quantile):
+
+        """
+        You must specify a list of columns and a list of quantiles. The result will be a new DataStream with only one row. The algorithm will be t-digest on partitions and then simply average the results.
+        """
+
+        class TDigestExecutor(Executor):
+            def __init__(self, columns, quantile) -> None:
+                self.columns = columns
+                self.quantile = quantile
+                self.state = None
+            def execute(self,batches,stream_id, executor_id):
+                from pyarrow.cffi import ffi
+                import time
+                if self.state is None:
+                    import pyquokka.ldb as ldb
+                    self.state = [ldb.TDigest(100,500) for i in range(len(self.columns))]
+                    self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+                
+                c_schema = ffi.new("struct ArrowSchema*")
+                c_array = ffi.new("struct ArrowArray*")                
+                arrow_batch = pa.concat_tables(batches)
+
+                print(len(arrow_batch))
+                start = time.time()
+                futures = []
+                for i, col in enumerate(self.columns):
+                    schema_ptr = int(ffi.cast("uintptr_t", c_schema))
+                    array_ptr = int(ffi.cast("uintptr_t", c_array))
+                    arr = arrow_batch[col].combine_chunks()
+                    arr._export_to_c(array_ptr,schema_ptr)
+                    # print("TYPES", array_ptr, schema_ptr)
+                    # self.state[i].add_arrow(array_ptr, schema_ptr)
+                    futures.append(self.executor.submit(lambda x: x.add_arrow(array_ptr, schema_ptr), self.state[i]))
+                
+                # parallelize the above using concurrent futures
+                z = [fut.result() for fut in futures]
+                print("TIME", time.time() - start)
+                
+            def done(self,executor_id):
+                values = [i.quantile(self.quantile) for i in self.state]
+                return polars.from_dict({col: [value] for col, value in zip(self.columns, values)})
+        
+        if self.materialized:
+            df = self._get_materialized_df()
+            return self.quokka_context.from_polars(df.select([polars.col(col).quantile(quantile) for col in columns]))
+        
+        selected_stream = self.select(columns)
+        executor = TDigestExecutor(columns, quantile)
+        stream = selected_stream.stateful_transform( executor, columns, required_columns = set(columns), partitioner = PassThroughPartitioner())
+        return stream.mean(columns, collect = False).rename({"{}_mean".format(col): col for col in columns})
 
     def gramian(self, columns):
 
@@ -1640,21 +1701,27 @@ class DataStream:
 
         return self.agg(aggregations)
     
-    def count(self):
+    def count(self, collect = True):
 
         """
         Return total row count.
+
+        Args:
+            collect (bool): if True, return a Polars DataFrame. If False, return a Quokka DataStream.
         """
+        if collect:
+            return self.agg({"*":"count"}).collect()
+        else:
+            return self.agg({"*":"count"})
 
-        return self.agg({"*":"count"}).collect()
-
-    def sum(self, columns):
+    def sum(self, columns, collect = True):
 
         """
         Return the sums of the specified columns.
 
         Args:
             columns (str or list): the column name or a list of column names to sum.
+            collect (bool): if True, return a Polars DataFrame. If False, return a Quokka DataStream.
         """
 
         assert type(columns) == str or type(columns) == list
@@ -1662,15 +1729,20 @@ class DataStream:
             columns = [columns]
         for col in columns:
             assert col in self.schema
-        return self.agg({col: "sum" for col in columns}).collect()
-    
-    def max(self, columns):
+        
+        if collect:
+            return self.agg({col: "sum" for col in columns}).collect()
+        else:
+            return self.agg({col: "sum" for col in columns})
+
+    def max(self, columns, collect = True):
 
         """
         Return the maximum values of the specified columns.
 
         Args:
             columns (str or list): the column name or a list of column names.
+            collect (bool): if True, return a Polars DataFrame. If False, return a Quokka DataStream.
         """
 
         assert type(columns) == str or type(columns) == list
@@ -1678,15 +1750,20 @@ class DataStream:
             columns = [columns]
         for col in columns:
             assert col in self.schema
-        return self.agg({col: "max" for col in columns}).collect()
+        
+        if collect:
+            return self.agg({col: "max" for col in columns}).collect()
+        else:
+            return self.agg({col: "max" for col in columns})
 
-    def min(self, columns):
+    def min(self, columns, collect = True):
 
         """
         Return the minimum values of the specified columns.
 
         Args:
             columns (str or list): the column name or a list of column names.
+            collect (bool): if True, return a Polars DataFrame. If False, return a Quokka DataStream.
         """
 
         assert type(columns) == str or type(columns) == list
@@ -1694,15 +1771,19 @@ class DataStream:
             columns = [columns]
         for col in columns:
             assert col in self.schema
-        return self.agg({col: "min" for col in columns}).collect()
+        if collect:
+            return self.agg({col: "min" for col in columns}).collect()
+        else:
+            return self.agg({col: "min" for col in columns})
     
-    def mean(self, columns):
+    def mean(self, columns, collect = True):
 
         """
         Return the mean values of the specified columns.
 
         Args:
             columns (str or list): the column name or a list of column names.
+            collect (bool): if True, return a Polars DataFrame. If False, return a Quokka DataStream.
         """
 
         assert type(columns) == str or type(columns) == list
@@ -1710,7 +1791,10 @@ class DataStream:
             columns = [columns]
         for col in columns:
             assert col in self.schema
-        return self.agg({col: "mean" for col in columns}).collect()
+        if collect:
+            return self.agg({col: "mean" for col in columns}).collect()
+        else:
+            return self.agg({col: "mean" for col in columns})
 
 
 class GroupedDataStream:

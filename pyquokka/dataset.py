@@ -143,6 +143,47 @@ class InputRestPostAPIDataset:
         results = polars.concat([i for i in results if i is not None]).select(self.projection)
         return None, results
 
+class InputLanceQVDataset:
+
+    """
+    Let's hope this works!
+    """
+
+    def __init__(self, uri, vec_column, query_vectors, k, columns = None, filters = None, batch_size = 100) -> None:
+        
+        assert type(columns) == list, "columns must be a list of strings"
+        self.columns = columns
+        assert type(filters) == str, "sql predicate supported"
+        self.filters = filters
+        self.query_vector = None
+        self.k = None
+        assert type(query_vectors) == np.ndarray
+        assert len(query_vectors.shape) == 2, "must supply 2d query_vectors"
+        assert type(k) == int
+        self.query_vectors = query_vectors
+        self.k = k
+        self.uri = uri
+        self.batch_size = batch_size
+        self.vec_column = vec_column
+        
+    def get_own_state(self, num_channels):
+
+        self.num_channels = num_channels
+        vectors_per_channel = len(self.query_vectors) // num_channels + 1
+        channel_infos = {}
+        for channel in range(num_channels):
+            my_query_vectors = self.query_vectors[channel * vectors_per_channel : (channel + 1) * vectors_per_channel]
+            channel_infos[channel] = []
+            for pos in range(0, len(my_query_vectors), self.batch_size):
+                channel_infos[channel].append(my_query_vectors[pos:pos+self.batch_size])
+        return channel_infos
+    
+    def execute(self, mapper_id, query_vec_batch):
+
+        import lance
+        dataset = lance.dataset(self.uri)
+        return dataset.to_table(columns = self.columns, filters = self.filters, nearest={"column": self.vec_column, "k": self.k, "q": query_vec_batch})
+
 class InputEC2ParquetDataset:
 
     # filter pushdown could be profitable in the future, especially when you can skip entire Parquet files
