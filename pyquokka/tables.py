@@ -323,3 +323,17 @@ class LastInputTable(ClientWrapper):
         keys = self.keys(redis_client)
         values = self.mget(redis_client, keys)
         return {pickle.loads(key): int(value) for key, value in zip(keys, values)}
+
+'''
+- Executor Watermark Table (EWT): this keeps track of the latest processed seq for each actor_id, channel_id to affect
+   backpressure similar to Storm
+'''
+
+class ExecutorWatermarkTable(ClientWrapper):
+    def __init__(self) -> None:
+        super().__init__("EWT")
+    
+    def to_dict(self, redis_client):
+        keys = self.keys(redis_client)
+        values = self.mget(redis_client, keys)
+        return {pickle.loads(key): int(value) for key, value in zip(keys, values)}

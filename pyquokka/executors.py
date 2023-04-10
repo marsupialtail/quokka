@@ -5,7 +5,6 @@ os.environ['ARROW_DEFAULT_MEMORY_POOL'] = 'system'
 import redis
 import pyarrow as pa
 import time
-import numpy as np
 import os, psutil
 import pyarrow.parquet as pq
 import pyarrow.csv as csv
@@ -406,6 +405,8 @@ class OutputExecutor(Executor):
 
     def execute(self,batches,stream_id, executor_id):
 
+        import numpy as np
+
         self.my_batches.extend([i for i in batches if i is not None and len(i) > 0])
 
         lengths = [len(batch) for batch in self.my_batches]
@@ -691,6 +692,8 @@ class SuperFastSortExecutor(Executor):
         return True
 
     def execute(self, batches, stream_id, executor_id):
+
+        import numpy as np
 
         # if self.executor is None:
         #     self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)

@@ -94,6 +94,7 @@ class TaskManager:
         self.SAT = SortedActorsTable()
         self.PFT = PartitionFunctionTable()
         self.AST = ActorStageTable()
+        self.EWT = ExecutorWatermarkTable()
 
         # populate this dictionary from the initial assignment 
             
@@ -674,6 +675,9 @@ class ExecTaskManager(TaskManager):
 
                 self.EST.set(transaction, pickle.dumps((actor_id, channel_id)), state_seq)                    
                 lineage = pickle.dumps((source_actor_id, source_channel_seqs))
+                for source_channel_id in source_channel_seqs:
+                    max_seq = max(source_channel_seqs[source_channel_id])
+                    self.EWT.set(transaction, pickle.dumps((source_actor_id, source_channel_id)), max_seq)
                 self.state_commit(transaction, actor_id, channel_id, state_seq, lineage)
                 self.task_commit(transaction, candidate_task, next_task)
                 
@@ -874,23 +878,34 @@ class IOTaskManager(TaskManager):
 
             if task_type == "input":
                 
-                candidate_task = InputTask.from_tuple(tup)
-                actor_id = candidate_task.actor_id
-                channel_id = candidate_task.channel_id
+                # candidate_task = InputTask.from_tuple(tup)
+                # actor_id = candidate_task.actor_id
+                # channel_id = candidate_task.channel_id
 
-                if (actor_id, channel_id) not in self.function_objects:
-                    self.function_objects[actor_id, channel_id] = ray.cloudpickle.loads(self.FOT.get(self.r, actor_id))
+                # if (actor_id, channel_id) not in self.function_objects:
+                #     self.function_objects[actor_id, channel_id] = ray.cloudpickle.loads(self.FOT.get(self.r, actor_id))
 
-                functionObject = self.function_objects[actor_id, channel_id]
+                # functionObject = self.function_objects[actor_id, channel_id]
                 
-                start = time.time()
+                # start = time.time()
 
-                next_task, output, seq, lineage = candidate_task.execute(functionObject)
+                # next_task, output, seq, lineage = candidate_task.execute(functionObject)
 
-                print_if_profile("read time", time.time() - start)
+                # print_if_profile("read time", time.time() - start)
+                raise Exception("only taped input tasks are supported now. Raise Github issue with this error message.")
             
             elif task_type == "inputtape":
                 candidate_task = TapedInputTask.from_tuple(tup)
+                seq = candidate_task.tape[0]
+
+                max_consumed_seq = self.EWT.get(self.r, pickle.dumps((candidate_task.actor_id, candidate_task.channel_id)))
+                if max_consumed_seq is not None:
+                    max_consumed_seq = int(max_consumed_seq)
+                else:
+                    max_consumed_seq = 0
+                if seq > max_consumed_seq + self.configs["max_pipeline"]:
+                    continue
+
                 actor_id = candidate_task.actor_id
                 channel_id = candidate_task.channel_id
                 
@@ -900,7 +915,6 @@ class IOTaskManager(TaskManager):
                 start = time.time()
 
                 functionObject = self.function_objects[actor_id, channel_id]
-                seq = candidate_task.tape[0]
                 input_object = pickle.loads(self.LT.get(self.r, pickle.dumps((actor_id, channel_id, seq))))
                 print_if_profile("lineage  time", time.time() - start)
                 start = time.time()

@@ -3,7 +3,6 @@ import duckdb
 import ray
 import sqlglot
 import os
-import numpy as np
 import polars
 from pyarrow.fs import S3FileSystem
 from pyquokka.sql_utils import filters_to_expression
@@ -27,6 +26,8 @@ class Catalog:
     
     def register_s3_csv_source(self, bucket, key, schema, sep, total_size):
 
+        import numpy as np
+
         s3 = boto3.client('s3')
         response = s3.head_object(Bucket= bucket, Key=key)
         size = response['ContentLength']
@@ -40,6 +41,8 @@ class Catalog:
         return self.register_table_data_and_return_ticket(sample, ratio = total_size / (last_new_line - first_new_line))
 
     def register_disk_csv_source(self, filename, schema, sep):
+
+        import numpy as np
 
         if os.path.isfile(filename):
             files = [filename]

@@ -9,7 +9,7 @@ from pyquokka.sql_utils import required_columns_from_exp, label_sample_table_nam
 from functools import partial
 import pyarrow as pa
 from sqlglot.dataframe.sql import functions as F
-
+import numpy as np
 
 class DataStream:
 
@@ -769,59 +769,138 @@ class DataStream:
             sorted=None
         )
 
-    def approximate_quantile(self, columns, quantile):
+    def clip(self, columns):
+
+        """
+        Clip the values of the specified columns to the specified min and max values.
+        The min and max values can be either a single value or a list of values (one for each column).
+        If a single value is specified, it will be used for all columns.
+
+        Args:
+            columns (dict): A dictionary of the form {column_name: (min_value, max_value)}.
+        Return:
+            A new DataStream with the specified columns clipped.
+
+        Examples:
+
+            >>> d = qc.read_csv("lineitem.csv")
+            >>> d1 = d.clip({"l_quantity": (0, 10), "l_extendedprice": (0, 1000)})
+
+        """
+        
+        # can't use with_columns or transform because we want some columns to be passed through but not all.
+
+        def polars_func(batch):
+            return batch.with_columns([polars.col(col).clip(min_, max_) for col, (min_, max_) in columns.items()])
+
+        return self.quokka_context.new_stream(
+            sources={0: self},
+            partitioners={0: PassThroughPartitioner()},
+            node=MapNode(
+                schema=self.schema,
+                schema_mapping={
+                    **{column: {-1: column} for column in columns}, **{col: {0: col} for col in self.schema if col not in columns}},
+                required_columns={0: set(columns)},
+                function=polars_func,
+                foldable=True),
+            schema=self.schema,
+            sorted = self.sorted
+            )
+
+    def approximate_median(self, columns, sample_factor = 1):
+        return self.approximate_quantile(columns, 0.5, sample_factor)
+
+    def approximate_quantile(self, columns, quantiles, sample_factor = 1):
 
         """
         You must specify a list of columns and a list of quantiles. The result will be a new DataStream with only one row. The algorithm will be t-digest on partitions and then simply average the results.
         """
 
         class TDigestExecutor(Executor):
-            def __init__(self, columns, quantile) -> None:
+            def __init__(self, columns, quantiles) -> None:
                 self.columns = columns
-                self.quantile = quantile
+                assert type(quantiles) == list or type(quantiles) == float, "quantile must be a list or a float"
+                if type(quantiles) == float:
+                    assert 0 <= quantiles <= 1, "quantile must be between 0 and 1"
+                    quantiles = [quantiles]
+                self.quantiles = quantiles
                 self.state = None
+                assert 0 < sample_factor <= 1
+                self.sample_factor = sample_factor
+
             def execute(self,batches,stream_id, executor_id):
                 from pyarrow.cffi import ffi
+                os.environ["OMP_NUM_THREADS"] = "8"
                 import time
                 if self.state is None:
                     import pyquokka.ldb as ldb
+                    # self.state = ldb.NTDigest(len(self.columns), 100,500) 
                     self.state = [ldb.TDigest(100,500) for i in range(len(self.columns))]
-                    self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=8)
-                
-                c_schema = ffi.new("struct ArrowSchema*")
-                c_array = ffi.new("struct ArrowArray*")                
+         
                 arrow_batch = pa.concat_tables(batches)
-
-                print(len(arrow_batch))
-                start = time.time()
-                futures = []
+                if self.sample_factor < 1:
+                    indices = np.random.choice(len(arrow_batch), int(len(arrow_batch) * self.sample_factor), replace=False)
+                    arrow_batch = arrow_batch.take(pa.array(indices))
+                
+                # start = time.time()
+                # array_ptrs = []
+                # schema_ptrs = []
+                # list_of_arrs = []
                 for i, col in enumerate(self.columns):
+                    c_schema = ffi.new("struct ArrowSchema*")
+                    c_array = ffi.new("struct ArrowArray*")
                     schema_ptr = int(ffi.cast("uintptr_t", c_schema))
                     array_ptr = int(ffi.cast("uintptr_t", c_array))
+                    # list_of_arrs.append(arrow_batch[col].combine_chunks())
+                    # list_of_arrs[-1]._export_to_c(array_ptr, schema_ptr)
                     arr = arrow_batch[col].combine_chunks()
-                    arr._export_to_c(array_ptr,schema_ptr)
-                    # print("TYPES", array_ptr, schema_ptr)
-                    # self.state[i].add_arrow(array_ptr, schema_ptr)
-                    futures.append(self.executor.submit(lambda x: x.add_arrow(array_ptr, schema_ptr), self.state[i]))
-                
-                # parallelize the above using concurrent futures
-                z = [fut.result() for fut in futures]
-                print("TIME", time.time() - start)
+                    arr._export_to_c(array_ptr, schema_ptr)
+                    self.state[i].add_arrow(array_ptr, schema_ptr)
+                    # array_ptrs.append(array_ptr)
+                    # schema_ptrs.append(schema_ptr)
+
+                # start = time.time()
+                # print(array_ptrs, schema_ptrs)
+                # self.state.batch_add_arrow(array_ptrs, schema_ptrs)
+                # print("TIME", time.time() - start)
                 
             def done(self,executor_id):
-                values = [i.quantile(self.quantile) for i in self.state]
-                return polars.from_dict({col: [value] for col, value in zip(self.columns, values)})
+                # values = [self.state.quantile(i, self.quantile) for i in range(len(self.columns))]
+                dicts = []
+                for quantile in self.quantiles:
+                    values = [self.state[i].quantile(quantile) for i in range(len(self.columns))]
+                    dicts.append({col: value for col, value in zip(self.columns, values)})
+                return polars.from_dicts(dicts)
+
+        class MeanExecutor(Executor):
+            def __init__(self) -> None:
+                self.state = None
+                self.count = 0
+            def execute(self,batches,stream_id, executor_id):
+                for batch in batches:
+                    #print(batch)
+                    self.count += 1
+                    if self.state is None:
+                        self.state = polars.from_arrow(batch)
+                    else:
+                        self.state += polars.from_arrow(batch)
+            def done(self,executor_id):
+                return self.state / self.count
         
         if self.materialized:
             df = self._get_materialized_df()
-            return self.quokka_context.from_polars(df.select([polars.col(col).quantile(quantile) for col in columns]))
+            frames = []
+            for quantile in quantiles:
+                frames.append(df.select([polars.col(col).quantile(quantile) for col in columns]))
+            return self.quokka_context.from_polars(polars.concat(frames))
         
         selected_stream = self.select(columns)
-        executor = TDigestExecutor(columns, quantile)
+        executor = TDigestExecutor(columns, quantiles)
         stream = selected_stream.stateful_transform( executor, columns, required_columns = set(columns), partitioner = PassThroughPartitioner())
-        return stream.mean(columns, collect = False).rename({"{}_mean".format(col): col for col in columns})
+        return stream.stateful_transform( MeanExecutor() , columns, required_columns = set(columns),
+                            partitioner=BroadcastPartitioner(), placement_strategy = SingleChannelStrategy())
 
-    def gramian(self, columns):
+    def gramian(self, columns, demean = None):
 
         """
         This will compute DataStream[columns]^T * DataStream[columns]. The result will be len(columns) * len(columns), with schema same as columns.
@@ -844,13 +923,26 @@ class DataStream:
         
         """
 
+        def udf2(x):
+            from threadpoolctl import threadpool_limits
+            x = x.select(columns).to_numpy() - demean
+            with threadpool_limits(limits=8, user_api='blas'):
+                product = np.dot(x.transpose(), x)
+            return polars.from_numpy(product, columns = columns)
+
         for col in columns:
             assert col in self.schema
+        
+        if demean is not None:
+            assert type(demean) == np.ndarray, "demean must be a numpy array"
+            assert len(demean) == len(columns), "demean must be the same length as columns"
+        else:
+            demean = np.zeros(len(columns))
 
         if self.materialized:
             df = self._get_materialized_df()
-            stuff = df.select(columns).to_numpy()
-            product = np.dot(stuff.transpose(), stuff)
+            stuff = df.select(columns).to_numpy() - demean
+            product = np.dot(stuff.transpose(), stuff)  
             return self.quokka_context.from_polars(polars.from_numpy(product, columns = columns))
 
         class AggExecutor(Executor):
@@ -865,19 +957,22 @@ class DataStream:
                         self.state += polars.from_arrow(batch)
             def done(self,executor_id):
                 return self.state
-
+                
+        local_agg_executor = AggExecutor()
         agg_executor = AggExecutor()
-        def udf2(x):
-            x = x.select(columns).to_numpy()
-            product = np.dot(x.transpose(), x)
-            return polars.from_numpy(product, columns = columns)
 
         stream = self.select(columns)
         stream = stream.transform( udf2, new_schema = columns, required_columns = set(columns), foldable=True)
-
+        stream = stream.stateful_transform( local_agg_executor , columns, required_columns = set(columns),
+                            partitioner=PassThroughPartitioner(), placement_strategy = CustomChannelsStrategy(1))
         return stream.stateful_transform( agg_executor , columns, required_columns = set(columns),
                             partitioner=BroadcastPartitioner(), placement_strategy = SingleChannelStrategy())
 
+    def covariance(self, columns):
+
+        count = self.count()
+        mean = self.mean(columns)
+        return self.gramian(columns, demean = np.squeeze(mean.to_numpy())).collect() / count.item()
 
     def with_columns_sql(self, new_columns: str, foldable = True):
 

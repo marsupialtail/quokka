@@ -575,7 +575,7 @@ class FilterNode(TaskNode):
 
 class NearestNeighborFilterNode(TaskNode):
 
-    def __init__(self, schema: list, vec_column: str, query_vectors: np.ndarray, k: int) -> None:
+    def __init__(self, schema: list, vec_column: str, query_vectors,  k: int) -> None:
         super().__init__(
             schema = schema,
             schema_mapping = {column: {0: column} for column in schema},

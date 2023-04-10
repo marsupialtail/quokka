@@ -10,7 +10,6 @@ import os
 import redis
 from collections import deque
 import polars
-import numpy as np
 import gc
 from pyarrow.fs import S3FileSystem, LocalFileSystem
 from pyarrow.dataset import FileSystemDataset, ParquetFileFormat
@@ -157,6 +156,7 @@ class InputLanceQVDataset:
         self.filters = filters
         self.query_vector = None
         self.k = None
+        import numpy as np
         assert type(query_vectors) == np.ndarray
         assert len(query_vectors.shape) == 2, "must supply 2d query_vectors"
         assert type(k) == int
