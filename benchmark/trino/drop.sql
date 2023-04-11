@@ -14,3 +14,11 @@ drop view supplier;
 drop view partsupp;
 drop view nation;
 drop view region;
+
+drop table orders;
+drop table customer;
+drop table part;
+drop table supplier;
+drop table partsupp;
+drop table nation;
+drop table region;

@@ -1,13 +1,13 @@
 import polars
 polars.Config().set_tbl_cols(10)
-lineitem = polars.read_csv("/home/ziheng/tpc-h/lineitem.tbl", sep = "|", has_header=True).to_arrow()
-orders = polars.read_csv("/home/ziheng/tpc-h/orders.tbl", sep = "|", has_header=True).to_arrow()
-customer = polars.read_csv("/home/ziheng/tpc-h/customer.tbl", sep = "|", has_header=True).to_arrow()
-region = polars.read_csv("/home/ziheng/tpc-h/region.tbl", sep = "|", has_header=True).to_arrow()
-part = polars.read_csv("/home/ziheng/tpc-h/part.tbl", sep = "|", has_header=True).to_arrow()
-partsupp = polars.read_csv("/home/ziheng/tpc-h/partsupp.tbl", sep = "|", has_header=True).to_arrow()
-supplier = polars.read_csv("/home/ziheng/tpc-h/supplier.tbl", sep = "|", has_header=True).to_arrow()
-nation = polars.read_csv("/home/ziheng/tpc-h/nation.tbl", sep = "|", has_header=True).to_arrow()
+lineitem_arrow = polars.read_csv("/home/ziheng/tpc-h/lineitem.tbl", sep = "|", has_header=True).to_arrow()
+orders_arrow = polars.read_csv("/home/ziheng/tpc-h/orders.tbl", sep = "|", has_header=True).to_arrow()
+customer_arrow = polars.read_csv("/home/ziheng/tpc-h/customer.tbl", sep = "|", has_header=True).to_arrow()
+region_arrow = polars.read_csv("/home/ziheng/tpc-h/region.tbl", sep = "|", has_header=True).to_arrow()
+part_arrow = polars.read_csv("/home/ziheng/tpc-h/part.tbl", sep = "|", has_header=True).to_arrow()
+partsupp_arrow = polars.read_csv("/home/ziheng/tpc-h/partsupp.tbl", sep = "|", has_header=True).to_arrow()
+supplier_arrow = polars.read_csv("/home/ziheng/tpc-h/supplier.tbl", sep = "|", has_header=True).to_arrow()
+nation_arrow = polars.read_csv("/home/ziheng/tpc-h/nation.tbl", sep = "|", has_header=True).to_arrow()
 
 import duckdb
 con = duckdb.connect()
@@ -26,7 +26,7 @@ def do_1_duckdb():
             avg(l_discount) as avg_disc,
             count(*) as count_order
     from
-            lineitem
+            lineitem_arrow
     where
             l_shipdate <= date '1998-12-01' - interval '90' day
     group by
@@ -50,11 +50,11 @@ def do_2_duckdb():
             s_phone,
             s_comment
     from
-            part,
-            supplier,
-            partsupp,
-            nation,
-            region
+            part_arrow,
+            supplier_arrow,
+            partsupp_arrow,
+            nation_arrow,
+            region_arrow
     where
             p_partkey = ps_partkey
             and s_suppkey = ps_suppkey
@@ -67,10 +67,10 @@ def do_2_duckdb():
                     select
                             min(ps_supplycost)
                     from
-                            partsupp,
-                            supplier,
-                            nation,
-                            region
+                            partsupp_arrow,
+                            supplier_arrow,
+                            nation_arrow,
+                            region_arrow
                     where
                             p_partkey = ps_partkey
                             and s_suppkey = ps_suppkey
@@ -95,9 +95,9 @@ def do_3_duckdb():
             o_orderdate,
             o_shippriority
     from
-            customer,
-            orders,
-            lineitem
+            customer_arrow,
+            orders_arrow,
+            lineitem_arrow
     where
             c_mktsegment = 'BUILDING'
             and c_custkey = o_custkey
@@ -120,7 +120,7 @@ def do_4_duckdb():
             o_orderpriority,
             count(*) as order_count
     from
-            orders
+            orders_arrow
     where
             o_orderdate >= date ':1'
             and o_orderdate < date ':1' + interval '3' month
@@ -128,7 +128,7 @@ def do_4_duckdb():
                     select
                             *
                     from
-                            lineitem
+                            lineitem_arrow
                     where
                             l_orderkey = o_orderkey
                             and l_commitdate < l_receiptdate
@@ -146,12 +146,12 @@ def do_5_duckdb():
             n_name,
             sum(l_extendedprice * (1 - l_discount)) as revenue
     from
-            customer,
-            orders,
-            lineitem,
-            supplier,
-            nation,
-            region
+            customer_arrow,
+            orders_arrow,
+            lineitem_arrow,
+            supplier_arrow,
+            nation_arrow,
+            region_arrow
     where
             c_custkey = o_custkey
             and l_orderkey = o_orderkey
@@ -174,7 +174,7 @@ def do_6_duckdb():
     select
             sum(l_extendedprice * l_discount) as revenue
     from
-            lineitem
+            lineitem_arrow
     where
             l_shipdate >= date '1994-01-01'
             and l_shipdate < date '1994-01-01' + interval '1' year
@@ -198,12 +198,12 @@ def do_7_duckdb():
                             extract(year from l_shipdate) as l_year,
                             l_extendedprice * (1 - l_discount) as volume
                     from
-                            supplier,
-                            lineitem,
-                            orders,
-                            customer,
-                            nation n1,
-                            nation n2
+                            supplier_arrow,
+                            lineitem_arrow,
+                            orders_arrow,
+                            customer_arrow,
+                            nation_arrow n1,
+                            nation_arrow n2
                     where
                             s_suppkey = l_suppkey
                             and o_orderkey = l_orderkey
@@ -242,14 +242,14 @@ def do_8_duckdb():
                                 l_extendedprice * (1 - l_discount) as volume,
                                 n2.n_name as nation
                         from
-                                part,
-                                supplier,
-                                lineitem,
-                                orders,
-                                customer,
-                                nation n1,
-                                nation n2,
-                                region
+                                part_arrow,
+                                supplier_arrow,
+                                lineitem_arrow,
+                                orders_arrow,
+                                customer_arrow,
+                                nation_arrow n1,
+                                nation_arrow n2,
+                                region_arrow
                         where
                                 p_partkey = l_partkey
                                 and s_suppkey = l_suppkey
@@ -280,12 +280,12 @@ def do_9_duckdb():
                             extract(year from o_orderdate) as o_year,
                             l_extendedprice * (1 - l_discount) - ps_supplycost * l_quantity as amount
                     from
-                            part,
-                            supplier,
-                            lineitem,
-                            partsupp,
-                            orders,
-                            nation
+                            part_arrow,
+                            supplier_arrow,
+                            lineitem_arrow,
+                            partsupp_arrow,
+                            orders_arrow,
+                            nation_arrow
                     where
                             s_suppkey = l_suppkey
                             and ps_suppkey = l_suppkey
@@ -316,10 +316,10 @@ def do_10_duckdb():
             c_phone,
             c_comment
     from
-            customer,
-            orders,
-            lineitem,
-            nation
+            customer_arrow,
+            orders_arrow,
+            lineitem_arrow,
+            nation_arrow
     where
             c_custkey = o_custkey
             and l_orderkey = o_orderkey
@@ -348,9 +348,9 @@ def do_11_duckdb():
                 ps_partkey,
                 sum(ps_supplycost * ps_availqty) as value
         from
-                partsupp,
-                supplier,
-                nation
+                partsupp_arrow,
+                supplier_arrow,
+                nation_arrow
         where
                 ps_suppkey = s_suppkey
                 and s_nationkey = n_nationkey
@@ -391,8 +391,8 @@ def do_12_duckdb():
                 else 0
         end) as low_line_count
     from
-            orders,
-            lineitem
+            orders_arrow,
+            lineitem_arrow
     where
             o_orderkey = l_orderkey
             and l_shipmode in ('MAIL', 'SHIP')
@@ -409,32 +409,26 @@ def do_12_duckdb():
 def do_13_duckdb():
 
     return con.execute("""
-        WITH "orders_2" AS (
-  SELECT
-    "orders"."o_orderkey" AS "o_orderkey",
-    "orders"."o_custkey" AS "o_custkey",
-    "orders"."o_comment" AS "o_comment"
-  FROM "orders" AS "orders"
-  WHERE
-    NOT "orders"."o_comment" LIKE '%special%requests%'
-), "c_orders" AS (
-  SELECT
-    COUNT("orders"."o_orderkey") AS "c_count"
-  FROM "customer" AS "customer"
-  LEFT JOIN "orders_2" AS "orders"
-    ON "customer"."c_custkey" = "orders"."o_custkey"
-  GROUP BY
-    "customer"."c_custkey"
-)
-SELECT
-  "c_orders"."c_count" AS "c_count",
-  COUNT(*) AS "custdist"
-FROM "c_orders" AS "c_orders"
-GROUP BY
-  "c_orders"."c_count"
-ORDER BY
-  "custdist" DESC,
-  "c_count" DESC;
+    select
+        c_count,
+        count(*) as custdist
+    from
+        (
+                select
+                        c_custkey,
+                        count(o_orderkey)
+                from
+                        customer_arrow left outer join orders_arrow on
+                                c_custkey = o_custkey
+                                and o_comment not like '%special%requests%'
+                group by
+                        c_custkey
+        ) as c_orders (c_custkey, c_count)
+    group by
+        c_count
+    order by
+        custdist desc,
+        c_count desc
         """).arrow()
 
 def do_14_duckdb():
@@ -447,8 +441,8 @@ def do_14_duckdb():
                     else 0
             end) / sum(l_extendedprice * (1 - l_discount)) as promo_revenue
     from
-            lineitem,
-            part
+            lineitem_arrow,
+            part_arrow
     where
             l_partkey = p_partkey
             and l_shipdate >= date '1995-09-01'
@@ -463,7 +457,7 @@ def do_15_duckdb():
                 l_suppkey,
                 sum(l_extendedprice * (1 - l_discount))
         from
-                lineitem
+                lineitem_arrow
         where
                 l_shipdate >= date '1996-01-01'
                 and l_shipdate < date '1996-01-01' + interval '3' month
@@ -476,7 +470,7 @@ def do_15_duckdb():
                 s_phone,
                 total_revenue
         from
-                supplier,
+                supplier_arrow,
                 revenue
         where
                 s_suppkey = supplier_no
@@ -497,11 +491,10 @@ def do_16_duckdb():
         p_brand,
         p_type,
         p_size,
-        ps_suppkey
-        -- count( ps_suppkey) as supplier_cnt
+        count(distinct ps_suppkey) as supplier_cnt
     from
-            partsupp,
-            part
+            partsupp_arrow,
+            part_arrow
     where
             p_partkey = ps_partkey
             and p_brand <> 'Brand#45'
@@ -511,10 +504,19 @@ def do_16_duckdb():
                     select
                             s_suppkey
                     from
-                            supplier
+                            supplier_arrow
                     where
                             s_comment like '%Customer%Complaints%'
             )
+    group by
+            p_brand,
+            p_type,
+            p_size
+    order by
+            supplier_cnt desc,
+            p_brand,
+            p_type,
+            p_size
     """).arrow()
 
 def do_17_duckdb():
@@ -523,8 +525,8 @@ def do_17_duckdb():
     select
             sum(l_extendedprice) / 7.0 as avg_yearly
     from
-            lineitem,
-            part
+            lineitem_arrow,
+            part_arrow
     where
             p_partkey = l_partkey
             and p_brand = 'Brand#23'
@@ -533,7 +535,7 @@ def do_17_duckdb():
                     select
                             0.2 * avg(l_quantity)
                     from
-                            lineitem
+                            lineitem_arrow
                     where
                             l_partkey = p_partkey
             )
@@ -550,15 +552,15 @@ def do_18_duckdb():
             o_totalprice,
             sum(l_quantity)
     from
-            customer,
-            orders,
-            lineitem
+            customer_arrow,
+            orders_arrow,
+            lineitem_arrow
     where
             o_orderkey in (
                     select
                             l_orderkey
                     from
-                            lineitem
+                            lineitem_arrow
                     group by
                             l_orderkey having
                                     sum(l_quantity) > 300
@@ -583,8 +585,8 @@ def do_19_duckdb():
     select
             sum(l_extendedprice * (1 - l_discount)) as revenue
     from
-            lineitem,
-            part
+            lineitem_arrow,
+            part_arrow
     where
             (
                     p_partkey = l_partkey
@@ -624,20 +626,20 @@ def do_20_duckdb():
     s_name,
     s_address
     from
-            supplier,
-            nation
+            supplier_arrow,
+            nation_arrow
     where
             s_suppkey in (
                     select
                             ps_suppkey
                     from
-                            partsupp
+                            partsupp_arrow
                     where
                             ps_partkey in (
                                     select
                                             p_partkey
                                     from
-                                            part
+                                            part_arrow
                                     where
                                             p_name like 'forest%'
                             )
@@ -645,7 +647,7 @@ def do_20_duckdb():
                                     select
                                             0.5 * sum(l_quantity)
                                     from
-                                            lineitem
+                                            lineitem_arrow
                                     where
                                             l_partkey = ps_partkey
                                             and l_suppkey = ps_suppkey
@@ -665,10 +667,10 @@ def do_21_duckdb():
         s_name,
         count(*) as numwait
         from
-                supplier,
-                lineitem l1,
-                orders,
-                nation
+                supplier_arrow,
+                lineitem_arrow l1,
+                orders_arrow,
+                nation_arrow
         where
                 s_suppkey = l1.l_suppkey
                 and o_orderkey = l1.l_orderkey
@@ -678,7 +680,7 @@ def do_21_duckdb():
                         select
                                 *
                         from
-                                lineitem l2
+                                lineitem_arrow l2
                         where
                                 l2.l_orderkey = l1.l_orderkey
                                 and l2.l_suppkey <> l1.l_suppkey
@@ -687,7 +689,7 @@ def do_21_duckdb():
                         select
                                 *
                         from
-                                lineitem l3
+                                lineitem_arrow l3
                         where
                                 l3.l_orderkey = l1.l_orderkey
                                 and l3.l_suppkey <> l1.l_suppkey
@@ -717,14 +719,14 @@ def do_22_duckdb():
                             substring(c_phone from 1 for 2) as cntrycode,
                             c_acctbal
                     from
-                            customer
+                            customer_arrow
                     where
                             substring(c_phone from 1 for 2) in ('13', '31', '23', '29', '30', '18', '17')
                             and c_acctbal > (
                                     select
                                             avg(c_acctbal)
                                     from
-                                            customer
+                                            customer_arrow
                                     where
                                             c_acctbal > 0.00
                                             and substring(c_phone from 1 for 2) in ('13', '31', '23', '29', '30', '18', '17')
@@ -733,7 +735,7 @@ def do_22_duckdb():
                                     select
                                             *
                                     from
-                                            orders
+                                            orders_arrow
                                     where
                                             o_custkey = c_custkey
                             )
@@ -743,8 +745,3 @@ def do_22_duckdb():
     order by
             cntrycode
     """).arrow()
-
-
-#print(polars.from_arrow(do_13_duckdb()))
-# print(polars.from_arrow(do_16_duckdb()))
-polars.from_arrow(do_16_duckdb())

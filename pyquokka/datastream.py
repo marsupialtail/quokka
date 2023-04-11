@@ -834,8 +834,8 @@ class DataStream:
                 import time
                 if self.state is None:
                     import pyquokka.ldb as ldb
-                    # self.state = ldb.NTDigest(len(self.columns), 100,500) 
-                    self.state = [ldb.TDigest(100,500) for i in range(len(self.columns))]
+                    self.state = ldb.NTDigest(len(self.columns), 100,500) 
+                    # self.state = [ldb.TDigest(100,500) for i in range(len(self.columns))]
          
                 arrow_batch = pa.concat_tables(batches)
                 if self.sample_factor < 1:
@@ -843,32 +843,38 @@ class DataStream:
                     arrow_batch = arrow_batch.take(pa.array(indices))
                 
                 # start = time.time()
-                # array_ptrs = []
-                # schema_ptrs = []
-                # list_of_arrs = []
+                array_ptrs = []
+                schema_ptrs = []
+                c_schemas = []
+                c_arrays = []
+                list_of_arrs = []
                 for i, col in enumerate(self.columns):
                     c_schema = ffi.new("struct ArrowSchema*")
                     c_array = ffi.new("struct ArrowArray*")
+                    c_schemas.append(c_schema)
+                    c_arrays.append(c_array)
                     schema_ptr = int(ffi.cast("uintptr_t", c_schema))
                     array_ptr = int(ffi.cast("uintptr_t", c_array))
-                    # list_of_arrs.append(arrow_batch[col].combine_chunks())
-                    # list_of_arrs[-1]._export_to_c(array_ptr, schema_ptr)
-                    arr = arrow_batch[col].combine_chunks()
-                    arr._export_to_c(array_ptr, schema_ptr)
-                    self.state[i].add_arrow(array_ptr, schema_ptr)
-                    # array_ptrs.append(array_ptr)
-                    # schema_ptrs.append(schema_ptr)
+                    list_of_arrs.append(arrow_batch[col].combine_chunks())
+                    list_of_arrs[-1]._export_to_c(array_ptr, schema_ptr)
+                    # arr = arrow_batch[col].combine_chunks()
+                    # arr._export_to_c(array_ptr, schema_ptr)
+                    # self.state[i].add_arrow(array_ptr, schema_ptr)
+                    array_ptrs.append(array_ptr)
+                    schema_ptrs.append(schema_ptr)
 
                 # start = time.time()
                 # print(array_ptrs, schema_ptrs)
-                # self.state.batch_add_arrow(array_ptrs, schema_ptrs)
+                self.state.batch_add_arrow(array_ptrs, schema_ptrs)
+                del c_schemas
+                del c_arrays
                 # print("TIME", time.time() - start)
                 
             def done(self,executor_id):
-                # values = [self.state.quantile(i, self.quantile) for i in range(len(self.columns))]
+                values = [self.state.quantile(i, self.quantile) for i in range(len(self.columns))]
                 dicts = []
                 for quantile in self.quantiles:
-                    values = [self.state[i].quantile(quantile) for i in range(len(self.columns))]
+                    # values = [self.state[i].quantile(quantile) for i in range(len(self.columns))]
                     dicts.append({col: value for col, value in zip(self.columns, values)})
                 return polars.from_dicts(dicts)
 

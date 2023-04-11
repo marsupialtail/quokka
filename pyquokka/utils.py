@@ -257,6 +257,9 @@ class QuokkaClusterManager:
         print("Trying to set up spill dir.")   
         result = self.launch_all("sudo nvme list", public_ips, "failed to list nvme devices")
         devices = [sentence.split(" ")[0] for sentence in result if "Amazon EC2 NVMe Instance Storage" in sentence]
+        if len(devices) == 0:
+            print("No nvme devices found. Skipping.")
+            return
         assert all([device == devices[0] for device in devices]), "All instances must have same nvme device location. Raise Github issue if you see this."
         device = devices[0]
         print("Found nvme device: ", device)
@@ -441,7 +444,7 @@ class QuokkaClusterManager:
             print("Cluster in an inconsistent state. Either only some machines are running or some machines have been terminated.")
             return False
     
-    def get_cluster_from_ray(self, path_to_yaml, aws_access_key, aws_access_id, requirements = [], spill_dir = "/data"):
+    def get_cluster_from_ray(self, path_to_yaml, aws_access_key, aws_access_id, requirements = [], spill_dir = "/data", cluster_name = None):
 
         """
         Connect to a Ray cluster. This will set up the Quokka runtime on the cluster. The Ray cluster must be in a running state and created by 
@@ -485,7 +488,8 @@ class QuokkaClusterManager:
         
     
         tag_key = "ray-cluster-name"
-        cluster_name = config['cluster_name']
+        if cluster_name is None:
+            cluster_name = config['cluster_name']
         instance_type = config["available_node_types"]['ray.worker.default']["node_config"]["InstanceType"]
         cpu_count = ec2.describe_instance_types(InstanceTypes=[instance_type])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
 

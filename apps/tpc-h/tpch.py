@@ -1,12 +1,12 @@
 from pyquokka.df import * 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
-mode = "DISK"
-format = "csv"
+mode = "S3"
+format = "parquet"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
 s3_path_csv = "s3://tpc-h-csv/"
-s3_path_parquet = "s3://tpc-h-parquet-100-native/"
+s3_path_parquet = "s3://tpc-h-parquet-100-native-mine/"
 
 import pyarrow as pa
 import pyarrow.compute as compute
@@ -16,13 +16,13 @@ polars.Config().set_tbl_cols(10)
 if mode == "DISK":
     cluster = LocalCluster()
 elif mode == "S3":
-    manager = QuokkaClusterManager(key_name = "tony_key", key_location = "/home/ziheng/Downloads/tony_key.pem")
+    manager = QuokkaClusterManager(key_name = "oregon-neurodb", key_location = "/home/ziheng/Downloads/oregon-neurodb.pem")
     cluster = manager.get_cluster_from_json("config.json")
 else:
     raise Exception
 
 qc = QuokkaContext(cluster,2,2)
-qc.set_config("fault_tolerance", False)
+qc.set_config("fault_tolerance", True)
 
 if mode == "DISK":
     if format == "csv":
@@ -549,28 +549,35 @@ def covariance():
 
     return lineitem.gramian(["l_quantity", "l_extendedprice", "l_discount", "l_tax"]).collect()
 
+def approx_quantile():
+
+    return lineitem.approximate_quantile(["l_tax"], 0.9).collect()
+
 # print_and_time(covariance)
+# print_and_time(approx_quantile)
+
+from tpch_ref import *
 
 # print(do_1())
 # print(do_1_1())
 # print(do_1_2())
-# print_and_time(do_1_sql)
-# print_and_time(do_2)
-# print_and_time(do_3_sql)
-# print_and_time(do_4_sql)
-# print_and_time(do_5_sql)
-# print_and_time(do_6_sql)
-# print_and_time(do_7_sql)
-# print_and_time(do_8)
-# print_and_time(do_9)
-# print_and_time(do_10)
+print_and_time(do_1_sql)
+print_and_time(do_2)
+print_and_time(do_3_sql)
+print_and_time(do_4_sql)
+print_and_time(do_5_sql)
+print_and_time(do_6_sql)
+print_and_time(do_7_sql)
+print_and_time(do_8)
+print_and_time(do_9)
+print_and_time(do_10)
 # print_and_time(do_11)
 # print_and_time(do_12)
 # print_and_time(do_12_sql)
 # print_and_time(do_13) 
 # print_and_time(do_14)
 # print_and_time(do_15)
-print_and_time(do_16) 
+# print_and_time(do_16) 
 # print_and_time(do_17)
 # print_and_time(do_18)
 # print_and_time(do_19)
