@@ -9,6 +9,8 @@ import json
 import signal
 import polars
 from pssh.clients import ParallelSSHClient
+import concurrent.futures
+import yaml
 
 def preexec_function():
     # Ignore the SIGINT signal by setting the handler to the standard
@@ -174,17 +176,20 @@ class QuokkaClusterManager:
         assert type(cluster) == EC2Cluster
         self.launch_all("pip3 install " + req, list(cluster.public_ips.values()), "Failed to install " + req)
 
+    def launch_ssh_command(self, command, ip, ignore_error=False):
+        exit_code = os.system("ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + ip + " " + command)
+        if not ignore_error and exit_code != 0:
+            raise Exception(f"Could not run command: {command}")
+        return exit_code 
+        
     def launch_all(self, command, ips, error = "Error", ignore_error = False):
 
-        client = ParallelSSHClient(ips, user="ubuntu", pkey=self.key_location, timeout=5)
-        output = client.run_command(command)
-        result = []
-        for host_output in output:
-            for line in host_output.stdout:
-                result.append(line)
-            exit_code = host_output.exit_code
-            assert exit_code == 0 or ignore_error, exit_code
-        return result
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(ips)) as executor:
+            future_list = [executor.submit(self.launch_ssh_command, command, instance_ip) for instance_ip in ips]
+
+        results = [future.result() for future in future_list]
+
+        return results
 
     def copy_all(self, file_path, ips, error = "Error"):
         commands = ["scp -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " " + file_path + " ubuntu@" + str(ip) + ":. " for ip in ips]
@@ -238,6 +243,7 @@ class QuokkaClusterManager:
         self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
         self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
 
+        print("----Completed aws access key setting----")
         # cluster must have same ray version as client.
         requirements = ["ray==" + ray.__version__, "polars==" + polars.__version__,  "pyquokka"] + requirements
         for req in requirements:
@@ -246,6 +252,8 @@ class QuokkaClusterManager:
                 self.launch_all("pip3 install " + req, public_ips, "Failed to install " + req)
             except:
                 pass
+        
+        print("----Finished setting up envs----")
 
     def copy_and_launch_flight(self, public_ips):
         
@@ -256,13 +264,12 @@ class QuokkaClusterManager:
     def set_up_spill_dir(self, public_ips, spill_dir):
         print("Trying to set up spill dir.")   
         result = self.launch_all("sudo nvme list", public_ips, "failed to list nvme devices")
-        devices = [sentence.split(" ")[0] for sentence in result if "Amazon EC2 NVMe Instance Storage" in sentence]
-        if len(devices) == 0:
-            print("No nvme devices found. Skipping.")
-            return
-        assert all([device == devices[0] for device in devices]), "All instances must have same nvme device location. Raise Github issue if you see this."
-        device = devices[0]
-        print("Found nvme device: ", device)
+
+        # Enote: This does not work with new implementation of launch_all
+        # devices = [sentence.split(" ")[0] for sentence in result if "Amazon EC2 NVMe Instance Storage" in sentence]
+        # assert all([device == devices[0] for device in devices]), "All instances must have same nvme device location. Raise Github issue if you see this."
+        # device = devices[0]
+        # print("Found nvme device: ", device)
         
         try:
             self.launch_all("sudo mkfs.ext4 -F -E nodiscard {};".format(device), public_ips, "failed to format nvme ssd")
@@ -444,7 +451,7 @@ class QuokkaClusterManager:
             print("Cluster in an inconsistent state. Either only some machines are running or some machines have been terminated.")
             return False
     
-    def get_cluster_from_ray(self, path_to_yaml, aws_access_key, aws_access_id, requirements = [], spill_dir = "/data", cluster_name = None):
+    def get_cluster_from_ray(self, path_to_yaml, aws_access_key, aws_access_id, requirements = [], spill_dir = "/data"):
 
         """
         Connect to a Ray cluster. This will set up the Quokka runtime on the cluster. The Ray cluster must be in a running state and created by 
@@ -482,14 +489,14 @@ class QuokkaClusterManager:
         """
 
         import yaml
-        ec2 = boto3.client("ec2")
         with open(path_to_yaml, 'r') as f:
             config = yaml.safe_load(f)
         
+        region = config["provider"]["region"]
+        ec2 = boto3.client("ec2", region_name=region)
     
         tag_key = "ray-cluster-name"
-        if cluster_name is None:
-            cluster_name = config['cluster_name']
+        cluster_name = config['cluster_name']
         instance_type = config["available_node_types"]['ray.worker.default']["node_config"]["InstanceType"]
         cpu_count = ec2.describe_instance_types(InstanceTypes=[instance_type])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
 
@@ -527,5 +534,191 @@ class QuokkaClusterManager:
         z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + public_ips[0] + " 'bash -s' < " + pyquokka.__file__.replace("__init__.py","leader_startup.sh"))
         print(z)
 
+        print(f"-----Before launching redis-----")
         self.copy_and_launch_flight(public_ips)
+        print(f"-----Returning EC2 cluster------")
         return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count, spill_dir)
+
+    
+    def get_multiple_clusters_from_yaml(self, paths_to_yaml, aws_access_key, aws_access_id, requirements = [], spill_dir = "/data"):
+        
+        """
+        Connect to a multiregional Ray cluster. This will set up the Quokka runtime on the cluster. The Ray clusters must be in a running state and created by 
+        the `ray up` command. The `ray up` command creates a yaml file that is used to connect to the cluster. This function will read the provided files
+        and connect all running instances into one cluster. It is important that all instances launched are in the same VPC. To see how to do this,
+        see the tutorial in the Quokka repository.
+
+        Make sure all the instances are running before calling this function! Best wait for a few minutes after calling `ray up` before calling this function.
+
+        Args:
+            paths_to_yaml (list): Paths to the yaml file used by `ray up`.
+            aws_access_key (str): AWS access key.
+            aws_access_id (str): AWS access id.
+            requirements (list): List of python packages to install on the cluster.
+            spill_dir (str): Directory to use for spill files. This is the directory where the Quokka runtime will write spill files.
+                Quokka will detect if your instance have NVME SSD and mount it to this directory.
+        
+        Return:
+            (EC2Cluster: Cluster object, Region_Info: Dictionary)
+
+        Examples:
+
+            You have `us_west_2.yaml`. You call `ray up us-west-2.yaml`. You can then connect to the cluster **after all the instances are running** by doing:
+
+            >>> from pyquokka.utils import *
+            >>> manager = QuokkaClusterManager()
+            >>> cluster_list = ["my_cluster_us.yaml", "my_cluster_eu.yaml"]
+            >>> results = manager.get_cluster_from_ray(cluster_list, aws_access_key, aws_access_id, requirements = ["numpy", "pandas"], spill_dir = "/data")
+            >>> from pyquokka.df import QuokkaContext
+            >>> qc = QuokkaContext(results[0])
+
+            It is recommended to do this only once and save the cluster object to a json file using `EC2Cluster.to_json` and then use `QuokkaClusterManager.get_cluster_from_json` to connect to the cluster.
+
+            >>> cluster.to_json("my_cluster.json")
+            >>> cluster = manager.get_cluster_from_json("my_cluster.json")
+        
+        """
+
+
+        def get_instance_info_from_cluster(path_to_yaml):
+
+            """
+            Gets instances information of the specified cluster.
+
+            Args:
+                path_to_yaml (str): Path to the yaml file used by `ray up`.
+            
+            Return:
+                (instance_ids, public_ips, private_ips, vcpu_per_node, region)
+            """
+            
+            
+            with open(path_to_yaml, 'r') as f:
+                config = yaml.safe_load(f)
+            
+            region = config["provider"]["region"]
+            ec2 = boto3.client("ec2", region_name=region)
+        
+            tag_key = "ray-cluster-name"
+            cluster_name = config['cluster_name']
+            instance_type = config["available_node_types"]['ray.worker.default']["node_config"]["InstanceType"]
+            cpu_count = ec2.describe_instance_types(InstanceTypes=[instance_type])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
+
+            filters = [{'Name': 'instance-state-name', 'Values': ['running']},
+                    {'Name': f'tag:{tag_key}', 'Values': [cluster_name]}]
+            response = ec2.describe_instances(Filters=filters)
+            instance_ids = []
+            public_ips = []
+            private_ips = []
+
+            instance_names = [[k for k in instance['Tags'] if k['Key'] == 'ray-user-node-type'][0]['Value'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+            instance_ids = [instance['InstanceId'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+            public_ips = [instance['PublicIpAddress'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+            private_ips = [instance['PrivateIpAddress'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+
+            try:
+                head_index = instance_names.index("ray.head.default")
+            except:
+                print("No head node found. Please make sure that the cluster is running.")
+                return False
+        
+            # rotate instance_ids, public_ips, private_ips so that head is first
+            instance_ids = instance_ids[head_index:] + instance_ids[:head_index]
+            public_ips = public_ips[head_index:] + public_ips[:head_index]
+            private_ips = private_ips[head_index:] + private_ips[:head_index]
+
+            assert len(instance_ids) == len(public_ips) == len(private_ips)
+            print("Detected {} instances in running ray cluster {} in region ".format(len(instance_ids), cluster_name, region))
+
+            print(public_ips)
+
+            return (instance_ids, public_ips, private_ips, cpu_count, region)
+        
+
+        def get_cluster_from_ips(instance_ids, public_ips, private_ips, cpu_count, aws_access_id, aws_access_key, requirements, spill_dir):
+            
+            self.set_up_envs(public_ips, requirements, aws_access_key, aws_access_id)
+            self.launch_all("sudo mkdir {}".format(spill_dir), public_ips, "failed to make temp spill directory", ignore_error = True)
+            self.set_up_spill_dir(public_ips, spill_dir)
+
+            print(f"----Launching ray cluster----")
+
+            leader_public_ip = public_ips[0]
+            leader_private_ip = private_ips[0]
+
+            z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + str(leader_public_ip) + " 'bash -s' < " + pyquokka.__file__.replace("__init__.py","leader_startup.sh"))
+            print(z)
+
+            z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + str(leader_public_ip) + " /home/ubuntu/.local/bin/ray start --disable-usage-stats --head --port=6380")
+            print(z)
+
+            command ="/home/ubuntu/.local/bin/ray start --address='" + str(leader_private_ip) + ":6380' --redis-password='5241590000000000'"
+            # double launches head note (Note: potential issue)
+            self.launch_all(command, public_ips, "ray workers failed to connect to ray head node")
+
+            print(f"-----Before launching flight-----")
+            self.copy_and_launch_flight(public_ips)
+            print(f"-----Returning EC2 cluster------")
+            return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count, spill_dir)
+
+
+        print("Launching Multi-Region Quokka cluster.")
+
+        all_instance_ids = []
+        all_public_ips = []
+        all_private_ips = []
+        cpu_count = None
+
+        # Dictionary storing infos about all regions in the cluster
+        region_info = {}
+
+        # Get cluster information
+        for path in paths_to_yaml:
+            subcluster_info = get_instance_info_from_cluster(path)
+            
+            # Extend region info dict
+            if subcluster_info[-1] not in region_info:
+                region_info[subcluster_info[-1]] = {}
+            
+            if "instance_ids" not in region_info[subcluster_info[-1]]:
+                region_info[subcluster_info[-1]]["instance_ids"] = []
+            region_info[subcluster_info[-1]]["instance_ids"].extend(subcluster_info[0])
+
+            if "public_ips" not in region_info[subcluster_info[-1]]:
+                region_info[subcluster_info[-1]]["public_ips"] = []
+            region_info[subcluster_info[-1]]["public_ips"].extend(subcluster_info[1])
+
+            if "private_ips" not in region_info[subcluster_info[-1]]:
+                region_info[subcluster_info[-1]]["private_ips"] = []
+            region_info[subcluster_info[-1]]["private_ips"].extend(subcluster_info[2])
+
+            if "vcpu_per_node" not in region_info[subcluster_info[-1]]:
+                region_info[subcluster_info[-1]]["vcpu_per_node"] = []
+            region_info[subcluster_info[-1]]["vcpu_per_node"] = subcluster_info[3]
+
+
+            all_instance_ids.extend(subcluster_info[0])
+            all_public_ips.extend(subcluster_info[1])
+            all_private_ips.extend(subcluster_info[2])
+
+            # Note: Take lowest cpu count
+            if cpu_count == None or subcluster_info[3] < cpu_count:
+                cpu_count = subcluster_info[3]
+
+        print("----Found the following region information----")
+        print(region_info)
+        print("----------------------------------------------")
+
+        print("----Found the following public IPs----")
+        print(all_public_ips)
+        print("--------------------------------------")
+
+        # Stop ray on all cluster instances
+        stop_command = "/home/ubuntu/.local/bin/ray stop --force"
+        print("----Stopping ray on all instances----")
+        self.launch_all(stop_command, all_public_ips)
+
+        # Created cluster across all instances
+        cluster = get_cluster_from_ips(all_instance_ids, all_public_ips, all_private_ips, cpu_count, aws_access_id, aws_access_key, requirements, spill_dir)
+
+        return (cluster, region_info)
