@@ -296,9 +296,9 @@ class QuokkaContext:
     
         def return_materialized_stream(where, my_schema = None):
             if has_header:
-                df = polars.read_csv(where, has_header = True,sep = sep)
+                df = polars.read_csv(where, has_header = True,separator = sep)
             else:
-                df = polars.read_csv(where, new_columns = my_schema, has_header = False,sep = sep)
+                df = polars.read_csv(where, new_columns = my_schema, has_header = False,separator = sep)
             self.nodes[self.latest_node_id] = InputPolarsNode(df)
             self.latest_node_id += 1
             return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
@@ -669,15 +669,14 @@ class QuokkaContext:
 
     def read_sorted_parquet(self, table_location: str, sorted_by: str, schema = None):
         assert type(sorted_by) == str
-        stream = self.read_parquet(table_location, schema)
-        stream._set_sorted({sorted_by : "stride"})
-        return stream
+        stream = self.read_parquet(table_location)
+        assert sorted_by in stream.schema, f"sorted_by column {sorted_by} not in schema {stream.schema}"
+        return OrderedStream(stream, {sorted_by : "stride"})
     
     def read_sorted_csv(self, table_location: str,sorted_by: str, schema = None, has_header = False, sep=","):
         assert type(sorted_by) == str
         stream = self.read_csv(table_location, schema, has_header, sep)
-        stream._set_sorted({sorted_by : "stride"})
-        return stream
+        return OrderedStream(stream, {sorted_by : "stride"})
 
     def read_iceberg(self, table, snapshot = None):
 

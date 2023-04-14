@@ -306,7 +306,7 @@ class InputS3ParquetNode(SourceNode):
             assert len(self.output_sorted_reqs) == 1
             key = list(self.output_sorted_reqs.keys())[0]
             val = self.output_sorted_reqs[key]
-            parquet_reader = InputSortedEC2ParquetDataset(self.files, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate, mode=val)
+            parquet_reader = InputSortedEC2ParquetDataset(self.files, key, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate, mode=val)
         else:
             parquet_reader = InputEC2ParquetDataset(self.files, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate)
         node = task_graph.new_input_reader_node(parquet_reader, self.stage, self.placement_strategy)

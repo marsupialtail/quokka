@@ -256,7 +256,6 @@ class InputSortedEC2ParquetDataset:
 
         self.files = files
         self.partitioner = partitioner
-        assert self.prefix is not None
 
         self.num_channels = None
         self.columns = columns
@@ -279,8 +278,8 @@ class InputSortedEC2ParquetDataset:
         fragments = []
         self.num_channels = num_channels
         s3fs = S3FileSystem()
-        dataset = pq.ParquetDataset(self.files, filesystem=s3fs )
-        for fragment in dataset.fragments:
+        dataset = ds.dataset(self.files, format = "parquet", filesystem=s3fs )
+        for fragment in dataset.get_fragments():
             field_index = fragment.physical_schema.get_field_index(self.partitioner)
             metadata = fragment.metadata
             min_timestamp = None
@@ -349,7 +348,7 @@ class InputSortedEC2ParquetDataset:
         def download(file):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
-                return pq.read_table(file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3)
+                return pq.read_table(file, columns=self.columns, filters=self.filters, use_threads= False, filesystem = self.s3)
 
         assert self.num_channels is not None
 
@@ -400,8 +399,8 @@ class InputEC2CoPartitionedSortedParquetDataset:
         assert len(channel_bounds) == num_channels, "must provide bounds for all the channel"
         self.num_channels = num_channels
         s3fs = S3FileSystem()
-        dataset = pq.ParquetDataset(self.bucket + "/" + self.prefix, filesystem=s3fs )
-        for fragment in dataset.fragments:
+        dataset = ds.dataset(self.bucket + "/" + self.prefix, format = "parquet", filesystem=s3fs )
+        for fragment in dataset.get_fragments():
             field_index = fragment.physical_schema.get_field_index(self.partitioner)
             metadata = fragment.metadata
             min_timestamp = None

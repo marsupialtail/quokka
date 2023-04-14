@@ -634,7 +634,7 @@ class ExecTaskManager(TaskManager):
 
                     # print("starting with input reqs", input_requirements[0])      
                     new_input_reqs = input_requirements[0].join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
-                    new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
+                    new_input_reqs = new_input_reqs.with_columns(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
                     
                     new_input_reqs = new_input_reqs.drop("progress")
                     # print("progress", actor_id, channel_id, progress, new_input_reqs)
@@ -752,7 +752,7 @@ class ExecTaskManager(TaskManager):
                 progress = polars.from_dict({"source_actor_id": [source_actor_id] * len(source_channel_ids) , "source_channel_id": source_channel_ids, "progress": source_channel_progress})
 
                 new_input_reqs = self.tape_input_reqs[actor_id, channel_id][0].join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
-                new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
+                new_input_reqs = new_input_reqs.with_columns(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
                 new_input_reqs = new_input_reqs.select(["source_actor_id", "source_channel_id","min_seq"])
                 self.update_dst()
                 if self.dst is not None:

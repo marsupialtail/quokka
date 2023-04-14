@@ -235,8 +235,8 @@ class QuokkaClusterManager:
         pool = multiprocessing.Pool(multiprocessing.cpu_count())        
         pool.starmap(execute_script, [(self.key_location, public_ip) for public_ip in public_ips])
 
-        self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
-        self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
+        # self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
+        # self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
 
         # cluster must have same ray version as client.
         requirements = ["ray==" + ray.__version__, "polars==" + polars.__version__,  "pyquokka"] + requirements
@@ -528,4 +528,47 @@ class QuokkaClusterManager:
         print(z)
 
         self.copy_and_launch_flight(public_ips)
+        return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count, spill_dir)
+
+
+    def get_cluster_from_dockerized_ray(self, path_to_yaml, spill_dir = "/data", cluster_name = None):
+
+        """
+        """
+
+        import yaml
+        ec2 = boto3.client("ec2")
+        with open(path_to_yaml, 'r') as f:
+            config = yaml.safe_load(f)
+    
+        tag_key = "ray-cluster-name"
+        if cluster_name is None:
+            cluster_name = config['cluster_name']
+        instance_type = config["available_node_types"]['ray.worker.default']["node_config"]["InstanceType"]
+        cpu_count = ec2.describe_instance_types(InstanceTypes=[instance_type])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
+
+        filters = [{'Name': 'instance-state-name', 'Values': ['running']},
+                   {'Name': f'tag:{tag_key}', 'Values': [cluster_name]}]
+        response = ec2.describe_instances(Filters=filters)
+
+        instance_names = [[k for k in instance['Tags'] if k['Key'] == 'ray-user-node-type'][0]['Value'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+        instance_ids = [instance['InstanceId'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+        public_ips = [instance['PublicIpAddress'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+        private_ips = [instance['PrivateIpAddress'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+
+        try:
+            head_index = instance_names.index("ray.head.default")
+        except:
+            print("No head node found. Please make sure that the cluster is running.")
+            return False
+    
+        # rotate instance_ids, public_ips, private_ips so that head is first
+        instance_ids = instance_ids[head_index:] + instance_ids[:head_index]
+        public_ips = public_ips[head_index:] + public_ips[:head_index]
+        private_ips = private_ips[head_index:] + private_ips[:head_index]
+
+        assert len(instance_ids) == len(public_ips) == len(private_ips)
+        print("Detected {} instances in running ray cluster {}".format(len(instance_ids), cluster_name))
+
+        print(public_ips)
         return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count, spill_dir)

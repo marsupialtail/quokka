@@ -32,7 +32,7 @@ setup(
             'psutil',
             'h5py',
             'polars>=0.16.8', # latest version for groupby semantics
-            'sqlglot',
+            'sqlglot>=11.4.2',
             'graphviz',
             'tqdm',
             'aiohttp',
