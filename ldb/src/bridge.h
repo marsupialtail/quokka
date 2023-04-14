@@ -1,4 +1,5 @@
 #include "type.h"
+#pragma once
 
 struct ArrowSchema {
   // Array type description

@@ -2,6 +2,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/stl_bind.h>
 #include "tdigest.h"
+#include "cep.h"
 // #include "bloom_filter.h"
 
 namespace py = pybind11;
@@ -17,6 +18,9 @@ PYBIND11_MODULE(ldb, m) {
         .def("add_arrow", &NTDigest::add_arrow)
         .def("batch_add_arrow", &NTDigest::batch_add_arrow)
         .def("quantile", &NTDigest::Quantile);
+    py::class_<CEP>(m, "CEP")
+        .def(py::init<std::vector<uint32_t>>())
+        .def("do_arrow_batch", &CEP::do_arrow_batch);
     /*py::class_<BlockedBloomFilter>(m, "BlockedBloomFilter")
         .def(py::init<uint64_t>())
         .def("insert", &BlockedBloomFilter::Insert)

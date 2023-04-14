@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include "exceptions.h"
 
+#pragma once
+
 struct Type {
     virtual ~Type() = default;
     virtual int64_t size() const = 0;
