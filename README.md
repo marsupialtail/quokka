@@ -14,6 +14,7 @@
 
 </div>
 
+If you like what you see, please give us a star! 🙏 
 
 ## What?
 
