@@ -235,8 +235,8 @@ class QuokkaClusterManager:
         pool = multiprocessing.Pool(multiprocessing.cpu_count())        
         pool.starmap(execute_script, [(self.key_location, public_ip) for public_ip in public_ips])
 
-        # self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
-        # self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
+        self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
+        self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
 
         # cluster must have same ray version as client.
         requirements = ["ray==" + ray.__version__, "polars==" + polars.__version__,  "pyquokka"] + requirements

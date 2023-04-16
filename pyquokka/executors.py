@@ -611,9 +611,8 @@ class SQLAggExecutor(Executor):
     def execute(self, batches, stream_id, executor_id):
         batch = pa.concat_tables(batches)
         self.state = batch if self.state is None else pa.concat_tables([self.state, batch])
-    
-    def done(self, executor_id):
 
+    def done(self, executor_id):
         if self.state is None:
             return None
         con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
@@ -669,10 +668,12 @@ class SortedAsofExecutor(Executor):
 
         result = joinable_trades.join_asof(joinable_quotes, left_on = self.time_col_trades, right_on = self.time_col_quotes, by_left = self.symbol_col_trades, by_right = self.symbol_col_quotes, suffix = self.suffix)
 
-        mock_result = joinable_quotes.lazy().join_asof(joinable_trades.lazy(), left_on = self.time_col_quotes, right_on = self.time_col_trades, by_left = self.symbol_col_quotes, by_right = self.symbol_col_trades, suffix = self.suffix, strategy = "forward").drop_nulls()
+        mock_result = joinable_quotes.join_asof(joinable_trades, left_on = self.time_col_quotes, right_on = self.time_col_trades, by_left = self.symbol_col_quotes, by_right = self.symbol_col_trades, suffix = self.suffix, strategy = "forward").drop_nulls()
         latest_joined_quotes = mock_result.groupby(self.symbol_col_quotes).agg([polars.max(self.time_col_quotes)])
-        new_quote_state = self.quote_state.lazy().join(latest_joined_quotes, on = self.symbol_col_quotes, how = "left", suffix = "_latest").fill_null(-1)
-        self.quote_state = new_quote_state.filter(polars.col(self.time_col_quotes) >= polars.col(self.time_col_quotes + "_latest")).drop([self.time_col_quotes + "_latest"]).collect()
+        start = time.time()
+        new_quote_state = self.quote_state.join(latest_joined_quotes, on = self.symbol_col_quotes, how = "left", suffix = "_latest").fill_null(-1)
+        print("join time: ", time.time() - start)
+        self.quote_state = new_quote_state.filter(polars.col(self.time_col_quotes) >= polars.col(self.time_col_quotes + "_latest")).drop([self.time_col_quotes + "_latest"])
 
         # print(len(result))
 
