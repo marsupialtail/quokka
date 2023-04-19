@@ -11,6 +11,7 @@ import polars
 from pssh.clients import ParallelSSHClient
 import concurrent.futures
 import yaml
+import subprocess
 
 def preexec_function():
     # Ignore the SIGINT signal by setting the handler to the standard
@@ -177,10 +178,12 @@ class QuokkaClusterManager:
         self.launch_all("pip3 install " + req, list(cluster.public_ips.values()), "Failed to install " + req)
 
     def launch_ssh_command(self, command, ip, ignore_error=False):
-        exit_code = os.system("ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + ip + " " + command)
-        if not ignore_error and exit_code != 0:
-            raise Exception(f"Could not run command: {command}")
-        return exit_code 
+        launch_command = "ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + ip + " " + command
+        try:
+            result = subprocess.run(launch_command, shell=True, capture_output=True, check=True)
+            return result.stdout.decode().strip()
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"launch_ssh_command failed with exit code: {e.returncode}")
         
     def launch_all(self, command, ips, error = "Error", ignore_error = False):
 
