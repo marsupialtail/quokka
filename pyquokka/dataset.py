@@ -733,7 +733,7 @@ class InputDiskCSVDataset:
 
             # bump = csv.read_csv(BytesIO(resp), read_options=csv.ReadOptions(
             #     column_names=self.names), parse_options=csv.ParseOptions(delimiter=self.sep))
-            bump = polars.read_csv(resp, new_columns = self.names, sep = self.sep, has_header = False, try_parse_dates=True)
+            bump = polars.read_csv(resp, new_columns = self.names, separator = self.sep, has_header = False, try_parse_dates=True)
             
             bump = bump.select(self.columns) if self.columns is not None else bump
 

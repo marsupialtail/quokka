@@ -8,6 +8,7 @@ import ray
 import json
 import signal
 import polars
+import multiprocessing
 from pssh.clients import ParallelSSHClient
 
 def preexec_function():
@@ -174,8 +175,15 @@ class QuokkaClusterManager:
         assert type(cluster) == EC2Cluster
         self.launch_all("pip3 install " + req, list(cluster.public_ips.values()), "Failed to install " + req)
 
-    def launch_all(self, command, ips, error = "Error", ignore_error = False):
+    def launch_ssh_command(self, command, ip, ignore_error=False):
+        launch_command = "ssh -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " ubuntu@" + ip + " " + command
+        try:
+            result = subprocess.run(launch_command, shell=True, capture_output=True, check=True)
+            return result.stdout.decode().strip()
+        except subprocess.CalledProcessError as e:
+            raise Exception(f"launch_ssh_command failed with exit code: {e.returncode}")
 
+    def launch_all(self, command, ips, error = "Error", ignore_error = False):
         client = ParallelSSHClient(ips, user="ubuntu", pkey=self.key_location, timeout=5)
         output = client.run_command(command)
         result = []
@@ -231,7 +239,6 @@ class QuokkaClusterManager:
 
     def set_up_envs(self, public_ips, requirements, aws_access_key, aws_access_id):
             
-        import multiprocessing
         pool = multiprocessing.Pool(multiprocessing.cpu_count())        
         pool.starmap(execute_script, [(self.key_location, public_ip) for public_ip in public_ips])
 
@@ -437,8 +444,16 @@ class QuokkaClusterManager:
 
             return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count, spill_dir)
         if sum([i=="running" for i in states]) == len(states):
+            request_instance_ids = [k['InstanceId'] for reservation in a['Reservations'] for k in reservation['Instances']]
             public_ips = [k['PublicIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
             private_ips = [k['PrivateIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
+
+            # figure out where in request_instance_ids is instance_ids[0]
+            leader_index = request_instance_ids.index(instance_ids[0])
+            assert leader_index != -1, "Leader instance not found in request_instance_ids"
+            public_ips = public_ips[leader_index:] + public_ips[:leader_index]
+            private_ips = private_ips[leader_index:] + private_ips[:leader_index]
+
             return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count, spill_dir)
         else:
             print("Cluster in an inconsistent state. Either only some machines are running or some machines have been terminated.")

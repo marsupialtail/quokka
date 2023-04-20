@@ -810,12 +810,43 @@ class DataStream:
             )
 
     def approximate_median(self, columns, sample_factor = 1):
+
+        """
+        Use the t-digest algorithm to compute approximate median.
+
+        Args:
+            columns (list): A list of columns to compute the median for.
+            sample_factor (int): The factor by which to sample the data before computing the median.
+
+        Return:
+            A new DataStream with number of columns = len(columns) and one row.
+        
+        """
+
         return self.approximate_quantile(columns, 0.5, sample_factor)
 
     def approximate_quantile(self, columns, quantiles, sample_factor = 1):
 
         """
-        You must specify a list of columns and a list of quantiles. The result will be a new DataStream with only one row. The algorithm will be t-digest on partitions and then simply average the results.
+        Use the t-digest algorithm to compute approximate quantiles.
+        This operator requires [ldbpy](https://pypi.org/project/ldbpy/#description) to be installed on the cluster. 
+        You can optionally supply a sample factor to sample the data before computing the quantiles.
+        Quokka does not implement exact T-Digest. Instead it computes the approximate quantiles on different portions of the data,
+        then computes the mean of the quantiles. This is not the same as computing the quantiles on the entire dataset, but it is
+        much faster and still gives a good approximation of the quantiles. Usually the number of portions is on the same order
+        of magnitude as nodes in the cluster.
+
+        The result will be a DataStream with as many rows as quantiles you want to compute, and as many columns as the number of
+        columns you want to compute the quantiles for. 
+
+        Args:
+            columns (list): A list of the columns to compute the quantiles for.
+            quantiles (list or float): A list of quantiles to compute, or a single quantile.
+            sample_factor (float): The fraction of the data to sample. Must be between 0 and 1.
+
+        Return:
+            A new DataStream. Number of columns = len(columns). Number of rows = len(quantiles).
+            The rows will be laid out in the order in which you supplied the quantiles argument. Row i will be quantile i for all the columns.
         """
 
         class TDigestExecutor(Executor):
@@ -835,16 +866,14 @@ class DataStream:
                 os.environ["OMP_NUM_THREADS"] = "8"
                 import time
                 if self.state is None:
-                    import pyquokka.ldb as ldb
-                    self.state = ldb.NTDigest(len(self.columns), 100,500) 
-                    # self.state = [ldb.TDigest(100,500) for i in range(len(self.columns))]
+                    import ldbpy
+                    self.state = ldbpy.NTDigest(len(self.columns), 100,500) 
          
                 arrow_batch = pa.concat_tables(batches)
                 if self.sample_factor < 1:
                     indices = np.random.choice(len(arrow_batch), int(len(arrow_batch) * self.sample_factor), replace=False)
                     arrow_batch = arrow_batch.take(pa.array(indices))
                 
-                # start = time.time()
                 array_ptrs = []
                 schema_ptrs = []
                 c_schemas = []
@@ -859,9 +888,6 @@ class DataStream:
                     array_ptr = int(ffi.cast("uintptr_t", c_array))
                     list_of_arrs.append(arrow_batch[col].combine_chunks())
                     list_of_arrs[-1]._export_to_c(array_ptr, schema_ptr)
-                    # arr = arrow_batch[col].combine_chunks()
-                    # arr._export_to_c(array_ptr, schema_ptr)
-                    # self.state[i].add_arrow(array_ptr, schema_ptr)
                     array_ptrs.append(array_ptr)
                     schema_ptrs.append(schema_ptr)
 
@@ -873,10 +899,9 @@ class DataStream:
                 # print("TIME", time.time() - start)
                 
             def done(self,executor_id):
-                values = [self.state.quantile(i, self.quantile) for i in range(len(self.columns))]
                 dicts = []
                 for quantile in self.quantiles:
-                    # values = [self.state[i].quantile(quantile) for i in range(len(self.columns))]
+                    values = [self.state.quantile(i, quantile) for i in range(len(self.columns))]
                     dicts.append({col: value for col, value in zip(self.columns, values)})
                 return polars.from_dicts(dicts)
 
@@ -894,7 +919,11 @@ class DataStream:
                         self.state += polars.from_arrow(batch)
             def done(self,executor_id):
                 return self.state / self.count
-        
+
+        assert type(quantiles) == float or type(quantiles) == list, "quantiles must be a float or a list"
+        if type(quantiles) == float:
+            quantiles = [quantiles]
+
         if self.materialized:
             df = self._get_materialized_df()
             frames = []
@@ -936,7 +965,7 @@ class DataStream:
             x = x.select(columns).to_numpy() - demean
             with threadpool_limits(limits=8, user_api='blas'):
                 product = np.dot(x.transpose(), x)
-            return polars.from_numpy(product, columns = columns)
+            return polars.from_numpy(product, schema = columns)
 
         for col in columns:
             assert col in self.schema
@@ -951,7 +980,7 @@ class DataStream:
             df = self._get_materialized_df()
             stuff = df.select(columns).to_numpy() - demean
             product = np.dot(stuff.transpose(), stuff)  
-            return self.quokka_context.from_polars(polars.from_numpy(product, columns = columns))
+            return self.quokka_context.from_polars(polars.from_numpy(product, schema = columns))
 
         class AggExecutor(Executor):
             def __init__(self) -> None:
@@ -978,9 +1007,51 @@ class DataStream:
 
     def covariance(self, columns):
 
-        count = self.count()
-        mean = self.mean(columns)
-        return self.gramian(columns, demean = np.squeeze(mean.to_numpy())).collect() / count.item()
+        """
+        Computes the covariance matrix of the columns.
+
+        Args:
+            columns (list): List of columns.
+
+        Return:
+            A Polars DataFrame of shape len(columns) * len(columns) which is the covariance matrix. This call is blocking.
+        
+        """
+
+        assert "__len__" not in self.schema
+
+        class AggExecutor(Executor):
+            def __init__(self) -> None:
+                self.state = None
+            def execute(self,batches,stream_id, executor_id):
+                psum = polars.from_arrow(pa.concat_tables(batches)).select(columns + ["__len__"]).to_numpy().sum(axis=0)
+                for batch in batches:
+                    #print(batch)
+                    if self.state is None:
+                        self.state = psum
+                    else:
+                        self.state += psum
+            def done(self,executor_id):
+                return polars.from_numpy(np.expand_dims(self.state,0), schema = columns + ["__len__"])
+            
+        def udf2(x):
+            x =  polars.from_numpy(np.expand_dims(x.select(columns).to_numpy().sum(axis = 0),0) , schema = columns).hstack(polars.from_dict({"__len__": [len(x)]}))
+            return x
+
+        stream = self.transform( udf2, new_schema = columns + ["__len__"], required_columns = set(columns), foldable=True)
+        local_agg_executor = AggExecutor()
+        agg_executor = AggExecutor()
+        stream = stream.stateful_transform( local_agg_executor , columns + ["__len__"], required_columns = set(columns + ["__len__"]),
+                            partitioner=PassThroughPartitioner(), placement_strategy = CustomChannelsStrategy(1))
+        mean = stream.stateful_transform( agg_executor , columns + ["__len__"], required_columns = set(columns + ["__len__"]),
+                            partitioner=BroadcastPartitioner(), placement_strategy = SingleChannelStrategy()).collect()
+        count = mean["__len__"][0]
+        print(count)
+        mean = mean.select(columns)
+        print(mean)
+        mean /= count
+        
+        return self.gramian(columns, demean = np.squeeze(mean.to_numpy())).collect() / count
 
     def with_columns_sql(self, new_columns: str, foldable = True):
 
