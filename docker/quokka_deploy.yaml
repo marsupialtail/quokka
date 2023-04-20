@@ -1,5 +1,5 @@
 # An unique identifier for the head node and workers of this cluster.
-cluster_name: us_west_2_3.8_full_regional_setups
+cluster_name: quokka_cluster
 
 # The maximum number of workers nodes to launch in addition to the head
 # node.
@@ -18,7 +18,8 @@ upscaling_speed: 4.0
 # Empty string means disabled.
 docker:
     #image: "rayproject/ray-ml:latest-gpu" # You can change this to latest-cpu if you don't need GPU support and want a faster startup
-    image: marsupialtail/quokka-on-docker:1.0   # use this one if you don't need ML dependencies, it's faster to pull
+    # image: marsupialtail/quokka-on-docker:1.0   # use this one if you don't need ML dependencies, it's faster to pull
+    image: rayproject/ray:nightly-py38-cpu  # use this one if you don't need ML dependencies, it's faster to pull
     container_name: "ray_container"
     # If true, pulls latest version of image. Otherwise, `docker run` will only pull the image
     # if no cached version is present.
@@ -26,6 +27,10 @@ docker:
     run_options:   # Extra options to pass into "docker run"
         - --ulimit nofile=65536:65536
         - -p 5005:5005
+        - -e AWS_ACCESS_KEY_ID=X
+        - -e AWS_SECRET_ACCESS_KEY=X
+        - -e AWS_REGION=us-west-2
+        - -e GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288
 
     # Example of running a GPU head with CPU workers
     # head_image: "rayproject/ray-ml:latest-gpu"
@@ -36,7 +41,7 @@ docker:
 
 
 # If a node is idle for this many minutes, it will be removed.
-idle_timeout_minutes: 5
+idle_timeout_minutes: 15
 
 # Cloud-provider specific configuration.
 provider:
@@ -48,12 +53,12 @@ provider:
     availability_zone: us-west-2a,us-west-2b
     # security_group: 
     #     GroupName: sg-0f01d7c338d22dfa5
-
+    cache_stopped_nodes: False
 
 # How Ray will authenticate with newly launched nodes.
 auth:
     ssh_user: ubuntu
-    ssh_private_key: /home/ziheng/Downloads/oregon-neurodb.pem
+    ssh_private_key: X
 
 # Tell the autoscaler the allowed node types and the resources they provide.
 # The key is the name of the node type, which is just for debugging purposes.
@@ -64,10 +69,9 @@ available_node_types:
         # If desired, you can override the autodetected CPU and GPU resources advertised to the autoscaler.
         # You can also set custom resources.
         # For example, to mark a node type as having 1 CPU, 1 GPU, and 5 units of a resource called "custom", set
-        # resources: {"CPU": 1, "GPU": 1, "custom": 5}
         resources: {}
         min_workers: 0
-        max_workers: 5
+        max_workers: 2
         # Provider-specific config for this node type, e.g. instance type. By default
         # Ray will auto-configure unspecified fields such as SubnetId and KeyName.
         # For more documentation on available fields, see:
@@ -79,8 +83,12 @@ available_node_types:
             # for default images for other zones.
             ImageId: ami-0530ca8899fac469f
             # Additional options in the boto docs.
-            KeyName: oregon-neurodb
+            KeyName: X
             SecurityGroupIds: [sg-0f01d7c338d22dfa5]
+            BlockDeviceMappings:
+                - DeviceName: /dev/sda1
+                  Ebs:
+                     VolumeSize: 500
     ray.worker.default:
         # The minimum number of worker nodes of this type to launch.
         # This number should be >= 0.
@@ -92,7 +100,6 @@ available_node_types:
         # If desired, you can override the autodetected CPU and GPU resources advertised to the autoscaler.
         # You can also set custom resources.
         # For example, to mark a node type as having 1 CPU, 1 GPU, and 5 units of a resource called "custom", set
-        # resources: {"CPU": 1, "GPU": 1, "custom": 5}
         resources: {}
         # Provider-specific config for this node type, e.g. instance type. By default
         # Ray will auto-configure unspecified fields such as SubnetId and KeyName.
@@ -108,8 +115,12 @@ available_node_types:
             # NOTE: If relying on spot instances, it is best to specify multiple different instance
             # types to avoid interruption when one instance type is experiencing heightened demand.
             # Demand information can be found at https://aws.amazon.com/ec2/spot/instance-advisor/
-            KeyName: oregon-neurodb
+            KeyName: X
             SecurityGroupIds: [sg-0f01d7c338d22dfa5]
+            BlockDeviceMappings:
+                - DeviceName: /dev/sda1
+                  Ebs:
+                     VolumeSize: 500
 
 head_node_type: ray.head.default
 
@@ -120,12 +131,25 @@ initialization_commands:
     - sudo systemctl restart docker -f
 
 
-setup_commands:
-    - sudo apt-get update
-    - sudo apt install -y python3-pip
-    - pip3 install ray==2.0.0
-    - pip3 install boto3
-    - pip3 install parallel-ssh
+setup_commands: 
+   - sudo apt-get update
+   - sudo apt-get -y install curl
+   - sudo apt-get -y install unzip
+   - sudo apt-get -y install python3.8-dev
+   - pip3 install ray==2.3.0 # this needs to be the SAME version as the ray you have on your client machine, i.e. the one that you will be using to interact with the cluster.
+   - pip3 install ldbpy # this is for running some Quokka operators that requires custom accelerated computing, mostly for time series, most operators should be Python only.
+   - pip3 install threadpoolctl # install optional dependencies for your workloads
+   - pip3 install pyquokka # this uses the latest pypi release of quokka to quickly install all its dependencies. The actual quokka code run is what you have on your client pushed at runtime.
+   - pip3 install cffi
+   - sudo apt-get -y install nvme-cli
+   - curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+   - unzip awscliv2.zip
+   - sudo ./aws/install
+   - pip3 install --upgrade awscli
+   - sudo apt-get -y install python-cffi
+   - sudo mkdir /data
+   - sudo chmod -R a+rw /data
+   - nohup python3 -u $(python3 -c 'import pyquokka; print(pyquokka.__file__.replace("__init__.py", "flight.py"))') > foo.out 2> foo.err < /dev/null & # start flight server inside docker
     #- /home/ubuntu/.local/bin/ray stop
     # Note: if you're developing Ray, you probably want to create a Docker image that
     # has your Ray repo pre-cloned. Then, you can replace the pip installs
@@ -135,22 +159,22 @@ setup_commands:
     # - pip install -U "ray[default] @ https://s3-us-west-2.amazonaws.com/ray-wheels/latest/ray-3.0.0.dev0-cp37-cp37m-manylinux2014_x86_64.whl"
 
 # Custom commands that will be run on the head node after common setup.
-head_setup_commands:
+head_setup_commands: 
+    - curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+    - echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb focal main" | sudo tee /etc/apt/sources.list.d/redis.list
     - sudo apt-get update
-    - sudo apt install -y python3-pip
-    - pip3 install ray
+    - sudo apt-get install -y redis
+    - redis-server $(python3 -c 'import pyquokka; print(pyquokka.__file__.replace("__init__.py", "redis.conf"))') --port 6800 --protected-mode no&
+    - echo '* hard nofile 65536\n* soft nofile 65536\n* hard core unlimited\n* soft core unlimited' | sudo tee /etc/security/limits.conf
 
 # Custom commands that will be run on worker nodes after common setup.
-worker_setup_commands:
-    - sudo apt-get update
-    - sudo apt install -y python3-pip
-    - pip3 install ray
+worker_setup_commands: []
 
 # Command to start ray on the head node. You don't need to change this.
 head_start_ray_commands:
     - ray stop
 #    - --head --port=6380 --autoscaling-config=~/ray_bootstrap_config.yaml
-    - ray start --head --port=6379 --object-manager-port=8076 --autoscaling-config=~/ray_bootstrap_config.yaml
+    - ray start --head --port=6379 --object-manager-port=8076 --autoscaling-config=~/ray_bootstrap_config.yaml --object-store-memory 5000000000 --system-config='{"automatic_object_spilling_enabled":true,"max_io_workers":4,"object_spilling_config":"{\"type\":\"filesystem\",\"params\":{\"directory_path\":\"/data\"}}"}'
 
 # Command to start ray on worker nodes. You don't need to change this.
 worker_start_ray_commands:
