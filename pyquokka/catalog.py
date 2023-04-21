@@ -37,7 +37,7 @@ class Catalog:
         first_new_line = sample.find(b'\n')
         last_new_line = sample.rfind(b'\n')
         sample = sample[first_new_line + 1 : last_new_line]
-        sample = polars.read_csv(sample, new_columns = schema, sep = sep, has_header = False).to_arrow()
+        sample = polars.read_csv(sample, new_columns = schema, separator = sep, has_header = False).to_arrow()
         return self.register_table_data_and_return_ticket(sample, ratio = total_size / (last_new_line - first_new_line))
 
     def register_disk_csv_source(self, filename, schema, sep):
@@ -63,7 +63,7 @@ class Catalog:
         first_new_line = sample.find(b'\n')
         last_new_line = sample.rfind(b'\n')
         sample = sample[first_new_line + 1 : last_new_line]
-        sample = polars.read_csv(sample, new_columns = schema, sep = sep, has_header = False).to_arrow()
+        sample = polars.read_csv(sample, new_columns = schema, separator = sep, has_header = False).to_arrow()
         return self.register_table_data_and_return_ticket(sample, ratio = sum(sizes) / (last_new_line - first_new_line))
     
     def register_s3_parquet_source(self, filepath, total_files):

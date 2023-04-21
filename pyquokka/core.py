@@ -331,7 +331,7 @@ class TaskManager:
 
                 client = self.actor_flight_clients[target_actor_id][target_channel_id]
 
-                print_if_debug("pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
+                # print("pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
 
                 try:
                     if not self.check_puttable(client):
@@ -634,7 +634,7 @@ class ExecTaskManager(TaskManager):
 
                     # print("starting with input reqs", input_requirements[0])      
                     new_input_reqs = input_requirements[0].join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
-                    new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
+                    new_input_reqs = new_input_reqs.with_columns(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
                     
                     new_input_reqs = new_input_reqs.drop("progress")
                     # print("progress", actor_id, channel_id, progress, new_input_reqs)
@@ -714,93 +714,103 @@ class ExecTaskManager(TaskManager):
                 input_requirements = self.LT.get(self.r, name_prefix)
                 assert input_requirements is not None, pickle.loads(name_prefix)
                 
-                if actor_id in self.sat:
-                    request = ("cache", actor_id, channel_id, input_requirements, True, self.sat[actor_id])
-                else:
-                    request = ("cache", actor_id, channel_id, input_requirements, True, None)
-
-                reader = self.flight_client.do_get(pyarrow.flight.Ticket(pickle.dumps(request)))
-
-                chunks_list = []
-                names = []
-                while True:
-                    try:
-                        chunk, metadata = reader.read_chunk()
-                        name, format = pickle.loads(metadata)
-                        assert format == "polars"
-                        if len(names) == 0 or name != names[-1]:
-                            chunks_list.append([chunk])
-                            names.append(name)
-                        else:
-                            chunks_list[-1].append(chunk)
-                            print("creating multi-chunk")
-
-                    except StopIteration:
-                        break
-
-                # we are going to assume the Flight server gives us results sorted by source_actor_id
-                batches = chunks_list
-                input_names = names
-
-                if len(batches) == 0:
-                    self.index += 1
-                    continue
-
-                source_actor_id, source_channel_seqs = pickle.loads(input_requirements)
-                source_channel_ids = list(source_channel_seqs.keys())
-                source_channel_progress = [len(source_channel_seqs[k]) for k in source_channel_ids]
-                progress = polars.from_dict({"source_actor_id": [source_actor_id] * len(source_channel_ids) , "source_channel_id": source_channel_ids, "progress": source_channel_progress})
-
-                new_input_reqs = self.tape_input_reqs[actor_id, channel_id][0].join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
-                new_input_reqs = new_input_reqs.with_column(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
-                new_input_reqs = new_input_reqs.select(["source_actor_id", "source_channel_id","min_seq"])
-                self.update_dst()
-                if self.dst is not None:
-                    new_input_reqs = new_input_reqs.join(self.dst, on = ["source_actor_id", "source_channel_id"], how = "left")\
-                                                    .fill_null(MAX_SEQ)\
-                                                    .filter(polars.col("min_seq") <= polars.col("done_seq"))\
-                                                    .drop("done_seq")
-                
-                if len(new_input_reqs) == 0:
-                    self.tape_input_reqs[actor_id, channel_id] =  self.tape_input_reqs[actor_id, channel_id][1:]
-                else:
-                    self.tape_input_reqs[actor_id, channel_id] = [new_input_reqs] +  self.tape_input_reqs[actor_id, channel_id][1:]
-
-                input = [record_batches_to_table(batch) for batch in batches if sum([len(b) for b in batch]) > 0]
-
-                if len(input) > 0:
-                    output, state_seq, out_seq = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
-                else:
-                    state_seq = candidate_task.state_seq
-                    out_seq = candidate_task.out_seq
-                    output = None
-                
                 transaction = self.r.pipeline()
-                    
-                out_seq = self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq)
-                if out_seq == -1:
-                    continue
-                    
-                if state_seq + 1 > candidate_task.last_state_seq:
-                    next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, self.tape_input_reqs[actor_id, channel_id])
-                    # print("finished exectape, next input requirement is ", self.tape_input_reqs[actor_id, channel_id])
 
+                if len(pickle.loads(input_requirements)[1]) > 0:
+                    if actor_id in self.sat:
+                        request = ("cache", actor_id, channel_id, input_requirements, True, self.sat[actor_id])
+                    else:
+                        request = ("cache", actor_id, channel_id, input_requirements, True, None)
+
+                    reader = self.flight_client.do_get(pyarrow.flight.Ticket(pickle.dumps(request)))
+
+                    chunks_list = []
+                    names = []
+                    while True:
+                        try:
+                            chunk, metadata = reader.read_chunk()
+                            name, format = pickle.loads(metadata)
+                            assert format == "polars"
+                            if len(names) == 0 or name != names[-1]:
+                                chunks_list.append([chunk])
+                                names.append(name)
+                            else:
+                                chunks_list[-1].append(chunk)
+                                print("creating multi-chunk")
+
+                        except StopIteration:
+                            break
+
+                    # we are going to assume the Flight server gives us results sorted by source_actor_id
+                    batches = chunks_list
+                    input_names = names
+
+                    if len(batches) == 0:
+                        self.index += 1
+                        continue
+
+                    source_actor_id, source_channel_seqs = pickle.loads(input_requirements)
+                    source_channel_ids = list(source_channel_seqs.keys())
+                    source_channel_progress = [len(source_channel_seqs[k]) for k in source_channel_ids]
+                    progress = polars.from_dict({"source_actor_id": [source_actor_id] * len(source_channel_ids) , "source_channel_id": source_channel_ids, "progress": source_channel_progress})
+
+                    new_input_reqs = self.tape_input_reqs[actor_id, channel_id][0].join(progress, on = ["source_actor_id", "source_channel_id"], how = "left").fill_null(0)
+                    new_input_reqs = new_input_reqs.with_columns(polars.Series(name = "min_seq", values = new_input_reqs["progress"] + new_input_reqs["min_seq"]))
+                    new_input_reqs = new_input_reqs.select(["source_actor_id", "source_channel_id","min_seq"])
+                    self.update_dst()
+                    if self.dst is not None:
+                        new_input_reqs = new_input_reqs.join(self.dst, on = ["source_actor_id", "source_channel_id"], how = "left")\
+                                                        .fill_null(MAX_SEQ)\
+                                                        .filter(polars.col("min_seq") <= polars.col("done_seq"))\
+                                                        .drop("done_seq")
+                    
+                    if len(new_input_reqs) == 0:
+                        self.tape_input_reqs[actor_id, channel_id] =  self.tape_input_reqs[actor_id, channel_id][1:]
+                    else:
+                        self.tape_input_reqs[actor_id, channel_id] = [new_input_reqs] +  self.tape_input_reqs[actor_id, channel_id][1:]
+
+                    input = [record_batches_to_table(batch) for batch in batches if sum([len(b) for b in batch]) > 0]
+
+                    if len(input) > 0:
+                        output, state_seq, out_seq = candidate_task.execute(self.function_objects[actor_id, channel_id], input, self.mappings[actor_id][source_actor_id] , channel_id)
+                    else:
+                        state_seq = candidate_task.state_seq
+                        out_seq = candidate_task.out_seq
+                        output = None
+                        
+                    out_seq = self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq)
+                    if out_seq == -1:
+                        continue
+                        
+                    if state_seq + 1 > candidate_task.last_state_seq:
+                        next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, self.tape_input_reqs[actor_id, channel_id])
+                        # print("finished exectape, next input requirement is ", self.tape_input_reqs[actor_id, channel_id])
+
+                    else:
+                        next_task = TapedExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, candidate_task.last_state_seq)
+
+                # this is a "done task"
                 else:
-                    next_task = TapedExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, candidate_task.last_state_seq)
+                    output = self.function_objects[actor_id, channel_id].done(channel_id)
+                    next_task = None
+                    out_seq = candidate_task.out_seq
+                    out_seq = self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq)
+                    if out_seq == -1:
+                        continue
 
-                # this way of logging the lineage probably use less space than a Polars table actually.
 
                 self.EST.set(transaction, pickle.dumps((actor_id, channel_id)), state_seq)
                 self.task_commit(transaction, candidate_task, next_task)
-                
                 executed = transaction.execute()
                 #if not all(executed):
                 #    raise Exception(executed)
             
-                message = pyarrow.py_buffer(pickle.dumps(input_names))
-                action = pyarrow.flight.Action("cache_garbage_collect", message)
-                for result in list(self.flight_client.do_action(action)):
-                    assert result.body.to_pybytes().decode("utf-8") == "True"
+                # if it's a done task this garbage collection shouldn't happen cause you didn't use any inputs.
+                if next_task is not None:
+                    message = pyarrow.py_buffer(pickle.dumps(input_names))
+                    action = pyarrow.flight.Action("cache_garbage_collect", message)
+                    for result in list(self.flight_client.do_action(action)):
+                        assert result.body.to_pybytes().decode("utf-8") == "True"
 
 
 @ray.remote
@@ -960,7 +970,7 @@ class ReplayTaskManager(TaskManager):
         for seq in seqs:
 
             targets = plan.filter(polars.col('seq') == seq).select(["target_actor_id", "target_channel_id"])
-            target_mask_list = targets.groupby('target_actor_id').agg_list().to_dicts()
+            target_mask_list = targets.groupby('target_actor_id').all().to_dicts()
             target_mask = {k['target_actor_id'] : k['target_channel_id'] for k in target_mask_list}
 
             # figure out a pythonic way to convert a dataframe to a dict of lists

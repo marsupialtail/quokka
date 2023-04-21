@@ -8,7 +8,7 @@ import ray
 import json
 import signal
 import polars
-from pssh.clients import ParallelSSHClient
+import multiprocessing
 import concurrent.futures
 import yaml
 import subprocess
@@ -19,7 +19,7 @@ def preexec_function():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 class EC2Cluster:
-    def __init__(self, public_ips, private_ips, instance_ids, cpu_count_per_instance, spill_dir) -> None:
+    def __init__(self, public_ips, private_ips, instance_ids, cpu_count_per_instance, spill_dir, docker_head_private_ip = None) -> None:
 
         """
         Not meant to be called directly. Use QuokkaClusterManager to create a cluster.
@@ -38,12 +38,18 @@ class EC2Cluster:
         
         self.state = "running"
         self.cpu_count = cpu_count_per_instance
-        self.leader_public_ip = self.public_ips[0]
+        if docker_head_private_ip is not None:
+            self.leader_public_ip = docker_head_private_ip
+        else:
+            self.leader_public_ip = self.public_ips[0]
         self.leader_private_ip = self.private_ips[0]
         print("EC2 Cluster leader public IP", self.leader_public_ip, "private IP", self.leader_private_ip)
         pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
         # connect to that ray cluster
-        ray.init(address='ray://' + str(self.leader_public_ip) + ':10001', 
+        if docker_head_private_ip is not None:
+            return 
+        else:
+            ray.init(address='ray://' + str(self.leader_public_ip) + ':10001', 
                  runtime_env={"py_modules":[pyquokka_loc]})
     
     def to_json(self, output = "cluster.json"):
@@ -135,6 +141,14 @@ class LocalCluster:
 def execute_script(key_location, x):
     return os.system("ssh -oStrictHostKeyChecking=no -i {} ubuntu@{} 'bash -s' < {}".format(key_location, x, pyquokka.__file__.replace("__init__.py", "common_startup.sh")))
 
+def get_cluster_from_docker_head(spill_dir = "/data"):
+    import socket
+    self_ip = socket.gethostbyname(socket.gethostname())
+    ray.init("ray://" + self_ip + ":10001")
+    private_ips = [name.split(":")[1] for name in ray.cluster_resources().keys() if "node" in name]
+    cpu_count = ray.cluster_resources()["CPU"] // len(private_ips)
+    return EC2Cluster([None] * len(private_ips), private_ips, [None] * len(private_ips), cpu_count, spill_dir, docker_head_private_ip=self_ip)
+
 class QuokkaClusterManager:
 
     def __init__(self, key_name = None, key_location = None, security_group= None) -> None:
@@ -194,6 +208,7 @@ class QuokkaClusterManager:
 
         return results
 
+
     def copy_all(self, file_path, ips, error = "Error"):
         commands = ["scp -oStrictHostKeyChecking=no -oConnectTimeout=2 -i " + self.key_location + " " + file_path + " ubuntu@" + str(ip) + ":. " for ip in ips]
         processes = [subprocess.Popen(command, close_fds=True, shell=True) for command in commands]
@@ -239,7 +254,6 @@ class QuokkaClusterManager:
 
     def set_up_envs(self, public_ips, requirements, aws_access_key, aws_access_id):
             
-        import multiprocessing
         pool = multiprocessing.Pool(multiprocessing.cpu_count())        
         pool.starmap(execute_script, [(self.key_location, public_ip) for public_ip in public_ips])
 
@@ -457,8 +471,16 @@ class QuokkaClusterManager:
 
             return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count, spill_dir)
         if sum([i=="running" for i in states]) == len(states):
+            request_instance_ids = [k['InstanceId'] for reservation in a['Reservations'] for k in reservation['Instances']]
             public_ips = [k['PublicIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
             private_ips = [k['PrivateIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
+
+            # figure out where in request_instance_ids is instance_ids[0]
+            leader_index = request_instance_ids.index(instance_ids[0])
+            assert leader_index != -1, "Leader instance not found in request_instance_ids"
+            public_ips = public_ips[leader_index:] + public_ips[:leader_index]
+            private_ips = private_ips[leader_index:] + private_ips[:leader_index]
+
             return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count, spill_dir)
         else:
             print("Cluster in an inconsistent state. Either only some machines are running or some machines have been terminated.")
@@ -729,3 +751,45 @@ class QuokkaClusterManager:
         cluster = get_cluster_from_ips(all_instance_ids, all_public_ips, all_private_ips, cpu_count, aws_access_id, aws_access_key, requirements, spill_dir)
 
         return (cluster, region_info)
+      
+    def get_cluster_from_docker_cluster(self, path_to_yaml, spill_dir = "/data", cluster_name = None):
+
+        """
+        """
+
+        import yaml
+        ec2 = boto3.client("ec2")
+        with open(path_to_yaml, 'r') as f:
+            config = yaml.safe_load(f)
+    
+        tag_key = "ray-cluster-name"
+        if cluster_name is None:
+            cluster_name = config['cluster_name']
+        instance_type = config["available_node_types"]['ray.worker.default']["node_config"]["InstanceType"]
+        cpu_count = ec2.describe_instance_types(InstanceTypes=[instance_type])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
+
+        filters = [{'Name': 'instance-state-name', 'Values': ['running']},
+                   {'Name': f'tag:{tag_key}', 'Values': [cluster_name]}]
+        response = ec2.describe_instances(Filters=filters)
+
+        instance_names = [[k for k in instance['Tags'] if k['Key'] == 'ray-user-node-type'][0]['Value'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+        instance_ids = [instance['InstanceId'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+        public_ips = [instance['PublicIpAddress'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+        private_ips = [instance['PrivateIpAddress'] for reservation in response['Reservations'] for instance in reservation['Instances']]
+
+        try:
+            head_index = instance_names.index("ray.head.default")
+        except:
+            print("No head node found. Please make sure that the cluster is running.")
+            return False
+    
+        # rotate instance_ids, public_ips, private_ips so that head is first
+        instance_ids = instance_ids[head_index:] + instance_ids[:head_index]
+        public_ips = public_ips[head_index:] + public_ips[:head_index]
+        private_ips = private_ips[head_index:] + private_ips[:head_index]
+
+        assert len(instance_ids) == len(public_ips) == len(private_ips)
+        print("Detected {} instances in running ray cluster {}".format(len(instance_ids), cluster_name))
+
+        print(public_ips)
+        return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count, spill_dir)

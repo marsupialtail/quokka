@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.2.2' 
+VERSION = '0.2.7' 
 DESCRIPTION = 'Quokka'
 LONG_DESCRIPTION = """
 Dope way to do cloud analytics\n
@@ -17,7 +17,7 @@ setup(
         description=DESCRIPTION,
         long_description=LONG_DESCRIPTION,
         packages=find_packages(),
-        package_data = {"":["ldb.so", "redis.conf", "leader_startup.sh", "common_startup.sh", "leader_start_ray.sh"]},
+        package_data = {"":[ "redis.conf", "leader_startup.sh", "common_startup.sh", "leader_start_ray.sh"]},
         install_requires=[
             'cffi',
             'pyarrow',
@@ -31,12 +31,14 @@ setup(
             'ray>=2.0.0',
             'psutil',
             'h5py',
-            'polars>=0.16.8', # latest version for groupby semantics
-            'sqlglot',
+            'polars>=0.17.0', # latest version of Polars generally
+            'sqlglot>=11.4.2',
             'graphviz',
             'tqdm',
             'aiohttp',
             'botocore',
+            'ldbpy',
+            'threadpoolctl',
             'parallel-ssh'
             ], # add any additional packages that 
         extra_requires = {

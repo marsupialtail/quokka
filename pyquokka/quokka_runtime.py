@@ -215,9 +215,9 @@ class TaskGraph:
             result = {}
             assert type(data) == polars.internals.DataFrame
             if "int" in str(data[key].dtype).lower():
-                partitions = data.with_column(polars.Series(name="__partition__", values=(data[key] % num_target_channels))).partition_by("__partition__")
+                partitions = data.with_columns(polars.Series(name="__partition__", values=(data[key] % num_target_channels))).partition_by("__partition__")
             elif data[key].dtype == polars.datatypes.Utf8 or data[key].dtype == polars.datatypes.Float32 or data[key].dtype == polars.datatypes.Float64:
-                partitions = data.with_column(polars.Series(name="__partition__", values=(data[key].hash() % num_target_channels))).partition_by("__partition__")
+                partitions = data.with_columns(polars.Series(name="__partition__", values=(data[key].hash() % num_target_channels))).partition_by("__partition__")
             else:
                 print(data[key])
                 raise Exception("partition key type not supported")
@@ -232,7 +232,7 @@ class TaskGraph:
             per_channel_range = total_range // num_target_channels
             result = {}
             assert type(data) == polars.internals.DataFrame
-            partitions = data.with_column(polars.Series(name="__partition__", values=((data[key] - 1) // per_channel_range))).partition_by("__partition__")
+            partitions = data.with_columns(polars.Series(name="__partition__", values=((data[key] - 1) // per_channel_range))).partition_by("__partition__")
             for partition in partitions:
                 target = partition["__partition__"][0]
                 result[target] = partition.drop("__partition__")   

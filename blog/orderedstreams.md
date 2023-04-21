@@ -44,7 +44,13 @@ To perform an `join_asof` to match quotes to trades and select the bsize/asize o
 >>> result.select([time,symbol,bsize,asize,size])
 >>> OrderedStream([time,symbol,bsize,asize,size], sort_by=time, partition_by=symbol)
 ```
-Quokka allows you to do much more than this. For example you can write a custom Python class that exposes an `execute` handler to process each batch in the OrderedStream to do anything you want, like building an order book:
+We can perform aggregations as we would do a regular DataStream:
+```
+>>> result.sum("asize")
+```
+Running this `asof` join followed by sum on four r6id.2xlarge worker machines on AWS against 1.3 billion quotes and 250 million trades on AWS took around 35 seconds with Quokka. Spark doesn't directly support `asof` joins, however, it takes 200 seconds with highly optimized SQL code in Spark that uses a union, sort and join similar to this [trick](https://gist.github.com/RMB-eQuant/758539f8914f2dd4461ec0ce144b048b). Quokka achieves **6x speedup** out of the box with this use case.
+
+Quokka allows you to do much more than `asof` joins. For example you can write a custom Python class that exposes an `execute` handler to process each batch in the OrderedStream to do anything you want, like building an order book:
 ``` 
 # Very simplified example, not production code!!
 class OrderBook:
