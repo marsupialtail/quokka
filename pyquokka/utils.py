@@ -17,7 +17,7 @@ def preexec_function():
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 class EC2Cluster:
-    def __init__(self, public_ips, private_ips, instance_ids, cpu_count_per_instance, spill_dir) -> None:
+    def __init__(self, public_ips, private_ips, instance_ids, cpu_count_per_instance, spill_dir, docker_head_private_ip = None) -> None:
 
         """
         Not meant to be called directly. Use QuokkaClusterManager to create a cluster.
@@ -36,12 +36,18 @@ class EC2Cluster:
         
         self.state = "running"
         self.cpu_count = cpu_count_per_instance
-        self.leader_public_ip = self.public_ips[0]
+        if docker_head_private_ip is not None:
+            self.leader_public_ip = docker_head_private_ip
+        else:
+            self.leader_public_ip = self.public_ips[0]
         self.leader_private_ip = self.private_ips[0]
         print("EC2 Cluster leader public IP", self.leader_public_ip, "private IP", self.leader_private_ip)
         pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
         # connect to that ray cluster
-        ray.init(address='ray://' + str(self.leader_public_ip) + ':10001', 
+        if docker_head_private_ip is not None:
+            return 
+        else:
+            ray.init(address='ray://' + str(self.leader_public_ip) + ':10001', 
                  runtime_env={"py_modules":[pyquokka_loc]})
     
     def to_json(self, output = "cluster.json"):
@@ -132,6 +138,14 @@ class LocalCluster:
 
 def execute_script(key_location, x):
     return os.system("ssh -oStrictHostKeyChecking=no -i {} ubuntu@{} 'bash -s' < {}".format(key_location, x, pyquokka.__file__.replace("__init__.py", "common_startup.sh")))
+
+def get_cluster_from_docker_head(spill_dir = "/data"):
+    import socket
+    self_ip = socket.gethostbyname(socket.gethostname())
+    ray.init("ray://" + self_ip + ":10001")
+    private_ips = [name.split(":")[1] for name in ray.cluster_resources().keys() if "node" in name]
+    cpu_count = ray.cluster_resources()["CPU"] // len(private_ips)
+    return EC2Cluster([None] * len(private_ips), private_ips, [None] * len(private_ips), cpu_count, spill_dir, docker_head_private_ip=self_ip)
 
 class QuokkaClusterManager:
 
@@ -545,8 +559,7 @@ class QuokkaClusterManager:
         self.copy_and_launch_flight(public_ips)
         return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count, spill_dir)
 
-
-    def get_cluster_from_dockerized_ray(self, path_to_yaml, spill_dir = "/data", cluster_name = None):
+    def get_cluster_from_docker_cluster(self, path_to_yaml, spill_dir = "/data", cluster_name = None):
 
         """
         """
