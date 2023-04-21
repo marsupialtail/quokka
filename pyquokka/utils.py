@@ -581,15 +581,9 @@ class QuokkaClusterManager:
             >>> from pyquokka.utils import *
             >>> manager = QuokkaClusterManager()
             >>> cluster_list = ["my_cluster_us.yaml", "my_cluster_eu.yaml"]
-            >>> results = manager.get_cluster_from_ray(cluster_list, aws_access_key, aws_access_id, requirements = ["numpy", "pandas"], spill_dir = "/data")
+            >>> results = manager.get_multiple_clusters_from_yaml(cluster_list, aws_access_key, aws_access_id, requirements = ["numpy", "pandas"], spill_dir = "/data")
             >>> from pyquokka.df import QuokkaContext
             >>> qc = QuokkaContext(results[0])
-
-            It is recommended to do this only once and save the cluster object to a json file using `EC2Cluster.to_json` and then use `QuokkaClusterManager.get_cluster_from_json` to connect to the cluster.
-
-            >>> cluster.to_json("my_cluster.json")
-            >>> cluster = manager.get_cluster_from_json("my_cluster.json")
-        
         """
 
 
