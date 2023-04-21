@@ -265,8 +265,24 @@ class QuokkaClusterManager:
         self.launch_all("nohup python3 -u flight.py > foo.out 2> foo.err < /dev/null &", public_ips, "Failed to start flight servers on workers.")
 
     def set_up_spill_dir(self, public_ips, spill_dir):
+
         print("Trying to set up spill dir.")   
         result = self.launch_all("sudo nvme list", public_ips, "failed to list nvme devices")
+        devices = []
+
+        for sentence in result:
+            if "Amazon EC2 NVMe Instance Storage" in sentence:
+                split_by_newline = sentence.split("\n")
+                device = split_by_newline[2].split(" ")[0]
+                devices.append(device)
+
+        if len(devices) == 0:
+            print("No nvme devices found. Skipping.")
+            return
+
+        assert all([device == devices[0] for device in devices]), "All instances must have same nvme device location. Raise Github issue if you see this."
+        device = devices[0]
+        print("Found nvme device: ", device)
         
         try:
             self.launch_all("sudo mkfs.ext4 -F -E nodiscard {};".format(device), public_ips, "failed to format nvme ssd")
