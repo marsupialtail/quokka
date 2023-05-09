@@ -56,7 +56,7 @@ class HBQ:
         new_outputs = {}
         # futures = []
         for key in outputs:
-            assert type(outputs[key]) == polars.internals.DataFrame
+            assert type(outputs[key]) == polars.DataFrame
             new_outputs[key] = self.path + "hbq-" + str(source_actor_id) + "-" + str(source_channel_id) + "-" + str(seq) \
                 + "-" + str(target_actor_id) + "-" + str(key) + ".ipc"
             outputs[key].write_ipc( new_outputs[key] )

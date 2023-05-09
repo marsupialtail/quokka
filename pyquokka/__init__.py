@@ -10,3 +10,6 @@ from . import tables
 from . import task
 from . import hbq
 
+from .df import QuokkaContext
+
+__version__ = '0.2.8'

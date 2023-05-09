@@ -9,6 +9,7 @@ from pyquokka.sql_utils import required_columns_from_exp, label_sample_table_nam
 from functools import partial
 import pyarrow as pa
 from sqlglot.dataframe.sql import functions as F
+from threadpoolctl import threadpool_limits
 import numpy as np
 
 class DataStream:
@@ -392,12 +393,62 @@ class DataStream:
                                               schema=self.schema, sorted = self.sorted)
 
 
-    def filter_ann(self, vec_column, query_vectors, k):
+    def nn_probe(self, probe_df, vec_column = None, vec_column_left = None, vec_column_right = None, k = 1, suffix = "_probe"):
 
         """
-        This will filter the DataStream where the vec_column is a 
+        This will perform a nearest neighbor join between two Quokka
         
         """
+
+        if vec_column is not None:
+            assert vec_column_left is None and vec_column_right is None, "cannot specify both vec_column and vec_column_left/vec_column_right"
+            vec_column_left = vec_column
+            vec_column_right = vec_column
+        else:
+            assert vec_column_right is not None and vec_column_left is not None, "must specify either vec_column or vec_column_left/vec_column_right"
+        
+        assert k >= 1, "k must be at least 1"
+        assert type(probe_df) == polars.DataFrame, "probe_df must be a polars DataFrame"
+
+        assert vec_column_left in self.schema, "Vector column not in schema"
+        assert vec_column_right in probe_df.schema, "Probe column not in schema"
+
+        # rename any column in probe_df that is also in self.schema
+
+        probe_vec_col = vec_column_right
+        new_schema = self.schema
+        schema_mapping = {col: {0: col} for col in self.schema}
+        for col_name in probe_df.columns:                
+            if col_name in self.schema:
+                assert col_name + suffix not in probe_df.columns, "suffix not sufficient to avoid column name collision"
+                probe_df = probe_df.rename({col_name: col_name + suffix})
+                if col_name == vec_column_right:
+                    probe_vec_col = col_name + suffix
+                new_schema.append(col_name + suffix)
+                schema_mapping[col_name + suffix] = {-1: col_name}
+            else:
+                new_schema.append(col_name)
+                schema_mapping[col_name] = {-1: col_name}
+
+        node = NearestNeighborFilterNode(new_schema, schema_mapping, vec_column, probe_df, probe_vec_col,  k)
+
+        return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=node,
+                                              schema=new_schema, sorted = self.sorted)
+
+    def ann_join(self, vec_column = None, vec_column_left = None, vec_column_right = None, probe_side = "left", k = 1):
+
+        """
+        This will perform a nearest neighbor join between two Quokka DataStreams.
+        The plan is to convert this to a NearestNeighborFilterNode after you propagate cardinality and figure out which side is smaller.
+        
+        """
+
+        pass # we need to eventually compile this down to some kind of filter
+        # node = NearestNeighborFilterNode(new_schema, vec_column, query_vectors,  k, probe_vector_col)
+
+        # return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=node,
+        #                                       schema=new_schema, sorted = self.sorted)
+
 
     def select(self, columns: list):
 
@@ -961,7 +1012,6 @@ class DataStream:
         """
 
         def udf2(x):
-            from threadpoolctl import threadpool_limits
             x = x.select(columns).to_numpy() - demean
             with threadpool_limits(limits=8, user_api='blas'):
                 product = np.dot(x.transpose(), x)
@@ -1365,7 +1415,7 @@ class DataStream:
             assert how in {"inner", "left"}
 
             # our broadcast join strategy should automatically satisfy this, no need to do anything special
-            if type(right) == polars.internals.DataFrame:
+            if type(right) == polars.DataFrame:
                 assert maintain_sort_order == "left"
                 assert self.sorted is not None
             
@@ -1378,7 +1428,7 @@ class DataStream:
                 if how == "left":
                     assert maintain_sort_order == "right", "in a left join, can only maintain order of the right table"
         
-        #if type(right) == polars.internals.DataFrame and right.to_arrow().nbytes > 10485760:
+        #if type(right) == polars.DataFrame and right.to_arrow().nbytes > 10485760:
         #    raise Exception("You cannot join a DataStream against a Polars DataFrame more than 10MB in size. Sorry.")
 
         if on is None:
@@ -1983,7 +2033,7 @@ class GroupedDataStream:
         Purely Experimental API.
         """
 
-        assert (type(right) == GroupedDataStream or type(right) == polars.internals.DataFrame) and issubclass(type(executor), Executor)
+        assert (type(right) == GroupedDataStream) and issubclass(type(executor), Executor)
         
         assert len(self.groupby) == 1 and len(right.groupby) == 1, "we only support single key partition functions right now"
         assert self.groupby[0] == right.groupby[0], "must be grouped by the same key"
@@ -2005,23 +2055,18 @@ class GroupedDataStream:
                 required_cols_right = set(required_cols_right)
             assert type(required_cols_right) == set
 
-        if type(right) == GroupedDataStream:
 
-            return self.source_data_stream.quokka_context.new_stream(
-                sources={0: self.source_data_stream, 1: right.source_data_stream},
-                partitioners={0: HashPartitioner(
-                    copartitioner), 1: HashPartitioner(copartitioner)},
-                node=StatefulNode(
-                    schema=new_schema,
-                    schema_mapping=schema_mapping,
-                    required_columns={0: required_cols_left, 1: required_cols_right},
-                    operator= executor),
+        return self.source_data_stream.quokka_context.new_stream(
+            sources={0: self.source_data_stream, 1: right.source_data_stream},
+            partitioners={0: HashPartitioner(
+                copartitioner), 1: HashPartitioner(copartitioner)},
+            node=StatefulNode(
                 schema=new_schema,
-                )
-
-        elif type(right) == polars.internals.DataFrame:
-            
-            raise NotImplementedError
+                schema_mapping=schema_mapping,
+                required_columns={0: required_cols_left, 1: required_cols_right},
+                operator= executor),
+            schema=new_schema,
+            )
 
     def count_distinct(self, col: str):
 

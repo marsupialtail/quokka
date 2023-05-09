@@ -136,7 +136,7 @@ setup_commands:
    - sudo apt-get -y install curl
    - sudo apt-get -y install unzip
    - sudo apt-get -y install python3.8-dev
-   - pip3 install ray==2.3.0 # this needs to be the SAME version as the ray you have on your client machine, i.e. the one that you will be using to interact with the cluster.
+   - pip3 install ray==X # this needs to be the SAME version as the ray you have on your client machine, i.e. the one that you will be using to interact with the cluster.
    - pip3 install ldbpy # this is for running some Quokka operators that requires custom accelerated computing, mostly for time series, most operators should be Python only.
    - pip3 install threadpoolctl # install optional dependencies for your workloads
    - pip3 install pyquokka # this uses the latest pypi release of quokka to quickly install all its dependencies. The actual quokka code run is what you have on your client pushed at runtime.

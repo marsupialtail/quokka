@@ -4,6 +4,7 @@ import polars
 import pyarrow.csv as csv
 import pyquokka.sql_utils as sql_utils
 from pyquokka.datastream import * 
+from pyquokka.orderedstream import * 
 from pyquokka.catalog import *
 import pyarrow.parquet as pq
 from pyarrow.fs import S3FileSystem
@@ -68,7 +69,9 @@ class QuokkaContext:
         self.nodes = {}
         self.cluster = LocalCluster() if cluster is None else cluster
         if type(self.cluster) == LocalCluster:
-            self.exec_config["fault_tolerance"] = False, "Fault tolerance is not supported in local mode, turning it off"
+            if self.exec_config["fault_tolerance"]:
+                print("Fault tolerance is not supported in local mode, turning it off")
+                self.exec_config["fault_tolerance"] = False
         self.io_per_node = io_per_node
         self.exec_per_node = exec_per_node
 
@@ -765,11 +768,11 @@ class QuokkaContext:
         self.__push_ann__()
         self.__push_filter__(node_id)
         self.__early_projection__(node_id)
-        self.__fold_map__(node_id)
-        if self.sql_config["optimize_joins"]:
-            self.__merge_joins__(node_id)
-        self.__propagate_cardinality__(node_id)
-        self.__determine_stages__(node_id)
+        # self.__fold_map__(node_id)
+        # if self.sql_config["optimize_joins"]:
+        #     self.__merge_joins__(node_id)
+        # self.__propagate_cardinality__(node_id)
+        # self.__determine_stages__(node_id)
         
         assert len(self.execution_nodes[node_id].parents) == 1
         parent_idx = list(self.execution_nodes[node_id].parents)[0]
@@ -1190,34 +1193,35 @@ class QuokkaContext:
             else:
 
                 # first remove yourself from the current location in the graph, i.e. wire up your parent to your targets.
-                parent = self.execution_nodes[node.parents[0]]
-                for target_id in targets:
-                    parent.targets[target_id] = targets[target_id]
-                del parent.targets[node_id]
-                # set your targets parents to your parent
-                for target_id in targets:
-                    success = False
-                    for key in self.execution_nodes[target_id].parents:
-                        if self.execution_nodes[target_id].parents[key] == node_id:
-                            self.execution_nodes[target_id].parents[key] = node.parents[0]
-                            success = True
-                            break
-                    assert success
-                node.targets = {}
+                # parent = self.execution_nodes[node.parents[0]]
+                # for target_id in targets:
+                #     parent.targets[target_id] = targets[target_id]
+                # del parent.targets[node_id]
+                # # set your targets parents to your parent
+                # for target_id in targets:
+                #     success = False
+                #     for key in self.execution_nodes[target_id].parents:
+                #         if self.execution_nodes[target_id].parents[key] == node_id:
+                #             self.execution_nodes[target_id].parents[key] = node.parents[0]
+                #             success = True
+                #             break
+                #     assert success
+                # node.targets = {}
                 
-                # now insert yourself between curr_node_id and curr_target_id
+                # # now insert yourself between curr_node_id and curr_target_id
 
-                self.execution_nodes[curr_node_id].targets[node_id] = TargetInfo(PassThroughPartitioner(), None, None, [])
-                node.parents[0] = curr_node_id
-                node.targets[curr_target_id] = copy.deepcopy(self.execution_nodes[curr_node_id].targets[curr_target_id])
-                del self.execution_nodes[curr_node_id].targets[curr_target_id]
-                success = False
-                for key in self.execution_nodes[curr_target_id].parents:
-                    if self.execution_nodes[target_id].parents[key] == curr_node_id:
-                        self.execution_nodes[target_id].parents[key] = node_id
-                        success = True
-                        break
-                assert success
+                # self.execution_nodes[curr_node_id].targets[node_id] = TargetInfo(PassThroughPartitioner(), None, None, [])
+                # node.parents[0] = curr_node_id
+                # node.targets[curr_target_id] = copy.deepcopy(self.execution_nodes[curr_node_id].targets[curr_target_id])
+                # del self.execution_nodes[curr_node_id].targets[curr_target_id]
+                # success = False
+                # for key in self.execution_nodes[curr_target_id].parents:
+                #     if self.execution_nodes[target_id].parents[key] == curr_node_id:
+                #         self.execution_nodes[target_id].parents[key] = node_id
+                #         success = True
+                #         break
+                # assert success
+                pass
 
     def __fold_map__(self, node_id):
 
