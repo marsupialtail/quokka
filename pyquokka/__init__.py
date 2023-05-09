@@ -12,4 +12,4 @@ from . import hbq
 
 from .df import QuokkaContext
 
-__version__ = '0.2.8'
+__version__ = '0.2.9'

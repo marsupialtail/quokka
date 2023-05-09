@@ -768,11 +768,11 @@ class QuokkaContext:
         self.__push_ann__()
         self.__push_filter__(node_id)
         self.__early_projection__(node_id)
-        # self.__fold_map__(node_id)
-        # if self.sql_config["optimize_joins"]:
-        #     self.__merge_joins__(node_id)
-        # self.__propagate_cardinality__(node_id)
-        # self.__determine_stages__(node_id)
+        self.__fold_map__(node_id)
+        if self.sql_config["optimize_joins"]:
+            self.__merge_joins__(node_id)
+        self.__propagate_cardinality__(node_id)
+        self.__determine_stages__(node_id)
         
         assert len(self.execution_nodes[node_id].parents) == 1
         parent_idx = list(self.execution_nodes[node_id].parents)[0]
