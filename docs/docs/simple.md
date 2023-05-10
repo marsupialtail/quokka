@@ -106,7 +106,7 @@ On the plus side, Quokka uses the amazing [SQLGlot](https://github.com/tobymao/s
 
 ~~~python
 def do_6():
-    d = lineitem.filter("l_shipdate >= date '1994-01-01' and l_shipdate < date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01 and l_quantity < 24")
+    d = lineitem.filter_sql("l_shipdate >= date '1994-01-01' and l_shipdate < date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01 and l_quantity < 24")
     d = d.with_columns({"revenue": lambda x: x["l_extendedprice"] * x["l_discount"]}, required_columns={"l_extendedprice", "l_discount"})
     f = d.aggregate({"revenue":["sum"]})
     return f.collect()
@@ -124,7 +124,7 @@ Joins work very intuitively. For example, this is how to do [TPC-H query 12](htt
 ~~~python
 def do_12():
     d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
-    d = d.filter("l_shipmode IN ('MAIL','SHIP') and l_commitdate < l_receiptdate and l_shipdate < l_commitdate and \
+    d = d.filter_sql("l_shipmode IN ('MAIL','SHIP') and l_commitdate < l_receiptdate and l_shipdate < l_commitdate and \
         l_receiptdate >= date '1994-01-01' and l_receiptdate < date '1995-01-01'")
     f = d.groupby("l_shipmode").agg_sql("""
         sum(case when o_orderpriority = '1-URGENT' or o_orderpriority = '2-HIGH' then 1 else 0 end) as high_line_count,
@@ -139,7 +139,7 @@ Note it does not matter if you filter after the join or before the join, Quokka 
 def do_3():
     d = lineitem.join(orders,left_on="l_orderkey", right_on="o_orderkey")
     d = customer.join(d,left_on="c_custkey", right_on="o_custkey")
-    d = d.filter("c_mktsegment = 'BUILDING' and o_orderdate < date '1995-03-15' and l_shipdate > date '1995-03-15'")
+    d = d.filter_sql("c_mktsegment = 'BUILDING' and o_orderdate < date '1995-03-15' and l_shipdate > date '1995-03-15'")
     d = d.with_columns({"revenue": d["l_extendedprice"] * ( 1 - d["l_discount"])})
     f = d.groupby(["l_orderkey","o_orderdate","o_shippriority"]).agg({"revenue":["sum"]})
     return f.collect()
