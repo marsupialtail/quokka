@@ -159,15 +159,15 @@ Quokka currently operates like Spark and by default writes a directory of files,
 To write out a DataStream to CSV or Parquet to a local directory (you must specify a valid absolute path), simply do:
 
 ~~~python
-d.write_csv("/home/ubuntu/test-path/")
-d.write_parquet("/home/ubuntu/test-path/")
+d.write_csv("/home/ubuntu/test-path/").collect()
+d.write_parquet("/home/ubuntu/test-path/").collect()
 ~~~
 
 To write out a DataStream to S3, you should specify an S3 bucket and prefix like this:
 
 ~~~python
-d.write_csv("s3://bucket/prefix/")
-d.write_parquet("s3://bucket/prefix/")
+d.write_csv("s3://bucket/prefix/").collect()
+d.write_parquet("s3://bucket/prefix/").collect()
 ~~~
 
 Writing out a DataStream is a blocking API and will automatically call a `collect()` for you. The collected Polars DataFrame at the end is just a column of filenames produced.
