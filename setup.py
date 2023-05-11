@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.2.9' 
+VERSION = '0.3.0' 
 DESCRIPTION = 'Quokka'
 LONG_DESCRIPTION = """
 Dope way to do cloud analytics\n
@@ -30,7 +30,6 @@ setup(
             'protobuf',
             'ray>=2.0.0',
             'psutil',
-            'h5py',
             'polars>=0.17.0', # latest version of Polars generally
             'sqlglot>=11.4.2',
             'graphviz',
@@ -42,7 +41,8 @@ setup(
             'parallel-ssh'
             ], # add any additional packages that 
         extra_requires = {
-                "datalake" : ["pyiceberg", "deltalake"]
+                "datalake" : ["pyiceberg", "deltalake"],
+                "advanced" : ["ldbpy"] 
             },
         license='http://www.apache.org/licenses/LICENSE-2.0',
         keywords=['python'],

@@ -533,6 +533,99 @@ class QuokkaContext:
 
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
+
+    def read_lance(self, table_location: str, vec_column: str):
+
+        """
+        
+        """
+
+        try:
+            import lance
+        except:
+            raise Exception("lance not installed. pylance must be installed on each machine in cluster.")
+
+        s3 = boto3.client('s3')
+        if table_location[:5] == "s3://":
+
+            if type(self.cluster) == LocalCluster:
+                print("Warning: trying to read S3 dataset on local machine. This assumes high network bandwidth.")
+
+            table_location = table_location[5:]
+            bucket = table_location.split("/")[0]
+            if "*" in table_location:
+                assert "*" not in table_location[:-1], "wildcard can only be the last character in address string"
+                table_location = table_location[:-1]
+                prefix = "/".join(table_location[:-1].split("/")[1:])
+
+                z = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+                if 'Contents' not in z:
+                    raise Exception("Wrong S3 path")
+                files = [bucket + "/" + i['Key'] for i in z['Contents'] if i['Key'].endswith(".lance")]
+                while 'NextContinuationToken' in z.keys():
+                    z = s3.list_objects_v2(
+                        Bucket=bucket, Prefix=prefix, ContinuationToken=z['NextContinuationToken'])
+                    files.extend([bucket + "/" + i['Key'] for i in z['Contents']
+                                    if i['Key'].endswith(".parquet")])
+
+                assert len(files) > 0, "could not find any parquet files. make sure they end with .parquet"
+                
+                try:
+                    schema = lance.dataset(files[0]).schema.names
+                    assert vec_column in schema, "vector column not found in schema"
+                except:
+                    raise Exception("""schema discovery failed for Parquet dataset at location {}. Please raise Github issue.
+                                    Lance dataset with S3 does not work with creds set with AWS configure, must use env variables.""".format(table_location))
+                
+                # token = ray.get(self.catalog.register_s3_lance_source.remote(files[0], len(sizes)))
+                self.nodes[self.latest_node_id] = InputLanceNode(files, schema, vec_column)
+                # self.nodes[self.latest_node_id].set_catalog_id(token)
+            else:
+                try:
+                    schema = lance.dataset(files[0]).schema.names
+                    assert vec_column in schema, "vector column not found in schema"
+                except:
+                    raise Exception("""schema discovery failed for Parquet dataset at location {}. 
+                                    Lance dataset with S3 does not work with creds set with AWS configure, must use env variables.
+                                    Note if you are specifying a prefix to many parquet files, must use asterix. E.g.
+                                    qc.read_parquet("s3://rottnest/happy.parquet/*")""".format(table_location))
+                # key = "/".join(table_location.split("/")[1:])
+                # response = s3.head_object(Bucket= bucket, Key=key)
+                # token = ray.get(self.catalog.register_s3_parquet_source.remote(bucket + "/" + key, 1))
+                self.nodes[self.latest_node_id] = InputLanceNode([table_location], schema, vec_column)
+                # self.nodes[self.latest_node_id].set_catalog_id(token)
+
+            # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
+        else:
+            if type(self.cluster) == EC2Cluster:
+                raise NotImplementedError("Does not support reading local dataset with S3 cluster. Must use S3 bucket.")
+            
+            if "*" in table_location:
+                table_location = table_location[:-1]
+                assert table_location[-1] == "/", "must specify * with entire directory, doesn't support prefixes yet"
+                try:
+                    files = [i for i in os.listdir(table_location) if i.endswith(".lance")]
+                except:
+                    raise Exception("Tried to get list of parquet files at ", table_location, " failed. Make sure specify absolute path and filenames end with .parquet")
+                assert len(files) > 0
+                schema = lance.dataset(files[0]).schema.names
+                # token = ray.get(self.catalog.register_disk_parquet_source.remote(table_location))
+                self.nodes[self.latest_node_id] = InputLanceNode(files, schema, vec_column)
+                # self.nodes[self.latest_node_id].set_catalog_id(token)
+
+            else:
+                
+                
+                try:
+                    schema = lance.dataset(table_location).schema.names
+                except:
+                    raise Exception("schema discovery failed for Parquet dataset at location {}. Please raise Github issue.".format(table_location))
+                # token = ray.get(self.catalog.register_disk_parquet_source.remote(table_location))
+                self.nodes[self.latest_node_id] = InputLanceNode([table_location], schema, vec_column)
+                # self.nodes[self.latest_node_id].set_catalog_id(token)
+
+        self.latest_node_id += 1
+        return DataStream(self, schema, self.latest_node_id - 1)
     
 
     def read_rest_post(self, url, data, schema, headers = {}, batch_size = 10000):
@@ -1178,9 +1271,7 @@ class QuokkaContext:
             if issubclass(type(self.execution_nodes[curr_node_id]), InputLanceNode):
                 
                 lance_node = self.execution_nodes[curr_node_id]
-                lance_node.query_vectors = copy.deepcopy(node.query_vectors)
-                lance_node.k = node.k
-                lance_node.vec_column = curr_col_name
+                lance_node.set_probe_df(copy.deepcopy(node.probe_df), node.probe_vector_col , node.k)
                 
                 # delete yourself
                 parent = self.execution_nodes[node.parents[0]]

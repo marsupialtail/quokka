@@ -79,8 +79,8 @@ class DFProbeDataStreamNNExecutor2(Executor):
         indices = np.argsort(distances, axis = 1)[:, -self.k:]
         # indices has shape len(probe_df) * k
 
-        print(indices)
-        print(self.state)
+        # print(indices)
+        # print(self.state)
 
         results = []
         # each index has a value between 0 and N * k - 1, you need to translate that to an index into self.state

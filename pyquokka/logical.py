@@ -278,18 +278,42 @@ class InputLanceNode(SourceNode):
         self.uris = uris
         self.predicate = predicate
         self.projection = projection
-        self.query_vectors = query_vectors
-        self.k = k
         self.vec_column = vec_column
+
+        self.probe_df = None
+        self.probe_df_col = None
+        self.k = None
     
+    def set_probe_df(self, probe_df, probe_df_col, k):
+
+        assert probe_df is not None and probe_df_col is not None and k is not None, "must provide probe_df, probe_df_col, and k"
+        
+        assert type(probe_df) == polars.DataFrame
+        self.probe_df = probe_df
+        assert type(probe_df_col) == str and probe_df_col in probe_df.columns, "probe_df_col must be a string and in probe_df"
+        self.probe_df_col = probe_df_col
+        self.probe_df_vecs = np.stack(self.probe_df[self.probe_df_col].to_numpy())
+        assert type(k) == int and k >= 1
+        self.k = k
+
     def set_cardinality(self, catalog):
         
-        # fix this later
-        return None
+        # assert self.catalog_id is not None
+        for target in self.targets:
+            self.cardinality[target] = None
     
     def lower(self, task_graph):
-        lance_reader = InputLanceDataset(self.uris, self.vec_column, probe_df = None, probe_df_col = None, k = None, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate)
+        lance_reader = InputLanceDataset(self.uris, self.vec_column, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate)
+        if self.probe_df is not None:
+            lance_reader.set_probe_df(self.probe_df, self.probe_df_col, self.k)
         node = task_graph.new_input_reader_node(lance_reader, self.stage, self.placement_strategy)
+        if self.probe_df is not None:
+            operator = DFProbeDataStreamNNExecutor2(self.vec_col, self.probe_df_vecs, self.probe_df_col, self.k)
+            target_info = TargetInfo(BroadcastPartitioner(), sqlglot.exp.TRUE, None, [])
+            node = task_graph.new_non_blocking_node({0: node}, 
+                        operator, self.stage, SingleChannelStrategy(), 
+                        source_target_info={0: target_info})
+
         return node
         
 

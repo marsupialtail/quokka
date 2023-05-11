@@ -149,12 +149,14 @@ class InputLanceDataset:
     Let's hope this works!
     """
 
-    def __init__(self, uris, vec_column, probe_df = None, probe_df_col = None, k = None, columns = None, filters = None) -> None:
+    def __init__(self, uris, vec_column, columns = None, filters = None) -> None:
         
         import lance
-        assert type(columns) == list, "columns must be a list of strings"
+        if columns is not None:
+            assert type(columns) == list, "columns must be a list of strings"
         self.columns = columns
-        assert type(filters) == str, "sql predicate supported"
+        if filters is not None:
+            assert type(filters) == str, "sql predicate supported"
         self.filters = filters
 
         self.probe_df = None
@@ -197,11 +199,12 @@ class InputLanceDataset:
         import lance
         dataset = lance.dataset(uri)
         if self.k is not None:
-            results = pa.concat_tables( [dataset.to_table(columns = self.columns, filters = self.filters, 
+            results = pa.concat_tables( [dataset.to_table(columns = self.columns, filter = self.filters, 
                                 nearest={"column": self.vec_column, "k": self.k, "q": self.probe_df_vecs[i]}) for i in range(len(self.probe_df_vecs))]) 
         else:
-            results = dataset.to_table(columns = self.columns, filters = self.filters)
-        return results
+            results = dataset.to_table(columns = self.columns, filter = self.filters)
+        
+        return None, results
 
 class InputEC2ParquetDataset:
 

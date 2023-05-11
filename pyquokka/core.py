@@ -153,13 +153,20 @@ class TaskManager:
 
             start = time.time()
             # x could be either a pyarrow table of a polars dataframe
-            # print(predicate_fn)
             if type(predicate_fn) == str:
                 con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
                 batch_arrow = x.to_arrow() if type(x) == polars.DataFrame else x
-                x = polars.from_arrow(con.execute(predicate_fn).arrow())
+                x = con.execute(predicate_fn).arrow()
+                try:
+                    x = polars.from_arrow(x)
+                except:
+                    x = polars.from_pandas(x.to_pandas())
             else:
-                x = x if type(x) == polars.DataFrame else polars.from_arrow(x)
+                if type(x) != polars.DataFrame:
+                    try:
+                        x = polars.from_arrow(x)
+                    except:
+                        x = polars.from_pandas(x.to_pandas())
                 x = x.filter(predicate_fn)
             # print("filter time", time.time() - start)
 

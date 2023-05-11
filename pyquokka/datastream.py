@@ -1075,17 +1075,18 @@ class DataStream:
                 self.state = None
             def execute(self,batches,stream_id, executor_id):
                 psum = polars.from_arrow(pa.concat_tables(batches)).select(columns + ["__len__"]).to_numpy().sum(axis=0)
-                for batch in batches:
-                    #print(batch)
-                    if self.state is None:
-                        self.state = psum
-                    else:
-                        self.state += psum
+                if self.state is None:
+                    self.state = psum
+                else:
+                    self.state += psum
             def done(self,executor_id):
-                return polars.from_numpy(np.expand_dims(self.state,0), schema = columns + ["__len__"])
+                x = polars.from_numpy(np.expand_dims(self.state,0), schema = columns + ["__len__"])
+                # print(x)
+                return x
             
         def udf2(x):
             x =  polars.from_numpy(np.expand_dims(x.select(columns).to_numpy().sum(axis = 0),0) , schema = columns).hstack(polars.from_dict({"__len__": [len(x)]}))
+            # print(x)
             return x
 
         stream = self.transform( udf2, new_schema = columns + ["__len__"], required_columns = set(columns), foldable=True)
@@ -1096,9 +1097,9 @@ class DataStream:
         mean = stream.stateful_transform( agg_executor , columns + ["__len__"], required_columns = set(columns + ["__len__"]),
                             partitioner=BroadcastPartitioner(), placement_strategy = SingleChannelStrategy()).collect()
         count = mean["__len__"][0]
-        print("COUNT", count)
+        # print("COUNT", count)
         mean = mean.select(columns)
-        print("MEAN", mean)
+        # print("MEAN", mean)
         mean /= count
         
         return self.gramian(columns, demean = np.squeeze(mean.to_numpy())).collect() / count
