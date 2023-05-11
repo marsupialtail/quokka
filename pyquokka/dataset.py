@@ -22,6 +22,7 @@ import random
 import ray
 import math
 import asyncio
+import numpy as np
 
 # computes the overlap of two intervals (a1, a2) and (b1, b2)
 def overlap(a, b):
@@ -142,47 +143,65 @@ class InputRestPostAPIDataset:
         results = polars.concat([i for i in results if i is not None]).select(self.projection)
         return None, results
 
-class InputLanceQVDataset:
+class InputLanceDataset:
 
     """
     Let's hope this works!
     """
 
-    def __init__(self, uri, vec_column, query_vectors, k, columns = None, filters = None, batch_size = 100) -> None:
+    def __init__(self, uris, vec_column, probe_df = None, probe_df_col = None, k = None, columns = None, filters = None) -> None:
         
+        import lance
         assert type(columns) == list, "columns must be a list of strings"
         self.columns = columns
         assert type(filters) == str, "sql predicate supported"
         self.filters = filters
-        self.query_vector = None
+
+        self.probe_df = None
+        self.probe_df_col = None
         self.k = None
-        import numpy as np
-        assert type(query_vectors) == np.ndarray
-        assert len(query_vectors.shape) == 2, "must supply 2d query_vectors"
-        assert type(k) == int
-        self.query_vectors = query_vectors
-        self.k = k
-        self.uri = uri
-        self.batch_size = batch_size
+
+        assert type(uris) == list
+        self.uris = uris
         self.vec_column = vec_column
+
+        for uri in self.uris:
+            dataset = lance.dataset(uri)
+            if not dataset.has_index:
+                print("Warning: dataset {} does not have an index. Expect slow performance and maybe crashes.".format(uri))
+            assert self.vec_column in dataset.schema.names, "vector column not found in schema"
         
+    def set_probe_df(self, probe_df, probe_df_col, k):
+
+        assert probe_df is not None and probe_df_col is not None and k is not None, "must provide probe_df, probe_df_col, and k"
+        
+        assert type(probe_df) == polars.DataFrame
+        self.probe_df = probe_df
+        assert type(probe_df_col) == str and probe_df_col in probe_df.columns, "probe_df_col must be a string and in probe_df"
+        self.probe_df_col = probe_df_col
+        self.probe_df_vecs = np.stack(self.probe_df[self.probe_df_col].to_numpy())
+        assert type(k) == int and k >= 1
+        self.k = k
+
     def get_own_state(self, num_channels):
 
-        self.num_channels = num_channels
-        vectors_per_channel = len(self.query_vectors) // num_channels + 1
-        channel_infos = {}
+        # split the urls across the channels
+        channel_info = {}
         for channel in range(num_channels):
-            my_query_vectors = self.query_vectors[channel * vectors_per_channel : (channel + 1) * vectors_per_channel]
-            channel_infos[channel] = []
-            for pos in range(0, len(my_query_vectors), self.batch_size):
-                channel_infos[channel].append(my_query_vectors[pos:pos+self.batch_size])
-        return channel_infos
+            channel_info[channel] = self.uris[channel::num_channels]
+        print(channel_info)
+        return channel_info
     
-    def execute(self, mapper_id, query_vec_batch):
+    def execute(self, mapper_id, uri):
 
         import lance
-        dataset = lance.dataset(self.uri)
-        return dataset.to_table(columns = self.columns, filters = self.filters, nearest={"column": self.vec_column, "k": self.k, "q": query_vec_batch})
+        dataset = lance.dataset(uri)
+        if self.k is not None:
+            results = pa.concat_tables( [dataset.to_table(columns = self.columns, filters = self.filters, 
+                                nearest={"column": self.vec_column, "k": self.k, "q": self.probe_df_vecs[i]}) for i in range(len(self.probe_df_vecs))]) 
+        else:
+            results = dataset.to_table(columns = self.columns, filters = self.filters)
+        return results
 
 class InputEC2ParquetDataset:
 

@@ -1,37 +1,40 @@
 import sys
 import time
+from pyquokka import QuokkaContext
 from pyquokka.quokka_runtime import TaskGraph
-from pyquokka.executors import AggExecutor, PolarJoinExecutor
+from pyquokka.executors import SQLAggExecutor, BuildProbeJoinExecutor
 from pyquokka.dataset import InputDiskCSVDataset, InputS3CSVDataset, InputParquetDataset
 
 import pyarrow.compute as compute
 from pyquokka.target_info import BroadcastPartitioner, HashPartitioner, TargetInfo
-from schema import * 
+from pyquokka.placement_strategy import * 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 import polars
-
+import ray
 import sqlglot
 
-manager = QuokkaClusterManager()
+# manager = QuokkaClusterManager()
 # cluster = manager.get_cluster_from_json("config.json")
 cluster = LocalCluster()
+qc = QuokkaContext(cluster)
+qc.set_config("memory_limit", 0.01)
 
-task_graph = TaskGraph(cluster)
+task_graph = TaskGraph(qc)
 
 def batch_func(df):
-    df["high"] = ((df["o_orderpriority"] == "1-URGENT") | (df["o_orderpriority"] == "2-HIGH"))
-    df["low"] = ((df["o_orderpriority"] != "1-URGENT") & (df["o_orderpriority"] != "2-HIGH"))
+    df = df.with_columns(((df["o_orderpriority"] == "1-URGENT") | (df["o_orderpriority"] == "2-HIGH")).alias("high"))
+    df = df.with_columns(((df["o_orderpriority"] != "1-URGENT") & (df["o_orderpriority"] != "2-HIGH")).alias("low"))
     result = df.to_arrow().group_by("l_shipmode").aggregate([("high","sum"), ("low","sum")])
     return polars.from_arrow(result)
 
 
 if sys.argv[1] == "csv":
 
-    lineitem_csv_reader = InputDiskCSVDataset("/home/ziheng/tpc-h/lineitem.tbl", lineitem_scheme, sep = "|", stride=16 * 1024 * 1024)
-    orders_csv_reader = InputDiskCSVDataset("/home/ziheng/tpc-h/orders.tbl", order_scheme, sep = "|", stride=16 * 1024 * 1024)
+    lineitem_csv_reader = InputDiskCSVDataset("/home/ziheng/Downloads/demo-tpch/lineitem.tbl", header = True, sep = "|", stride=16 * 1024 * 1024)
+    orders_csv_reader = InputDiskCSVDataset("/home/ziheng/Downloads/demo-tpch/orders.tbl", header = True, sep = "|", stride=16 * 1024 * 1024)
     # lineitem_csv_reader = InputS3CSVDataset("tpc-h-csv", lineitem_scheme , key = "lineitem/lineitem.tbl.1", sep="|", stride = 128 * 1024 * 1024)
     # orders_csv_reader = InputS3CSVDataset("tpc-h-csv",  order_scheme , key ="orders/orders.tbl.1",sep="|", stride = 128 * 1024 * 1024)
-    lineitem = task_graph.new_input_reader_node(lineitem_csv_reader)
+    lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, stage = -1)
     orders = task_graph.new_input_reader_node(orders_csv_reader)
 
 elif sys.argv[1] == "parquet":
@@ -41,7 +44,7 @@ elif sys.argv[1] == "parquet":
     orders = task_graph.new_input_reader_node(orders_parquet_reader)
       
 
-join_executor = PolarJoinExecutor(left_on="o_orderkey",right_on="l_orderkey")
+join_executor = BuildProbeJoinExecutor(left_on="o_orderkey",right_on="l_orderkey")
 
 if sys.argv[1] == "csv":
     output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},join_executor,
@@ -65,9 +68,9 @@ else:
                                         projection = ["l_orderkey","l_shipmode"],
                                         batch_funcs = [])})
 
-agg_executor = AggExecutor(["l_shipmode"], {"high_sum": "sum", "low_sum":"sum"}, False)
+agg_executor = SQLAggExecutor(["l_shipmode"], None, "sum(high_sum) as high, sum(low_sum) as low")
 
-agged = task_graph.new_blocking_node({0:output_stream},  agg_executor, ip_to_num_channel={cluster.leader_private_ip: 1}, 
+agged = task_graph.new_blocking_node({0:output_stream},  agg_executor, placement_strategy = SingleChannelStrategy(), 
     source_target_info={0:TargetInfo(
         partitioner = BroadcastPartitioner(),
         predicate = None,
@@ -80,4 +83,4 @@ start = time.time()
 task_graph.run()
 print("total time ", time.time() - start)
 
-print(agged.to_pandas())
+print(ray.get(qc.dataset_manager.to_df.remote(agged)))

@@ -430,12 +430,12 @@ class DataStream:
                 new_schema.append(col_name)
                 schema_mapping[col_name] = {-1: col_name}
 
-        node = NearestNeighborFilterNode(new_schema, schema_mapping, vec_column, probe_df, probe_vec_col,  k)
+        node = NearestNeighborFilterNode(new_schema, schema_mapping, vec_column_left, probe_df, probe_vec_col,  k)
 
         return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=node,
                                               schema=new_schema, sorted = self.sorted)
 
-    def ann_join(self, vec_column = None, vec_column_left = None, vec_column_right = None, probe_side = "left", k = 1):
+    def _ann_join(self, vec_column = None, vec_column_left = None, vec_column_right = None, probe_side = "left", k = 1):
 
         """
         This will perform a nearest neighbor join between two Quokka DataStreams.
@@ -1096,9 +1096,9 @@ class DataStream:
         mean = stream.stateful_transform( agg_executor , columns + ["__len__"], required_columns = set(columns + ["__len__"]),
                             partitioner=BroadcastPartitioner(), placement_strategy = SingleChannelStrategy()).collect()
         count = mean["__len__"][0]
-        print(count)
+        print("COUNT", count)
         mean = mean.select(columns)
-        print(mean)
+        print("MEAN", mean)
         mean /= count
         
         return self.gramian(columns, demean = np.squeeze(mean.to_numpy())).collect() / count

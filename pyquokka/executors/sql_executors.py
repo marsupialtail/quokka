@@ -416,6 +416,8 @@ class DistinctExecutor(Executor):
 class SQLAggExecutor(Executor):
     def __init__(self, groupby_keys, orderby_keys, sql_statement) -> None:
         assert type(groupby_keys) == list
+        if orderby_keys is not None:
+            assert type(orderby_keys) == list
         if len(groupby_keys) > 0:
             self.agg_clause = "select " + ",".join(groupby_keys) + ", " + sql_statement + " from batch_arrow"
         else:
@@ -426,7 +428,7 @@ class SQLAggExecutor(Executor):
                 self.agg_clause += key + ","
             self.agg_clause = self.agg_clause[:-1]
 
-        if orderby_keys is not None:
+        if orderby_keys is not None and len(orderby_keys) > 0:
             self.agg_clause += " order by "
             for key, dir in orderby_keys:
                 if dir == "desc":

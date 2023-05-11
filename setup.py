@@ -37,7 +37,7 @@ setup(
             'tqdm',
             'aiohttp',
             'botocore',
-            'ldbpy',
+            # 'ldbpy',
             'threadpoolctl',
             'parallel-ssh'
             ], # add any additional packages that 

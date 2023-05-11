@@ -273,16 +273,25 @@ class InputS3IcebergNode(SourceNode):
         return result
     
 class InputLanceNode(SourceNode):
-    def __init__(self, uri, schema, predicate = None, projection = None, query_vectors = None, k = None) -> None:
+    def __init__(self, uris, schema, vec_column, predicate = None, projection = None) -> None:
         super().__init__(schema)
-        self.uri = uri
+        self.uris = uris
         self.predicate = predicate
         self.projection = projection
         self.query_vectors = query_vectors
         self.k = k
+        self.vec_column = vec_column
     
     def set_cardinality(self, catalog):
-        return super().set_cardinality(catalog)
+        
+        # fix this later
+        return None
+    
+    def lower(self, task_graph):
+        lance_reader = InputLanceDataset(self.uris, self.vec_column, probe_df = None, probe_df_col = None, k = None, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate)
+        node = task_graph.new_input_reader_node(lance_reader, self.stage, self.placement_strategy)
+        return node
+        
 
 class InputS3ParquetNode(SourceNode):
     def __init__(self, files, schema, predicate = None, projection = None) -> None:
