@@ -2014,7 +2014,7 @@ for file in files:
 <p>Quokka supports filtering DataStreams by <code>DataStream.filter()</code>. Filters can be specified in SQL syntax. The columns in the SQL expression must exist in the schema of the DataStream. A more Pythonic way of doing this like <code>b = b[b.a &lt; 5]</code> isn't supported yet, mainly due to the finickiness surrounding date types etc. The result of a <code>filter()</code> is another DataStream whose Polars DataFrames will only contain rows that respect the predicate.</p>
 <p>On the plus side, Quokka uses the amazing <a href="https://github.com/tobymao/sqlglot">SQLGlot</a> library to support most ANSI-SQL compliant predicates, including dates, between, IN, even arithmetic in conditions. Try out some different <a href="../datastream/filter/">predicates</a>! Please give SQLGlot a star when you're at it. For example, you can specify this super complicated predicate for <a href="https://github.com/dragansah/tpch-dbgen/blob/master/tpch-queries/6.sql">TPC-H query 6</a>:</p>
 <pre><code class="language-python">def do_6():
-    d = lineitem.filter(&quot;l_shipdate &gt;= date '1994-01-01' and l_shipdate &lt; date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01 and l_quantity &lt; 24&quot;)
+    d = lineitem.filter_sql(&quot;l_shipdate &gt;= date '1994-01-01' and l_shipdate &lt; date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01 and l_quantity &lt; 24&quot;)
     d = d.with_columns({&quot;revenue&quot;: lambda x: x[&quot;l_extendedprice&quot;] * x[&quot;l_discount&quot;]}, required_columns={&quot;l_extendedprice&quot;, &quot;l_discount&quot;})
     f = d.aggregate({&quot;revenue&quot;:[&quot;sum&quot;]})
     return f.collect()
@@ -2026,7 +2026,7 @@ for file in files:
 <p>Joins work very intuitively. For example, this is how to do <a href="https://github.com/dragansah/tpch-dbgen/blob/master/tpch-queries/12.sql">TPC-H query 12</a>.</p>
 <pre><code class="language-python">def do_12():
     d = lineitem.join(orders,left_on=&quot;l_orderkey&quot;, right_on=&quot;o_orderkey&quot;)
-    d = d.filter(&quot;l_shipmode IN ('MAIL','SHIP') and l_commitdate &lt; l_receiptdate and l_shipdate &lt; l_commitdate and \
+    d = d.filter_sql(&quot;l_shipmode IN ('MAIL','SHIP') and l_commitdate &lt; l_receiptdate and l_shipdate &lt; l_commitdate and \
         l_receiptdate &gt;= date '1994-01-01' and l_receiptdate &lt; date '1995-01-01'&quot;)
     f = d.groupby(&quot;l_shipmode&quot;).agg_sql(&quot;&quot;&quot;
         sum(case when o_orderpriority = '1-URGENT' or o_orderpriority = '2-HIGH' then 1 else 0 end) as high_line_count,
@@ -2038,7 +2038,7 @@ for file in files:
 <pre><code class="language-python">def do_3():
     d = lineitem.join(orders,left_on=&quot;l_orderkey&quot;, right_on=&quot;o_orderkey&quot;)
     d = customer.join(d,left_on=&quot;c_custkey&quot;, right_on=&quot;o_custkey&quot;)
-    d = d.filter(&quot;c_mktsegment = 'BUILDING' and o_orderdate &lt; date '1995-03-15' and l_shipdate &gt; date '1995-03-15'&quot;)
+    d = d.filter_sql(&quot;c_mktsegment = 'BUILDING' and o_orderdate &lt; date '1995-03-15' and l_shipdate &gt; date '1995-03-15'&quot;)
     d = d.with_columns({&quot;revenue&quot;: d[&quot;l_extendedprice&quot;] * ( 1 - d[&quot;l_discount&quot;])})
     f = d.groupby([&quot;l_orderkey&quot;,&quot;o_orderdate&quot;,&quot;o_shippriority&quot;]).agg({&quot;revenue&quot;:[&quot;sum&quot;]})
     return f.collect()
@@ -2050,12 +2050,12 @@ for file in files:
 <p>So far, we have just learned about how to read things into DataStreams and do things to DataStreams. You can also write out DataStreams to persistent storage like disk or S3 to record all the amazing things we did with them.</p>
 <p>Quokka currently operates like Spark and by default writes a directory of files, with a default maximum file size for different file formats. This makes it easy to perform parallel writing.</p>
 <p>To write out a DataStream to CSV or Parquet to a local directory (you must specify a valid absolute path), simply do:</p>
-<pre><code class="language-python">d.write_csv(&quot;/home/ubuntu/test-path/&quot;)
-d.write_parquet(&quot;/home/ubuntu/test-path/&quot;)
+<pre><code class="language-python">d.write_csv(&quot;/home/ubuntu/test-path/&quot;).collect()
+d.write_parquet(&quot;/home/ubuntu/test-path/&quot;).collect()
 </code></pre>
 <p>To write out a DataStream to S3, you should specify an S3 bucket and prefix like this:</p>
-<pre><code class="language-python">d.write_csv(&quot;s3://bucket/prefix/&quot;)
-d.write_parquet(&quot;s3://bucket/prefix/&quot;)
+<pre><code class="language-python">d.write_csv(&quot;s3://bucket/prefix/&quot;).collect()
+d.write_parquet(&quot;s3://bucket/prefix/&quot;).collect()
 </code></pre>
 <p>Writing out a DataStream is a blocking API and will automatically call a <code>collect()</code> for you. The collected Polars DataFrame at the end is just a column of filenames produced.</p>
 <h2 id="lesson-3-things-you-cant-do">Lesson 3: Things you can't do.</h2>

@@ -1904,21 +1904,55 @@
   
       <p>Return total row count.</p>
 
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>collect</code></td>
+          <td>
+                <code>bool</code>
+          </td>
+          <td><p>if True, return a Polars DataFrame. If False, return a Quokka DataStream.</p></td>
+          <td>
+                <code>True</code>
+          </td>
+        </tr>
+    </tbody>
+  </table>
+
       <details class="quote">
         <summary>Source code in <code>pyquokka/datastream.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1643</span>
-<span class="normal">1644</span>
-<span class="normal">1645</span>
-<span class="normal">1646</span>
-<span class="normal">1647</span>
-<span class="normal">1648</span>
-<span class="normal">1649</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">count</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1878</span>
+<span class="normal">1879</span>
+<span class="normal">1880</span>
+<span class="normal">1881</span>
+<span class="normal">1882</span>
+<span class="normal">1883</span>
+<span class="normal">1884</span>
+<span class="normal">1885</span>
+<span class="normal">1886</span>
+<span class="normal">1887</span>
+<span class="normal">1888</span>
+<span class="normal">1889</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">count</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">collect</span> <span class="o">=</span> <span class="kc">True</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Return total row count.</span>
-<span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">agg</span><span class="p">({</span><span class="s2">&quot;*&quot;</span><span class="p">:</span><span class="s2">&quot;count&quot;</span><span class="p">})</span><span class="o">.</span><span class="n">collect</span><span class="p">()</span>
+<span class="sd">    Args:</span>
+<span class="sd">        collect (bool): if True, return a Polars DataFrame. If False, return a Quokka DataStream.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">collect</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">agg</span><span class="p">({</span><span class="s2">&quot;*&quot;</span><span class="p">:</span><span class="s2">&quot;count&quot;</span><span class="p">})</span><span class="o">.</span><span class="n">collect</span><span class="p">()</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">agg</span><span class="p">({</span><span class="s2">&quot;*&quot;</span><span class="p">:</span><span class="s2">&quot;count&quot;</span><span class="p">})</span>
 </code></pre></div></td></tr></table></div>
       </details>
   </div>

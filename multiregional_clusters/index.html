@@ -8,19 +8,19 @@
       
       
       
-      <link rel="icon" href="../../quokka.png">
+      <link rel="icon" href="../quokka.png">
       <meta name="generator" content="mkdocs-1.4.0, mkdocs-material-8.5.5">
     
     
       
-        <title>QuokkaClusterManager.terminate_cluster - Quokka</title>
+        <title>Spinning up Multiregional AWS Clusters using Quokka - Quokka</title>
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.80dcb947.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.80dcb947.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.cbb835fc.min.css">
+        <link rel="stylesheet" href="../assets/stylesheets/palette.cbb835fc.min.css">
         
           
           
@@ -41,9 +41,9 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
     
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -68,7 +68,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#quokkaclustermanagerterminate_cluster" class="md-skip">
+        <a href="#spinning-up-multiregional-aws-clusters-using-quokka" class="md-skip">
           Skip to content
         </a>
       
@@ -82,9 +82,9 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../.." title="Quokka" class="md-header__button md-logo" aria-label="Quokka" data-md-component="logo">
+    <a href=".." title="Quokka" class="md-header__button md-logo" aria-label="Quokka" data-md-component="logo">
       
-  <img src="../../quokka.png" alt="logo">
+  <img src="../quokka.png" alt="logo">
 
     </a>
     <label class="md-header__button md-icon" for="__drawer">
@@ -100,7 +100,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              QuokkaClusterManager.terminate_cluster
+              Spinning up Multiregional AWS Clusters using Quokka
             
           </span>
         </div>
@@ -179,9 +179,9 @@
 
 <nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../.." title="Quokka" class="md-nav__button md-logo" aria-label="Quokka" data-md-component="logo">
+    <a href=".." title="Quokka" class="md-nav__button md-logo" aria-label="Quokka" data-md-component="logo">
       
-  <img src="../../quokka.png" alt="logo">
+  <img src="../quokka.png" alt="logo">
 
     </a>
     Quokka
@@ -209,7 +209,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../.." class="md-nav__link">
+      <a href=".." class="md-nav__link">
         Home
       </a>
     </li>
@@ -224,7 +224,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../started/" class="md-nav__link">
+      <a href="../started/" class="md-nav__link">
         Cartoons
       </a>
     </li>
@@ -239,7 +239,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../install/" class="md-nav__link">
+      <a href="../install/" class="md-nav__link">
         Installation
       </a>
     </li>
@@ -254,7 +254,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../cloud/" class="md-nav__link">
+      <a href="../cloud/" class="md-nav__link">
         Setting Up Cloud Cluster
       </a>
     </li>
@@ -269,7 +269,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../different/" class="md-nav__link">
+      <a href="../different/" class="md-nav__link">
         How is Quokka different from ...?
       </a>
     </li>
@@ -310,7 +310,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../simple/" class="md-nav__link">
+      <a href="../simple/" class="md-nav__link">
         DataStream API (Use Quokka)
       </a>
     </li>
@@ -324,7 +324,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../tutorial/" class="md-nav__link">
+      <a href="../tutorial/" class="md-nav__link">
         TaskGraph API (Contribute to Quokka)
       </a>
     </li>
@@ -344,14 +344,12 @@
 
   
   
-    
-  
   
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7" type="checkbox" id="__nav_7" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7" type="checkbox" id="__nav_7" >
       
       
       
@@ -400,7 +398,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../quokka_context/quokka_context/" class="md-nav__link">
+      <a href="../quokka_context/quokka_context/" class="md-nav__link">
         QuokkaContext
       </a>
     </li>
@@ -414,7 +412,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../quokka_context/set_config/" class="md-nav__link">
+      <a href="../quokka_context/set_config/" class="md-nav__link">
         QuokkaContext.set_config
       </a>
     </li>
@@ -428,7 +426,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../quokka_context/get_config/" class="md-nav__link">
+      <a href="../quokka_context/get_config/" class="md-nav__link">
         QuokkaContext.get_config
       </a>
     </li>
@@ -442,7 +440,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../quokka_context/read_csv/" class="md-nav__link">
+      <a href="../quokka_context/read_csv/" class="md-nav__link">
         QuokkaContext.read_csv
       </a>
     </li>
@@ -456,7 +454,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../quokka_context/read_parquet/" class="md-nav__link">
+      <a href="../quokka_context/read_parquet/" class="md-nav__link">
         QuokkaContext.read_parquet
       </a>
     </li>
@@ -470,7 +468,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../quokka_context/read_iceberg/" class="md-nav__link">
+      <a href="../quokka_context/read_iceberg/" class="md-nav__link">
         QuokkaContext.read_iceberg
       </a>
     </li>
@@ -484,7 +482,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../quokka_context/read_delta/" class="md-nav__link">
+      <a href="../quokka_context/read_delta/" class="md-nav__link">
         QuokkaContext.read_delta
       </a>
     </li>
@@ -498,7 +496,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../quokka_context/read_dataset/" class="md-nav__link">
+      <a href="../quokka_context/read_dataset/" class="md-nav__link">
         QuokkaContext.read_dataset
       </a>
     </li>
@@ -512,7 +510,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../quokka_context/read_ray_dataset/" class="md-nav__link">
+      <a href="../quokka_context/read_ray_dataset/" class="md-nav__link">
         QuokkaContext.read_ray_dataset
       </a>
     </li>
@@ -526,7 +524,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../quokka_context/from_polars/" class="md-nav__link">
+      <a href="../quokka_context/from_polars/" class="md-nav__link">
         QuokkaContext.from_polars
       </a>
     </li>
@@ -540,7 +538,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../quokka_context/from_pandas/" class="md-nav__link">
+      <a href="../quokka_context/from_pandas/" class="md-nav__link">
         QuokkaContext.from_pandas
       </a>
     </li>
@@ -554,7 +552,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../quokka_context/from_arrow/" class="md-nav__link">
+      <a href="../quokka_context/from_arrow/" class="md-nav__link">
         QuokkaContext.from_arrow
       </a>
     </li>
@@ -601,7 +599,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/collect/" class="md-nav__link">
+      <a href="../datastream/collect/" class="md-nav__link">
         DataStream.collect
       </a>
     </li>
@@ -615,7 +613,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/compute/" class="md-nav__link">
+      <a href="../datastream/compute/" class="md-nav__link">
         DataStream.compute
       </a>
     </li>
@@ -629,7 +627,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/explain/" class="md-nav__link">
+      <a href="../datastream/explain/" class="md-nav__link">
         DataStream.explain
       </a>
     </li>
@@ -643,7 +641,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/write_csv/" class="md-nav__link">
+      <a href="../datastream/write_csv/" class="md-nav__link">
         DataStream.write_csv
       </a>
     </li>
@@ -657,7 +655,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/write_parquet/" class="md-nav__link">
+      <a href="../datastream/write_parquet/" class="md-nav__link">
         DataStream.write_parquet
       </a>
     </li>
@@ -671,7 +669,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/filter/" class="md-nav__link">
+      <a href="../datastream/filter/" class="md-nav__link">
         DataStream.filter
       </a>
     </li>
@@ -685,7 +683,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/filter_sql/" class="md-nav__link">
+      <a href="../datastream/filter_sql/" class="md-nav__link">
         DataStream.filter_sql
       </a>
     </li>
@@ -699,7 +697,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/select/" class="md-nav__link">
+      <a href="../datastream/select/" class="md-nav__link">
         DataStream.select
       </a>
     </li>
@@ -713,7 +711,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/drop/" class="md-nav__link">
+      <a href="../datastream/drop/" class="md-nav__link">
         DataStream.drop
       </a>
     </li>
@@ -727,7 +725,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/rename/" class="md-nav__link">
+      <a href="../datastream/rename/" class="md-nav__link">
         DataStream.rename
       </a>
     </li>
@@ -741,7 +739,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/transform/" class="md-nav__link">
+      <a href="../datastream/transform/" class="md-nav__link">
         DataStream.transform
       </a>
     </li>
@@ -755,7 +753,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/transform_sql/" class="md-nav__link">
+      <a href="../datastream/transform_sql/" class="md-nav__link">
         DataStream.transform_sql
       </a>
     </li>
@@ -769,7 +767,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/with_columns/" class="md-nav__link">
+      <a href="../datastream/with_columns/" class="md-nav__link">
         DataStream.with_columns
       </a>
     </li>
@@ -783,7 +781,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/with_columns_sql/" class="md-nav__link">
+      <a href="../datastream/with_columns_sql/" class="md-nav__link">
         DataStream.with_columns_sql
       </a>
     </li>
@@ -797,7 +795,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/union/" class="md-nav__link">
+      <a href="../datastream/union/" class="md-nav__link">
         DataStream.union
       </a>
     </li>
@@ -811,7 +809,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/distinct/" class="md-nav__link">
+      <a href="../datastream/distinct/" class="md-nav__link">
         DataStream.distinct
       </a>
     </li>
@@ -825,7 +823,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/gramian/" class="md-nav__link">
+      <a href="../datastream/gramian/" class="md-nav__link">
         DataStream.gramian
       </a>
     </li>
@@ -839,7 +837,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/stateful_transform/" class="md-nav__link">
+      <a href="../datastream/stateful_transform/" class="md-nav__link">
         DataStream.stateful_transform
       </a>
     </li>
@@ -853,7 +851,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/join/" class="md-nav__link">
+      <a href="../datastream/join/" class="md-nav__link">
         DataStream.join
       </a>
     </li>
@@ -867,7 +865,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/groupby/" class="md-nav__link">
+      <a href="../datastream/groupby/" class="md-nav__link">
         DataStream.groupby
       </a>
     </li>
@@ -881,7 +879,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/top_k/" class="md-nav__link">
+      <a href="../datastream/top_k/" class="md-nav__link">
         DataStream.top_k
       </a>
     </li>
@@ -895,7 +893,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/count_distinct/" class="md-nav__link">
+      <a href="../datastream/count_distinct/" class="md-nav__link">
         DataStream.count_distinct
       </a>
     </li>
@@ -909,7 +907,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/agg/" class="md-nav__link">
+      <a href="../datastream/agg/" class="md-nav__link">
         DataStream.agg
       </a>
     </li>
@@ -923,7 +921,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/agg/" class="md-nav__link">
+      <a href="../datastream/agg/" class="md-nav__link">
         DataStream.aggregate
       </a>
     </li>
@@ -937,7 +935,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/agg_sql/" class="md-nav__link">
+      <a href="../datastream/agg_sql/" class="md-nav__link">
         DataStream.agg_sql
       </a>
     </li>
@@ -951,7 +949,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/count/" class="md-nav__link">
+      <a href="../datastream/count/" class="md-nav__link">
         DataStream.count
       </a>
     </li>
@@ -965,7 +963,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/sum/" class="md-nav__link">
+      <a href="../datastream/sum/" class="md-nav__link">
         DataStream.sum
       </a>
     </li>
@@ -979,7 +977,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/mean/" class="md-nav__link">
+      <a href="../datastream/mean/" class="md-nav__link">
         DataStream.mean
       </a>
     </li>
@@ -993,7 +991,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/min/" class="md-nav__link">
+      <a href="../datastream/min/" class="md-nav__link">
         DataStream.min
       </a>
     </li>
@@ -1007,7 +1005,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/max/" class="md-nav__link">
+      <a href="../datastream/max/" class="md-nav__link">
         DataStream.max
       </a>
     </li>
@@ -1021,7 +1019,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/grouped_agg/" class="md-nav__link">
+      <a href="../datastream/grouped_agg/" class="md-nav__link">
         GroupedDataStream.agg
       </a>
     </li>
@@ -1035,7 +1033,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/grouped_agg/" class="md-nav__link">
+      <a href="../datastream/grouped_agg/" class="md-nav__link">
         GroupedDataStream.aggregate
       </a>
     </li>
@@ -1049,7 +1047,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/grouped_agg_sql/" class="md-nav__link">
+      <a href="../datastream/grouped_agg_sql/" class="md-nav__link">
         GroupedDataStream.agg_sql
       </a>
     </li>
@@ -1063,7 +1061,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../datastream/grouped_count_distinct/" class="md-nav__link">
+      <a href="../datastream/grouped_count_distinct/" class="md-nav__link">
         GroupedDataStream.count_distinct
       </a>
     </li>
@@ -1110,7 +1108,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dataset/to_df/" class="md-nav__link">
+      <a href="../dataset/to_df/" class="md-nav__link">
         DataSet.to_df
       </a>
     </li>
@@ -1124,7 +1122,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dataset/to_ray_dataset/" class="md-nav__link">
+      <a href="../dataset/to_ray_dataset/" class="md-nav__link">
         DataSet.to_ray_dataset
       </a>
     </li>
@@ -1138,7 +1136,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../dataset/to_arrow_refs/" class="md-nav__link">
+      <a href="../dataset/to_arrow_refs/" class="md-nav__link">
         DataSet.to_arrow_refs
       </a>
     </li>
@@ -1211,7 +1209,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/str_to_uppercase/" class="md-nav__link">
+      <a href="../expression/str_to_uppercase/" class="md-nav__link">
         Expression.str.to_uppercase
       </a>
     </li>
@@ -1225,7 +1223,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/str_to_lowercase/" class="md-nav__link">
+      <a href="../expression/str_to_lowercase/" class="md-nav__link">
         Expression.str.to_lowercase
       </a>
     </li>
@@ -1239,7 +1237,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/str_contains/" class="md-nav__link">
+      <a href="../expression/str_contains/" class="md-nav__link">
         Expression.str.contains
       </a>
     </li>
@@ -1253,7 +1251,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/str_starts_with/" class="md-nav__link">
+      <a href="../expression/str_starts_with/" class="md-nav__link">
         Expression.str.starts_with
       </a>
     </li>
@@ -1267,7 +1265,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/str_ends_with/" class="md-nav__link">
+      <a href="../expression/str_ends_with/" class="md-nav__link">
         Expression.str.ends_with
       </a>
     </li>
@@ -1281,7 +1279,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/str_length/" class="md-nav__link">
+      <a href="../expression/str_length/" class="md-nav__link">
         Expression.str.length
       </a>
     </li>
@@ -1295,7 +1293,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/str_json_extract/" class="md-nav__link">
+      <a href="../expression/str_json_extract/" class="md-nav__link">
         Expression.str.json_extract
       </a>
     </li>
@@ -1309,7 +1307,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/str_strptime/" class="md-nav__link">
+      <a href="../expression/str_strptime/" class="md-nav__link">
         Expression.str.strptime
       </a>
     </li>
@@ -1323,7 +1321,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/str_hash/" class="md-nav__link">
+      <a href="../expression/str_hash/" class="md-nav__link">
         Expression.str.hash
       </a>
     </li>
@@ -1370,7 +1368,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/dt_hour/" class="md-nav__link">
+      <a href="../expression/dt_hour/" class="md-nav__link">
         Expression.dt.hour
       </a>
     </li>
@@ -1384,7 +1382,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/dt_minute/" class="md-nav__link">
+      <a href="../expression/dt_minute/" class="md-nav__link">
         Expression.dt.minute
       </a>
     </li>
@@ -1398,7 +1396,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/dt_second/" class="md-nav__link">
+      <a href="../expression/dt_second/" class="md-nav__link">
         Expression.dt.second
       </a>
     </li>
@@ -1412,7 +1410,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/dt_weekday/" class="md-nav__link">
+      <a href="../expression/dt_weekday/" class="md-nav__link">
         Expression.dt.weekday
       </a>
     </li>
@@ -1426,7 +1424,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/dt_millisecond/" class="md-nav__link">
+      <a href="../expression/dt_millisecond/" class="md-nav__link">
         Expression.dt.millisecond
       </a>
     </li>
@@ -1440,7 +1438,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/dt_microsecond/" class="md-nav__link">
+      <a href="../expression/dt_microsecond/" class="md-nav__link">
         Expression.dt.microsecond
       </a>
     </li>
@@ -1454,7 +1452,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/dt_week/" class="md-nav__link">
+      <a href="../expression/dt_week/" class="md-nav__link">
         Expression.dt.week
       </a>
     </li>
@@ -1468,7 +1466,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/dt_month/" class="md-nav__link">
+      <a href="../expression/dt_month/" class="md-nav__link">
         Expression.dt.month
       </a>
     </li>
@@ -1482,7 +1480,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/dt_year/" class="md-nav__link">
+      <a href="../expression/dt_year/" class="md-nav__link">
         Expression.dt.year
       </a>
     </li>
@@ -1496,7 +1494,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/dt_offset_by/" class="md-nav__link">
+      <a href="../expression/dt_offset_by/" class="md-nav__link">
         Expression.dt.offset_by
       </a>
     </li>
@@ -1510,7 +1508,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../expression/dt_strftime/" class="md-nav__link">
+      <a href="../expression/dt_strftime/" class="md-nav__link">
         Expression.dt.strftime
       </a>
     </li>
@@ -1536,14 +1534,12 @@
               
   
   
-    
-  
   
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5" type="checkbox" id="__nav_7_5" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5" type="checkbox" id="__nav_7_5" >
       
       
       
@@ -1592,7 +1588,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../ec2cluster_to_json/" class="md-nav__link">
+      <a href="../utils/ec2cluster_to_json/" class="md-nav__link">
         EC2Cluster.to_json
       </a>
     </li>
@@ -1639,7 +1635,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../localcluster/" class="md-nav__link">
+      <a href="../utils/localcluster/" class="md-nav__link">
         LocalCluster
       </a>
     </li>
@@ -1658,14 +1654,12 @@
               
   
   
-    
-  
   
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--nested">
       
       
-        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5_3" type="checkbox" id="__nav_7_5_3" checked>
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5_3" type="checkbox" id="__nav_7_5_3" >
       
       
       
@@ -1688,7 +1682,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../quokka_cluster_manager/" class="md-nav__link">
+      <a href="../utils/quokka_cluster_manager/" class="md-nav__link">
         QuokkaClusterManager
       </a>
     </li>
@@ -1702,7 +1696,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../create_cluster/" class="md-nav__link">
+      <a href="../utils/create_cluster/" class="md-nav__link">
         QuokkaClusterManager.create_cluster
       </a>
     </li>
@@ -1716,7 +1710,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../stop_cluster/" class="md-nav__link">
+      <a href="../utils/stop_cluster/" class="md-nav__link">
         QuokkaClusterManager.stop_cluster
       </a>
     </li>
@@ -1728,52 +1722,11 @@
               
   
   
-    
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          QuokkaClusterManager.terminate_cluster
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../utils/terminate_cluster/" class="md-nav__link">
         QuokkaClusterManager.terminate_cluster
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#pyquokka.utils.QuokkaClusterManager.terminate_cluster" class="md-nav__link">
-    pyquokka.utils.QuokkaClusterManager.terminate_cluster
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1785,7 +1738,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../get_cluster_from_json/" class="md-nav__link">
+      <a href="../utils/get_cluster_from_json/" class="md-nav__link">
         QuokkaClusterManager.get_cluster_from_json
       </a>
     </li>
@@ -1799,7 +1752,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../get_cluster_from_ray/" class="md-nav__link">
+      <a href="../utils/get_cluster_from_ray/" class="md-nav__link">
         QuokkaClusterManager.get_cluster_from_ray
       </a>
     </li>
@@ -1869,9 +1822,50 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#pyquokka.utils.QuokkaClusterManager.terminate_cluster" class="md-nav__link">
-    pyquokka.utils.QuokkaClusterManager.terminate_cluster
+  <a href="#how-to-connect-instances-from-multiple-regions-in-quokka" class="md-nav__link">
+    How to connect instances from multiple regions in Quokka
   </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#important-information-about-multiregional-clusters" class="md-nav__link">
+    Important Information about Multiregional Clusters
+  </a>
+  
+    <nav class="md-nav" aria-label="Important Information about Multiregional Clusters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#amis" class="md-nav__link">
+    AMIs
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vpc-peering-for-data-transfer" class="md-nav__link">
+    VPC Peering for Data Transfer
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security-groups-and-vpcs" class="md-nav__link">
+    Security Groups and VPCs
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#use-of-aws-keys-across-multiple-regions" class="md-nav__link">
+    Use of AWS Keys across Multiple regions
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1889,128 +1883,45 @@
                 
                   
 
-  <a href="https://github.com/marsupialtail/quokka/edit/master/docs/utils/terminate_cluster.md" title="Edit this page" class="md-content__button md-icon">
+  <a href="https://github.com/marsupialtail/quokka/edit/master/docs/multiregional_clusters.md" title="Edit this page" class="md-content__button md-icon">
     
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25Z"/></svg>
   </a>
 
 
-<h1 id="quokkaclustermanagerterminate_cluster">QuokkaClusterManager.terminate_cluster</h1>
+<h1 id="spinning-up-multiregional-aws-clusters-using-quokka">Spinning up Multiregional AWS Clusters using Quokka</h1>
+<h2 id="how-to-connect-instances-from-multiple-regions-in-quokka">How to connect instances from multiple regions in Quokka</h2>
+<p>Quokka now provides an interface which allows users to spin up a connected cluster of AWS EC2 instances across multiple regions. To do so, we first need to create a config.yaml file that specifies the details of the instances that will be included in the cluster. This config.yaml file needs to be set up according to the specifications outlined <a href="https://docs.ray.io/en/latest/cluster/vms/references/ray-cluster-configuration.html">here</a>. In order to spin up a certain number of workers in addition to the head node, the min_workers should be set to the desired number. Make sure that the specified number of max_workers is greater than the specified number of min_workers.</p>
+<p>In order to spin up instances in different regions, we need to create a new config file for each region in which we want to launch instances. Once we have our config files, we call <code>ray up /path/to/config_region1.yaml</code> from the command line. This will spin up the instances in region1. To spin up instances in other regions, we need to call <code>ray up /path/to/config_regionX.yaml</code> on each regional config file respectively.</p>
+<p>Once all instances are up and running, we can then create a QuokkaClusterManager and subsequently call the <code>get_multiple_clusters_from_yaml</code> method. Here is an example of how to do this:</p>
+<pre><code>from pyquokka.utils import *
+manager = QuokkaClusterManager(key_name=”my_key”, key_location=”/path/to/key”, security_group=”abc”)
+cluster_list = [&quot;config_region1.yaml&quot;, &quot;config_region2.yaml&quot;]
+results = manager.get_multiple_clusters_from_yaml(cluster_list, aws_access_key, aws_access_id, requirements = [&quot;numpy&quot;, &quot;pandas&quot;], spill_dir = &quot;/data&quot;)
 
-
-<div class="doc doc-object doc-function">
-
-
-<a id="pyquokka.utils.QuokkaClusterManager.terminate_cluster"></a>
-  <div class="doc doc-contents first">
-  
-      <p>Terminate a cluster.</p>
-
-  <p><strong>Parameters:</strong></p>
-  <table>
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th>Type</th>
-        <th>Description</th>
-        <th>Default</th>
-      </tr>
-    </thead>
-    <tbody>
-        <tr>
-          <td><code>quokka_cluster</code></td>
-          <td>
-                <code><span title="pyquokka.utils.EC2Cluster">EC2Cluster</span></code>
-          </td>
-          <td><p>Cluster to terminate.</p></td>
-          <td>
-              <em>required</em>
-          </td>
-        </tr>
-    </tbody>
-  </table>
-
-<details class="return">
-  <summary>Return</summary>
-  <p>None</p>
-</details>
-<p><strong>Examples:</strong></p>
-    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="kn">from</span> <span class="nn">pyquokka.utils</span> <span class="kn">import</span> <span class="o">*</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="n">manager</span> <span class="o">=</span> <span class="n">QuokkaClusterManager</span><span class="p">()</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="n">cluster</span> <span class="o">=</span> <span class="n">manager</span><span class="o">.</span><span class="n">create_cluster</span><span class="p">(</span><span class="n">aws_access_key</span><span class="p">,</span> <span class="n">aws_access_id</span><span class="p">,</span> <span class="n">num_instances</span> <span class="o">=</span> <span class="mi">2</span><span class="p">,</span> <span class="n">instance_type</span> <span class="o">=</span> <span class="s2">&quot;i3.2xlarge&quot;</span><span class="p">,</span> <span class="n">ami</span><span class="o">=</span><span class="s2">&quot;ami-0530ca8899fac469f&quot;</span><span class="p">,</span> <span class="n">requirements</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;numpy&quot;</span><span class="p">,</span> <span class="s2">&quot;pandas&quot;</span><span class="p">])</span>
-<span class="gp">&gt;&gt;&gt; </span><span class="n">manager</span><span class="o">.</span><span class="n">terminate_cluster</span><span class="p">(</span><span class="n">cluster</span><span class="p">)</span>
-</code></pre></div>
-
-      <details class="quote">
-        <summary>Source code in <code>pyquokka/utils.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">391</span>
-<span class="normal">392</span>
-<span class="normal">393</span>
-<span class="normal">394</span>
-<span class="normal">395</span>
-<span class="normal">396</span>
-<span class="normal">397</span>
-<span class="normal">398</span>
-<span class="normal">399</span>
-<span class="normal">400</span>
-<span class="normal">401</span>
-<span class="normal">402</span>
-<span class="normal">403</span>
-<span class="normal">404</span>
-<span class="normal">405</span>
-<span class="normal">406</span>
-<span class="normal">407</span>
-<span class="normal">408</span>
-<span class="normal">409</span>
-<span class="normal">410</span>
-<span class="normal">411</span>
-<span class="normal">412</span>
-<span class="normal">413</span>
-<span class="normal">414</span>
-<span class="normal">415</span>
-<span class="normal">416</span>
-<span class="normal">417</span>
-<span class="normal">418</span>
-<span class="normal">419</span>
-<span class="normal">420</span>
-<span class="normal">421</span>
-<span class="normal">422</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">terminate_cluster</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quokka_cluster</span><span class="p">):</span>
-
-    <span class="sd">&quot;&quot;&quot;</span>
-<span class="sd">    Terminate a cluster.</span>
-
-<span class="sd">    Args:</span>
-<span class="sd">        quokka_cluster (EC2Cluster): Cluster to terminate.</span>
-
-<span class="sd">    Return:</span>
-<span class="sd">        None</span>
-
-<span class="sd">    Examples:</span>
-
-<span class="sd">        &gt;&gt;&gt; from pyquokka.utils import *</span>
-<span class="sd">        &gt;&gt;&gt; manager = QuokkaClusterManager()</span>
-<span class="sd">        &gt;&gt;&gt; cluster = manager.create_cluster(aws_access_key, aws_access_id, num_instances = 2, instance_type = &quot;i3.2xlarge&quot;, ami=&quot;ami-0530ca8899fac469f&quot;, requirements = [&quot;numpy&quot;, &quot;pandas&quot;])</span>
-<span class="sd">        &gt;&gt;&gt; manager.terminate_cluster(cluster)</span>
-
-<span class="sd">    &quot;&quot;&quot;</span>
-
-    <span class="n">ec2</span> <span class="o">=</span> <span class="n">boto3</span><span class="o">.</span><span class="n">client</span><span class="p">(</span><span class="s2">&quot;ec2&quot;</span><span class="p">)</span>
-    <span class="n">instance_ids</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">quokka_cluster</span><span class="o">.</span><span class="n">instance_ids</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
-    <span class="n">ec2</span><span class="o">.</span><span class="n">terminate_instances</span><span class="p">(</span><span class="n">InstanceIds</span> <span class="o">=</span> <span class="n">instance_ids</span><span class="p">)</span>
-    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
-        <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
-        <span class="n">a</span> <span class="o">=</span> <span class="n">ec2</span><span class="o">.</span><span class="n">describe_instances</span><span class="p">(</span><span class="n">InstanceIds</span> <span class="o">=</span> <span class="n">instance_ids</span><span class="p">)</span>
-        <span class="n">states</span> <span class="o">=</span> <span class="p">[</span><span class="n">a</span><span class="p">[</span><span class="s1">&#39;Reservations&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;Instances&#39;</span><span class="p">][</span><span class="n">i</span><span class="p">][</span><span class="s1">&#39;State&#39;</span><span class="p">][</span><span class="s1">&#39;Name&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">instance_ids</span><span class="p">))]</span>
-        <span class="k">if</span> <span class="s2">&quot;running&quot;</span> <span class="ow">in</span> <span class="n">states</span><span class="p">:</span>
-            <span class="k">continue</span>
-        <span class="k">else</span><span class="p">:</span>
-            <span class="k">break</span>
-    <span class="k">del</span> <span class="n">quokka_cluster</span>
-</code></pre></div></td></tr></table></div>
-      </details>
-  </div>
-
-</div>
+from pyquokka.df import QuokkaContext
+qc = QuokkaContext(results[0])
+</code></pre>
+<p>It is important to note that <code>results</code> is a tuple of values: an instance of a Quokka EC2Cluster class at index 0 and a dictionary containing more regional information about the instances in the cluster at index 1.</p>
+<h2 id="important-information-about-multiregional-clusters">Important Information about Multiregional Clusters</h2>
+<h3 id="amis">AMIs</h3>
+<p>AWS AMIs are region specific. Therefore, you should use region-appropriate AMIs for the instances that you are spinning up in each region. If you have AMIs in one region that you want to copy to another region, you can do as described in this <a href="https://medium.com/@jayantspeaks/introduction-to-amazon-machine-instance-ami-1ccec45eab9d#:~:text=Copying%20an%20AMI%20%3A-,AMIs%20are%20region%20specific.,and%20select%20the%20destination%20region">post</a>.</p>
+<h3 id="vpc-peering-for-data-transfer">VPC Peering for Data Transfer</h3>
+<p>In order to spin up a multi-region cluster, Quokka requires the VPCs of all involved instances to be peered. The idea of VPC peering is explained in more detail <a href="https://docs.aws.amazon.com/vpc/latest/peering/vpc-peering-basics.html">here</a>. </p>
+<p>It is easiest to create a VPC peering connection from the AWS console. The steps to establish a VPC peering connection are described in the AWS docs <a href="https://docs.aws.amazon.com/vpc/latest/peering/create-vpc-peering-connection.html">here</a>. </p>
+<p>Since we are talking about setting up a multiregional cluster here, you most likely will want to peer two VPC on the same account, but for different regions. An in-depth tutorial on how to do this can be found <a href="https://docs.aws.amazon.com/vpc/latest/peering/create-vpc-peering-connection.html#same-account-different-region">here</a>. </p>
+<p>At the end of the peering process, you will need to update your route tables for the peering. The AWS docs on how to do this can be found <a href="https://docs.aws.amazon.com/vpc/latest/peering/vpc-peering-routing.html">here</a>.</p>
+<h3 id="security-groups-and-vpcs">Security Groups and VPCs</h3>
+<p>When spinning up instances in different regions with boto3, issues can arise from the security group specified in the QuokkaClusterManager. An example would be the following error:</p>
+<pre><code>botocore.exceptions.ClientError: An error occurred (InvalidGroup.NotFound) when calling the RunInstances operation: The security group 'xyz’ does not exist in VPC 'abc’
+</code></pre>
+<p>Make sure to update the security group in order to allow VPC from other regions to access it. The process of how to do this is described in the AWS docs <a href="https://docs.aws.amazon.com/vpc/latest/peering/vpc-peering-security-groups.html">here</a>.</p>
+<h3 id="use-of-aws-keys-across-multiple-regions">Use of AWS Keys across Multiple regions</h3>
+<p>When using different key pairs for different regions, it is likely that the following error occurs:</p>
+<pre><code>botocore.exceptions.ClientError: An error occurred (InvalidKeyPair.NotFound) when calling the RunInstances operation: The key pair xxxxx does not exist
+</code></pre>
+<p>In order for this to work, we need to import the key that we want to use across the instances to all the regions that we want to connect using the multi-region cluster. An article on how to import AWS keys to other regions can be found <a href="https://michael-ludvig.medium.com/re-using-ec2-ssh-key-pair-in-multiple-regions-982cb620a3ca">here</a>. </p>
+<p>When importing the key to a different region, make sure to give it the same name as the key in the original region. The QuokkaClusterManager class does not distinguish between key names. This means that it will not be able to handle various key names.</p>
 
 
 
@@ -2026,42 +1937,6 @@
       </main>
       
         <footer class="md-footer">
-  
-    
-    <nav class="md-footer__inner md-grid" aria-label="Footer" >
-      
-        
-        <a href="../stop_cluster/" class="md-footer__link md-footer__link--prev" aria-label="Previous: QuokkaClusterManager.stop_cluster" rel="prev">
-          <div class="md-footer__button md-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
-          </div>
-          <div class="md-footer__title">
-            <div class="md-ellipsis">
-              <span class="md-footer__direction">
-                Previous
-              </span>
-              QuokkaClusterManager.stop_cluster
-            </div>
-          </div>
-        </a>
-      
-      
-        
-        <a href="../get_cluster_from_json/" class="md-footer__link md-footer__link--next" aria-label="Next: QuokkaClusterManager.get_cluster_from_json" rel="next">
-          <div class="md-footer__title">
-            <div class="md-ellipsis">
-              <span class="md-footer__direction">
-                Next
-              </span>
-              QuokkaClusterManager.get_cluster_from_json
-            </div>
-          </div>
-          <div class="md-footer__button md-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4Z"/></svg>
-          </div>
-        </a>
-      
-    </nav>
   
   <div class="md-footer-meta md-typeset">
     <div class="md-footer-meta__inner md-grid">
@@ -2084,10 +1959,10 @@
       <div class="md-dialog__inner md-typeset"></div>
     </div>
     
-    <script id="__config" type="application/json">{"base": "../..", "features": [], "search": "../../assets/javascripts/workers/search.5bf1dace.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.config.lang": "en", "search.config.pipeline": "trimmer, stopWordFilter", "search.config.separator": "[\\s\\-]+", "search.placeholder": "Search", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version.title": "Select version"}}</script>
+    <script id="__config" type="application/json">{"base": "..", "features": [], "search": "../assets/javascripts/workers/search.5bf1dace.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.config.lang": "en", "search.config.pipeline": "trimmer, stopWordFilter", "search.config.separator": "[\\s\\-]+", "search.placeholder": "Search", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version.title": "Select version"}}</script>
     
     
-      <script src="../../assets/javascripts/bundle.078830c0.min.js"></script>
+      <script src="../assets/javascripts/bundle.078830c0.min.js"></script>
       
     
   </body>

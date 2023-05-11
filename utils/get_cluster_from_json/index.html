@@ -1948,41 +1948,7 @@ format of the json file created by <code>EC2Cluster.to_json</code>, but this is 
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/utils.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">391</span>
-<span class="normal">392</span>
-<span class="normal">393</span>
-<span class="normal">394</span>
-<span class="normal">395</span>
-<span class="normal">396</span>
-<span class="normal">397</span>
-<span class="normal">398</span>
-<span class="normal">399</span>
-<span class="normal">400</span>
-<span class="normal">401</span>
-<span class="normal">402</span>
-<span class="normal">403</span>
-<span class="normal">404</span>
-<span class="normal">405</span>
-<span class="normal">406</span>
-<span class="normal">407</span>
-<span class="normal">408</span>
-<span class="normal">409</span>
-<span class="normal">410</span>
-<span class="normal">411</span>
-<span class="normal">412</span>
-<span class="normal">413</span>
-<span class="normal">414</span>
-<span class="normal">415</span>
-<span class="normal">416</span>
-<span class="normal">417</span>
-<span class="normal">418</span>
-<span class="normal">419</span>
-<span class="normal">420</span>
-<span class="normal">421</span>
-<span class="normal">422</span>
-<span class="normal">423</span>
-<span class="normal">424</span>
-<span class="normal">425</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">425</span>
 <span class="normal">426</span>
 <span class="normal">427</span>
 <span class="normal">428</span>
@@ -1999,7 +1965,49 @@ format of the json file created by <code>EC2Cluster.to_json</code>, but this is 
 <span class="normal">439</span>
 <span class="normal">440</span>
 <span class="normal">441</span>
-<span class="normal">442</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">get_cluster_from_json</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">json_file</span><span class="p">):</span>
+<span class="normal">442</span>
+<span class="normal">443</span>
+<span class="normal">444</span>
+<span class="normal">445</span>
+<span class="normal">446</span>
+<span class="normal">447</span>
+<span class="normal">448</span>
+<span class="normal">449</span>
+<span class="normal">450</span>
+<span class="normal">451</span>
+<span class="normal">452</span>
+<span class="normal">453</span>
+<span class="normal">454</span>
+<span class="normal">455</span>
+<span class="normal">456</span>
+<span class="normal">457</span>
+<span class="normal">458</span>
+<span class="normal">459</span>
+<span class="normal">460</span>
+<span class="normal">461</span>
+<span class="normal">462</span>
+<span class="normal">463</span>
+<span class="normal">464</span>
+<span class="normal">465</span>
+<span class="normal">466</span>
+<span class="normal">467</span>
+<span class="normal">468</span>
+<span class="normal">469</span>
+<span class="normal">470</span>
+<span class="normal">471</span>
+<span class="normal">472</span>
+<span class="normal">473</span>
+<span class="normal">474</span>
+<span class="normal">475</span>
+<span class="normal">476</span>
+<span class="normal">477</span>
+<span class="normal">478</span>
+<span class="normal">479</span>
+<span class="normal">480</span>
+<span class="normal">481</span>
+<span class="normal">482</span>
+<span class="normal">483</span>
+<span class="normal">484</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">get_cluster_from_json</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">json_file</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Get an EC2Cluster object from a json file. The json file must have been created by `EC2Cluster.to_json`.</span>
@@ -2045,8 +2053,16 @@ format of the json file created by <code>EC2Cluster.to_json</code>, but this is 
 
         <span class="k">return</span> <span class="n">EC2Cluster</span><span class="p">(</span><span class="n">public_ips</span><span class="p">,</span> <span class="n">private_ips</span><span class="p">,</span> <span class="n">instance_ids</span><span class="p">,</span> <span class="n">cpu_count</span><span class="p">,</span> <span class="n">spill_dir</span><span class="p">)</span>
     <span class="k">if</span> <span class="nb">sum</span><span class="p">([</span><span class="n">i</span><span class="o">==</span><span class="s2">&quot;running&quot;</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">states</span><span class="p">])</span> <span class="o">==</span> <span class="nb">len</span><span class="p">(</span><span class="n">states</span><span class="p">):</span>
+        <span class="n">request_instance_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">k</span><span class="p">[</span><span class="s1">&#39;InstanceId&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">reservation</span> <span class="ow">in</span> <span class="n">a</span><span class="p">[</span><span class="s1">&#39;Reservations&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">reservation</span><span class="p">[</span><span class="s1">&#39;Instances&#39;</span><span class="p">]]</span>
         <span class="n">public_ips</span> <span class="o">=</span> <span class="p">[</span><span class="n">k</span><span class="p">[</span><span class="s1">&#39;PublicIpAddress&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">reservation</span> <span class="ow">in</span> <span class="n">a</span><span class="p">[</span><span class="s1">&#39;Reservations&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">reservation</span><span class="p">[</span><span class="s1">&#39;Instances&#39;</span><span class="p">]]</span> 
         <span class="n">private_ips</span> <span class="o">=</span> <span class="p">[</span><span class="n">k</span><span class="p">[</span><span class="s1">&#39;PrivateIpAddress&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">reservation</span> <span class="ow">in</span> <span class="n">a</span><span class="p">[</span><span class="s1">&#39;Reservations&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">k</span> <span class="ow">in</span> <span class="n">reservation</span><span class="p">[</span><span class="s1">&#39;Instances&#39;</span><span class="p">]]</span> 
+
+        <span class="c1"># figure out where in request_instance_ids is instance_ids[0]</span>
+        <span class="n">leader_index</span> <span class="o">=</span> <span class="n">request_instance_ids</span><span class="o">.</span><span class="n">index</span><span class="p">(</span><span class="n">instance_ids</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+        <span class="k">assert</span> <span class="n">leader_index</span> <span class="o">!=</span> <span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="s2">&quot;Leader instance not found in request_instance_ids&quot;</span>
+        <span class="n">public_ips</span> <span class="o">=</span> <span class="n">public_ips</span><span class="p">[</span><span class="n">leader_index</span><span class="p">:]</span> <span class="o">+</span> <span class="n">public_ips</span><span class="p">[:</span><span class="n">leader_index</span><span class="p">]</span>
+        <span class="n">private_ips</span> <span class="o">=</span> <span class="n">private_ips</span><span class="p">[</span><span class="n">leader_index</span><span class="p">:]</span> <span class="o">+</span> <span class="n">private_ips</span><span class="p">[:</span><span class="n">leader_index</span><span class="p">]</span>
+
         <span class="k">return</span> <span class="n">EC2Cluster</span><span class="p">(</span><span class="n">public_ips</span><span class="p">,</span> <span class="n">private_ips</span><span class="p">,</span> <span class="n">instance_ids</span><span class="p">,</span> <span class="n">cpu_count</span><span class="p">,</span> <span class="n">spill_dir</span><span class="p">)</span>
     <span class="k">else</span><span class="p">:</span>
         <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Cluster in an inconsistent state. Either only some machines are running or some machines have been terminated.&quot;</span><span class="p">)</span>

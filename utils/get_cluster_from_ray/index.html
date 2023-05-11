@@ -1993,49 +1993,7 @@ Quokka will detect if your instance have NVME SSD and mount it to this directory
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/utils.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">444</span>
-<span class="normal">445</span>
-<span class="normal">446</span>
-<span class="normal">447</span>
-<span class="normal">448</span>
-<span class="normal">449</span>
-<span class="normal">450</span>
-<span class="normal">451</span>
-<span class="normal">452</span>
-<span class="normal">453</span>
-<span class="normal">454</span>
-<span class="normal">455</span>
-<span class="normal">456</span>
-<span class="normal">457</span>
-<span class="normal">458</span>
-<span class="normal">459</span>
-<span class="normal">460</span>
-<span class="normal">461</span>
-<span class="normal">462</span>
-<span class="normal">463</span>
-<span class="normal">464</span>
-<span class="normal">465</span>
-<span class="normal">466</span>
-<span class="normal">467</span>
-<span class="normal">468</span>
-<span class="normal">469</span>
-<span class="normal">470</span>
-<span class="normal">471</span>
-<span class="normal">472</span>
-<span class="normal">473</span>
-<span class="normal">474</span>
-<span class="normal">475</span>
-<span class="normal">476</span>
-<span class="normal">477</span>
-<span class="normal">478</span>
-<span class="normal">479</span>
-<span class="normal">480</span>
-<span class="normal">481</span>
-<span class="normal">482</span>
-<span class="normal">483</span>
-<span class="normal">484</span>
-<span class="normal">485</span>
-<span class="normal">486</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">486</span>
 <span class="normal">487</span>
 <span class="normal">488</span>
 <span class="normal">489</span>
@@ -2076,7 +2034,52 @@ Quokka will detect if your instance have NVME SSD and mount it to this directory
 <span class="normal">524</span>
 <span class="normal">525</span>
 <span class="normal">526</span>
-<span class="normal">527</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">get_cluster_from_ray</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path_to_yaml</span><span class="p">,</span> <span class="n">aws_access_key</span><span class="p">,</span> <span class="n">aws_access_id</span><span class="p">,</span> <span class="n">requirements</span> <span class="o">=</span> <span class="p">[],</span> <span class="n">spill_dir</span> <span class="o">=</span> <span class="s2">&quot;/data&quot;</span><span class="p">):</span>
+<span class="normal">527</span>
+<span class="normal">528</span>
+<span class="normal">529</span>
+<span class="normal">530</span>
+<span class="normal">531</span>
+<span class="normal">532</span>
+<span class="normal">533</span>
+<span class="normal">534</span>
+<span class="normal">535</span>
+<span class="normal">536</span>
+<span class="normal">537</span>
+<span class="normal">538</span>
+<span class="normal">539</span>
+<span class="normal">540</span>
+<span class="normal">541</span>
+<span class="normal">542</span>
+<span class="normal">543</span>
+<span class="normal">544</span>
+<span class="normal">545</span>
+<span class="normal">546</span>
+<span class="normal">547</span>
+<span class="normal">548</span>
+<span class="normal">549</span>
+<span class="normal">550</span>
+<span class="normal">551</span>
+<span class="normal">552</span>
+<span class="normal">553</span>
+<span class="normal">554</span>
+<span class="normal">555</span>
+<span class="normal">556</span>
+<span class="normal">557</span>
+<span class="normal">558</span>
+<span class="normal">559</span>
+<span class="normal">560</span>
+<span class="normal">561</span>
+<span class="normal">562</span>
+<span class="normal">563</span>
+<span class="normal">564</span>
+<span class="normal">565</span>
+<span class="normal">566</span>
+<span class="normal">567</span>
+<span class="normal">568</span>
+<span class="normal">569</span>
+<span class="normal">570</span>
+<span class="normal">571</span>
+<span class="normal">572</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">get_cluster_from_ray</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path_to_yaml</span><span class="p">,</span> <span class="n">aws_access_key</span><span class="p">,</span> <span class="n">aws_access_id</span><span class="p">,</span> <span class="n">requirements</span> <span class="o">=</span> <span class="p">[],</span> <span class="n">spill_dir</span> <span class="o">=</span> <span class="s2">&quot;/data&quot;</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Connect to a Ray cluster. This will set up the Quokka runtime on the cluster. The Ray cluster must be in a running state and created by </span>
@@ -2114,10 +2117,11 @@ Quokka will detect if your instance have NVME SSD and mount it to this directory
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="kn">import</span> <span class="nn">yaml</span>
-    <span class="n">ec2</span> <span class="o">=</span> <span class="n">boto3</span><span class="o">.</span><span class="n">client</span><span class="p">(</span><span class="s2">&quot;ec2&quot;</span><span class="p">)</span>
     <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">path_to_yaml</span><span class="p">,</span> <span class="s1">&#39;r&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
         <span class="n">config</span> <span class="o">=</span> <span class="n">yaml</span><span class="o">.</span><span class="n">safe_load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
 
+    <span class="n">region</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s2">&quot;provider&quot;</span><span class="p">][</span><span class="s2">&quot;region&quot;</span><span class="p">]</span>
+    <span class="n">ec2</span> <span class="o">=</span> <span class="n">boto3</span><span class="o">.</span><span class="n">client</span><span class="p">(</span><span class="s2">&quot;ec2&quot;</span><span class="p">,</span> <span class="n">region_name</span><span class="o">=</span><span class="n">region</span><span class="p">)</span>
 
     <span class="n">tag_key</span> <span class="o">=</span> <span class="s2">&quot;ray-cluster-name&quot;</span>
     <span class="n">cluster_name</span> <span class="o">=</span> <span class="n">config</span><span class="p">[</span><span class="s1">&#39;cluster_name&#39;</span><span class="p">]</span>
@@ -2158,7 +2162,9 @@ Quokka will detect if your instance have NVME SSD and mount it to this directory
     <span class="n">z</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">system</span><span class="p">(</span><span class="s2">&quot;ssh -oStrictHostKeyChecking=no -i &quot;</span> <span class="o">+</span> <span class="bp">self</span><span class="o">.</span><span class="n">key_location</span> <span class="o">+</span> <span class="s2">&quot; ubuntu@&quot;</span> <span class="o">+</span> <span class="n">public_ips</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="s2">&quot; &#39;bash -s&#39; &lt; &quot;</span> <span class="o">+</span> <span class="n">pyquokka</span><span class="o">.</span><span class="vm">__file__</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;__init__.py&quot;</span><span class="p">,</span><span class="s2">&quot;leader_startup.sh&quot;</span><span class="p">))</span>
     <span class="nb">print</span><span class="p">(</span><span class="n">z</span><span class="p">)</span>
 
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;-----Before launching redis-----&quot;</span><span class="p">)</span>
     <span class="bp">self</span><span class="o">.</span><span class="n">copy_and_launch_flight</span><span class="p">(</span><span class="n">public_ips</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;-----Returning EC2 cluster------&quot;</span><span class="p">)</span>
     <span class="k">return</span> <span class="n">EC2Cluster</span><span class="p">(</span><span class="n">public_ips</span><span class="p">,</span> <span class="n">private_ips</span><span class="p">,</span> <span class="n">instance_ids</span><span class="p">,</span> <span class="n">cpu_count</span><span class="p">,</span> <span class="n">spill_dir</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
       </details>
