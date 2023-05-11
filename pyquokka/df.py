@@ -4,6 +4,7 @@ import polars
 import pyarrow.csv as csv
 import pyquokka.sql_utils as sql_utils
 from pyquokka.datastream import * 
+from pyquokka.orderedstream import * 
 from pyquokka.catalog import *
 import pyarrow.parquet as pq
 from pyarrow.fs import S3FileSystem
