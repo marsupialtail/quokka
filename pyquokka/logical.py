@@ -273,16 +273,25 @@ class InputS3IcebergNode(SourceNode):
         return result
     
 class InputLanceNode(SourceNode):
-    def __init__(self, uri, schema, predicate = None, projection = None, query_vectors = None, k = None) -> None:
+    def __init__(self, uris, schema, vec_column, predicate = None, projection = None) -> None:
         super().__init__(schema)
-        self.uri = uri
+        self.uris = uris
         self.predicate = predicate
         self.projection = projection
         self.query_vectors = query_vectors
         self.k = k
+        self.vec_column = vec_column
     
     def set_cardinality(self, catalog):
-        return super().set_cardinality(catalog)
+        
+        # fix this later
+        return None
+    
+    def lower(self, task_graph):
+        lance_reader = InputLanceDataset(self.uris, self.vec_column, probe_df = None, probe_df_col = None, k = None, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate)
+        node = task_graph.new_input_reader_node(lance_reader, self.stage, self.placement_strategy)
+        return node
+        
 
 class InputS3ParquetNode(SourceNode):
     def __init__(self, files, schema, predicate = None, projection = None) -> None:
@@ -575,23 +584,46 @@ class FilterNode(TaskNode):
 
 class NearestNeighborFilterNode(TaskNode):
 
-    def __init__(self, schema: list, vec_column: str, query_vectors,  k: int) -> None:
+    def __init__(self, schema: list, schema_mapping: dict, vec_column: str, probe_df, probe_vector_col: str, k: int) -> None:
         super().__init__(
             schema = schema,
-            schema_mapping = {column: {0: column} for column in schema},
+            schema_mapping = schema_mapping,
             required_columns = {0: {vec_column}})
         self.vec_column = vec_column
-        self.query_vectors = query_vectors
+        self.probe_df = probe_df
         self.k = k
+        self.probe_vector_col = probe_vector_col
     
     def __str__(self):
-        result = "nearest neighbor filter node on vec column {} with {} query vectors".format(self.vec_column, len(self.query_vectors))
+        result = "nearest neighbor filter node on vec column {} with {} probe vectors".format(self.vec_column, len(self.probe_df))
         return result
     
+    def set_cardinality(self, parent_cardinalities):
+        assert len(parent_cardinalities) == 1
+        parent_cardinality = list(parent_cardinalities.values())[0]
+        for target in self.targets:
+            if self.targets[target].predicate == sqlglot.exp.TRUE and parent_cardinality is not None:
+                self.cardinality[target] = parent_cardinality * self.k
+            else:
+                self.cardinality[target] = None
+    
     def lower(self, task_graph, parent_nodes, parent_source_info):
-        print("Tried to lower a nearest neighbor filter node. This means the optimization probably failed and something bad is happening.")
-        raise NotImplementedError
 
+        executor1 = DFProbeDataStreamNNExecutor1(self.vec_column, self.probe_df, self.probe_vector_col, self.k)
+        executor2 = DFProbeDataStreamNNExecutor2(self.vec_column, self.probe_df, self.probe_vector_col, self.k)
+
+        intermediate_target_info = TargetInfo(BroadcastPartitioner(), sqlglot.exp.TRUE, None, [])
+
+        if self.blocking:
+            assert len(self.targets) == 1
+            target_info = self.targets[list(self.targets.keys())[0]]
+            transform_func = target_info_to_transform_func(target_info)     
+            intermediates = task_graph.new_non_blocking_node(parent_nodes,executor1, self.stage, self.placement_strategy, source_target_info=parent_source_info)
+            return task_graph.new_blocking_node({0: intermediates}, executor2, self.stage, SingleChannelStrategy(), source_target_info={0: intermediate_target_info}, transform_fn = transform_func)
+
+        else:
+            intermediates = task_graph.new_non_blocking_node(parent_nodes,executor1, self.stage, self.placement_strategy, source_target_info=parent_source_info)
+            return task_graph.new_non_blocking_node({0: intermediates}, executor2, self.stage, SingleChannelStrategy(), source_target_info={0: intermediate_target_info})
 
 class ProjectionNode(TaskNode):
 

@@ -146,6 +146,8 @@ def get_cluster_from_docker_head(spill_dir = "/data"):
     self_ip = socket.gethostbyname(socket.gethostname())
     ray.init("ray://" + self_ip + ":10001")
     private_ips = [name.split(":")[1] for name in ray.cluster_resources().keys() if "node" in name]
+    # rotate private_ips so that self_ip is the first element
+    private_ips = private_ips[private_ips.index(self_ip):] + private_ips[:private_ips.index(self_ip)]
     cpu_count = ray.cluster_resources()["CPU"] // len(private_ips)
     return EC2Cluster([None] * len(private_ips), private_ips, [None] * len(private_ips), cpu_count, spill_dir, docker_head_private_ip=self_ip)
 

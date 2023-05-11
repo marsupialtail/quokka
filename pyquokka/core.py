@@ -156,10 +156,10 @@ class TaskManager:
             # print(predicate_fn)
             if type(predicate_fn) == str:
                 con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
-                batch_arrow = x.to_arrow() if type(x) == polars.internals.DataFrame else x
+                batch_arrow = x.to_arrow() if type(x) == polars.DataFrame else x
                 x = polars.from_arrow(con.execute(predicate_fn).arrow())
             else:
-                x = x if type(x) == polars.internals.DataFrame else polars.from_arrow(x)
+                x = x if type(x) == polars.DataFrame else polars.from_arrow(x)
                 x = x.filter(predicate_fn)
             # print("filter time", time.time() - start)
 
@@ -281,7 +281,7 @@ class TaskManager:
         if output is None:
             assert from_local
         else:
-            assert type(output) == pyarrow.Table or type(output) == polars.internals.DataFrame, "push data type {} not understood".format(type(output))
+            assert type(output) == pyarrow.Table or type(output) == polars.DataFrame, "push data type {} not understood".format(type(output))
 
         print_if_profile("convert time", time.time() - start_convert)
 
@@ -450,8 +450,8 @@ class ExecTaskManager(TaskManager):
         if output is not None:
             if type(output) == pyarrow.Table:
                 output = polars.from_arrow(output)
-            assert type(output) == polars.internals.DataFrame or type(output) == types.GeneratorType
-            if type(output) == polars.internals.DataFrame:
+            assert type(output) == polars.DataFrame or type(output) == types.GeneratorType
+            if type(output) == polars.DataFrame:
                 output = [output]
             
             for data in output:

@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-VERSION = '0.2.7' 
+VERSION = '0.2.9' 
 DESCRIPTION = 'Quokka'
 LONG_DESCRIPTION = """
 Dope way to do cloud analytics\n
@@ -37,7 +37,7 @@ setup(
             'tqdm',
             'aiohttp',
             'botocore',
-            'ldbpy',
+            # 'ldbpy',
             'threadpoolctl',
             'parallel-ssh'
             ], # add any additional packages that 
