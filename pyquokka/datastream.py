@@ -1880,7 +1880,7 @@ class DataStream:
             
             >>> d = d.with_column("disc_price", lambda x:x["l_extendedprice"] * (1 - x["l_discount"]), required_columns ={"l_extendedprice", "l_discount"})
             
-            I want the sum and average of the l_quantity column and the l_extendedprice colum, the sum of the disc_price column, the minimum of the l_discount
+            I want the sum and average of the l_quantity column and the l_extendedprice column, the sum of the disc_price column, the minimum of the l_discount
             column, and oh give me the total row count as well.
             
             >>> f = d.agg({"l_quantity":["sum","avg"], "l_extendedprice":["sum","avg"], "disc_price":"sum", "l_discount":"min","*":"count"})
@@ -2109,7 +2109,7 @@ class GroupedDataStream:
             
             >>> d = d.with_column("disc_price", lambda x:x["l_extendedprice"] * (1 - x["l_discount"]), required_columns ={"l_extendedprice", "l_discount"})
             
-            I want the sum and average of the l_quantity column and the l_extendedprice colum, the sum of the disc_price column, the minimum of the l_discount
+            I want the sum and average of the l_quantity column and the l_extendedprice column, the sum of the disc_price column, the minimum of the l_discount
             column, and oh give me the total row count as well, of each unique combination of l_returnflag and l_linestatus
             
             >>> f = d.groupby(["l_returnflag", "l_linestatus"]).agg({"l_quantity":["sum","avg"], "l_extendedprice":["sum","avg"], "disc_price":"sum", "l_discount":"min","*":"count"})
