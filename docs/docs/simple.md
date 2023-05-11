@@ -147,8 +147,6 @@ def do_3():
 
 Note unlike some SQL engines, Quokka currently will not try to figure out the optimal join ordering between the specified three-way join between lineitem, orders and customer tables. You are responsible for figuring that out at the moment -- try to join smaller tables first and then join them against larger tables, or try to minimize the intermeidate result size from those joins.
 
-An important thing to note is that Quokka currently only support inner joins. Other kinds of joins are coming soon.
-
 Feel free to look at some other queries in the Quokka [github](https://github.com/marsupialtail/quokka/tree/master/apps), or browse the API references. While you are there, please give Quokka a star!
 
 ##Lesson 2: Writing Things
@@ -170,7 +168,7 @@ d.write_csv("s3://bucket/prefix/").collect()
 d.write_parquet("s3://bucket/prefix/").collect()
 ~~~
 
-Writing out a DataStream is a blocking API and will automatically call a `collect()` for you. The collected Polars DataFrame at the end is just a column of filenames produced.
+The collected Polars DataFrame at the end is just a column of filenames produced.
 
 ##Lesson 3: Things you can't do.
 
