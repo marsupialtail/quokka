@@ -25,13 +25,6 @@ qc.set_config("memory_limit", 0.01)
 
 task_graph = TaskGraph(qc)
 
-def batch_func(df):
-    df = df.with_columns(((df["o_orderpriority"] == "1-URGENT") | (df["o_orderpriority"] == "2-HIGH")).alias("high"))
-    df = df.with_columns(((df["o_orderpriority"] != "1-URGENT") & (df["o_orderpriority"] != "2-HIGH")).alias("low"))
-    result = df.to_arrow().group_by("l_shipmode").aggregate([("high","sum"), ("low","sum")])
-    return polars.from_arrow(result)
-
-
 if sys.argv[1] == "csv":
 
     lineitem_csv_reader = InputDiskCSVDataset("/Users/EA/Desktop/Quokka_Research/Test_Datasets/tpc-h-public/lineitem.tbl", header = True, sep = "|", stride=16 * 1024 * 1024)
@@ -48,38 +41,38 @@ elif sys.argv[1] == "parquet":
     orders = task_graph.new_input_reader_node(orders_parquet_reader)
       
 
-join_executor = BuildProbeJoinExecutor(left_on="o_orderkey",right_on="l_orderkey")
+join_executor = BuildProbeJoinExecutor(left_on="o_orderkey",right_on="l_orderkey", how="semi")
 
 if sys.argv[1] == "csv":
     output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},join_executor,
         source_target_info={0:TargetInfo(partitioner = HashPartitioner("o_orderkey"), 
-                                        predicate = None,
+                                        predicate = sqlglot.parse_one("o_orderdate between date '1993-07-01' and date '1993-09-30'"),
                                         projection = ["o_orderkey", "o_orderpriority"],
                                         batch_funcs = []), 
                             1:TargetInfo(partitioner = HashPartitioner("l_orderkey"),
-                                        predicate = sqlglot.parse_one("l_shipmode IN ('MAIL','SHIP') and l_commitdate < l_receiptdate and l_shipdate < l_commitdate and \
-            l_receiptdate >= date '1994-01-01' and l_receiptdate < date '1995-01-01'"),
-                                        projection = ["l_orderkey","l_shipmode"],
+                                        predicate = sqlglot.parse_one("l_commitdate < l_receiptdate"),
+                                        projection = ["l_orderkey"],
                                         batch_funcs = [])})
 else:
     output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},join_executor,
-        source_target_info={0:TargetInfo(partitioner = HashPartitioner("o_orderkey"), 
-                                        predicate = None,
-                                        projection = None,
+            source_target_info={0:TargetInfo(partitioner = HashPartitioner("o_orderkey"), 
+                                        predicate = sqlglot.parse_one("o_orderdate between date '1993-07-01' and date '1993-09-30'"),
+
+                                        projection = ["o_orderkey", "o_orderpriority"],
                                         batch_funcs = []), 
                             1:TargetInfo(partitioner = HashPartitioner("l_orderkey"),
-                                        predicate = sqlglot.parse_one("l_commitdate < l_receiptdate and l_shipdate < l_commitdate "),
-                                        projection = ["l_orderkey","l_shipmode"],
+                                        predicate = sqlglot.parse_one("l_commitdate < l_receiptdate"),
+                                        projection = ["l_orderkey"],
                                         batch_funcs = [])})
 
-agg_executor = SQLAggExecutor(["l_shipmode"], None, "sum(high_sum) as high, sum(low_sum) as low")
+agg_executor = SQLAggExecutor(["o_orderpriority"], [("o_orderpriority", "asc")], "count(*) as order_count")
 
 agged = task_graph.new_blocking_node({0:output_stream},  agg_executor, placement_strategy = SingleChannelStrategy(), 
     source_target_info={0:TargetInfo(
         partitioner = BroadcastPartitioner(),
         predicate = None,
         projection = None,
-        batch_funcs = [batch_func]
+        batch_funcs = []
     )})
 
 task_graph.create()

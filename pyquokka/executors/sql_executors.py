@@ -415,6 +415,11 @@ class DistinctExecutor(Executor):
 
 class SQLAggExecutor(Executor):
     def __init__(self, groupby_keys, orderby_keys, sql_statement) -> None:
+        """
+        groupby_keys (list): Keys to perform the group by operation on.
+        orderby_keys (list of tuples): Keys to order by. Add "desc" as second element of tuple to order in descending order.
+        sql_statement (string): aggregation statement in SQL
+        """
         assert type(groupby_keys) == list
         if orderby_keys is not None:
             assert type(orderby_keys) == list
