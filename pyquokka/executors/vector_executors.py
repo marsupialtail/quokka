@@ -18,15 +18,35 @@ class DFProbeDataStreamNNExecutor1(Executor):
         self.k = k
 
     def execute(self, batches, stream_id, executor_id):
+        
+        start = time.time()
         batch = pa.concat_tables(batches)
+        print("starting stage 0, with shape", len(batch))
         vectors = np.stack(batch[self.vec_col].to_numpy())
         normalized_vectors = vectors / np.linalg.norm(vectors, axis = 1, keepdims = True)
+
         with threadpool_limits(limits=8, user_api='blas'):
             distances = np.dot(normalized_vectors, self.query_vecs.T)
         indices = np.argsort(distances, axis = 0)[-self.k:].T.flatten()
-        print(indices)
-        # you could be smarter here and keep track of separate candidate sets for each probe, but let's leave this for an intern.
-        return batch.take(indices)
+
+        # import torch
+        # torch.set_num_threads(8)
+        # B = len(batch)
+        # all_indices = []
+
+        # for i in range(0, len(batch), B):
+        #     vectors = torch.from_numpy(np.stack(batch[self.vec_col].to_numpy()[i: i + B])).cuda().half()
+        #     normalized_vectors = vectors / vectors.norm(dim=1).unsqueeze(1)
+        #     query_vecs = torch.from_numpy(self.query_vecs).cuda().half().T
+        #     distances = torch.matmul(normalized_vectors, query_vecs)
+        #     indices = torch.topk(distances, self.k, dim = 0).indices.T.flatten().cpu().numpy()
+
+        #     all_indices.append(indices)
+            # you could be smarter here and keep track of separate candidate sets for each probe, but let's leave this for an intern.
+        # return batch.take(np.concatenate(all_indices))
+        
+        print("stage 0 took", time.time() - start)
+        return batch.take(np.concatenate(indices))
     
     def done(self, executor_id):
         return

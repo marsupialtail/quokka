@@ -159,6 +159,9 @@ class InputLanceDataset:
             assert type(filters) == str, "sql predicate supported"
         self.filters = filters
 
+        self.workers = 4
+        self.executor = None
+
         self.probe_df = None
         self.probe_df_col = None
         self.k = None
@@ -167,11 +170,11 @@ class InputLanceDataset:
         self.uris = uris
         self.vec_column = vec_column
 
-        for uri in self.uris:
-            dataset = lance.dataset(uri)
-            if not dataset.has_index:
-                print("Warning: dataset {} does not have an index. Expect slow performance and maybe crashes.".format(uri))
-            assert self.vec_column in dataset.schema.names, "vector column not found in schema"
+        # for uri in self.uris:
+        #     dataset = lance.dataset(uri)
+        #     if not dataset.has_index:
+        #         print("Warning: dataset {} does not have an index. Expect slow performance and maybe crashes.".format(uri))
+        #     assert self.vec_column in dataset.schema.names, "vector column not found in schema"
         
     def set_probe_df(self, probe_df, probe_df_col, k):
 
@@ -187,25 +190,53 @@ class InputLanceDataset:
 
     def get_own_state(self, num_channels):
 
-        # split the urls across the channels
-        channel_info = {}
+        self.num_channels = num_channels
+        channel_infos = {}
         for channel in range(num_channels):
-            channel_info[channel] = self.uris[channel::num_channels]
-        print(channel_info)
-        return channel_info
+            my_files = [self.uris[k] for k in range(channel, len(self.uris), self.num_channels)]
+            channel_infos[channel] = []
+            for pos in range(0, len(my_files), self.workers):
+                channel_infos[channel].append( my_files[pos : pos + self.workers])
+        return channel_infos
     
-    def execute(self, mapper_id, uri):
+    def execute(self, mapper_id, uris):
 
         import lance
-        dataset = lance.dataset(uri)
-        if self.k is not None:
-            results = pa.concat_tables( [dataset.to_table(columns = self.columns, filter = self.filters, 
-                                nearest={"column": self.vec_column, "k": self.k, "q": self.probe_df_vecs[i]}) for i in range(len(self.probe_df_vecs))]) 
-        else:
-            results = dataset.to_table(columns = self.columns, filter = self.filters)
-        
-        return None, results
 
+        def download(uri):
+            dataset = lance.dataset(uri)
+            if self.k is not None:
+                results = pa.concat_tables( [dataset.to_table(columns = self.columns, filter = self.filters, 
+                                    nearest={"column": self.vec_column, "k": self.k, "q": self.probe_df_vecs[i]}) for i in range(len(self.probe_df_vecs))]) 
+            else:
+                results = dataset.to_table(columns = self.columns, filter = self.filters)
+            return results
+
+        # dirty hack to set env varibles
+
+        if self.executor is None:
+            import os
+            lines = open("/home/ubuntu/.aws/credentials").readlines()
+            aws_secret_access_key = lines[1].split("=")[1].strip()
+            aws_access_key_id = lines[2].split("=")[1].strip()
+
+            os.environ["AWS_SECRET_ACCESS_KEY"] = aws_secret_access_key
+            os.environ["AWS_ACCESS_KEY_ID"] = aws_access_key_id
+
+            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
+
+        if len(uris) == 0:
+            return None, None
+        
+        # this will return things out of order, but that's ok!
+
+        future_to_url = {self.executor.submit(download, uri): uri for uri in uris}
+        dfs = []
+        for future in concurrent.futures.as_completed(future_to_url):
+            dfs.append(future.result())
+        
+        return None, pa.concat_tables(dfs)
+        
 class InputEC2ParquetDataset:
 
     # filter pushdown could be profitable in the future, especially when you can skip entire Parquet files

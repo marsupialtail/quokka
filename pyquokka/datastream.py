@@ -393,11 +393,23 @@ class DataStream:
                                               schema=self.schema, sorted = self.sorted)
 
 
-    def nn_probe(self, probe_df, vec_column = None, vec_column_left = None, vec_column_right = None, k = 1, suffix = "_probe"):
+    def vector_nn_join(self, probe_df, vec_column = None, vec_column_left = None, vec_column_right = None, k = 1, suffix = "_probe", probe_side = "right", tmp_directory = None):
 
         """
-        This will perform a nearest neighbor join between two Quokka
-        
+        Probe a Quokka DataStream with a vector column by a Polars DataFrame with a vector column.
+        For each vector in the Polars DataFrame it will find the k nearest neighbors in the vector column of the Quokka DataStream.
+        This is a blocking operation. The result length will be len(probe_df) * k.
+
+        Args:
+            probe_df (polars.DataFrame): The Polars DataFrame to probe with.
+            vec_column (str): The name of the vector column in both the Quokka DataStream and the Polars DataFrame.
+            vec_column_left (str): The name of the vector column in the Quokka DataStream.
+            vec_column_right (str): The name of the vector column in the Polars DataFrame.
+            k (int): The number of nearest neighbors to find.
+            suffix (str): The suffix to append to the column names of the result.
+
+        Return:
+            A DataStream consisting of the nearest neighbors of each vector in the Polars DataFrame.
         """
 
         if vec_column is not None:
@@ -412,6 +424,10 @@ class DataStream:
 
         assert vec_column_left in self.schema, "Vector column not in schema"
         assert vec_column_right in probe_df.schema, "Probe column not in schema"
+
+        assert probe_side in ["left", "right"], "probe_side must be either 'left' or 'right'"
+        if probe_side == "left": 
+            assert tmp_directory is not None, "tmp_directory must be specified if probe_side is 'left'"
 
         # rename any column in probe_df that is also in self.schema
 
@@ -430,12 +446,38 @@ class DataStream:
                 new_schema.append(col_name)
                 schema_mapping[col_name] = {-1: col_name}
 
-        node = NearestNeighborFilterNode(new_schema, schema_mapping, vec_column_left, probe_df, probe_vec_col,  k)
+        if probe_side == "right":
+            node = NearestNeighborFilterNode(new_schema, schema_mapping, vec_column_left, probe_df, probe_vec_col,  k)
 
-        return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=node,
-                                              schema=new_schema, sorted = self.sorted)
+            return self.quokka_context.new_stream(sources={0: self}, partitioners={0: PassThroughPartitioner()}, node=node,
+                                                schema=new_schema, sorted = self.sorted)
+        else:
+            # you are probing a small polars dataframe with a datastream, this will typically make the datastream bigger. 
+            # so don't push down, can't push down into lance anyway.
+            import lance
+            class ProbeExecutor(Executor):
+                def __init__(self) -> None:
+                    try:
+                        self.dataset = lance.write_dataset(probe_df.to_arrow(), tmp_directory)
+                        self.dataset.create_index(vec_column_right, index_type = "IVF_PQ", num_partitions=256, num_sub_vectors=16)
+                    except:
+                        raise Exception("Failed to write dataset to tmp directory, is it writeable?")
+                def execute(self,batches,stream_id, executor_id):
+                    batch = pa.concat_tables(batches)
+                    probe_vecs = batch.column(probe_vec_col).to_numpy()
+                    results = pa.concat_tables([self.dataset.to_table(nearest={"column": vec_column_right, "k": k, "q": probe_vecs[i]})
+                                                 for i in range(len(probe_vecs))]) 
+                    return pa.Table.from_arrays(batch.columns + results.columns, names=batch.column_names + results.column_names)
+                def done(self,executor_id):
+                    return
+                
+            executor = ProbeExecutor()
+            return self.stateful_transform(executor, new_schema = new_schema, required_columns = set(vec_column_left), 
+                                           partitioner = PassThroughPartitioner(), placement_strategy= CustomChannelsStrategy(1))
 
-    def _ann_join(self, vec_column = None, vec_column_left = None, vec_column_right = None, probe_side = "left", k = 1):
+            
+
+    def vector_range_join(self, vec_column = None, vec_column_left = None, vec_column_right = None, probe_side = "left", k = 1):
 
         """
         This will perform a nearest neighbor join between two Quokka DataStreams.

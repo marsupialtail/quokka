@@ -292,7 +292,7 @@ class InputLanceNode(SourceNode):
         self.probe_df = probe_df
         assert type(probe_df_col) == str and probe_df_col in probe_df.columns, "probe_df_col must be a string and in probe_df"
         self.probe_df_col = probe_df_col
-        self.probe_df_vecs = np.stack(self.probe_df[self.probe_df_col].to_numpy())
+        # self.probe_df_vecs = np.stack(self.probe_df[self.probe_df_col].to_numpy())
         assert type(k) == int and k >= 1
         self.k = k
 
@@ -308,7 +308,7 @@ class InputLanceNode(SourceNode):
             lance_reader.set_probe_df(self.probe_df, self.probe_df_col, self.k)
         node = task_graph.new_input_reader_node(lance_reader, self.stage, self.placement_strategy)
         if self.probe_df is not None:
-            operator = DFProbeDataStreamNNExecutor2(self.vec_col, self.probe_df_vecs, self.probe_df_col, self.k)
+            operator = DFProbeDataStreamNNExecutor2(self.vec_column, self.probe_df, self.probe_df_col, self.k)
             target_info = TargetInfo(BroadcastPartitioner(), sqlglot.exp.TRUE, None, [])
             node = task_graph.new_non_blocking_node({0: node}, 
                         operator, self.stage, SingleChannelStrategy(), 

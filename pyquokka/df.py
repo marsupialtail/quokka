@@ -86,6 +86,9 @@ class QuokkaContext:
         self.replay_nodes = set()
         count = 0
 
+        self.tag_io_nodes = {k: set() for k in self.cluster.tags}
+        self.tag_compute_nodes = {k: set() for k in self.cluster.tags}
+
         self.leader_compute_nodes = []
         self.leader_io_nodes = []
 
@@ -94,29 +97,34 @@ class QuokkaContext:
         for ip in private_ips:
             
             for k in range(1):
-                self.task_managers[count] = ReplayTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()), self.exec_config)
+                self.task_managers[count] = ReplayTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_public_ip, list(self.cluster.private_ips.values()), self.exec_config)
                 self.replay_nodes.add(count)
                 self.node_locs[count] = ip
                 count += 1
             for k in range(io_per_node):
-                self.task_managers[count] = IOTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()), self.exec_config)
+                self.task_managers[count] = IOTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_public_ip, list(self.cluster.private_ips.values()), self.exec_config)
                 self.io_nodes.add(count)
+                if ip == self.cluster.leader_private_ip:
+                    self.leader_io_nodes.append(count)
+                for tag in self.cluster.tags:
+                    if ip in self.cluster.tags[tag]:
+                        self.tag_io_nodes[tag].add(count)
                 self.node_locs[count] = ip
                 count += 1
 
-                if ip == self.cluster.leader_private_ip:
-                    self.leader_io_nodes.append(count)
-
             for k in range(exec_per_node):
                 if type(self.cluster) == LocalCluster:
-                    self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()), self.exec_config)
+                    self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001,  max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_public_ip, list(self.cluster.private_ips.values()), self.exec_config)
                 elif type(self.cluster) == EC2Cluster:
-                    self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001, max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_private_ip, list(self.cluster.private_ips.values()), self.exec_config) 
+                    self.task_managers[count] = ExecTaskManager.options(num_cpus = 0.001,  max_concurrency = 2, resources={"node:" + ip : 0.001}).remote(count, self.cluster.leader_public_ip, list(self.cluster.private_ips.values()), self.exec_config) 
                 else:
                     raise Exception
 
                 if ip == self.cluster.leader_private_ip:
                     self.leader_compute_nodes.append(count)
+                for tag in self.cluster.tags:
+                    if ip in self.cluster.tags[tag]:
+                        self.tag_compute_nodes[tag].add(count)
                 
                 self.compute_nodes.add(count)
                 self.node_locs[count] = ip
@@ -558,17 +566,14 @@ class QuokkaContext:
                 table_location = table_location[:-1]
                 prefix = "/".join(table_location[:-1].split("/")[1:])
 
-                z = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
-                if 'Contents' not in z:
-                    raise Exception("Wrong S3 path")
-                files = [bucket + "/" + i['Key'] for i in z['Contents'] if i['Key'].endswith(".lance")]
+                z = s3.list_objects_v2(Bucket=bucket, Prefix=prefix, Delimiter = "/")
+                files = ["s3://" + bucket + "/" + i['Prefix'] for i in z['CommonPrefixes'] if i['Prefix'].endswith(".lance/")]
                 while 'NextContinuationToken' in z.keys():
                     z = s3.list_objects_v2(
-                        Bucket=bucket, Prefix=prefix, ContinuationToken=z['NextContinuationToken'])
-                    files.extend([bucket + "/" + i['Key'] for i in z['Contents']
-                                    if i['Key'].endswith(".parquet")])
+                        Bucket=bucket, Prefix=prefix, Delimiter = "/", ContinuationToken=z['NextContinuationToken'])
+                    files.extend(["s3://" + bucket + "/" + i['Prefix'] for i in z['CommonPrefixes'] if i['Prefix'].endswith(".lance/")])
 
-                assert len(files) > 0, "could not find any parquet files. make sure they end with .parquet"
+                assert len(files) > 0, "could not find any lance files. make sure they end with .lance"
                 
                 try:
                     schema = lance.dataset(files[0]).schema.names
@@ -1279,6 +1284,16 @@ class QuokkaContext:
                     parent.targets[target_id] = targets[target_id]
                 del parent.targets[node_id]
                 del self.execution_nodes[node_id]
+
+                # find yourself in your targets' parents and replace yourself with your parent
+                for target_id in targets:
+                    success = False
+                    for key in self.execution_nodes[target_id].parents:
+                        if self.execution_nodes[target_id].parents[key] == node_id:
+                            self.execution_nodes[target_id].parents[key] = node.parents[0]
+                            success = True
+                            break
+                    assert success
 
             # otherwise you need to maintain yourself
             else:

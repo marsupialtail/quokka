@@ -57,6 +57,8 @@ class TaskGraph:
             return 1
         elif type(placement_strategy) == CustomChannelsStrategy:
             return self.context.cluster.num_node * placement_strategy.channels_per_node * (self.context.io_per_node if node_type == 'input' else self.context.exec_per_node)
+        elif type(placement_strategy) == TaggedCustomChannelsStrategy:
+            return len(self.context.cluster.tags[placement_strategy.tag]) * placement_strategy.channels_per_node * (self.context.io_per_node if node_type == 'input' else self.context.exec_per_node)
         elif type(placement_strategy) == DatasetStrategy:
             return placement_strategy.total_channels
         else:
@@ -120,7 +122,7 @@ class TaskGraph:
         if placement_strategy is None:
             placement_strategy = CustomChannelsStrategy(1)
         
-        assert type(placement_strategy) in [SingleChannelStrategy, CustomChannelsStrategy]
+        assert type(placement_strategy) in [SingleChannelStrategy, CustomChannelsStrategy, TaggedCustomChannelsStrategy]
         
         channel_info = reader.get_own_state(self.get_total_channels_from_placement_strategy(placement_strategy, 'input'))
         # print(channel_info)
@@ -144,9 +146,11 @@ class TaskGraph:
             self.NTT.rpush(pipe, node, input_task.reduce())
             channel_locs[count] = node
         
-        elif type(placement_strategy) == CustomChannelsStrategy:
+        elif type(placement_strategy) == CustomChannelsStrategy or type(placement_strategy) == TaggedCustomChannelsStrategy:
         
-            for node in sorted(self.context.io_nodes):
+            nodes = sorted(self.context.io_nodes) if type(placement_strategy) == CustomChannelsStrategy else sorted(self.context.tag_io_nodes[placement_strategy.tag])
+
+            for node in nodes:
                 for channel in range(placement_strategy.channels_per_node):
 
                     if count in channel_info:
@@ -342,10 +346,11 @@ class TaskGraph:
             self.CLT.set(pipe, pickle.dumps((self.current_actor, 0)), self.context.node_locs[node])
             self.IRT.set(pipe, pickle.dumps((self.current_actor, 0, -1)), pickle.dumps(input_reqs))
 
-        elif type(placement_strategy) == CustomChannelsStrategy:
+        elif type(placement_strategy) == CustomChannelsStrategy or type(placement_strategy) == TaggedCustomChannelsStrategy:
 
+            nodes = sorted(self.context.compute_nodes) if type(placement_strategy) == CustomChannelsStrategy else sorted(self.context.tag_compute_nodes[placement_strategy.tag])
             count = 0
-            for node in sorted(self.context.compute_nodes):
+            for node in nodes:
                 for channel in range(placement_strategy.channels_per_node):
                     exec_task = ExecutorTask(self.current_actor, count, 0, 0, input_reqs)
                     channel_locs[count] = node
@@ -353,6 +358,7 @@ class TaskGraph:
                     self.CLT.set(pipe, pickle.dumps((self.current_actor, count)), self.context.node_locs[node])
                     self.IRT.set(pipe, pickle.dumps((self.current_actor, count, -1)), pickle.dumps(input_reqs))
                     count += 1
+
         else:
             raise Exception("placement strategy not supported")
         

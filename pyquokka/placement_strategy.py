@@ -27,9 +27,10 @@ class DatasetStrategy(PlacementStrategy):
         self.total_channels = total_channels
 
 '''
-Launch only on GPU instances.
+Lance a custom umber of channels per node within a tag. 
 '''
-class GPUStrategy(PlacementStrategy):
-    def __init__(self) -> None:
+class TaggedCustomChannelsStrategy(PlacementStrategy):
+    def __init__(self, channels, tag) -> None:
         super().__init__()
-
+        self.channels_per_node = channels
+        self.tag = tag
