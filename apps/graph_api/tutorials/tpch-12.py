@@ -1,5 +1,5 @@
 """
-This is a Quokka TaskGraph API implementation of the TPC-H 4 query. 
+This is a Quokka TaskGraph API implementation of the TPC-H 12 query. 
 """
 
 import sys
