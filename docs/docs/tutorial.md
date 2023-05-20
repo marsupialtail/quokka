@@ -363,7 +363,7 @@ Here, we are using our `InputDiskJSONReader` as the `a_reader` and our `InputDis
 
 ### Lesson 3.1: Putting it all together & using stages
 
-We have seen before how we can define input readers and executors, how we can use built-in input readers in order read data from CSV and JSON files and finally how to join this data. Let's put it all together now and see the TaskGraph API in action! In this lesson, we will be writing a TaskGraph API implementation of the TPC-H 4 query. The code for this lesson can be found in /apps/graph_api/tutorial/lesson3.1.py.
+Previously, we have seen how we can define input readers and executors, how we can use built-in input readers in order read data from CSV and JSON files and finally how to join this data. Let's put it all together now and see the TaskGraph API in action! In this lesson, we will be writing a TaskGraph API implementation of the TPC-H 4 query. The code for this lesson can be found in /apps/graph_api/tutorial/lesson3.1.py.
 
 We start off by reading the data from an input source, namely two tables called lineitem and orders tables, and we create new input reader nodes for them.
 
@@ -433,7 +433,6 @@ print(ray.get(qc.dataset_manager.to_df.remote(agged)))
 Let us now take a look at another TaskGraph API implementation of a TPC-H query, namely the TPC-H 6 query. First, we create input readers in order to read in the data. For this query, we only need to read one table, so we specify a `new_input_reader_node` for the lineitem table.
 
 ~~~ python3
-
 lineitem_csv_reader = InputDiskCSVDataset("lineitem.tbl", header = True, sep = "|", stride=16 * 1024 * 1024)
 lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, stage=-1)
 ~~~
@@ -452,7 +451,7 @@ This function will be applied to each batch that we process in the next operatio
 agg_executor = SQLAggExecutor([], None, "sum(revenue) as revenue")
 ~~~
 
-And then we pass this agg_executor, along with our custom function as input to a `new_blocking_node`. In addition, we also apply a predicate.
+And then we pass this agg_executor, along with our custom function, as input to a `new_blocking_node`. In addition, we also apply a predicate.
 
 ~~~ python3
 agged = task_graph.new_blocking_node({0:lineitem}, agg_executor, placement_strategy = SingleChannelStrategy(), 
