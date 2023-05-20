@@ -56,4 +56,4 @@ What does this **vector data lake** look like? Vector embeddings should be store
 
 Of course, vector databases are still needed to provide operational access to the latest data, just like Oracle/Postgres/MySQL. However, old data should be periodically ETL'ed out of those systems to the data lake. Data engineering teams are already experts at doing it.
 
-Quokka is the first system that tries to allow people to do something like this, but I don't think it will be the last, or the best. Executing on this vision needs collaboration from open data lake formats Iceberg and Delta, file formats like Parquet and query engines like Quokka, Trino and SparkSQL. But we should get on it, this time before people start complaining their databases are too expensive,
+Quokka is the first system that tries to allow people to do something like this, but I don't think it will be the last, or the best. Executing on this vision needs collaboration from open data lake formats Iceberg and Delta, file formats like Parquet and query engines like Quokka, Trino and SparkSQL. But the open data community moves fast, and I have high hopes for the future!
