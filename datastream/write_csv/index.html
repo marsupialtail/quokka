@@ -1797,7 +1797,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../utils/get_cluster_from_ray/" class="md-nav__link">
+      <a href="../../utils/get_cluster_from_ray.md" class="md-nav__link">
         QuokkaClusterManager.get_cluster_from_ray
       </a>
     </li>
@@ -1955,8 +1955,7 @@ this many rows in memory instead of using file appends, so you should have enoug
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/datastream.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">128</span>
-<span class="normal">129</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">129</span>
 <span class="normal">130</span>
 <span class="normal">131</span>
 <span class="normal">132</span>
@@ -2029,7 +2028,8 @@ this many rows in memory instead of using file appends, so you should have enoug
 <span class="normal">199</span>
 <span class="normal">200</span>
 <span class="normal">201</span>
-<span class="normal">202</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">write_csv</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_location</span><span class="p">,</span> <span class="n">output_line_limit</span><span class="o">=</span><span class="mi">1000000</span><span class="p">):</span>
+<span class="normal">202</span>
+<span class="normal">203</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">write_csv</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">table_location</span><span class="p">,</span> <span class="n">output_line_limit</span><span class="o">=</span><span class="mi">1000000</span><span class="p">):</span>
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    This will write out the entire contents of the DataStream to a list of CSVs. </span>
 

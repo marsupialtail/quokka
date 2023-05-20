@@ -1799,7 +1799,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../get_cluster_from_ray/" class="md-nav__link">
+      <a href="../get_cluster_from_ray.md" class="md-nav__link">
         QuokkaClusterManager.get_cluster_from_ray
       </a>
     </li>
@@ -2006,11 +2006,7 @@
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/utils.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">305</span>
-<span class="normal">306</span>
-<span class="normal">307</span>
-<span class="normal">308</span>
-<span class="normal">309</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">309</span>
 <span class="normal">310</span>
 <span class="normal">311</span>
 <span class="normal">312</span>
@@ -2054,7 +2050,22 @@
 <span class="normal">350</span>
 <span class="normal">351</span>
 <span class="normal">352</span>
-<span class="normal">353</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">create_cluster</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">aws_access_key</span><span class="p">,</span> <span class="n">aws_access_id</span><span class="p">,</span> <span class="n">num_instances</span><span class="p">,</span> <span class="n">instance_type</span> <span class="o">=</span> <span class="s2">&quot;i3.2xlarge&quot;</span><span class="p">,</span> <span class="n">ami</span><span class="o">=</span><span class="s2">&quot;ami-0530ca8899fac469f&quot;</span><span class="p">,</span> <span class="n">requirements</span> <span class="o">=</span> <span class="p">[],</span> <span class="n">spill_dir</span> <span class="o">=</span> <span class="s2">&quot;/data&quot;</span><span class="p">):</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span>
+<span class="normal">363</span>
+<span class="normal">364</span>
+<span class="normal">365</span>
+<span class="normal">366</span>
+<span class="normal">367</span>
+<span class="normal">368</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">create_cluster</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">aws_access_key</span><span class="p">,</span> <span class="n">aws_access_id</span><span class="p">,</span> <span class="n">num_instances</span><span class="p">,</span> <span class="n">instance_type</span> <span class="o">=</span> <span class="s2">&quot;i3.2xlarge&quot;</span><span class="p">,</span> <span class="n">ami</span><span class="o">=</span><span class="s2">&quot;ami-0530ca8899fac469f&quot;</span><span class="p">,</span> <span class="n">requirements</span> <span class="o">=</span> <span class="p">[],</span> <span class="n">spill_dir</span> <span class="o">=</span> <span class="s2">&quot;/data&quot;</span><span class="p">,</span> <span class="n">volume_size</span> <span class="o">=</span> <span class="mi">8</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Create a Ray cluster configured to run Quokka applications.</span>
@@ -2087,7 +2098,18 @@
     <span class="n">ec2</span> <span class="o">=</span> <span class="n">boto3</span><span class="o">.</span><span class="n">client</span><span class="p">(</span><span class="s2">&quot;ec2&quot;</span><span class="p">)</span>
     <span class="n">vcpu_per_node</span> <span class="o">=</span> <span class="n">ec2</span><span class="o">.</span><span class="n">describe_instance_types</span><span class="p">(</span><span class="n">InstanceTypes</span><span class="o">=</span><span class="p">[</span><span class="n">instance_type</span><span class="p">])[</span><span class="s1">&#39;InstanceTypes&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;VCpuInfo&#39;</span><span class="p">][</span><span class="s1">&#39;DefaultVCpus&#39;</span><span class="p">]</span>
     <span class="n">waiter</span> <span class="o">=</span> <span class="n">ec2</span><span class="o">.</span><span class="n">get_waiter</span><span class="p">(</span><span class="s1">&#39;instance_running&#39;</span><span class="p">)</span>
-    <span class="n">res</span> <span class="o">=</span> <span class="n">ec2</span><span class="o">.</span><span class="n">run_instances</span><span class="p">(</span><span class="n">ImageId</span><span class="o">=</span><span class="n">ami</span><span class="p">,</span> <span class="n">InstanceType</span> <span class="o">=</span> <span class="n">instance_type</span><span class="p">,</span> <span class="n">SecurityGroupIds</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">security_group</span><span class="p">],</span> <span class="n">KeyName</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">key_name</span> <span class="p">,</span><span class="n">MaxCount</span><span class="o">=</span><span class="n">num_instances</span><span class="p">,</span> <span class="n">MinCount</span><span class="o">=</span><span class="n">num_instances</span><span class="p">)</span>
+    <span class="n">res</span> <span class="o">=</span> <span class="n">ec2</span><span class="o">.</span><span class="n">run_instances</span><span class="p">(</span>
+        <span class="n">BlockDeviceMappings</span><span class="o">=</span><span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s1">&#39;DeviceName&#39;</span><span class="p">:</span> <span class="n">ec2</span><span class="o">.</span><span class="n">describe_images</span><span class="p">(</span><span class="n">ImageIds</span><span class="o">=</span><span class="p">[</span><span class="n">ami</span><span class="p">])[</span><span class="s1">&#39;Images&#39;</span><span class="p">][</span><span class="mi">0</span><span class="p">][</span><span class="s1">&#39;RootDeviceName&#39;</span><span class="p">],</span>
+                <span class="s1">&#39;Ebs&#39;</span><span class="p">:</span> <span class="p">{</span>
+                    <span class="s1">&#39;DeleteOnTermination&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span>
+                    <span class="s1">&#39;VolumeSize&#39;</span><span class="p">:</span> <span class="n">volume_size</span><span class="p">,</span>
+                    <span class="s1">&#39;VolumeType&#39;</span><span class="p">:</span> <span class="s1">&#39;gp3&#39;</span>
+                <span class="p">}</span>
+            <span class="p">}</span>
+        <span class="p">],</span>
+        <span class="n">ImageId</span><span class="o">=</span><span class="n">ami</span><span class="p">,</span> <span class="n">InstanceType</span> <span class="o">=</span> <span class="n">instance_type</span><span class="p">,</span> <span class="n">SecurityGroupIds</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">security_group</span><span class="p">],</span> <span class="n">KeyName</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">key_name</span> <span class="p">,</span><span class="n">MaxCount</span><span class="o">=</span><span class="n">num_instances</span><span class="p">,</span> <span class="n">MinCount</span><span class="o">=</span><span class="n">num_instances</span><span class="p">)</span>
     <span class="n">instance_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">res</span><span class="p">[</span><span class="s1">&#39;Instances&#39;</span><span class="p">][</span><span class="n">i</span><span class="p">][</span><span class="s1">&#39;InstanceId&#39;</span><span class="p">]</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_instances</span><span class="p">)]</span> 
     <span class="n">waiter</span><span class="o">.</span><span class="n">wait</span><span class="p">(</span><span class="n">InstanceIds</span><span class="o">=</span><span class="n">instance_ids</span><span class="p">)</span>
     <span class="n">a</span> <span class="o">=</span> <span class="n">ec2</span><span class="o">.</span><span class="n">describe_instances</span><span class="p">(</span><span class="n">InstanceIds</span> <span class="o">=</span> <span class="n">instance_ids</span><span class="p">)</span>

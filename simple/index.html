@@ -1823,7 +1823,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../utils/get_cluster_from_ray/" class="md-nav__link">
+      <a href="../utils/get_cluster_from_ray.md" class="md-nav__link">
         QuokkaClusterManager.get_cluster_from_ray
       </a>
     </li>
@@ -2044,7 +2044,6 @@ for file in files:
     return f.collect()
 </code></pre>
 <p>Note unlike some SQL engines, Quokka currently will not try to figure out the optimal join ordering between the specified three-way join between lineitem, orders and customer tables. You are responsible for figuring that out at the moment -- try to join smaller tables first and then join them against larger tables, or try to minimize the intermeidate result size from those joins.</p>
-<p>An important thing to note is that Quokka currently only support inner joins. Other kinds of joins are coming soon.</p>
 <p>Feel free to look at some other queries in the Quokka <a href="https://github.com/marsupialtail/quokka/tree/master/apps">github</a>, or browse the API references. While you are there, please give Quokka a star!</p>
 <h2 id="lesson-2-writing-things">Lesson 2: Writing Things</h2>
 <p>So far, we have just learned about how to read things into DataStreams and do things to DataStreams. You can also write out DataStreams to persistent storage like disk or S3 to record all the amazing things we did with them.</p>
@@ -2057,7 +2056,7 @@ d.write_parquet(&quot;/home/ubuntu/test-path/&quot;).collect()
 <pre><code class="language-python">d.write_csv(&quot;s3://bucket/prefix/&quot;).collect()
 d.write_parquet(&quot;s3://bucket/prefix/&quot;).collect()
 </code></pre>
-<p>Writing out a DataStream is a blocking API and will automatically call a <code>collect()</code> for you. The collected Polars DataFrame at the end is just a column of filenames produced.</p>
+<p>The collected Polars DataFrame at the end is just a column of filenames produced.</p>
 <h2 id="lesson-3-things-you-cant-do">Lesson 3: Things you can't do.</h2>
 <p>Here is a brief discussion of what Quokka is not great for. Quokka's main advantage stems from the fact it can pipeline the execution of DataStreams. Once a partition (typically a Polars DataFrame) in a DataStream has been generated, it can be immediately consumed by a downstream user. This means downstream processing of this partition and upstream generation of the next partition can be overlapped. </p>
 <p>Now, if an operator processing a DataStream cannot emit any partitions downstream until it has seen all of the partitions in its input DataStreams, the pipeline breaks. An example of this is an aggregation. You cannot safely emit the result of a sum of a column of a table until you have seen every row! The main examples of this in data processing are groupby-aggregations and distributed sorts. </p>

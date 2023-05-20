@@ -1799,7 +1799,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../get_cluster_from_ray/" class="md-nav__link">
+      <a href="../get_cluster_from_ray.md" class="md-nav__link">
         QuokkaClusterManager.get_cluster_from_ray
       </a>
     </li>
@@ -1948,16 +1948,7 @@
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/utils.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">55</span>
-<span class="normal">56</span>
-<span class="normal">57</span>
-<span class="normal">58</span>
-<span class="normal">59</span>
-<span class="normal">60</span>
-<span class="normal">61</span>
-<span class="normal">62</span>
-<span class="normal">63</span>
-<span class="normal">64</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">64</span>
 <span class="normal">65</span>
 <span class="normal">66</span>
 <span class="normal">67</span>
@@ -1974,7 +1965,16 @@
 <span class="normal">78</span>
 <span class="normal">79</span>
 <span class="normal">80</span>
-<span class="normal">81</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">to_json</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output</span> <span class="o">=</span> <span class="s2">&quot;cluster.json&quot;</span><span class="p">):</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span>
+<span class="normal">84</span>
+<span class="normal">85</span>
+<span class="normal">86</span>
+<span class="normal">87</span>
+<span class="normal">88</span>
+<span class="normal">89</span>
+<span class="normal">90</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">to_json</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output</span> <span class="o">=</span> <span class="s2">&quot;cluster.json&quot;</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Creates JSON representation of this cluster that can be used to connect to the cluster again.</span>
@@ -2000,7 +2000,7 @@
 
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">({</span><span class="s2">&quot;instance_ids&quot;</span><span class="p">:</span><span class="bp">self</span><span class="o">.</span><span class="n">instance_ids</span><span class="p">,</span><span class="s2">&quot;cpu_count_per_instance&quot;</span><span class="p">:</span><span class="bp">self</span><span class="o">.</span><span class="n">cpu_count</span><span class="p">,</span> <span class="s2">&quot;spill_dir&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">spill_dir</span><span class="p">},</span><span class="nb">open</span><span class="p">(</span><span class="n">output</span><span class="p">,</span><span class="s2">&quot;w&quot;</span><span class="p">))</span>
+    <span class="n">json</span><span class="o">.</span><span class="n">dump</span><span class="p">({</span><span class="s2">&quot;instance_ids&quot;</span><span class="p">:</span><span class="bp">self</span><span class="o">.</span><span class="n">instance_ids</span><span class="p">,</span><span class="s2">&quot;cpu_count_per_instance&quot;</span><span class="p">:</span><span class="bp">self</span><span class="o">.</span><span class="n">cpu_count</span><span class="p">,</span> <span class="s2">&quot;spill_dir&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">spill_dir</span><span class="p">,</span> <span class="s2">&quot;tags&quot;</span><span class="p">:</span> <span class="bp">self</span><span class="o">.</span><span class="n">tags</span><span class="p">},</span><span class="nb">open</span><span class="p">(</span><span class="n">output</span><span class="p">,</span><span class="s2">&quot;w&quot;</span><span class="p">))</span>
 </code></pre></div></td></tr></table></div>
       </details>
   </div>

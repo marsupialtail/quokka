@@ -68,7 +68,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#quokkaclustermanagerterminate_cluster" class="md-skip">
+        <a href="#terminate_cluster" class="md-skip">
           Skip to content
         </a>
       
@@ -1764,8 +1764,8 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#pyquokka.utils.QuokkaClusterManager.terminate_cluster" class="md-nav__link">
-    pyquokka.utils.QuokkaClusterManager.terminate_cluster
+  <a href="#pyquokka.utils.terminate_cluster" class="md-nav__link">
+    pyquokka.utils.terminate_cluster
   </a>
   
 </li>
@@ -1799,7 +1799,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../get_cluster_from_ray/" class="md-nav__link">
+      <a href="../get_cluster_from_ray.md" class="md-nav__link">
         QuokkaClusterManager.get_cluster_from_ray
       </a>
     </li>
@@ -1869,8 +1869,8 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#pyquokka.utils.QuokkaClusterManager.terminate_cluster" class="md-nav__link">
-    pyquokka.utils.QuokkaClusterManager.terminate_cluster
+  <a href="#pyquokka.utils.terminate_cluster" class="md-nav__link">
+    pyquokka.utils.terminate_cluster
   </a>
   
 </li>
@@ -1895,13 +1895,13 @@
   </a>
 
 
-<h1 id="quokkaclustermanagerterminate_cluster">QuokkaClusterManager.terminate_cluster</h1>
+<h1 id="terminate_cluster">terminate_cluster</h1>
 
 
 <div class="doc doc-object doc-function">
 
 
-<a id="pyquokka.utils.QuokkaClusterManager.terminate_cluster"></a>
+<a id="pyquokka.utils.terminate_cluster"></a>
   <div class="doc doc-contents first">
   
       <p>Terminate a cluster.</p>
@@ -1943,38 +1943,41 @@
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/utils.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">391</span>
-<span class="normal">392</span>
-<span class="normal">393</span>
-<span class="normal">394</span>
-<span class="normal">395</span>
-<span class="normal">396</span>
-<span class="normal">397</span>
-<span class="normal">398</span>
-<span class="normal">399</span>
-<span class="normal">400</span>
-<span class="normal">401</span>
-<span class="normal">402</span>
-<span class="normal">403</span>
-<span class="normal">404</span>
-<span class="normal">405</span>
-<span class="normal">406</span>
-<span class="normal">407</span>
-<span class="normal">408</span>
-<span class="normal">409</span>
-<span class="normal">410</span>
-<span class="normal">411</span>
-<span class="normal">412</span>
-<span class="normal">413</span>
-<span class="normal">414</span>
-<span class="normal">415</span>
-<span class="normal">416</span>
-<span class="normal">417</span>
-<span class="normal">418</span>
-<span class="normal">419</span>
-<span class="normal">420</span>
-<span class="normal">421</span>
-<span class="normal">422</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">terminate_cluster</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">quokka_cluster</span><span class="p">):</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">648</span>
+<span class="normal">649</span>
+<span class="normal">650</span>
+<span class="normal">651</span>
+<span class="normal">652</span>
+<span class="normal">653</span>
+<span class="normal">654</span>
+<span class="normal">655</span>
+<span class="normal">656</span>
+<span class="normal">657</span>
+<span class="normal">658</span>
+<span class="normal">659</span>
+<span class="normal">660</span>
+<span class="normal">661</span>
+<span class="normal">662</span>
+<span class="normal">663</span>
+<span class="normal">664</span>
+<span class="normal">665</span>
+<span class="normal">666</span>
+<span class="normal">667</span>
+<span class="normal">668</span>
+<span class="normal">669</span>
+<span class="normal">670</span>
+<span class="normal">671</span>
+<span class="normal">672</span>
+<span class="normal">673</span>
+<span class="normal">674</span>
+<span class="normal">675</span>
+<span class="normal">676</span>
+<span class="normal">677</span>
+<span class="normal">678</span>
+<span class="normal">679</span>
+<span class="normal">680</span>
+<span class="normal">681</span>
+<span class="normal">682</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">terminate_cluster</span><span class="p">(</span><span class="n">cluster_json</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Terminate a cluster.</span>
@@ -1995,7 +1998,10 @@
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">ec2</span> <span class="o">=</span> <span class="n">boto3</span><span class="o">.</span><span class="n">client</span><span class="p">(</span><span class="s2">&quot;ec2&quot;</span><span class="p">)</span>
-    <span class="n">instance_ids</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">quokka_cluster</span><span class="o">.</span><span class="n">instance_ids</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">cluster_json</span><span class="p">,</span> <span class="s2">&quot;r&quot;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+        <span class="n">cluster_info</span> <span class="o">=</span> <span class="n">json</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">f</span><span class="p">)</span>
+    <span class="n">instance_ids</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">cluster_info</span><span class="p">[</span><span class="s1">&#39;instance_ids&#39;</span><span class="p">]</span><span class="o">.</span><span class="n">values</span><span class="p">())</span>
+    <span class="n">ec2</span><span class="o">.</span><span class="n">terminate_instances</span><span class="p">(</span><span class="n">InstanceIds</span> <span class="o">=</span> <span class="n">instance_ids</span><span class="p">)</span>
     <span class="n">ec2</span><span class="o">.</span><span class="n">terminate_instances</span><span class="p">(</span><span class="n">InstanceIds</span> <span class="o">=</span> <span class="n">instance_ids</span><span class="p">)</span>
     <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
         <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mf">0.1</span><span class="p">)</span>
@@ -2005,7 +2011,7 @@
             <span class="k">continue</span>
         <span class="k">else</span><span class="p">:</span>
             <span class="k">break</span>
-    <span class="k">del</span> <span class="n">quokka_cluster</span>
+    <span class="n">os</span><span class="o">.</span><span class="n">remove</span><span class="p">(</span><span class="n">cluster_json</span><span class="p">)</span>
 </code></pre></div></td></tr></table></div>
       </details>
   </div>

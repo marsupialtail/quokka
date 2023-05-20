@@ -1797,7 +1797,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../utils/get_cluster_from_ray/" class="md-nav__link">
+      <a href="../../utils/get_cluster_from_ray.md" class="md-nav__link">
         QuokkaClusterManager.get_cluster_from_ray
       </a>
     </li>
@@ -1948,49 +1948,49 @@ aggregation, so might as well as materialize it right now.</p>
 </code></pre></div>
     <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">d</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">with_column</span><span class="p">(</span><span class="s2">&quot;disc_price&quot;</span><span class="p">,</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:</span><span class="n">x</span><span class="p">[</span><span class="s2">&quot;l_extendedprice&quot;</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="mi">1</span> <span class="o">-</span> <span class="n">x</span><span class="p">[</span><span class="s2">&quot;l_discount&quot;</span><span class="p">]),</span> <span class="n">required_columns</span> <span class="o">=</span><span class="p">{</span><span class="s2">&quot;l_extendedprice&quot;</span><span class="p">,</span> <span class="s2">&quot;l_discount&quot;</span><span class="p">})</span>
 </code></pre></div>
-    <p>I want the sum and average of the l_quantity column and the l_extendedprice colum, the sum of the disc_price column, the minimum of the l_discount
+    <p>I want the sum and average of the l_quantity column and the l_extendedprice column, the sum of the disc_price column, the minimum of the l_discount
 column, and oh give me the total row count as well, of each unique combination of l_returnflag and l_linestatus</p>
     <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">f</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s2">&quot;l_returnflag&quot;</span><span class="p">,</span> <span class="s2">&quot;l_linestatus&quot;</span><span class="p">])</span><span class="o">.</span><span class="n">agg</span><span class="p">({</span><span class="s2">&quot;l_quantity&quot;</span><span class="p">:[</span><span class="s2">&quot;sum&quot;</span><span class="p">,</span><span class="s2">&quot;avg&quot;</span><span class="p">],</span> <span class="s2">&quot;l_extendedprice&quot;</span><span class="p">:[</span><span class="s2">&quot;sum&quot;</span><span class="p">,</span><span class="s2">&quot;avg&quot;</span><span class="p">],</span> <span class="s2">&quot;disc_price&quot;</span><span class="p">:</span><span class="s2">&quot;sum&quot;</span><span class="p">,</span> <span class="s2">&quot;l_discount&quot;</span><span class="p">:</span><span class="s2">&quot;min&quot;</span><span class="p">,</span><span class="s2">&quot;*&quot;</span><span class="p">:</span><span class="s2">&quot;count&quot;</span><span class="p">})</span>
 </code></pre></div>
 
       <details class="quote">
         <summary>Source code in <code>pyquokka/datastream.py</code></summary>
-        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2038</span>
-<span class="normal">2039</span>
-<span class="normal">2040</span>
-<span class="normal">2041</span>
-<span class="normal">2042</span>
-<span class="normal">2043</span>
-<span class="normal">2044</span>
-<span class="normal">2045</span>
-<span class="normal">2046</span>
-<span class="normal">2047</span>
-<span class="normal">2048</span>
-<span class="normal">2049</span>
-<span class="normal">2050</span>
-<span class="normal">2051</span>
-<span class="normal">2052</span>
-<span class="normal">2053</span>
-<span class="normal">2054</span>
-<span class="normal">2055</span>
-<span class="normal">2056</span>
-<span class="normal">2057</span>
-<span class="normal">2058</span>
-<span class="normal">2059</span>
-<span class="normal">2060</span>
-<span class="normal">2061</span>
-<span class="normal">2062</span>
-<span class="normal">2063</span>
-<span class="normal">2064</span>
-<span class="normal">2065</span>
-<span class="normal">2066</span>
-<span class="normal">2067</span>
-<span class="normal">2068</span>
-<span class="normal">2069</span>
-<span class="normal">2070</span>
-<span class="normal">2071</span>
-<span class="normal">2072</span>
-<span class="normal">2073</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">agg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">aggregations</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">2126</span>
+<span class="normal">2127</span>
+<span class="normal">2128</span>
+<span class="normal">2129</span>
+<span class="normal">2130</span>
+<span class="normal">2131</span>
+<span class="normal">2132</span>
+<span class="normal">2133</span>
+<span class="normal">2134</span>
+<span class="normal">2135</span>
+<span class="normal">2136</span>
+<span class="normal">2137</span>
+<span class="normal">2138</span>
+<span class="normal">2139</span>
+<span class="normal">2140</span>
+<span class="normal">2141</span>
+<span class="normal">2142</span>
+<span class="normal">2143</span>
+<span class="normal">2144</span>
+<span class="normal">2145</span>
+<span class="normal">2146</span>
+<span class="normal">2147</span>
+<span class="normal">2148</span>
+<span class="normal">2149</span>
+<span class="normal">2150</span>
+<span class="normal">2151</span>
+<span class="normal">2152</span>
+<span class="normal">2153</span>
+<span class="normal">2154</span>
+<span class="normal">2155</span>
+<span class="normal">2156</span>
+<span class="normal">2157</span>
+<span class="normal">2158</span>
+<span class="normal">2159</span>
+<span class="normal">2160</span>
+<span class="normal">2161</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">agg</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">aggregations</span><span class="p">:</span> <span class="nb">dict</span><span class="p">):</span>
 
     <span class="sd">&quot;&quot;&quot;</span>
 <span class="sd">    Aggregate this GroupedDataStream according to the defined aggregations. This is similar to Pandas `df.groupby().agg()`.</span>
@@ -2019,7 +2019,7 @@ column, and oh give me the total row count as well, of each unique combination o
 
 <span class="sd">        &gt;&gt;&gt; d = d.with_column(&quot;disc_price&quot;, lambda x:x[&quot;l_extendedprice&quot;] * (1 - x[&quot;l_discount&quot;]), required_columns ={&quot;l_extendedprice&quot;, &quot;l_discount&quot;})</span>
 
-<span class="sd">        I want the sum and average of the l_quantity column and the l_extendedprice colum, the sum of the disc_price column, the minimum of the l_discount</span>
+<span class="sd">        I want the sum and average of the l_quantity column and the l_extendedprice column, the sum of the disc_price column, the minimum of the l_discount</span>
 <span class="sd">        column, and oh give me the total row count as well, of each unique combination of l_returnflag and l_linestatus</span>
 
 <span class="sd">        &gt;&gt;&gt; f = d.groupby([&quot;l_returnflag&quot;, &quot;l_linestatus&quot;]).agg({&quot;l_quantity&quot;:[&quot;sum&quot;,&quot;avg&quot;], &quot;l_extendedprice&quot;:[&quot;sum&quot;,&quot;avg&quot;], &quot;disc_price&quot;:&quot;sum&quot;, &quot;l_discount&quot;:&quot;min&quot;,&quot;*&quot;:&quot;count&quot;})</span>
