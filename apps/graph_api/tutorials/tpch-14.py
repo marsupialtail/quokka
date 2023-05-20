@@ -27,10 +27,9 @@ qc.set_config("memory_limit", 0.01)
 task_graph = TaskGraph(qc)
 
 def batch_func(df):
-    df = df.with_columns(((df["o_orderpriority"] == "1-URGENT") | (df["o_orderpriority"] == "2-HIGH")).alias("high"))
-    df = df.with_columns(((df["o_orderpriority"] != "1-URGENT") & (df["o_orderpriority"] != "2-HIGH")).alias("low"))
-    result = df.to_arrow().group_by("l_shipmode").aggregate([("high","sum"), ("low","sum")])
-    return polars.from_arrow(result)
+    df = df.with_columns(polars.when(df["p_type"].str.starts_with("PROMO")).then(df['l_extendedprice'] * (1 - df['l_discount'])).otherwise(0).alias("promo_revenue"))
+    df = df.with_columns((df["l_extendedprice"] * (1 - df["l_discount"])).alias("revenue"))
+    return df
 
 
 if sys.argv[1] == "csv":
@@ -58,14 +57,14 @@ if sys.argv[1] == "csv":
                                         projection = ["p_partkey", "p_type"],
                                         batch_funcs = [])})
 
-agg_executor = SQLAggExecutor([], None, "count(*) as linecount")
+agg_executor = SQLAggExecutor([], None, "100 * sum(revenue) / sum(promo_revenue)")
 
 agged = task_graph.new_blocking_node({0:output_stream},  agg_executor, placement_strategy = SingleChannelStrategy(), 
     source_target_info={0:TargetInfo(
         partitioner = BroadcastPartitioner(),
         predicate = None,
         projection = None,
-        batch_funcs = []
+        batch_funcs = [batch_func]
     )})
 
 task_graph.create()
