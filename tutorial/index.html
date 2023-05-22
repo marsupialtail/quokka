@@ -395,6 +395,20 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#lesson-31-putting-it-all-together-using-stages" class="md-nav__link">
+    Lesson 3.1: Putting it all together &amp; using stages
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lesson-32-putting-it-all-together-using-batch-functions" class="md-nav__link">
+    Lesson 3.2: Putting it all together &amp; using batch functions
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1934,6 +1948,20 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#lesson-31-putting-it-all-together-using-stages" class="md-nav__link">
+    Lesson 3.1: Putting it all together &amp; using stages
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lesson-32-putting-it-all-together-using-batch-functions" class="md-nav__link">
+    Lesson 3.2: Putting it all together &amp; using batch functions
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1960,7 +1988,7 @@
 
 
 <h1 id="advanced-tutorials">Advanced Tutorials</h1>
-<p>This section is for learning how to use Quokka's graph level API. This is expected for use cases where the DataStream API cannot satisfy your needs. Most users are not expected to program at this level. You should contact me: zihengw@stanford.edu or hit me up on Discord if you want to do this.</p>
+<p>This section is for learning how to use Quokka's graph level API. This is expected for use cases where the DataStream API cannot satisfy your needs. Most users are not expected to program at this level. You should contact me: zihengw@stanford.edu or hit me up on <a href="https://discord.gg/6ujVV9HAg3">Discord</a> if you want to do this.</p>
 <p>You should probably stop reading now, unless you are a Stanford undergrad or masters student (or somebody else) who somehow decided to work with me on Quokka. <strong>You should read this tutorial if you want to add a new executor or input reader into Quokka.</strong> You should probably read up on the <a href="../started/">Cartoons</a> section first, and then come back here. You probably should also first run the <a href="../simple/">DataStream Tutorial</a> to make sure Quokka actually works on your machine.</p>
 <p>The code for the tutorials can be found under <code>apps/tutorials</code>. They might perform meaningless tasks or perform tasks which you shoudn't necessarily use Quokka for, but they will showcase how Quokka works. </p>
 <p>I wrote Quokka. As a result I might take some things for granted that you might not. If you spot a typo or find some sections too difficult to understand, I would appreciate your feedback! Better yet, the docs are also open source under quokka/docs, so you can also make a PR.</p>
@@ -2031,14 +2059,12 @@ import polars
 <p>Now that we have defined our input reader and stateful operator, we can hook them up together in a TaskGraph. Defining the TaskGraph requires a cluster object, which is <code>LocalCluster</code> here but can be an <code>EC2Cluster</code> for cloud deployments. </p>
 <p>Now let's hook up the TaskGraph. This programming model should remind you strongly of Tensorflow, if you had the good fortune of trying to use Tensorflow 1.0. The TaskGraph exposes <code>new_input_reader_node</code>, <code>new_non_blocking_node</code> and <code>new_blocking_node</code> APIs. The first one is used to define an input reader, the second one is used to define a "normal" executor, and the third one is used to define the last executor in the TaskGraph (i.e. the grey/gold quokka in the cartoon). Whereas the return values of <code>non_blocking_node</code> will be pushed to downstream executors, the return values of <code>blocking_node</code> will be collected in a Dataset object.</p>
 <p>In our example, the sum executor is the last executor, so we just use <code>new_blocking_node</code>, like this:</p>
-<pre><code class="language-python">cluster = LocalCluster()
-task_graph = TaskGraph(cluster)
+<pre><code class="language-python">task_graph = TaskGraph(cluster)
 reader = SimpleDataset(80)
 numbers = task_graph.new_input_reader_node(reader)
 
 executor = AddExecutor()
-sum = task_graph.new_blocking_node({0:numbers},executor, placement_strategy = SingleChannelStrategy(), 
-    source_target_info={0:TargetInfo(partitioner = PassThroughPartitioner(), 
+sum = task_graph.new_blocking_node({0:numbers},executor, placement_strategy = SingleChannelStrategy(), source_target_info={0:TargetInfo(partitioner = PassThroughPartitioner(), 
                                     predicate = sqlglot.exp.TRUE,
                                     projection = None,
                                     batch_funcs = [])})
@@ -2049,12 +2075,12 @@ start = time.time()
 task_graph.run()
 print(&quot;total time &quot;, time.time() - start)
 
-print(sum.to_df())
+print(ray.get(sum.to_df.remote()))
 </code></pre>
 <p>Let's talk about the arguments to <code>new_blocking_node</code> one by one.</p>
 <ul>
 <li>The first argument to <code>new_blocking_node</code> is a dictionary. The values are the upstream actors you'd like the executor to receive data from. The keys are arbitrary integers, which you can use to identify the source actor in the <code>execute</code> method. Those integers will be passed as the <code>stream_id</code> argument to the <code>execute</code> method. In our example, we only have one upstream actor, so we just use <code>0</code> as the key.</li>
-<li>The second argument is the executor object.</li>
+<li>The second argument is the executor object. In this case, this is the AddExecutor that we defined above. Quokka provides a variety of built-in executors (for example for performing joins), which can be found in the /pyquokka/executors/ folder.</li>
 <li>
 <p>The third argument is the placement strategy of the executor, which determines how many channels the executor will have. In our example, we use <code>SingleChannelStrategy</code>, which means the executor will have one channel. If we use <code>CustomChannelsStrategy(n)</code>, the executor will have n channels on each TaskManager.</p>
 <p>What is a TaskManager? It can be interpretted as a thread pool. Each TaskManager holds channels from different actors and decide how to schedule their execution. There are separate TaskManagers for input readers and executors. The number of TaskManagers is determined by the <code>io_per_node</code> and <code>exec_per_node</code> keyword arugments to the <code>TaskGraph()</code> constructor.</p>
@@ -2069,9 +2095,9 @@ print(sum.to_df())
 <p>First, filters are applied, specified by a <a href="https://github.com/tobymao/sqlglot">SQLGlot</a> predicate. In our example, we use <code>sqlglot.exp.TRUE</code>, which means no filter is applied. Then a partitioner is applied to split the filtered data into data for each channel. In our example, we use <code>PassThroughPartitioner</code>, which means a channel in the target actor gets all the data from a range of channels in the source actor, assuming the source actor has more channels. Other partitioners include BroadcastPartitioner and HashPartitioner. </p>
 <p style="text-align:center;"><img src="../partitioners.svg" width=800></p>
 
-<p>After the partitioner is applied, a series of functions (<code>batch_funcs</code>) are applied to each message destined for a downstream channel. In our example, we use <code>[]</code>, which means no functions are applied. You can supply any arbitrary list of Python functions with Polars Dataframe input and Polars Dataframe output, though you have to make sure that the columns you need in a later function must be in the executor output or generated by a previous function.</p>
-<p>Finally, a projection is applied to the data. In our example, we use <code>None</code>, which means no projection is applied. You can supply a list of column names.</p>
-<p><code>new_blocking_node</code> returns <code>sum</code>, a Quokka Dataset object. It has a <code>to_df</code> method which returns a Polars Dataframe, once the TaskGraph has been run. To run the TaskGraph, we call <code>task_graph.create()</code> to initialize it, and then <code>task_graph.run()</code>.</p>
+<p>After the partitioner is applied, a series of functions (<code>batch_funcs</code>) are applied to each message destined for a downstream channel. In our example, we use <code>[]</code>, which means no functions are applied. You can supply any arbitrary list of Python functions with Polars Dataframe input and Polars Dataframe output, though you have to make sure that the columns you need in a later function must be in the executor output or generated by a previous function. Examples of batch_funcs can be found in the TPC-H examples written in the TaskGraph API. These examples can be found at /apps/graph_api/tutorials/.</p>
+<p>Finally, a projection is applied to the data. In our example, we use <code>None</code>, which means no projection is applied. If you want to select only certain columns of the data, you can supply a list with column names. Again, make sure that the column names you supply exist after applying the filters and batch funcs to the data.</p>
+<p><code>new_blocking_node</code> returns <code>sum</code>, a Quokka Dataset object. It has a <code>to_df</code> method which returns a Polars Dataframe, once the TaskGraph has been run. To run the TaskGraph, we call <code>task_graph.create()</code> to initialize it, and then <code>task_graph.run()</code>. Since Quokka uses Ray, we need to call <code>ray.get(sum.to_df.remote())</code> in order to fetch the output data.</p>
 <h2 id="lesson-1-joins">Lesson 1: Joins</h2>
 <p>If you think the first lesson was too complicated, it proably was. This is because we had to define custom input readers and stateful operators. Hopefully in the process you learned a few things about how Quokka works.</p>
 <p>In most scenarios, it is my hope that you don't have to define custom objects, and use canned implementations which you can just import. This is similar to how Tensorflow or Pytorch works. If you know how to import <code>torch.nn.Conv2d</code>, you get the idea. </p>
@@ -2085,6 +2111,7 @@ from pyquokka.placement_strategy import SingleChannelStrategy
 from pyquokka.dataset import InputDiskCSVDataset
 import sqlglot
 import pandas as pd
+import ray
 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 
@@ -2120,7 +2147,7 @@ start = time.time()
 task_graph.run()
 print(&quot;total time &quot;, time.time() - start)
 
-print(count.to_df())
+print(ray.get(count.to_df.remote()))
 
 a = pd.read_csv(&quot;a.csv&quot;,names=[&quot;key&quot;,&quot;val1&quot;,&quot;val2&quot;])
 b = pd.read_csv(&quot;b.csv&quot;,names=[&quot;key&quot;,&quot;val1&quot;,&quot;val2&quot;])
@@ -2134,8 +2161,7 @@ print(len(a.merge(b,on=&quot;key&quot;,how=&quot;inner&quot;)))
 <h3 id="lesson-21-json-joins">Lesson 2.1: JSON Joins</h3>
 <p>We are again going to be dealing with joins. This time, though, we are going to join data from two JSONs on disk. As in lesson 1, we are then going to count the records in the result. You can use the a.json and b.json provided in the apps/tutorials folder, or, as in lesson 1, you can supply your own and change the JSON reader accordingly.</p>
 <p>Here's the code:</p>
-<pre><code class="language-python">
-import time
+<pre><code class="language-python">import time
 from pyquokka.quokka_runtime import TaskGraph
 from pyquokka.executors import JoinExecutor, CountExecutor
 from pyquokka.target_info import TargetInfo, PassThroughPartitioner, HashPartitioner
@@ -2144,6 +2170,7 @@ from pyquokka.dataset import InputDiskJSONDataset
 import sqlglot
 import pandas as pd
 import pyarrow as pa
+import ray
 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 
@@ -2194,9 +2221,9 @@ start = time.time()
 task_graph.run()
 print(&quot;total time &quot;, time.time() - start)
 
-print(count.to_df())
+print(ray.get(count.to_df.remote()))
 
-
+import json
 a = json.read_json(&quot;a.json&quot;)
 b = json.read_json(&quot;b.json&quot;)
 a = a.to_pandas()
@@ -2216,6 +2243,7 @@ from pyquokka.placement_strategy import SingleChannelStrategy
 from pyquokka.dataset import InputDiskCSVDataset, InputDiskJSONDataset
 import sqlglot
 import pandas as pd
+import ray
 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 
@@ -2252,8 +2280,9 @@ start = time.time()
 task_graph.run()
 print(&quot;total time &quot;, time.time() - start)
 
-print(count.to_df())
+print(ray.get(count.to_df.remote()))
 
+import json
 a = json.read_json(&quot;a.json&quot;)
 a = a.to_pandas()
 a[&quot;key_a&quot;] = a[&quot;key_a&quot;].astype(str)
@@ -2262,6 +2291,75 @@ print(len(a.merge(b,left_on=&quot;key_a&quot;, right_on = &quot;key_b&quot;, how
 
 </code></pre>
 <p>Here, we are using our <code>InputDiskJSONReader</code> as the <code>a_reader</code> and our <code>InputDiskCSVReader</code> as the <code>b_reader</code>. Notice how we are not using an explicit pyarrow schema for the JSON input reader here. We simply let the input reader infer the data type of the values present in our JSON file. </p>
+<h3 id="lesson-31-putting-it-all-together-using-stages">Lesson 3.1: Putting it all together &amp; using stages</h3>
+<p>Previously, we have seen how we can define input readers and executors, how we can use built-in input readers in order read data from CSV and JSON files and finally how to join this data. Let's put it all together now and see the TaskGraph API in action! In this lesson, we will be writing a TaskGraph API implementation of the TPC-H 4 query. The code for this lesson can be found in /apps/graph_api/tutorial/lesson3.1.py.</p>
+<p>We start off by reading the data from an input source, namely two tables called lineitem and orders tables, and we create new input reader nodes for them.</p>
+<pre><code class="language-python3">
+lineitem_csv_reader = InputDiskCSVDataset(&quot;lineitem.tbl&quot;, header = True, sep = &quot;|&quot;, stride=16 * 1024 * 1024)
+orders_csv_reader = InputDiskCSVDataset(&quot;orders.tbl&quot;, header = True, sep = &quot;|&quot;, stride=16 * 1024 * 1024)
+lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, stage = -1)
+orders = task_graph.new_input_reader_node(orders_csv_reader)
+</code></pre>
+<p>Notice that we specify a stage for the lineitem input reader node. We do not explicitly specify a stage for the orders input reader node, since the default stage is set to be 0. Therefore, the input reader node processing the lineitem table and the input reader node processing the orders table are set to different stages. Setting these stages correctly will be necessary for the next node in the graph, where we join the two tables. In order to do so, we specify one of Quokka's built-in join executors, namely the <code>BuildProbeJoinExecutor</code>, and provide it the columns on which we want to perform the join.</p>
+<pre><code class="language-python3">join_executor = BuildProbeJoinExecutor(left_on=&quot;o_orderkey&quot;,right_on=&quot;l_orderkey&quot;, how=&quot;semi&quot;)
+</code></pre>
+<p>Since we are conducting a build-probe join, we need to specify a build table and a probe table, or, in Quokka's case, a build stream and a probe stream. This is where stages come in handy. When performing joins of this form, the build stream needs to be of a lower stage than the stage of the probe stream. In our example, we therefore see that the stream reading the lineitem table is the build stream (with stage=-1), while the stream reading the orders table will be the probe stream (with stage=0). </p>
+<p>We then feed this executor into another <code>new_non_blocking_node</code>, which will carry out the join. Notice that we also apply a predicate and a projection.</p>
+<pre><code class="language-python3">output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},join_executor,
+    source_target_info={0:TargetInfo(partitioner = HashPartitioner(&quot;o_orderkey&quot;), 
+                                    predicate = sqlglot.parse_one(&quot;o_orderdate between date '1993-07-01' and date '1993-09-30'&quot;),
+                                    projection = [&quot;o_orderkey&quot;, &quot;o_orderpriority&quot;],
+                                    batch_funcs = []), 
+                        1:TargetInfo(partitioner = HashPartitioner(&quot;l_orderkey&quot;),
+                                    predicate = sqlglot.parse_one(&quot;l_commitdate &lt; l_receiptdate&quot;),
+                                    projection = [&quot;l_orderkey&quot;],
+                                    batch_funcs = [])})
+</code></pre>
+<p>The resulting joined node now takes on the larger stage of the two streams used to perform the join. Consequently, our join node takes on the stage 0. If we need to perform multiple joins, where one join relies on the output of another join, we need to keep this in mind. An example of where we set the stages in order to perform multiple joins can be found in /apps/graph_api/tutorials/tpch-3.py </p>
+<p>In the last stage of the query, we want to aggregate the joined data, counting the rows left, grouping them by <code>o_orderpriority</code> and sorting them by <code>o_orderpriority</code>. To do this we specify another built-in Quokka executor, namely the SQLAggExecutor.</p>
+<pre><code class="language-python3">agg_executor = SQLAggExecutor([&quot;o_orderpriority&quot;], [(&quot;o_orderpriority&quot;, &quot;asc&quot;)], &quot;count(*) as order_count&quot;)
+</code></pre>
+<p>Finally, we specify a <code>new_blocking_node</code>, the node in the graph representing this aggregation step.</p>
+<pre><code class="language-python3">agged = task_graph.new_blocking_node({0:output_stream}, agg_executor, placement_strategy = SingleChannelStrategy(), 
+    source_target_info={0:TargetInfo(
+        partitioner = BroadcastPartitioner(),
+        predicate = None,
+        projection = None,
+        batch_funcs = []
+    )})
+</code></pre>
+<p>We can now measure the time that it took for Quokka to run this query and print out the resulting data:</p>
+<pre><code class="language-python3">task_graph.create()
+start = time.time()
+task_graph.run()
+print(&quot;total time &quot;, time.time() - start)
+
+print(ray.get(qc.dataset_manager.to_df.remote(agged)))
+</code></pre>
+<h3 id="lesson-32-putting-it-all-together-using-batch-functions">Lesson 3.2: Putting it all together &amp; using batch functions</h3>
+<p>Let us now take a look at another TaskGraph API implementation of a TPC-H query, namely the TPC-H 6 query. First, we create input readers in order to read in the data. For this query, we only need to read one table, so we specify a <code>new_input_reader_node</code> for the lineitem table.</p>
+<pre><code class="language-python3">lineitem_csv_reader = InputDiskCSVDataset(&quot;lineitem.tbl&quot;, header = True, sep = &quot;|&quot;, stride=16 * 1024 * 1024)
+lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, stage=-1)
+</code></pre>
+<p>As the next step in the query, we want to calculate the total revenue generated by a specific set of lineitems. However, there is no column keeping track of the revenue. Rather, we need to compute the revenue for each row by mulitplying the <code>l_extendedprice</code> with <code>1 - l_discount</code>. We do so by writing a custom function.</p>
+<pre><code class="language-python3">def batch_func(df):
+    df = df.with_columns(((df[&quot;l_extendedprice&quot;] * df[&quot;l_discount&quot;])).alias(&quot;revenue&quot;))
+    return df
+</code></pre>
+<p>This function will be applied to each batch that we process in the next operation of the query: aggregating all the revenues. We first specify an aggregator executor.</p>
+<pre><code class="language-python3">agg_executor = SQLAggExecutor([], None, &quot;sum(revenue) as revenue&quot;)
+</code></pre>
+<p>And then we pass this agg_executor, along with our custom function, as input to a <code>new_blocking_node</code>. In addition, we also apply a predicate.</p>
+<pre><code class="language-python3">agged = task_graph.new_blocking_node({0:lineitem}, agg_executor, placement_strategy = SingleChannelStrategy(), 
+    source_target_info={0:TargetInfo(
+        partitioner = BroadcastPartitioner(),
+        predicate = sqlglot.parse_one(&quot;l_shipdate between date '1994-01-01' and date '1994-12-31' and l_discount between 0.05 and 0.07 and l_quantity &lt;= 23.99&quot;),
+        projection = None,
+        batch_funcs = [batch_func]
+    )})
+</code></pre>
+<p>This node will now process the data in the order described earlier in the tutorial: We first apply filters. Then we partition the data. Next, we execute our batch function on each batch of data and finally we carry out the projection. As the last step, our <code>agg_executor</code> will process the data.</p>
+<p>There are many other examples of TPC-H queries implemented in the TaskGraph API. Feel free to take a look at them (in the /apps/tutorials/graph_api/ folder) to learn more!</p>
 <p>This is it for now. I unfortunately can't find too much time to write tutorials, but I hope this is enough to get you started. If you have any questions, feel free to reach out to me on the Quokka Discord server. </p>
 <p>You can always check out how the Quokka canned executors and input readers work, in <code>pyquokka/executors.py</code> and <code>pyquokka/dataset.py</code>. If you are feeling particularly audacious, you can try implementing a new input reader! </p>
 
