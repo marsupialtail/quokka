@@ -141,8 +141,7 @@ def do_lance_with_filter():
     vecs = qc.read_lance(DISK_PATH + "vec_data.lance", "vector")
     # vecs = vecs.filter_sql("id < 1000")
     # this CAN NO LONGER USE THE INDEX! Since the vector index has to be done before the filter, this will change the meaning of the query.
-    results = vecs.vector_nn_join(probe_df, vec_column_left = "vector", vec_column_right = "probe_vec", k = K, probe_side = "right")
-    print(results)
+    results = vecs.vector_nn_join(probe_df, vec_column_left = "vector", vec_column_right = "probe_vec", k = 5, probe_side = "right")
     results.explain()
     a = results.collect()
     print(a)
@@ -173,5 +172,5 @@ def do_lance_s3(N):
 # do_parquet()
 # do_parquet_with_filter()
 # do_parquet_with_filter_and_join()
-# do_lance()
+do_lance()
 do_lance_with_filter()

@@ -1,4 +1,4 @@
-# Why dataframe libraries need to understand vector embeddings
+# Why dataframe libraries and query engines need to understand vector embeddings
 
 This is a post preceding a upcoming talk at the [Data+AI Summit](https://www.databricks.com/dataaisummit/) this June. 
 
@@ -8,13 +8,11 @@ Vector embeddings are here to stay. It is hard to conceive of constructing recom
 
 ## We need better ways of working with vector embeddings
 
-It's clear from the get-go that vector embeddings are a whole new data type, and singificant changes to current data systems are needed to support them well. Hundreds of millions of VC dollars have poured into making a new generation of databases that are optimized around vectors. Existing SQL/noSQL players like Redis, Elastic, Postgres, Clickhouse, DuckDB have all built extensions that support vector operations. 
-
-It is an open question which approach will win in the end -- a new data system with vectors at the core or a strong existing player with reasonable vector support.
+It's clear from the get-go that vector embeddings are a whole new data type, and significant changes to current data systems are needed to support them well. Hundreds of millions of VC dollars have poured into making a new generation of databases that are optimized around vectors. Existing SQL/noSQL players like Redis, Elastic, Postgres, Clickhouse, DuckDB have all built extensions that support vector operations. It is an open question which approach will win in the end -- a new data system with vectors at the core or a strong existing player with reasonable vector support.
 
 I have my opinions on this issue, but that is not the topic of this blog post. **The topic at hand, is why are current dataframe systems so bad at handling vector data?** It used to be that dataframes lead databases in features (Python UDFs). However, in the case of vector embeddings, I believe they are falling behind.
 
-For starters, there's no agreement on what the **type** of vector embeddings should be as a column in a dataframe. In Pandas, it will likely be an "object" datatype, which is opaque and unamenable to optimizations. Apache Arrow probably has the best idea, representing the vector embeddings as a FixedSizeList datatype. Recently it has also introduced the "Tensor" datatype in Release 12.0.0. Unfortunately most people use Polars to operate on Arrow data, and Polars does not support FixedSizeList or Tensor, only List, though there is an ongoing draft [PR](https://github.com/pola-rs/polars/pull/8342) to address this. In Spark we probably will use the ArrayType. Concretely this also means that Parquet files written by some systems will be unreadable by others.
+For starters, there's no agreement on what the **type** of vector embeddings should be as a column in a dataframe. In Pandas, it will likely be an "object" datatype, which is opaque and unamenable to optimizations. Apache Arrow probably has the best idea, representing the vector embeddings as a FixedSizeList datatype. Recently it has also introduced the "Tensor" datatype in Release 12.0.0. Unfortunately most people use Polars to operate on Arrow data, and Polars does not support FixedSizeList or Tensor, only List, though there is an ongoing draft [PR](https://github.com/pola-rs/polars/pull/8342) to address this. In Spark we probably will use the ArrayType. Concretely this also means that Parquet files written by some systems will be unreadable by others, and it's a nightmare to convert between different dataframe libraries. 
 
 **Wouldn't it be nice if there's a standard vector embedding data type** that every system understands? That data type needs to make its way into the storage standard (Parquet) and the in-memory standard (Arrow). Perhaps a group of important people can get together in a room and decide it, I don't know, but make it happen!
 
@@ -22,7 +20,7 @@ For starters, there's no agreement on what the **type** of vector embeddings sho
 
 Maybe most people think it's okay because that's the only option today, but I think it *sucks*. Imagine having to convert a numerical column to numpy every time you want to do a filter operation. At what point do you ditch the dataframe library altogether and start doing everything in numpy? Of course, **.to_numpy()** only works on single-machine libraries like Polars and Pandas. If you are using Spark, good luck. Maybe write a UDF or something? 
 
-I think dataframes should support native operations on vector embedding columns, such as exact/approximate nearest neighbor searchs or range searches. But wait -- don't you need an index to get any semblance of good performance? Well, Pandas already has an index, so perhaps it's not too hard to add another one. Polars famously does not have indexes, but the index can be stored as a separate structure in memory. Finally, is exact nearest neighbor search really so bad? With GPUs that can do a few trillion FLOPs per second available at $1 per hour on AWS, maybe not. 
+I think dataframes should support native operations on vector embedding columns, such as exact/approximate nearest neighbor searchs or range searches. But wait -- don't you need an index to get any semblance of good performance? Well, Pandas already has an index, so perhaps it's not too hard to add another one. Polars famously does not have indexes, but the index can be stored as a separate structure in memory. Recently, a new format [Lance](https://github.com/eto-ai/lance) has come out as strong alternatives to Parquet that has native support for vector indices. Finally, is exact nearest neighbor search really so bad? With GPUs that can do a few trillion FLOPs available at $1 per hour on AWS, maybe not. 
 
 ## What Quokka is doing
 
@@ -30,7 +28,7 @@ As a proof of concept and hopefully example for other dataframe systems, I have 
 
 Since Quokka is very much based on Polars, the data type for embeddings is currently a Polars List. If it encounters Parquets with other formats, it will try to convert them under the hood.
 
-**IO**: Quokka supports ingest from the [Lance](https://github.com/eto-ai/lance) format. Lance is an on-disk alternative to Parquet specifically optimized for vector embedding data with an optional PQ-IVF index built on the vector embedding column. If you are working with vector embedding data, you should strongly consider using Lance. It is still lacking integrations to Delta Lake and a few other features, but its team includes a Pandas co-founder and delta-rs contributor, so its future is bright.
+**Lance IO**: Quokka supports ingest from the [Lance](https://github.com/eto-ai/lance) format. Lance is an on-disk alternative to Parquet specifically optimized for vector embedding data with an optional PQ-IVF index built on the vector embedding column. If you are working with vector embedding data, you should strongly consider using Lance. It is still lacking integrations to Delta Lake and a few other features, but its team includes a Pandas co-founder and delta-rs contributor, so its future is bright.
 
 To read a Lance dataset into a Quokka DataStream, just do `qc.read_lance("vec_data.lance")`. You can also read many Lance datasets on object storage into the same Quokka DataStream: `qc.read_lance("s3://lance_data/*")`. 
 
@@ -56,6 +54,6 @@ However, if a big part of your workload on vector embeddings resembles "classic 
 
 What does this **vector data lake** look like? Vector embeddings should be stored in Parquet, or Lance, as a native data type. Data lake formats such as Delta Lake or Iceberg should allow a place to stick the ANN index anyone might want to build, and support versioning on these indexes. Query engines such as Trino and SparkSQL should be able to do nearest neighbor search on the vector data, just like how they are able to filter or join relational data.
 
-Of course, vector databases are still needed to provide operational access to the latest data, just like Oracle/Postgres/MySQL. However, old data should be periodically ETL'ed out of those systems to the data lake. Ask your data engineering team. They already know how to do it.
+Of course, vector databases are still needed to provide operational access to the latest data, just like Oracle/Postgres/MySQL. However, old data should be periodically ETL'ed out of those systems to the data lake. Data engineering teams are already experts at doing it.
 
-Quokka is the first system that tries to allow people to do something like this, but I don't think it will be the last, or the best. Executing on this vision needs collaboration from open data lake formats Iceberg and Delta, file formats like Parquet and query engines like Quokka, Trino and SparkSQL. But we should get on it, this time before people start complaining their databases are too expensive,
+Quokka is the first system that tries to allow people to do something like this, but I don't think it will be the last, or the best. Executing on this vision needs collaboration from open data lake formats Iceberg and Delta, file formats like Parquet and query engines like Quokka, Trino and SparkSQL. But the open data community moves fast, and I have high hopes for the future!
