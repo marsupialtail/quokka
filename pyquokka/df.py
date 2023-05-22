@@ -1257,7 +1257,7 @@ class QuokkaContext:
             curr_col_name = node.vec_column
             curr_target_id = node_id
             while True:
-                if issubclass(type(self.execution_nodes[curr_node_id]), SourceNode):
+                if issubclass(type(self.execution_nodes[curr_node_id]), SourceNode) or issubclass(type(self.execution_nodes[curr_node_id]), FilterNode):
                     break
                 else:
                     schema_mapping = self.execution_nodes[curr_node_id].schema_mapping

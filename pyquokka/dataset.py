@@ -201,6 +201,8 @@ class InputLanceDataset:
     
     def execute(self, mapper_id, uris):
 
+        print("FILTERS", self.filters)
+
         import lance
 
         def download(uri):
@@ -216,12 +218,12 @@ class InputLanceDataset:
 
         if self.executor is None:
             import os
-            lines = open("/home/ubuntu/.aws/credentials").readlines()
-            aws_secret_access_key = lines[1].split("=")[1].strip()
-            aws_access_key_id = lines[2].split("=")[1].strip()
+            # lines = open("/home/ubuntu/.aws/credentials").readlines()
+            # aws_secret_access_key = lines[1].split("=")[1].strip()
+            # aws_access_key_id = lines[2].split("=")[1].strip()
 
-            os.environ["AWS_SECRET_ACCESS_KEY"] = aws_secret_access_key
-            os.environ["AWS_ACCESS_KEY_ID"] = aws_access_key_id
+            # os.environ["AWS_SECRET_ACCESS_KEY"] = aws_secret_access_key
+            # os.environ["AWS_ACCESS_KEY_ID"] = aws_access_key_id
 
             self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
 
@@ -235,7 +237,13 @@ class InputLanceDataset:
         for future in concurrent.futures.as_completed(future_to_url):
             dfs.append(future.result())
         
-        return None, pa.concat_tables(dfs)
+        result = pa.concat_tables(dfs)
+        if "score" in result.column_names:
+            result = result.drop(["score"])
+        
+        print("LANCE RETURN", [len(df) for df in dfs])
+        
+        return None, result
         
 class InputEC2ParquetDataset:
 

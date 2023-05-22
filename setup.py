@@ -10,6 +10,7 @@ or https://marsupialtail.github.io/quokka/\n
 
 # Setting up
 setup(
+
         name="pyquokka", 
         version=VERSION,
         author="Tony Wang",
@@ -36,10 +37,13 @@ setup(
             'tqdm',
             'aiohttp',
             'botocore',
-            # 'ldbpy',
-            'threadpoolctl',
-            'parallel-ssh'
+            'threadpoolctl'
             ], # add any additional packages that 
+        entry_points = {
+            'console_scripts': [
+                'print = pyquokka.utils:print_hello'
+                ],
+            },
         extra_requires = {
                 "datalake" : ["pyiceberg", "deltalake"],
                 "advanced" : ["ldbpy"] 

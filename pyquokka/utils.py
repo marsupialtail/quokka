@@ -12,6 +12,7 @@ import multiprocessing
 import concurrent.futures
 import yaml
 import subprocess
+import argparse
 
 def preexec_function():
     # Ignore the SIGINT signal by setting the handler to the standard
@@ -115,6 +116,7 @@ class LocalCluster:
 
         print("Initializing local Quokka cluster.")
         self.num_node = 1
+        self.tags = {}
         self.cpu_count = multiprocessing.cpu_count()
         pyquokka_loc = pyquokka.__file__.replace("__init__.py","")
         # we assume you have pyquokka installed, and we are going to spin up a ray cluster locally
@@ -300,27 +302,9 @@ class QuokkaClusterManager:
 
     def set_up_spill_dir(self, public_ips, spill_dir):
 
-        # print("Trying to set up spill dir.")   
-        # result = self.launch_all("sudo nvme list", public_ips, "failed to list nvme devices")
-        # devices = []
-
-        # for sentence in result:
-        #     if "Amazon EC2 NVMe Instance Storage" in sentence:
-        #         split_by_newline = sentence.split("\n")
-        #         device = split_by_newline[2].split(" ")[0]
-        #         devices.append(device)
-
-        # if len(devices) == 0:
-        #     print("No nvme devices found. Skipping.")
-        #     return
-
-        # assert all([device == devices[0] for device in devices]), "All instances must have same nvme device location. Raise Github issue if you see this."
-        device = "/dev/nvme1n1" #devices[0]
-        print("Found nvme device: ", device)
-        self.launch_all("sudo mkfs.ext4 -F -E nodiscard {};".format(device), public_ips, "failed to format nvme ssd")
-        self.launch_all("sudo mount {} {};".format(device, spill_dir), public_ips, "failed to mount nvme ssd")
+        self.launch_all("sudo mkfs.ext4 -F -E nodiscard $(sudo nvme list | grep 'Amazon EC2 NVMe Instance Storage' | awk '{ print $1 }');", public_ips, "failed to format nvme ssd")
+        self.launch_all("sudo mount $(sudo nvme list | grep 'Amazon EC2 NVMe Instance Storage' | awk '{ print $1 }') {};".format(spill_dir), public_ips, "failed to mount nvme ssd")
         self.launch_all("sudo chmod -R a+rw {}".format(spill_dir), public_ips, "failed to give spill dir permissions")
-
 
     def create_cluster(self, aws_access_key, aws_access_id, num_instances, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = [], spill_dir = "/data", volume_size = 8):
 
@@ -382,75 +366,15 @@ class QuokkaClusterManager:
         print("Launching of Quokka cluster used: ", time.time() - start_time)
 
         return EC2Cluster(public_ips, private_ips, instance_ids, vcpu_per_node, spill_dir)  
-        
-
-    def stop_cluster(self, quokka_cluster):
-
-        """
-        Stops a cluster, does not terminate it. If the cluster had been saved to json, can use `get_cluster_from_json` to restart the cluster.
-
-        Args:
-            quokka_cluster (EC2Cluster): Cluster to stop.
-
-        Return:
-            None
-
-        Examples:
-
-            >>> from pyquokka.utils import *
-            >>> manager = QuokkaClusterManager()
-            >>> cluster = manager.create_cluster(aws_access_key, aws_access_id, num_instances = 2, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = ["numpy", "pandas"])
-            >>> cluster.to_json("my_cluster.json")
-            >>> manager.stop_cluster(cluster)
-        
-        """
+    
+    def start_cluster(self, cluster_json):
 
         ec2 = boto3.client("ec2")
-        instance_ids = list(quokka_cluster.instance_ids.values())
-        ec2.stop_instances(InstanceIds = instance_ids)
-        while True:
-            time.sleep(0.1)
-            a = ec2.describe_instances(InstanceIds = instance_ids)
-            states = [a['Reservations'][0]['Instances'][i]['State']['Name'] for i in range(len(instance_ids))]
-            if "running" in states:
-                continue
-            else:
-                break
-        quokka_cluster.state = "stopped"
-        
-        
-    def terminate_cluster(self, quokka_cluster):
-
-        """
-        Terminate a cluster.
-
-        Args:
-            quokka_cluster (EC2Cluster): Cluster to terminate.
-
-        Return:
-            None
-
-        Examples:
-
-            >>> from pyquokka.utils import *
-            >>> manager = QuokkaClusterManager()
-            >>> cluster = manager.create_cluster(aws_access_key, aws_access_id, num_instances = 2, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = ["numpy", "pandas"])
-            >>> manager.terminate_cluster(cluster)
-
-        """
-
-        ec2 = boto3.client("ec2")
-        instance_ids = list(quokka_cluster.instance_ids.values())
-        ec2.terminate_instances(InstanceIds = instance_ids)
-        while True:
-            time.sleep(0.1)
-            a = ec2.describe_instances(InstanceIds = instance_ids)
-            states = [a['Reservations'][0]['Instances'][i]['State']['Name'] for i in range(len(instance_ids))]
-            if "running" in states:
-                continue
-            else:
-                break
-        del quokka_cluster
+        with open(cluster_json, "r") as f:
+            cluster_info = json.load(f)
+        instance_ids = list(cluster_info['instance_ids'].values())
+        ec2.start_instances(InstanceIds = instance_ids)
+        self._initialize_instances(instance_ids, cluster_info["spill_dir"])
 
     
     def get_cluster_from_json(self, json_file):
@@ -490,14 +414,7 @@ class QuokkaClusterManager:
         states = [k['State']['Name'] for reservation in a['Reservations'] for k in reservation['Instances']] 
 
         if sum([i=="stopped" for i in states]) == len(states):
-            ec2.start_instances(InstanceIds = instance_ids)
-            self._initialize_instances(instance_ids, spill_dir)
-            a = ec2.describe_instances(InstanceIds = instance_ids)
-
-            public_ips = [k['PublicIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
-            private_ips = [k['PrivateIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
-
-            return EC2Cluster(public_ips, private_ips, instance_ids, cpu_count, spill_dir, tags = stuff['tags'] if 'tags' in stuff else {})
+            print("Cluster is stopped. Run quokkactl start_cluster to start the cluster.")
         if sum([i=="running" for i in states]) == len(states):
             request_instance_ids = [k['InstanceId'] for reservation in a['Reservations'] for k in reservation['Instances']]
             public_ips = [k['PublicIpAddress'] for reservation in a['Reservations'] for k in reservation['Instances']] 
@@ -691,3 +608,219 @@ class QuokkaClusterManager:
         cluster = get_cluster_from_ips(all_instance_ids, all_public_ips, all_private_ips, cpu_count, aws_access_id, aws_access_key, requirements, spill_dir)
 
         return (cluster, region_info)
+    
+def stop_cluster(cluster_json):
+
+    """
+    Stops a cluster, does not terminate it. If the cluster had been saved to json, can use `get_cluster_from_json` to restart the cluster.
+
+    Args:
+        quokka_cluster (EC2Cluster): Cluster to stop.
+
+    Return:
+        None
+
+    Examples:
+
+        >>> from pyquokka.utils import *
+        >>> manager = QuokkaClusterManager()
+        >>> cluster = manager.create_cluster(aws_access_key, aws_access_id, num_instances = 2, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = ["numpy", "pandas"])
+        >>> cluster.to_json("my_cluster.json")
+        >>> manager.stop_cluster(cluster)
+    
+    """
+
+    ec2 = boto3.client("ec2")
+    with open(cluster_json, "r") as f:
+        cluster_info = json.load(f)
+    instance_ids = list(cluster_info['instance_ids'].values())
+    ec2.stop_instances(InstanceIds = instance_ids)
+    while True:
+        time.sleep(0.1)
+        a = ec2.describe_instances(InstanceIds = instance_ids)
+        states = [a['Reservations'][0]['Instances'][i]['State']['Name'] for i in range(len(instance_ids))]
+        if "running" in states:
+            continue
+        else:
+            break
+        
+        
+def terminate_cluster(cluster_json):
+
+    """
+    Terminate a cluster.
+
+    Args:
+        quokka_cluster (EC2Cluster): Cluster to terminate.
+
+    Return:
+        None
+
+    Examples:
+
+        >>> from pyquokka.utils import *
+        >>> manager = QuokkaClusterManager()
+        >>> cluster = manager.create_cluster(aws_access_key, aws_access_id, num_instances = 2, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = ["numpy", "pandas"])
+        >>> manager.terminate_cluster(cluster)
+
+    """
+
+    ec2 = boto3.client("ec2")
+    with open(cluster_json, "r") as f:
+        cluster_info = json.load(f)
+    instance_ids = list(cluster_info['instance_ids'].values())
+    ec2.terminate_instances(InstanceIds = instance_ids)
+    ec2.terminate_instances(InstanceIds = instance_ids)
+    while True:
+        time.sleep(0.1)
+        a = ec2.describe_instances(InstanceIds = instance_ids)
+        states = [a['Reservations'][0]['Instances'][i]['State']['Name'] for i in range(len(instance_ids))]
+        if "running" in states:
+            continue
+        else:
+            break
+    os.remove(cluster_json)
+
+def make_new_sg():
+
+    # Create an EC2 resource object
+    ec2 = boto3.resource('ec2')
+
+    # Create a new security group
+    try:
+        security_group = ec2.create_security_group(
+            GroupName='quokka-security-group',
+            Description='Quokka Security Group'
+        )
+    except:
+        raise Exception("quokka-security-group already exists, just use that one!")
+
+    # Authorize all inbound and outbound traffic within the security group
+    security_group.authorize_ingress(
+        IpPermissions=[
+            {
+                'IpProtocol': '-1',  # All protocols
+                'UserIdGroupPairs': [
+                    {
+                        'GroupId': security_group.id  # Allow traffic from the same security group
+                    }
+                ]
+            }
+        ]
+    )
+
+    security_group.authorize_egress(
+        IpPermissions=[
+            {
+                'IpProtocol': '-1',  # All protocols
+                'UserIdGroupPairs': [
+                    {
+                        'GroupId': security_group.id  # Allow traffic to the same security group
+                    }
+                ]
+            }
+        ]
+        )
+
+    return security_group.id
+
+
+def cli_main():
+    parser = argparse.ArgumentParser(description='Utility to launch, stop or terminate a Quokka cluster. API inspired by AWS EMR.')
+
+    parser.add_argument('action', choices = ['create-cluster','start-cluster', 'pip-install', 'stop-cluster', 'terminate-cluster'], help = 'Action to perform.')
+
+    parser.add_argument('--name', help = 'Name of the cluster to launch. Your cluster will be saved to name.json.')
+    parser.add_argument('--instance-type', help = 'Instance type to use for the cluster. Default is r6id.2xlarge.', default = 'r6id.2xlarge')
+    parser.add_argument('--instance-count', help = 'Number of instances to launch. Default is 1.', default = 1, type = int)
+    parser.add_argument('--security-group', help = 'Security group to use for the cluster. Default is to make a new random one.', default = None)
+    parser.add_argument('--pem-key', help = 'Path to the key to use for the cluster.', default = None)
+
+    args = parser.parse_args()
+
+    if args.action == 'create-cluster':
+
+        # make sure args.name is not already there
+        if os.path.isfile(args.name + '.json'):
+            raise ValueError('specified cluster name already exists! Please use a different name or log into the existing cluster.')
+        print("Creating Quokka cluster, cluster config will be written to {}.json".format(args.name))
+
+        # make sure the pem-key is a real file
+        assert args.pem_key is not None, "Must specify a pem key!"
+        if not os.path.isfile(args.pem_key):
+            raise ValueError('specified pem key does not exist!')
+        key_name = os.path.basename(args.pem_key).split('.')[0]
+        # check the security group exists if not None, otherwise make a new one
+        if args.security_group is None:
+            security_group = make_new_sg()
+        else:
+            # check security group is real using boto3 api
+            ec2 = boto3.resource('ec2')
+            try:
+                security_group = ec2.SecurityGroup(args.security_group)
+            except:
+                raise ValueError('specified security group does not exist!')
+
+        manager = QuokkaClusterManager(key_name, args.pem_key, security_group)
+        # try to get your AWS credentials from the environment
+        try:
+            aws_access_id = os.environ['AWS_ACCESS_KEY_ID']
+            aws_access_key = os.environ['AWS_SECRET_ACCESS_KEY']
+        except:
+            # not in environemnt variables, maybe in ~/.aws/credentials
+            try:
+                session = boto3.Session()
+                credentials = session.get_credentials()
+                aws_access_id = credentials.access_key
+                aws_access_key = credentials.secret_key
+            except:
+                raise ValueError('AWS credentials not found! Please run aws configure to set them up.')
+        
+        cluster = manager.create_cluster( aws_access_key, aws_access_id,  args.instance_count, args.instance_type)
+        cluster.to_json(args.name + '.json')
+    
+    elif args.action == 'start-cluster':
+
+        # make sure args.name is not already there
+        if not os.path.isfile(args.name + '.json'):
+            raise ValueError('make sure {} is present in current folder'.format(args.name + '.json'))
+        
+        assert args.pem_key is not None, "Must specify a pem key!"
+        if not os.path.isfile(args.pem_key):
+            raise ValueError('specified pem key does not exist!')
+        key_name = os.path.basename(args.pem_key).split('.')[0]
+
+        manager = QuokkaClusterManager(key_name, args.pem_key, None)
+        manager.start_cluster(args.name + '.json')
+        print("Creating Quokka cluster, cluster config will be written to {}.json".format(args.name))
+    
+    elif args.action == 'pip-install':
+
+        # make sure args.name is not already there
+        if not os.path.isfile(args.name + '.json'):
+            raise ValueError('make sure {} is present in current folder'.format(args.name + '.json'))
+        
+        assert args.pem_key is not None, "Must specify a pem key!"
+        if not os.path.isfile(args.pem_key):
+            raise ValueError('specified pem key does not exist!')
+        key_name = os.path.basename(args.pem_key).split('.')[0]
+
+        manager = QuokkaClusterManager(key_name, args.pem_key, None)
+        manager.install_python_package()
+        print("Creating Quokka cluster, cluster config will be written to {}.json".format(args.name))
+
+    elif args.action == 'stop-cluster':
+        
+        # make sure args.name is not already there
+        if not os.path.isfile(args.name + '.json'):
+            raise ValueError('make sure {} is present in current folder'.format(args.name + '.json'))
+        
+        stop_cluster(args.name + '.json')
+    
+    elif args.action == 'terminate-cluster':
+
+        # make sure args.name is not already there
+        if not os.path.isfile(args.name + '.json'):
+            raise ValueError('make sure {} is present in current folder'.format(args.name + '.json'))
+        
+        terminate_cluster(args.name + '.json')

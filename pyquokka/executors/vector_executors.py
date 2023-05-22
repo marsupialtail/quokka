@@ -18,10 +18,9 @@ class DFProbeDataStreamNNExecutor1(Executor):
         self.k = k
 
     def execute(self, batches, stream_id, executor_id):
-        
+
         start = time.time()
         batch = pa.concat_tables(batches)
-        print("starting stage 0, with shape", len(batch))
         vectors = np.stack(batch[self.vec_col].to_numpy())
         normalized_vectors = vectors / np.linalg.norm(vectors, axis = 1, keepdims = True)
 
@@ -45,8 +44,7 @@ class DFProbeDataStreamNNExecutor1(Executor):
             # you could be smarter here and keep track of separate candidate sets for each probe, but let's leave this for an intern.
         # return batch.take(np.concatenate(all_indices))
         
-        print("stage 0 took", time.time() - start)
-        return batch.take(np.concatenate(indices))
+        return batch.take(indices)
     
     def done(self, executor_id):
         return
