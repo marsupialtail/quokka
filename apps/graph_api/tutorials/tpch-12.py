@@ -1,3 +1,7 @@
+"""
+This is a Quokka TaskGraph API implementation of the TPC-H 12 query. 
+"""
+
 import sys
 import time
 from pyquokka import QuokkaContext
@@ -34,8 +38,8 @@ def batch_func(df):
 
 if sys.argv[1] == "csv":
 
-    lineitem_csv_reader = InputDiskCSVDataset("/home/ziheng/Downloads/demo-tpch/lineitem.tbl", header = True, sep = "|", stride=16 * 1024 * 1024)
-    orders_csv_reader = InputDiskCSVDataset("/home/ziheng/Downloads/demo-tpch/orders.tbl", header = True, sep = "|", stride=16 * 1024 * 1024)
+    lineitem_csv_reader = InputDiskCSVDataset("/Users/EA/Desktop/Quokka_Research/Test_Datasets/tpc-h-public/lineitem.tbl", header = True, sep = "|", stride=16 * 1024 * 1024)
+    orders_csv_reader = InputDiskCSVDataset("/Users/EA/Desktop/Quokka_Research/Test_Datasets/tpc-h-public/orders.tbl", header = True, sep = "|", stride=16 * 1024 * 1024)
     # lineitem_csv_reader = InputS3CSVDataset("tpc-h-csv", lineitem_scheme , key = "lineitem/lineitem.tbl.1", sep="|", stride = 128 * 1024 * 1024)
     # orders_csv_reader = InputS3CSVDataset("tpc-h-csv",  order_scheme , key ="orders/orders.tbl.1",sep="|", stride = 128 * 1024 * 1024)
     lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, stage = -1)

@@ -6,7 +6,7 @@ The user defines **input readers** that generate a DataStream from a dataset. Fo
 
 ![Quokka Stream](quokkas-stream.svg)
 
-In this illustration, the bush produces a DataStream of leaves and the forest produces a DataStream of acorns. The brown quokka consumes those two streams and magically turn it into a stream of strawberries. The grey quokka takes in this stream of strawberries, slices them up and puts them in a salad bowl.
+In this illustration, the bush produces a DataStream of leaves and the forest produces a DataStream of acorns. The brown quokka consumes those two streams and magically turns them into a stream of strawberries. The grey quokka takes in this stream of strawberries, slices them up and puts them in a salad bowl.
 
 Unfortunately, people like us can't slice strawberries for a living and have to process tables of numbers. Quokka exposes useful primitives that allow you to filter, aggregate and join DataStreams, similar to what you can do in Polars or Spark. Please look at the [tutorials](simple.md) to learn more.
 
