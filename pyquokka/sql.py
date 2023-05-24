@@ -6,6 +6,8 @@ from collections import deque
 
 from pyquokka.df import * 
 
+supported_aggs = ['count', 'sum', 'avg', 'min', 'max'] 
+
 def get_new_var_name(var_names):
     return 'v_'+str(len(var_names)+1)
 
@@ -43,7 +45,7 @@ def name_aliases(cols, aliases, schema, indices=None):
             aliases[indexed_name] = new_col_name
     return cols, col_aliases
 
-def emit_code(node, var_names, var_values, aliases, no_exec=True):
+def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, no_exec=True):
     """
     Args:
         var_names: id number -> name
@@ -59,9 +61,13 @@ def emit_code(node, var_names, var_values, aliases, no_exec=True):
     code = ""
     result = None
     
-    print('#' + node['name'])
-    if node['name'] == 'PARQUET_SCAN' or node['name'] == 'PROJECTION':
-        if node['name'] == 'PARQUET_SCAN':
+    if no_exec: 
+        # Label each code block with the node they correspond to
+        print('#' + node['name'])
+        
+    # Parquet scan nodes have different names in the json depending on DuckDB version
+    if node['name'] in ['PARQUET_SCAN', 'READ_PARQUET '] or node['name'] == 'PROJECTION':
+        if node['name'] in ['PARQUET_SCAN', 'READ_PARQUET ']:
             extra_info = node['extra_info'].split('[INFOSEPARATOR]')
             cols = rewrite_aliases(extra_info[0].strip(), aliases).split('\n')
 
@@ -97,7 +103,7 @@ def emit_code(node, var_names, var_values, aliases, no_exec=True):
         with_columns, col_aliases = name_aliases(with_columns, aliases, child.schema, with_column_indices)
         
         # Filters may depend on columns not in the select, so filter first
-        if node['name'] == 'PARQUET_SCAN':
+        if node['name'] in ['PARQUET_SCAN', 'READ_PARQUET ']:
             if len(extra_info) >= 2 and 'Filters' in extra_info[1]:
                 filters = extra_info[1].strip()
                 if 'EC' in extra_info[1]: # if there's no infoseparator
@@ -130,7 +136,7 @@ def emit_code(node, var_names, var_values, aliases, no_exec=True):
                 result = result.select(col_aliases)
                 
     elif node['name'] == 'FILTER':
-        filters = node['extra_info'].split('\n')
+        filters = node['extra_info'].split('[INFOSEPARATOR]')[0].strip().split('\n')
         child_name = var_names[node['children'][0]['id']]
         child = var_values[child_name]
         result = child
@@ -149,6 +155,9 @@ def emit_code(node, var_names, var_values, aliases, no_exec=True):
     elif node['name'] == 'HASH_JOIN':
         extra_info = node['extra_info'].split('\n')
         how = extra_info[0].lower()
+        # Only allow inner joins for now, there's a bug with semi joins in the plan 
+        assert how in ['inner'], how+ ' joins not supported'
+        
         left_key = extra_info[1].split(' = ')[0]
         right_key = extra_info[1].split(' = ')[1]
         
@@ -219,7 +228,16 @@ def emit_code(node, var_names, var_values, aliases, no_exec=True):
     var_names[node['id']] = var_name
     var_values[var_name] = result
 
-def generate_code(json_plan, tables, qc):
+def generate_code(json_plan, tables, qc, table_prefixes = {
+        'l': 'lineitem',
+        'o': 'orders',
+        'c': 'customer',
+        'p': 'part',
+        'ps': 'partsupp',
+        's': 'supplier',
+        'r': 'region',
+        'n': 'nation'
+        }):
     """
         json_plan (string): name of json file with DuckDB plan
         tables (dict): looks like
@@ -235,6 +253,18 @@ def generate_code(json_plan, tables, qc):
             }
           where table name is mapped to Quokka datastream
        qc (QuokkaContext)
+       table_prefixes (dict): prefix of columns that identifies which table they belong to, e.g.
+       {
+        'l': 'lineitem',
+        'o': 'orders',
+        'c': 'customer',
+        'p': 'part',
+        'ps': 'partsupp',
+        's': 'supplier',
+        'r': 'region',
+        'n': 'nation'
+        }
+        This is needed because DuckDB plans currently don't include the table name in the READ_PARQUET nodes. Clearly this fix may not extend to other schemas besides TPC-H, so we will find a better solution in the future.
     """
     
     with open(json_plan) as f:
@@ -242,6 +272,7 @@ def generate_code(json_plan, tables, qc):
     plan = obj['children'][0]['children']
 
     #Reverse topologically sort
+    node = plan[0]
     nodes = deque([node])
     i = 0
     node['id'] = i
@@ -259,4 +290,4 @@ def generate_code(json_plan, tables, qc):
     aliases = {'count_star()': 'count(*)'}
     
     for node in reverse_sorted_nodes:
-        emit_code(node, var_names, var_values, aliases)
+        emit_code(node, var_names, var_values, aliases, tables, table_prefixes)
