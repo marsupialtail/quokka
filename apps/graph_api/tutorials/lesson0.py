@@ -1,3 +1,4 @@
+from pyquokka import QuokkaContext
 from pyquokka.quokka_runtime import TaskGraph
 from pyquokka.utils import LocalCluster
 from pyquokka.executors import Executor
@@ -7,7 +8,9 @@ import sqlglot
 import time
 import polars
 import ray
+
 cluster = LocalCluster()
+qc = QuokkaContext(cluster)
 
 # this dataset will generate a sequence of numbers, from 0 to limit. 
 class SimpleDataset:
@@ -37,7 +40,7 @@ class AddExecutor(Executor):
         print("I am executor ", channel, " my sum is ", self.sum)
         return self.sum
 
-task_graph = TaskGraph(cluster)
+task_graph = TaskGraph(qc)
 reader = SimpleDataset(80)
 numbers = task_graph.new_input_reader_node(reader)
 
@@ -53,4 +56,4 @@ start = time.time()
 task_graph.run()
 print("total time ", time.time() - start)
 
-print(ray.get(sum.to_df.remote()))
+print(ray.get(qc.dataset_manager.to_df.remote(sum)))
