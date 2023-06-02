@@ -150,6 +150,9 @@ class LocalCluster:
 def execute_script(key_location, x):
     return os.system("ssh -oStrictHostKeyChecking=no -i {} ubuntu@{} 'bash -s' < {}".format(key_location, x, pyquokka.__file__.replace("__init__.py", "common_startup.sh")))
 
+def execute_script1(key_location, x, spill_dir):
+    return os.system("ssh -oStrictHostKeyChecking=no -i {} ubuntu@{} 'bash -s' < {} {}".format(key_location, x, pyquokka.__file__.replace("__init__.py", "disk_setup.sh"), spill_dir))
+
 def get_cluster_from_docker_head(spill_dir = "/data"):
     import socket
     self_ip = socket.gethostbyname(socket.gethostname())
@@ -214,7 +217,7 @@ class QuokkaClusterManager:
         self.launch_all("pip3 install " + req, list(cluster.public_ips.values()), "Failed to install " + req)
 
     def launch_ssh_command(self, command, ip, ignore_error=False):
-        launch_command = "ssh -oStrictHostKeyChecking=no -oConnectTimeout=5 -i " + self.key_location + " ubuntu@" + ip + " " + command
+        launch_command = "ssh -oStrictHostKeyChecking=no -oConnectTimeout=5 -i " + self.key_location + " ubuntu@" + ip + " '" + command.replace("'", "'\"'\"'") + "' "
         try:
             result = subprocess.run(launch_command, shell=True, capture_output=True, check=True)
             return result.stdout.decode().strip()
@@ -263,7 +266,8 @@ class QuokkaClusterManager:
 
         self.check_instance_alive(public_ips)
 
-        self.set_up_spill_dir(public_ips, spill_dir)
+        pool = multiprocessing.Pool(multiprocessing.cpu_count())        
+        pool.starmap(execute_script1, [(self.key_location, public_ip, spill_dir) for public_ip in public_ips])
         z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + " 'bash -s' < " + pyquokka.__file__.replace("__init__.py","leader_startup.sh"))
         print(z)
         z = os.system("ssh -oStrictHostKeyChecking=no -i " + self.key_location + " ubuntu@" + leader_public_ip + " 'bash -s' < " + pyquokka.__file__.replace("__init__.py","leader_start_ray.sh"))
@@ -299,12 +303,6 @@ class QuokkaClusterManager:
         self.copy_all(pyquokka.__file__.replace("__init__.py","flight.py"), public_ips, "Failed to copy flight server file.")
         self.launch_all("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288", public_ips, "Failed to set malloc limit")
         self.launch_all("nohup python3 -u flight.py > foo.out 2> foo.err < /dev/null &", public_ips, "Failed to start flight servers on workers.")
-
-    def set_up_spill_dir(self, public_ips, spill_dir):
-
-        self.launch_all("sudo mkfs.ext4 -F -E nodiscard $(sudo nvme list | grep 'Amazon EC2 NVMe Instance Storage' | awk '{ print $1 }');", public_ips, "failed to format nvme ssd")
-        self.launch_all("sudo mount $(sudo nvme list | grep 'Amazon EC2 NVMe Instance Storage' | awk '{ print $1 }') {};".format(spill_dir), public_ips, "failed to mount nvme ssd")
-        self.launch_all("sudo chmod -R a+rw {}".format(spill_dir), public_ips, "failed to give spill dir permissions")
 
     def create_cluster(self, aws_access_key, aws_access_id, num_instances, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = [], spill_dir = "/data", volume_size = 8):
 
@@ -525,7 +523,8 @@ class QuokkaClusterManager:
             
             self.set_up_envs(public_ips, requirements, aws_access_key, aws_access_id)
             self.launch_all("sudo mkdir {}".format(spill_dir), public_ips, "failed to make temp spill directory", ignore_error = True)
-            self.set_up_spill_dir(public_ips, spill_dir)
+            pool = multiprocessing.Pool(multiprocessing.cpu_count())        
+            pool.starmap(execute_script1, [(self.key_location, public_ip, spill_dir) for public_ip in public_ips])
 
             print(f"----Launching ray cluster----")
 
