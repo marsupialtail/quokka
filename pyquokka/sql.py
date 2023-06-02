@@ -45,15 +45,30 @@ def name_aliases(cols, aliases, schema, indices=None):
             aliases[indexed_name] = new_col_name
     return cols, col_aliases
 
-def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, no_exec=True):
+def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, qc, print_code=True):
     """
     Args:
-        var_names: id number -> name
+        var_names: node id number -> name of variable
         var_values: name -> value
         aliases: 
             #int -> name ('#3' -> 'n_nationkey'),
             formula -> name ('l_partkey + 1' -> 'col1')
             'count_star()' -> 'count(*)'
+        tables (dict): mapping of table name (string) to Quokka Datastream
+        table_prefixes (dict): prefix of columns that identifies which table they belong to, e.g.
+       {
+        'l': 'lineitem',
+        'o': 'orders',
+        'c': 'customer',
+        'p': 'part',
+        'ps': 'partsupp',
+        's': 'supplier',
+        'r': 'region',
+        'n': 'nation'
+        }
+        This is needed because DuckDB plans currently don't include the table name in the READ_PARQUET nodes. Clearly this fix may not extend to other schemas besides TPC-H, so we will find a better solution in the future. 
+        qc: QuokkaContext
+        print_code: print generated code if this flag is set, otherwise don't print anything. 
     Returns:
         values
     """
@@ -61,7 +76,7 @@ def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, no_e
     code = ""
     result = None
     
-    if no_exec: 
+    if print_code: 
         # Label each code block with the node they correspond to
         print('#' + node['name'])
         
@@ -111,12 +126,12 @@ def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, no_e
                 filters = filters.split('\n')
                 filters[0] = filters[0].split('Filters: ')[1]
                 for f in filters:
-                    if no_exec:
+                    if print_code:
                         filter_stmt = var_name + ' = ' + var_name + '.filter_sql("' + f + '")'
                         code += filter_stmt + '\n'
                     # there are some formatting issues for filter where 'r_name = ASIA', etc. won't work, so we'll comment this out for now as filtering doesn't change the schema
-                    if not no_exec: result = result.filter_sql(f)
-        if no_exec and len(selected_columns) > 0:
+                    if not print_code: result = result.filter_sql(f)
+        if print_code and len(selected_columns) > 0:
             select_stmt = var_name + ' = ' + var_name + '.select(' + str(selected_columns) + ')'
             code += select_stmt + '\n'
         result = result.select(selected_columns)
@@ -124,13 +139,13 @@ def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, no_e
         # Parquet scan node won't introduce new columns
         if node['name'] == 'PROJECTION':
             if len(with_columns) > 0:
-                if no_exec:
+                if print_code:
                     with_col_stmt = var_name + ' = ' + var_name + '.with_columns_sql("' + ','.join(with_columns) + '")'
                     code += with_col_stmt + '\n'
                 result = result.with_columns_sql(','.join(with_columns))
                 
                 # If we are only creating new columns, need to make sure we throw away other ones
-                if no_exec and len(selected_columns) == 0:
+                if print_code and len(selected_columns) == 0:
                     select_stmt = var_name + ' = ' + var_name + '.select(' + str(col_aliases) + ')'
                     code += select_stmt
                 result = result.select(col_aliases)
@@ -143,7 +158,7 @@ def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, no_e
         
         first_filter = True  # for whether to use child_name or var_name in assignment
         for f in filters:
-            if no_exec:
+            if print_code:
                 if first_filter:
                     filter_stmt = var_name + ' = ' + child_name + '.filter_sql("' + f + '")'
                 else:
@@ -170,7 +185,7 @@ def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, no_e
         suffix = '_' + str(node['id'])
         # Need to add back left key to table in case it is referenced later in query
         alias_left_key = left_key + ' as ' + right_key
-        if no_exec:
+        if print_code:
             join_stmt = var_name + ' = ' + left_table_name + '.join(' + right_table_name \
                     + ', left_on = "' + left_key + '", right_on = "'  + right_key \
                     + ', suffix = ' + '"' + suffix + '"' + '", how = "' + how + '")'
@@ -201,7 +216,7 @@ def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, no_e
                     with_columns.append(c)
             if len(with_columns) > 0:
                 with_columns, _ = name_aliases(with_columns, aliases, result.schema)
-                if no_exec:
+                if print_code:
                     with_col_stmt = var_name + ' = ' + var_name + '.with_columns_sql("' + ','.join(with_columns) + '")'
                     code += with_col_stmt + '\n'
                 result = result.with_columns_sql(','.join(with_columns))
@@ -209,7 +224,7 @@ def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, no_e
             # Quokka GroupedDatastream does not have schema attribute, so do this before calling the groupby
             aggregates, _ = name_aliases(aggregates, aliases, result.schema)
             if len(group) > 0:
-                if no_exec:
+                if print_code:
                     groupby_stmt = var_name + ' = ' + var_name + '.groupby(' + str(group) + ')'
                     code += groupby_stmt + '\n'
                 result = result.groupby(group)
@@ -218,17 +233,17 @@ def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, no_e
             aggregates = rewrite_aliases(node['extra_info'].strip(), aliases).split('\n')
             aggregates, _ = name_aliases(aggregates, aliases, result.schema)
 
-        if no_exec:
+        if print_code:
             agg_stmt = var_name + ' = ' + var_name + '.agg_sql("' + ','.join(aggregates) + '")'
             code += agg_stmt
     else:
         code += '# not supported yet'
 
-    if no_exec: print(code + '\n')
+    if print_code: print(code + '\n')
     var_names[node['id']] = var_name
     var_values[var_name] = result
-
-def generate_code(json_plan, tables, qc, table_prefixes = {
+    
+def generate_code_from_plan(plan, tables, qc, table_prefixes = {
         'l': 'lineitem',
         'o': 'orders',
         'c': 'customer',
@@ -238,39 +253,7 @@ def generate_code(json_plan, tables, qc, table_prefixes = {
         'r': 'region',
         'n': 'nation'
         }):
-    """
-        json_plan (string): name of json file with DuckDB plan
-        tables (dict): looks like
-           {
-                "lineitem": lineitem,
-                "orders": orders,
-                "customer": customer,
-                "part": part,
-                "supplier": supplier,
-                "partsupp": partsupp,
-                "nation": nation,
-                "region": region
-            }
-          where table name is mapped to Quokka datastream
-       qc (QuokkaContext)
-       table_prefixes (dict): prefix of columns that identifies which table they belong to, e.g.
-       {
-        'l': 'lineitem',
-        'o': 'orders',
-        'c': 'customer',
-        'p': 'part',
-        'ps': 'partsupp',
-        's': 'supplier',
-        'r': 'region',
-        'n': 'nation'
-        }
-        This is needed because DuckDB plans currently don't include the table name in the READ_PARQUET nodes. Clearly this fix may not extend to other schemas besides TPC-H, so we will find a better solution in the future.
-    """
     
-    with open(json_plan) as f:
-        obj = json.load(f)
-    plan = obj['children'][0]['children']
-
     #Reverse topologically sort
     node = plan[0]
     nodes = deque([node])
@@ -290,4 +273,98 @@ def generate_code(json_plan, tables, qc, table_prefixes = {
     aliases = {'count_star()': 'count(*)'}
     
     for node in reverse_sorted_nodes:
-        emit_code(node, var_names, var_values, aliases, tables, table_prefixes)
+        emit_code(node, var_names, var_values, aliases, tables, table_prefixes, qc)
+                            
+def generate_code(query, data_path, table_prefixes = {
+        'l': 'lineitem',
+        'o': 'orders',
+        'c': 'customer',
+        'p': 'part',
+        'ps': 'partsupp',
+        's': 'supplier',
+        'r': 'region',
+        'n': 'nation'
+        }, mode='DISK', format_="parquet"):
+    """
+    Args:
+       query (string): String representing SQL query
+       data_path (string): path to the disk storage location, e.g. "/home/ziheng/tpc-h/"
+       table_prefixes (dict): prefix of columns that identifies which table they belong to, e.g.
+       {
+        'l': 'lineitem',
+        'o': 'orders',
+        'c': 'customer',
+        'p': 'part',
+        'ps': 'partsupp',
+        's': 'supplier',
+        'r': 'region',
+        'n': 'nation'
+        }
+        This is needed because DuckDB plans currently don't include the table name in the READ_PARQUET nodes. Clearly this fix may not extend to other schemas besides TPC-H, so we will find a better solution in the future.
+        mode (string): Only 'DISK' is allowed for now. Support for 'S3' will be added soon.
+        format_ (string): The format of the data, 'csv' or 'parquet'. The default value is 'parquet'.
+    """
+    if mode == "DISK":
+        cluster = LocalCluster()
+    else:
+        raise Exception
+
+    qc = QuokkaContext(cluster,2,2)
+    qc.set_config("fault_tolerance", True)
+
+    if mode == "DISK":
+        disk_path = data_path
+        if format_ == "csv":
+            lineitem = qc.read_csv(disk_path + "lineitem.tbl", sep="|", has_header=True)
+            orders = qc.read_csv(disk_path + "orders.tbl", sep="|", has_header=True)
+            customer = qc.read_csv(disk_path + "customer.tbl",sep = "|", has_header=True)
+            part = qc.read_csv(disk_path + "part.tbl", sep = "|", has_header=True)
+            supplier = qc.read_csv(disk_path + "supplier.tbl", sep = "|", has_header=True)
+            partsupp = qc.read_csv(disk_path + "partsupp.tbl", sep = "|", has_header=True)
+            nation = qc.read_csv(disk_path + "nation.tbl", sep = "|", has_header=True)
+            region = qc.read_csv(disk_path + "region.tbl", sep = "|", has_header=True)
+        elif format_ == "parquet":
+            lineitem = qc.read_parquet(disk_path + "lineitem.parquet")
+            orders = qc.read_parquet(disk_path + "orders.parquet")
+            customer = qc.read_parquet(disk_path + "customer.parquet")
+            part = qc.read_parquet(disk_path + "part.parquet")
+            supplier = qc.read_parquet(disk_path + "supplier.parquet")
+            partsupp = qc.read_parquet(disk_path + "partsupp.parquet")
+            nation = qc.read_parquet(disk_path + "nation.parquet")
+            region = qc.read_parquet(disk_path + "region.parquet")
+        else:
+            raise Exception
+    else:
+        raise Exception
+        
+    tables = {
+        "lineitem": lineitem,
+        "orders": orders,
+        "customer": customer,
+        "part": part,
+        "supplier": supplier,
+        "partsupp": partsupp,
+        "nation": nation,
+        "region": region
+    }
+    
+    # Need this argument to know which parquet files to read
+    TABLES = tables.keys()
+    # Table files should be in the form [DATA_PATH][table name].parquet
+    DATA_PATH = data_path
+
+    print("Start plan generation")
+    con = duckdb.connect()
+    con.execute("SET explain_output='ALL';")
+
+    CREATE_SCRIPT = '\n'.join(['CREATE VIEW ' + table + " AS SELECT * FROM read_"+format_+"('" + DATA_PATH + table + "."+format_+"');" for table in TABLES])
+    con.execute(CREATE_SCRIPT)
+    con.execute("PRAGMA explain_output = 'OPTIMIZED_ONLY'; PRAGMA enable_profiling = json; ")
+    result = con.execute('explain analyze ' + query).fetchall()[0][1]
+    obj = json.loads(result)
+
+    plan = obj['children'][0]['children']
+    
+    print("Finished plan generation, beginning code generation")
+    
+    generate_code_from_plan(plan, tables, qc, table_prefixes)
