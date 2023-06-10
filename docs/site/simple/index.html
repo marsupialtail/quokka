@@ -1,0 +1,2146 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      <link rel="icon" href="../quokka.png">
+      <meta name="generator" content="mkdocs-1.4.0, mkdocs-material-8.5.5">
+    
+    
+      
+        <title>DataStream API (Use Quokka) - Quokka</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.80dcb947.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.cbb835fc.min.css">
+        
+          
+          
+          <meta name="theme-color" content="#8bc34b">
+        
+      
+      
+
+    
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="" data-md-color-primary="light-green" data-md-color-accent="">
+  
+    
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#tutorials" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Quokka" class="md-header__button md-logo" aria-label="Quokka" data-md-component="logo">
+      
+  <img src="../quokka.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Quokka
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              DataStream API (Use Quokka)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/marsupialtail/quokka" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Quokka" class="md-nav__button md-logo" aria-label="Quokka" data-md-component="logo">
+      
+  <img src="../quokka.png" alt="logo">
+
+    </a>
+    Quokka
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/marsupialtail/quokka" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        Home
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../started/" class="md-nav__link">
+        Cartoons
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        Installation
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cloud/" class="md-nav__link">
+        Setting Up Cloud Cluster
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../different/" class="md-nav__link">
+        How is Quokka different from ...?
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+    
+  
+  
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_6" type="checkbox" id="__nav_6" checked>
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6">
+          Tutorials
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Tutorials" data-md-level="1">
+        <label class="md-nav__title" for="__nav_6">
+          <span class="md-nav__icon md-icon"></span>
+          Tutorials
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+    
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          DataStream API (Use Quokka)
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        DataStream API (Use Quokka)
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-1-things" class="md-nav__link">
+    Lesson -1: Things
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-0-reading-things" class="md-nav__link">
+    Lesson 0: Reading Things
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-1-doing-things" class="md-nav__link">
+    Lesson 1: Doing Things
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-2-writing-things" class="md-nav__link">
+    Lesson 2: Writing Things
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-3-things-you-cant-do" class="md-nav__link">
+    Lesson 3: Things you can't do.
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/" class="md-nav__link">
+        TaskGraph API (Contribute to Quokka)
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7" type="checkbox" id="__nav_7" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7">
+          API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="API Reference" data-md-level="1">
+        <label class="md-nav__title" for="__nav_7">
+          <span class="md-nav__icon md-icon"></span>
+          API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_1" type="checkbox" id="__nav_7_1" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_1">
+          QuokkaContext API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="QuokkaContext API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_1">
+          <span class="md-nav__icon md-icon"></span>
+          QuokkaContext API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/quokka_context/" class="md-nav__link">
+        QuokkaContext
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/set_config/" class="md-nav__link">
+        QuokkaContext.set_config
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/get_config/" class="md-nav__link">
+        QuokkaContext.get_config
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_csv/" class="md-nav__link">
+        QuokkaContext.read_csv
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_parquet/" class="md-nav__link">
+        QuokkaContext.read_parquet
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_iceberg/" class="md-nav__link">
+        QuokkaContext.read_iceberg
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_delta/" class="md-nav__link">
+        QuokkaContext.read_delta
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_dataset/" class="md-nav__link">
+        QuokkaContext.read_dataset
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_ray_dataset/" class="md-nav__link">
+        QuokkaContext.read_ray_dataset
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/from_polars/" class="md-nav__link">
+        QuokkaContext.from_polars
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/from_pandas/" class="md-nav__link">
+        QuokkaContext.from_pandas
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/from_arrow/" class="md-nav__link">
+        QuokkaContext.from_arrow
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_2" type="checkbox" id="__nav_7_2" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_2">
+          DataStream API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="DataStream API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_2">
+          <span class="md-nav__icon md-icon"></span>
+          DataStream API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/collect/" class="md-nav__link">
+        DataStream.collect
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/compute/" class="md-nav__link">
+        DataStream.compute
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/explain/" class="md-nav__link">
+        DataStream.explain
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/write_csv/" class="md-nav__link">
+        DataStream.write_csv
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/write_parquet/" class="md-nav__link">
+        DataStream.write_parquet
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/filter/" class="md-nav__link">
+        DataStream.filter
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/filter_sql/" class="md-nav__link">
+        DataStream.filter_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/select/" class="md-nav__link">
+        DataStream.select
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/drop/" class="md-nav__link">
+        DataStream.drop
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/rename/" class="md-nav__link">
+        DataStream.rename
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/transform/" class="md-nav__link">
+        DataStream.transform
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/transform_sql/" class="md-nav__link">
+        DataStream.transform_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/with_columns/" class="md-nav__link">
+        DataStream.with_columns
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/with_columns_sql/" class="md-nav__link">
+        DataStream.with_columns_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/union/" class="md-nav__link">
+        DataStream.union
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/distinct/" class="md-nav__link">
+        DataStream.distinct
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/gramian/" class="md-nav__link">
+        DataStream.gramian
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/stateful_transform/" class="md-nav__link">
+        DataStream.stateful_transform
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/join/" class="md-nav__link">
+        DataStream.join
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/groupby/" class="md-nav__link">
+        DataStream.groupby
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/top_k/" class="md-nav__link">
+        DataStream.top_k
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/count_distinct/" class="md-nav__link">
+        DataStream.count_distinct
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/agg/" class="md-nav__link">
+        DataStream.agg
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/agg/" class="md-nav__link">
+        DataStream.aggregate
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/agg_sql/" class="md-nav__link">
+        DataStream.agg_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/count/" class="md-nav__link">
+        DataStream.count
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/sum/" class="md-nav__link">
+        DataStream.sum
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/mean/" class="md-nav__link">
+        DataStream.mean
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/min/" class="md-nav__link">
+        DataStream.min
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/max/" class="md-nav__link">
+        DataStream.max
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/grouped_agg/" class="md-nav__link">
+        GroupedDataStream.agg
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/grouped_agg/" class="md-nav__link">
+        GroupedDataStream.aggregate
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/grouped_agg_sql/" class="md-nav__link">
+        GroupedDataStream.agg_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/grouped_count_distinct/" class="md-nav__link">
+        GroupedDataStream.count_distinct
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_3" type="checkbox" id="__nav_7_3" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_3">
+          DataSet API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="DataSet API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_3">
+          <span class="md-nav__icon md-icon"></span>
+          DataSet API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dataset/to_df/" class="md-nav__link">
+        DataSet.to_df
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dataset/to_ray_dataset/" class="md-nav__link">
+        DataSet.to_ray_dataset
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dataset/to_arrow_refs/" class="md-nav__link">
+        DataSet.to_arrow_refs
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_4" type="checkbox" id="__nav_7_4" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_4">
+          Expression API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Expression API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_4">
+          <span class="md-nav__icon md-icon"></span>
+          Expression API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_4_1" type="checkbox" id="__nav_7_4_1" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_4_1">
+          Strings
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Strings" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_4_1">
+          <span class="md-nav__icon md-icon"></span>
+          Strings
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_to_uppercase/" class="md-nav__link">
+        Expression.str.to_uppercase
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_to_lowercase/" class="md-nav__link">
+        Expression.str.to_lowercase
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_contains/" class="md-nav__link">
+        Expression.str.contains
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_starts_with/" class="md-nav__link">
+        Expression.str.starts_with
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_ends_with/" class="md-nav__link">
+        Expression.str.ends_with
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_length/" class="md-nav__link">
+        Expression.str.length
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_json_extract/" class="md-nav__link">
+        Expression.str.json_extract
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_strptime/" class="md-nav__link">
+        Expression.str.strptime
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_hash/" class="md-nav__link">
+        Expression.str.hash
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_4_2" type="checkbox" id="__nav_7_4_2" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_4_2">
+          Temporal
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Temporal" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_4_2">
+          <span class="md-nav__icon md-icon"></span>
+          Temporal
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_hour/" class="md-nav__link">
+        Expression.dt.hour
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_minute/" class="md-nav__link">
+        Expression.dt.minute
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_second/" class="md-nav__link">
+        Expression.dt.second
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_weekday/" class="md-nav__link">
+        Expression.dt.weekday
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_millisecond/" class="md-nav__link">
+        Expression.dt.millisecond
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_microsecond/" class="md-nav__link">
+        Expression.dt.microsecond
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_week/" class="md-nav__link">
+        Expression.dt.week
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_month/" class="md-nav__link">
+        Expression.dt.month
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_year/" class="md-nav__link">
+        Expression.dt.year
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_offset_by/" class="md-nav__link">
+        Expression.dt.offset_by
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_strftime/" class="md-nav__link">
+        Expression.dt.strftime
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5" type="checkbox" id="__nav_7_5" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5">
+          QuokkaClusterManager API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="QuokkaClusterManager API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_5">
+          <span class="md-nav__icon md-icon"></span>
+          QuokkaClusterManager API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5_1" type="checkbox" id="__nav_7_5_1" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5_1">
+          EC2Cluster
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="EC2Cluster" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_5_1">
+          <span class="md-nav__icon md-icon"></span>
+          EC2Cluster
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/ec2cluster_to_json/" class="md-nav__link">
+        EC2Cluster.to_json
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5_2" type="checkbox" id="__nav_7_5_2" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5_2">
+          LocalCluster
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="LocalCluster" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_5_2">
+          <span class="md-nav__icon md-icon"></span>
+          LocalCluster
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/localcluster/" class="md-nav__link">
+        LocalCluster
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5_3" type="checkbox" id="__nav_7_5_3" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5_3">
+          QuokkaClusterManager
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="QuokkaClusterManager" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_5_3">
+          <span class="md-nav__icon md-icon"></span>
+          QuokkaClusterManager
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/quokka_cluster_manager/" class="md-nav__link">
+        QuokkaClusterManager
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/create_cluster/" class="md-nav__link">
+        QuokkaClusterManager.create_cluster
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/stop_cluster/" class="md-nav__link">
+        QuokkaClusterManager.stop_cluster
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/terminate_cluster/" class="md-nav__link">
+        QuokkaClusterManager.terminate_cluster
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/get_cluster_from_json/" class="md-nav__link">
+        QuokkaClusterManager.get_cluster_from_json
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/get_cluster_from_ray.md" class="md-nav__link">
+        QuokkaClusterManager.get_cluster_from_ray
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://www.rottnestisland.com" class="md-nav__link">
+        Visit Rottnest
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-1-things" class="md-nav__link">
+    Lesson -1: Things
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-0-reading-things" class="md-nav__link">
+    Lesson 0: Reading Things
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-1-doing-things" class="md-nav__link">
+    Lesson 1: Doing Things
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-2-writing-things" class="md-nav__link">
+    Lesson 2: Writing Things
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-3-things-you-cant-do" class="md-nav__link">
+    Lesson 3: Things you can't do.
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  <a href="https://github.com/marsupialtail/quokka/edit/master/docs/simple.md" title="Edit this page" class="md-content__button md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25Z"/></svg>
+  </a>
+
+
+<h1 id="tutorials">Tutorials</h1>
+<p>This section is for learning how to use Quokka's DataStream API. <strong>Quokka's DataStream API is basically a dataframe API.</strong> It takes heavy inspiration from SparkSQL and Polars, and adopts a lazy execution model. This means that in contrast to Pandas, your operations are not executed immediately after you define them. Instead, Quokka builds a logical plan under the hood and executes it only when the user wants to "collect" the result, just like Spark. </p>
+<p>For the first part of our tutorial, we are going to go through implementing a few SQL queries in the TPC-H benchmark suite. You can download the data <a href="https://drive.google.com/file/d/14yDfWZUAxifM5i7kf7CFvOQCIrU7sRXP/view?usp=sharing">here</a>. It is about 1GB unzipped. Please download the data (should take 2 minutes) and extract it to some directory locally. If you are testing this on a VM where clicking the link can't work, try this command after pip installing gdown: <code>gdown https://drive.google.com/uc?id=14yDfWZUAxifM5i7kf7CFvOQCIrU7sRXP</code>. If it complain gdown not found, maybe you need to do something like this: <code>/home/ubuntu/.local/bin/gdown</code>. The SQL queries themselves can be found on this awesome <a href="https://umbra-db.com/interface/">interface</a>.</p>
+<p>These tutorials will use your local machine. They shouldn't take too long to run. It would be great if you can follow along, not just for fun -- <strong>if you find a bug in this tutorial I will buy you a cup of coffee!</strong></p>
+<p>You can also refer to the API reference on the index.</p>
+<h2 id="lesson-1-things">Lesson -1: Things</h2>
+<p>Please read the <a href="../started/">Getting Started</a> section. I spent way too much time making the cartoons on that page.</p>
+<h2 id="lesson-0-reading-things">Lesson 0: Reading Things</h2>
+<p>For every Quokka program, we need to set up a <code>QuokkaContext</code> object. This is similar to the Spark <code>SQLContext</code>. This can easily be done by running the following two lines of code in your Python terminal.</p>
+<pre><code class="language-python">from pyquokka.df import * 
+qc = QuokkaContext()
+</code></pre>
+<p>Once we have the <code>QuokkaContext</code> object, we can start reading data to obtain DataStreams. Quokka can read data on disk and on the cloud (currently S3). For the purposes of this tutorial we will be reading data from disk. Quokka currently reads CSV and Parquet, with plans to add JSON soon. </p>
+<p>Here is how you would read a CSV file <strong>if you know the schema</strong>:</p>
+<pre><code class="language-python"># the last column is called NULL, because the TPC-H data generator likes to put a | at the end of each row, making it appear as if there is a final column
+# with no values. Don't worry, we can drop this column. 
+lineitem_scheme = [&quot;l_orderkey&quot;,&quot;l_partkey&quot;,&quot;l_suppkey&quot;,&quot;l_linenumber&quot;,&quot;l_quantity&quot;,&quot;l_extendedprice&quot;, &quot;l_discount&quot;,&quot;l_tax&quot;,&quot;l_returnflag&quot;,&quot;l_linestatus&quot;,&quot;l_shipdate&quot;,&quot;l_commitdate&quot;,&quot;l_receiptdate&quot;,&quot;l_shipinstruct&quot;,&quot;l_shipmode&quot;,&quot;l_comment&quot;, &quot;null&quot;]
+lineitem = qc.read_csv(disk_path + &quot;lineitem.tbl&quot;, lineitem_scheme, sep=&quot;|&quot;)
+</code></pre>
+<p>And if you don't know the schema but there is a header row where column names are <strong>separated with the same separator as the data</strong>:</p>
+<pre><code class="language-python">lineitem = qc.read_csv(disk_path + &quot;lineitem.tbl&quot;, sep=&quot;|&quot;, has_header=True)
+</code></pre>
+<p>The test files you just downloaded are of this form. No need to specify the schema for those. In this case Quokka will just use the header row for the schema.</p>
+<p>You can also read a directory of CSV files:</p>
+<pre><code class="language-python">lineitem = qc.read_csv(disk_path + &quot;lineitem/*&quot;, lineitem_scheme, sep=&quot;|&quot;, has_header = True)
+</code></pre>
+<p>Now let's read all the tables of the TPC-H benchmark suite. Set <code>disk_path</code> to where you unzipped the files.</p>
+<pre><code class="language-python">lineitem = qc.read_csv(disk_path + &quot;lineitem.tbl&quot;, sep=&quot;|&quot;, has_header=True)
+orders = qc.read_csv(disk_path + &quot;orders.tbl&quot;, sep=&quot;|&quot;, has_header=True)
+customer = qc.read_csv(disk_path + &quot;customer.tbl&quot;,sep = &quot;|&quot;, has_header=True)
+part = qc.read_csv(disk_path + &quot;part.tbl&quot;, sep = &quot;|&quot;, has_header=True)
+supplier = qc.read_csv(disk_path + &quot;supplier.tbl&quot;, sep = &quot;|&quot;, has_header=True)
+partsupp = qc.read_csv(disk_path + &quot;partsupp.tbl&quot;, sep = &quot;|&quot;, has_header=True)
+nation = qc.read_csv(disk_path + &quot;nation.tbl&quot;, sep = &quot;|&quot;, has_header=True)
+region = qc.read_csv(disk_path + &quot;region.tbl&quot;, sep = &quot;|&quot;, has_header=True)
+</code></pre>
+<p>If you want to read the Parquet files, you should first run this script to generate the Parquet files:</p>
+<pre><code class="language-python">import polars as pl
+disk_path = &quot;/home/ubuntu/tpc-h/&quot; #replace
+files = [&quot;lineitem.tbl&quot;,&quot;orders.tbl&quot;,&quot;customer.tbl&quot;,&quot;part.tbl&quot;,&quot;supplier.tbl&quot;,&quot;partsupp.tbl&quot;,&quot;nation.tbl&quot;,&quot;region.tbl&quot;]
+for file in files:
+    df = pl.read_csv(disk_path + file,sep=&quot;|&quot;,has_header = True, parse_dates = True).drop(&quot;null&quot;)
+    df.write_parquet(disk_path + file.replace(&quot;tbl&quot;, &quot;parquet&quot;), row_group_size=100000)
+</code></pre>
+<p>To read in a Parquet file, you don't have to worry about headers or schema, just do:</p>
+<pre><code class="language-python">lineitem = qc.read_parquet(disk_path + &quot;lineitem.parquet&quot;)
+</code></pre>
+<p>Currently, <code>qc.read_csv</code> and <code>qc.read_parquet</code> will either return a DataStream or just a Polars DataFrame directly if the data size is small (set at 10 MB).</p>
+<h2 id="lesson-1-doing-things">Lesson 1: Doing Things</h2>
+<p>Now that we have read the data, let's do things with it. First, why don't we count how many rows there are in the <code>lineitem</code> table.</p>
+<pre><code class="language-python">lineitem.count()
+</code></pre>
+<p>If you don't see the number 6001215 after a while, something is very wrong. Please send me an email, I will help you fix things (and buy you a coffee): zihengw@stanford.edu.</p>
+<p>Feel free to type other random things and see if it's supported, but for those interested, let's follow a structured curriculum. Let's take a look at <a href="https://github.com/dragansah/tpch-dbgen/blob/master/tpch-queries/1.sql">TPC-H query 1</a>.</p>
+<p>This is how you would write it in Quokka. This is very similar to how you'd write in another DataFrame library like Polars or Dask.</p>
+<pre><code class="language-python">def do_1():
+    d = lineitem.filter_sql(&quot;l_shipdate &lt;= date '1998-12-01' - interval '90' day&quot;)
+    d = d.with_columns({&quot;disc_price&quot;: d[&quot;l_extendedprice&quot;] * (1 - d[&quot;l_discount&quot;]), 
+                        &quot;charge&quot;: d[&quot;l_extendedprice&quot;] * (1 - d[&quot;l_discount&quot;]) * (1 + d[&quot;l_tax&quot;])})
+
+    f = d.groupby([&quot;l_returnflag&quot;, &quot;l_linestatus&quot;], orderby=[&quot;l_returnflag&quot;,&quot;l_linestatus&quot;]).agg({&quot;l_quantity&quot;:[&quot;sum&quot;,&quot;avg&quot;], &quot;l_extendedprice&quot;:[&quot;sum&quot;,&quot;avg&quot;], &quot;disc_price&quot;:&quot;sum&quot;, 
+        &quot;charge&quot;:&quot;sum&quot;, &quot;l_discount&quot;:&quot;avg&quot;,&quot;*&quot;:&quot;count&quot;})
+    return f.collect()
+</code></pre>
+<p>Quokka supports filtering DataStreams by <code>DataStream.filter()</code>. Filters can be specified in SQL syntax. The columns in the SQL expression must exist in the schema of the DataStream. A more Pythonic way of doing this like <code>b = b[b.a &lt; 5]</code> isn't supported yet, mainly due to the finickiness surrounding date types etc. The result of a <code>filter()</code> is another DataStream whose Polars DataFrames will only contain rows that respect the predicate.</p>
+<p>On the plus side, Quokka uses the amazing <a href="https://github.com/tobymao/sqlglot">SQLGlot</a> library to support most ANSI-SQL compliant predicates, including dates, between, IN, even arithmetic in conditions. Try out some different <a href="../datastream/filter/">predicates</a>! Please give SQLGlot a star when you're at it. For example, you can specify this super complicated predicate for <a href="https://github.com/dragansah/tpch-dbgen/blob/master/tpch-queries/6.sql">TPC-H query 6</a>:</p>
+<pre><code class="language-python">def do_6():
+    d = lineitem.filter_sql(&quot;l_shipdate &gt;= date '1994-01-01' and l_shipdate &lt; date '1994-01-01' + interval '1' year and l_discount between 0.06 - 0.01 and 0.06 + 0.01 and l_quantity &lt; 24&quot;)
+    d = d.with_columns({&quot;revenue&quot;: lambda x: x[&quot;l_extendedprice&quot;] * x[&quot;l_discount&quot;]}, required_columns={&quot;l_extendedprice&quot;, &quot;l_discount&quot;})
+    f = d.aggregate({&quot;revenue&quot;:[&quot;sum&quot;]})
+    return f.collect()
+</code></pre>
+<p>Quokka supports creating new columns in DataStreams with <code>with_columns</code>. Read more about how this works <a href="../datastream/with_columns/">here</a>. This is in principle similar to Spark <code>df.with_column</code> and Pandas UDFs. You can also use <code>with_columns_sql</code>, documented <a href="../datastream/with_columns_sql/">here</a>.</p>
+<p>Like most Quokka operations, <code>with_columns</code> will produce a new DataStream with an added column and is not inplace. This means that the command is lazy, and won't trigger the runtime to produce the actual data. It simply builds a logical plan of what to do in the background, which can be optimized when the user specifically ask for the result.</p>
+<p>Finally, we can group the DataStream and aggregate it to get the result. Read more about aggregation syntax <a href="../datastream/grouped_agg/">here</a>. The aggregation will produce another DataStream, which we call <code>collect()</code> on, to convert it to a Polars DataFrame in your Python terminal.</p>
+<p>When you call <code>.collect()</code>, the logical plan you have built is actually optimized and executed. This is exactly how Spark works. To view the optimized logical plan and learn more about what Quokka is doing, you can do <code>f.explain()</code> which will produce a graph, or <code>f.explain(mode="text")</code> which will produce a textual explanation.</p>
+<p>Joins work very intuitively. For example, this is how to do <a href="https://github.com/dragansah/tpch-dbgen/blob/master/tpch-queries/12.sql">TPC-H query 12</a>.</p>
+<pre><code class="language-python">def do_12():
+    d = lineitem.join(orders,left_on=&quot;l_orderkey&quot;, right_on=&quot;o_orderkey&quot;)
+    d = d.filter_sql(&quot;l_shipmode IN ('MAIL','SHIP') and l_commitdate &lt; l_receiptdate and l_shipdate &lt; l_commitdate and \
+        l_receiptdate &gt;= date '1994-01-01' and l_receiptdate &lt; date '1995-01-01'&quot;)
+    f = d.groupby(&quot;l_shipmode&quot;).agg_sql(&quot;&quot;&quot;
+        sum(case when o_orderpriority = '1-URGENT' or o_orderpriority = '2-HIGH' then 1 else 0 end) as high_line_count,
+        sum(case when o_orderpriority &lt;&gt; '1-URGENT' and o_orderpriority &lt;&gt; '2-HIGH' then 1 else 0 end) as low_line_count
+    &quot;&quot;&quot;)
+    return f.collect()
+</code></pre>
+<p>Note it does not matter if you filter after the join or before the join, Quokka will automatically push them down during the logical plan optimization. The <code>join</code> operator on a DataStream takes in either another DataStream or a Polars DataFrame in your Python session. In the latter case, this Polars DataFrame will be broadcasted to different workers similar to Spark's broadcast join. Here is another example, <a href="https://github.com/dragansah/tpch-dbgen/blob/master/tpch-queries/3.sql">TPC-H query 3</a>.</p>
+<pre><code class="language-python">def do_3():
+    d = lineitem.join(orders,left_on=&quot;l_orderkey&quot;, right_on=&quot;o_orderkey&quot;)
+    d = customer.join(d,left_on=&quot;c_custkey&quot;, right_on=&quot;o_custkey&quot;)
+    d = d.filter_sql(&quot;c_mktsegment = 'BUILDING' and o_orderdate &lt; date '1995-03-15' and l_shipdate &gt; date '1995-03-15'&quot;)
+    d = d.with_columns({&quot;revenue&quot;: d[&quot;l_extendedprice&quot;] * ( 1 - d[&quot;l_discount&quot;])})
+    f = d.groupby([&quot;l_orderkey&quot;,&quot;o_orderdate&quot;,&quot;o_shippriority&quot;]).agg({&quot;revenue&quot;:[&quot;sum&quot;]})
+    return f.collect()
+</code></pre>
+<p>Note unlike some SQL engines, Quokka currently will not try to figure out the optimal join ordering between the specified three-way join between lineitem, orders and customer tables. You are responsible for figuring that out at the moment -- try to join smaller tables first and then join them against larger tables, or try to minimize the intermeidate result size from those joins.</p>
+<p>Feel free to look at some other queries in the Quokka <a href="https://github.com/marsupialtail/quokka/tree/master/apps">github</a>, or browse the API references. While you are there, please give Quokka a star!</p>
+<h2 id="lesson-2-writing-things">Lesson 2: Writing Things</h2>
+<p>So far, we have just learned about how to read things into DataStreams and do things to DataStreams. You can also write out DataStreams to persistent storage like disk or S3 to record all the amazing things we did with them.</p>
+<p>Quokka currently operates like Spark and by default writes a directory of files, with a default maximum file size for different file formats. This makes it easy to perform parallel writing.</p>
+<p>To write out a DataStream to CSV or Parquet to a local directory (you must specify a valid absolute path), simply do:</p>
+<pre><code class="language-python">d.write_csv(&quot;/home/ubuntu/test-path/&quot;).collect()
+d.write_parquet(&quot;/home/ubuntu/test-path/&quot;).collect()
+</code></pre>
+<p>To write out a DataStream to S3, you should specify an S3 bucket and prefix like this:</p>
+<pre><code class="language-python">d.write_csv(&quot;s3://bucket/prefix/&quot;).collect()
+d.write_parquet(&quot;s3://bucket/prefix/&quot;).collect()
+</code></pre>
+<p>The collected Polars DataFrame at the end is just a column of filenames produced.</p>
+<h2 id="lesson-3-things-you-cant-do">Lesson 3: Things you can't do.</h2>
+<p>Here is a brief discussion of what Quokka is not great for. Quokka's main advantage stems from the fact it can pipeline the execution of DataStreams. Once a partition (typically a Polars DataFrame) in a DataStream has been generated, it can be immediately consumed by a downstream user. This means downstream processing of this partition and upstream generation of the next partition can be overlapped. </p>
+<p>Now, if an operator processing a DataStream cannot emit any partitions downstream until it has seen all of the partitions in its input DataStreams, the pipeline breaks. An example of this is an aggregation. You cannot safely emit the result of a sum of a column of a table until you have seen every row! The main examples of this in data processing are groupby-aggregations and distributed sorts. </p>
+<p>Currently, calling <code>groupby().agg()</code> or just <code>agg()</code> on a DataStream will produce another DataStream. However that DataStream will consist of exactly one batch, which holds the final result, emitted when it's computed. It is recommended to just call <code>collect()</code> or <code>compute()</code> on that result. </p>
+<p>Quokka currently does not support distributed sort -- indeed a sort heavy workload is really great for Spark. Distributed sorting is not exactly needed for many analytical SQL workloads since you typically do the aggregation before the order by, which greatly reduce the number of rows you have to sort. You can then sort after you have done <code>collect()</code>. However for many other workloads distributed sorting is critical, and Quokka aims to support this as soon as possible.</p>
+<p>Things that Quokka can do and doesn't do yet: fine grained placement of UDFs or UDAFs on GPUs or CPUs, core-count-control, Docker support, reading JSON, etc. Most of these can be easily implemented (and some already are) in the graph level API, however it takes effort to figure out what's the best abstractions to expose in the DataStream API. If you want to make this list shorter, I welcome contributions: zihengw@stanford.edu.</p>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+    <nav class="md-footer__inner md-grid" aria-label="Footer" >
+      
+        
+        <a href="../different/" class="md-footer__link md-footer__link--prev" aria-label="Previous: How is Quokka different from ...?" rel="prev">
+          <div class="md-footer__button md-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+          </div>
+          <div class="md-footer__title">
+            <div class="md-ellipsis">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              How is Quokka different from ...?
+            </div>
+          </div>
+        </a>
+      
+      
+        
+        <a href="../tutorial/" class="md-footer__link md-footer__link--next" aria-label="Next: TaskGraph API (Contribute to Quokka)" rel="next">
+          <div class="md-footer__title">
+            <div class="md-ellipsis">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              TaskGraph API (Contribute to Quokka)
+            </div>
+          </div>
+          <div class="md-footer__button md-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4Z"/></svg>
+          </div>
+        </a>
+      
+    </nav>
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    <script id="__config" type="application/json">{"base": "..", "features": [], "search": "../assets/javascripts/workers/search.5bf1dace.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.config.lang": "en", "search.config.pipeline": "trimmer, stopWordFilter", "search.config.separator": "[\\s\\-]+", "search.placeholder": "Search", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version.title": "Select version"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.078830c0.min.js"></script>
+      
+    
+  </body>
+</html>

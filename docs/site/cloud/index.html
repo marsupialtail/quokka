@@ -1,0 +1,2090 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      <link rel="icon" href="../quokka.png">
+      <meta name="generator" content="mkdocs-1.4.0, mkdocs-material-8.5.5">
+    
+    
+      
+        <title>Setting Up Cloud Cluster - Quokka</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.80dcb947.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.cbb835fc.min.css">
+        
+          
+          
+          <meta name="theme-color" content="#8bc34b">
+        
+      
+      
+
+    
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="" data-md-color-primary="light-green" data-md-color-accent="">
+  
+    
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#setting-up-quokka-for-ec2" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Quokka" class="md-header__button md-logo" aria-label="Quokka" data-md-component="logo">
+      
+  <img src="../quokka.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Quokka
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Setting Up Cloud Cluster
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/marsupialtail/quokka" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Quokka" class="md-nav__button md-logo" aria-label="Quokka" data-md-component="logo">
+      
+  <img src="../quokka.png" alt="logo">
+
+    </a>
+    Quokka
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/marsupialtail/quokka" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        Home
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../started/" class="md-nav__link">
+        Cartoons
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        Installation
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+    
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          Setting Up Cloud Cluster
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        Setting Up Cloud Cluster
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#connecting-to-an-existing-ray-cluster" class="md-nav__link">
+    Connecting to an existing Ray cluster
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#creating-an-ec2-cluster-without-using-ray-up" class="md-nav__link">
+    Creating an EC2 cluster without using ray up
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-hard-way-diy" class="md-nav__link">
+    The hard way, DIY
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../different/" class="md-nav__link">
+        How is Quokka different from ...?
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_6" type="checkbox" id="__nav_6" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6">
+          Tutorials
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Tutorials" data-md-level="1">
+        <label class="md-nav__title" for="__nav_6">
+          <span class="md-nav__icon md-icon"></span>
+          Tutorials
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../simple/" class="md-nav__link">
+        DataStream API (Use Quokka)
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorial/" class="md-nav__link">
+        TaskGraph API (Contribute to Quokka)
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7" type="checkbox" id="__nav_7" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7">
+          API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="API Reference" data-md-level="1">
+        <label class="md-nav__title" for="__nav_7">
+          <span class="md-nav__icon md-icon"></span>
+          API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_1" type="checkbox" id="__nav_7_1" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_1">
+          QuokkaContext API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="QuokkaContext API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_1">
+          <span class="md-nav__icon md-icon"></span>
+          QuokkaContext API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/quokka_context/" class="md-nav__link">
+        QuokkaContext
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/set_config/" class="md-nav__link">
+        QuokkaContext.set_config
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/get_config/" class="md-nav__link">
+        QuokkaContext.get_config
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_csv/" class="md-nav__link">
+        QuokkaContext.read_csv
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_parquet/" class="md-nav__link">
+        QuokkaContext.read_parquet
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_iceberg/" class="md-nav__link">
+        QuokkaContext.read_iceberg
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_delta/" class="md-nav__link">
+        QuokkaContext.read_delta
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_dataset/" class="md-nav__link">
+        QuokkaContext.read_dataset
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_ray_dataset/" class="md-nav__link">
+        QuokkaContext.read_ray_dataset
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/from_polars/" class="md-nav__link">
+        QuokkaContext.from_polars
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/from_pandas/" class="md-nav__link">
+        QuokkaContext.from_pandas
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/from_arrow/" class="md-nav__link">
+        QuokkaContext.from_arrow
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_2" type="checkbox" id="__nav_7_2" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_2">
+          DataStream API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="DataStream API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_2">
+          <span class="md-nav__icon md-icon"></span>
+          DataStream API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/collect/" class="md-nav__link">
+        DataStream.collect
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/compute/" class="md-nav__link">
+        DataStream.compute
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/explain/" class="md-nav__link">
+        DataStream.explain
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/write_csv/" class="md-nav__link">
+        DataStream.write_csv
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/write_parquet/" class="md-nav__link">
+        DataStream.write_parquet
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/filter/" class="md-nav__link">
+        DataStream.filter
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/filter_sql/" class="md-nav__link">
+        DataStream.filter_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/select/" class="md-nav__link">
+        DataStream.select
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/drop/" class="md-nav__link">
+        DataStream.drop
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/rename/" class="md-nav__link">
+        DataStream.rename
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/transform/" class="md-nav__link">
+        DataStream.transform
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/transform_sql/" class="md-nav__link">
+        DataStream.transform_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/with_columns/" class="md-nav__link">
+        DataStream.with_columns
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/with_columns_sql/" class="md-nav__link">
+        DataStream.with_columns_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/union/" class="md-nav__link">
+        DataStream.union
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/distinct/" class="md-nav__link">
+        DataStream.distinct
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/gramian/" class="md-nav__link">
+        DataStream.gramian
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/stateful_transform/" class="md-nav__link">
+        DataStream.stateful_transform
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/join/" class="md-nav__link">
+        DataStream.join
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/groupby/" class="md-nav__link">
+        DataStream.groupby
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/top_k/" class="md-nav__link">
+        DataStream.top_k
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/count_distinct/" class="md-nav__link">
+        DataStream.count_distinct
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/agg/" class="md-nav__link">
+        DataStream.agg
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/agg/" class="md-nav__link">
+        DataStream.aggregate
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/agg_sql/" class="md-nav__link">
+        DataStream.agg_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/count/" class="md-nav__link">
+        DataStream.count
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/sum/" class="md-nav__link">
+        DataStream.sum
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/mean/" class="md-nav__link">
+        DataStream.mean
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/min/" class="md-nav__link">
+        DataStream.min
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/max/" class="md-nav__link">
+        DataStream.max
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/grouped_agg/" class="md-nav__link">
+        GroupedDataStream.agg
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/grouped_agg/" class="md-nav__link">
+        GroupedDataStream.aggregate
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/grouped_agg_sql/" class="md-nav__link">
+        GroupedDataStream.agg_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/grouped_count_distinct/" class="md-nav__link">
+        GroupedDataStream.count_distinct
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_3" type="checkbox" id="__nav_7_3" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_3">
+          DataSet API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="DataSet API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_3">
+          <span class="md-nav__icon md-icon"></span>
+          DataSet API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dataset/to_df/" class="md-nav__link">
+        DataSet.to_df
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dataset/to_ray_dataset/" class="md-nav__link">
+        DataSet.to_ray_dataset
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dataset/to_arrow_refs/" class="md-nav__link">
+        DataSet.to_arrow_refs
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_4" type="checkbox" id="__nav_7_4" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_4">
+          Expression API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Expression API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_4">
+          <span class="md-nav__icon md-icon"></span>
+          Expression API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_4_1" type="checkbox" id="__nav_7_4_1" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_4_1">
+          Strings
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Strings" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_4_1">
+          <span class="md-nav__icon md-icon"></span>
+          Strings
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_to_uppercase/" class="md-nav__link">
+        Expression.str.to_uppercase
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_to_lowercase/" class="md-nav__link">
+        Expression.str.to_lowercase
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_contains/" class="md-nav__link">
+        Expression.str.contains
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_starts_with/" class="md-nav__link">
+        Expression.str.starts_with
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_ends_with/" class="md-nav__link">
+        Expression.str.ends_with
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_length/" class="md-nav__link">
+        Expression.str.length
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_json_extract/" class="md-nav__link">
+        Expression.str.json_extract
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_strptime/" class="md-nav__link">
+        Expression.str.strptime
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_hash/" class="md-nav__link">
+        Expression.str.hash
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_4_2" type="checkbox" id="__nav_7_4_2" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_4_2">
+          Temporal
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Temporal" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_4_2">
+          <span class="md-nav__icon md-icon"></span>
+          Temporal
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_hour/" class="md-nav__link">
+        Expression.dt.hour
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_minute/" class="md-nav__link">
+        Expression.dt.minute
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_second/" class="md-nav__link">
+        Expression.dt.second
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_weekday/" class="md-nav__link">
+        Expression.dt.weekday
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_millisecond/" class="md-nav__link">
+        Expression.dt.millisecond
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_microsecond/" class="md-nav__link">
+        Expression.dt.microsecond
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_week/" class="md-nav__link">
+        Expression.dt.week
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_month/" class="md-nav__link">
+        Expression.dt.month
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_year/" class="md-nav__link">
+        Expression.dt.year
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_offset_by/" class="md-nav__link">
+        Expression.dt.offset_by
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_strftime/" class="md-nav__link">
+        Expression.dt.strftime
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5" type="checkbox" id="__nav_7_5" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5">
+          QuokkaClusterManager API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="QuokkaClusterManager API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_5">
+          <span class="md-nav__icon md-icon"></span>
+          QuokkaClusterManager API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5_1" type="checkbox" id="__nav_7_5_1" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5_1">
+          EC2Cluster
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="EC2Cluster" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_5_1">
+          <span class="md-nav__icon md-icon"></span>
+          EC2Cluster
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/ec2cluster_to_json/" class="md-nav__link">
+        EC2Cluster.to_json
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5_2" type="checkbox" id="__nav_7_5_2" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5_2">
+          LocalCluster
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="LocalCluster" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_5_2">
+          <span class="md-nav__icon md-icon"></span>
+          LocalCluster
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/localcluster/" class="md-nav__link">
+        LocalCluster
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5_3" type="checkbox" id="__nav_7_5_3" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5_3">
+          QuokkaClusterManager
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="QuokkaClusterManager" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_5_3">
+          <span class="md-nav__icon md-icon"></span>
+          QuokkaClusterManager
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/quokka_cluster_manager/" class="md-nav__link">
+        QuokkaClusterManager
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/create_cluster/" class="md-nav__link">
+        QuokkaClusterManager.create_cluster
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/stop_cluster/" class="md-nav__link">
+        QuokkaClusterManager.stop_cluster
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/terminate_cluster/" class="md-nav__link">
+        QuokkaClusterManager.terminate_cluster
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/get_cluster_from_json/" class="md-nav__link">
+        QuokkaClusterManager.get_cluster_from_json
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/get_cluster_from_ray.md" class="md-nav__link">
+        QuokkaClusterManager.get_cluster_from_ray
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://www.rottnestisland.com" class="md-nav__link">
+        Visit Rottnest
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#connecting-to-an-existing-ray-cluster" class="md-nav__link">
+    Connecting to an existing Ray cluster
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#creating-an-ec2-cluster-without-using-ray-up" class="md-nav__link">
+    Creating an EC2 cluster without using ray up
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-hard-way-diy" class="md-nav__link">
+    The hard way, DIY
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  <a href="https://github.com/marsupialtail/quokka/edit/master/docs/cloud.md" title="Edit this page" class="md-content__button md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25Z"/></svg>
+  </a>
+
+
+<h1 id="setting-up-quokka-for-ec2"><strong>Setting up Quokka for EC2</strong></h1>
+<p>To use Quokka for EC2, you need to <em>at minimum</em> have an AWS account with permissions to launch instances. You will probably run into issues since everybody's AWS setup is a little bit different, so please email: zihengw@stanford.edu or <a href="https://discord.gg/6ujVV9HAg3">Discord</a>. </p>
+<p>First if you haven't already, you must run <code>aws configure</code> on your local machine, i.e. the machine you are using to spin up a Quokka cluster and submit jobs to the cluster.</p>
+<h2 id="connecting-to-an-existing-ray-cluster">Connecting to an existing Ray cluster</h2>
+<p>This is the easiest way. It assumes you have already started a cluster with a Ray cluster YAML, and the cluster is already in a <strong>running state</strong>. You can use the <code>QuokkaClusterManager</code> in <code>pyquokka.utils</code> to connect to the cluster. You need to specify the path to the Ray cluster YAML, your AWS access key and secret key. You can optionally specify a spill directory on the machines in the cluster. </p>
+<pre><code class="language-python">from pyquokka.utils import *
+from pyquokka.df import * 
+manager = QuokkaClusterManager()
+
+# Assume you created a Ray cluster with my_cluster.yaml. You need to pick a spill directory on the machines in the cluster. If you don't know what this is, just use /data. If /data doesn't work, try something else random like /data1. You can also specify pip requirements here for things you think you will need, like numpy.
+
+cluster = manager.get_cluster_from_ray(&quot;my_cluster.yaml&quot;, aws_access_key, aws_access_id, requirements = [&quot;numpy&quot;, &quot;pandas&quot;], spill_dir = &quot;/data&quot;)
+from pyquokka.df import QuokkaContext
+qc = QuokkaContext(cluster)
+cluster.to_json(&quot;my_cluster.json&quot;)
+</code></pre>
+<p>It is recommended to do the above only once and save the cluster object to a json file using <code>EC2Cluster.to_json</code> and then use <code>QuokkaClusterManager.get_cluster_from_json</code> to connect to the cluster. Now you can start a new Python session and just use the json.</p>
+<pre><code class="language-python">cluster = manager.get_cluster_from_json(&quot;my_cluster.json&quot;)
+qc = QuokkaContext(cluster)
+
+lineitem = qc.read_parquet(&quot;s3://my-bucket/lineitem.parquet&quot;)
+...
+</code></pre>
+<p>If this doesn't work, please join the <a href="https://discord.gg/6ujVV9HAg3">Discord</a> and ask for help, or raise a Github issue.</p>
+<h2 id="creating-an-ec2-cluster-without-using-ray-up">Creating an EC2 cluster without using <code>ray up</code></h2>
+<p>Quokka requires a security group that allows inbound and outbound connections for Arrow Flight, Ray, Redis and SSH. For simplicity, you can just enable all inbound and outbound connections from all IP addresses. You can make a security group like this: </p>
+<pre><code class="language-bash">#!/bin/bash
+
+# Set the name and description of the security group
+GROUP_NAME=random-group
+GROUP_DESCRIPTION=&quot;Custom security group for Quokka&quot;
+
+# Create the security group
+aws ec2 create-security-group --group-name &quot;$GROUP_NAME&quot; --description &quot;$GROUP_DESCRIPTION&quot;
+
+# Get the ID of the security group
+GROUP_ID=$(aws ec2 describe-security-groups --group-names &quot;$GROUP_NAME&quot; --query &quot;SecurityGroups[0].GroupId&quot; --output text)
+echo $GROUP_ID # write this down!
+
+# Allow some inbound TCP traffic
+aws ec2 authorize-security-group-ingress --group-id &quot;$GROUP_ID&quot; --protocol tcp --port 0-65535 --cidr 0.0.0.0/0
+
+# Allow all outbound TCP traffic
+aws ec2 authorize-security-group-egress --group-id &quot;$GROUP_ID&quot; --protocol tcp --port 0-65535 --cidr 0.0.0.0/0
+</code></pre>
+<p>You also need to generate a pem key pair. The easiest way to do this is if you don't already have one, is to start a t2.micro instance in the AWS console and create a new keypair. Remember the name of the key pair and where it lives on your computer.</p>
+<p>After you have the security group ID (sg-XXXXXX), you can use the <code>QuokkaClusterManager</code> in <code>pyquokka.utils</code> to spin up a cluster. You can optionally specify an AMI_ID as the base AMI for the machines in the cluster. The first requirement is that it's running Ubuntu. The <strong>second</strong> requirement for this AMI is that the Python version on it must match the Python version on your laptop, or whatever machine that will be running Quokka code and submitting jobs to this cluster. If you don't specify anything, the default will be AWS Ubuntu Server 20.04 AMI, which assume you have Python3.8. </p>
+<p>Now you can spin up a cluster with four lines of code:</p>
+<pre><code class="language-python">from pyquokka.utils import QuokkaClusterManager
+manager = QuokkaClusterManager(key_name = YOUR_KEY, key_location = ABSOLUTE_PATH_TO_KEY, security_group= SECURITY_GROUP_ID)
+cluster = manager.create_cluster(aws_access_secret_key, aws_access_id, num_instances = 4, instance_type = &quot;i3.2xlarge&quot;, ami=AMI_ID, requirements = [&quot;sklearn&quot;])
+cluster.to_json(&quot;config.json&quot;)
+</code></pre>
+<p>This would spin up four <code>i3.2xlarge</code> instances and install Sklearn on each of them. This takes around three minutes for me.</p>
+<p>The <code>QuokkaClusterManager</code> also has other utilities such as <code>launch_all</code>, <code>terminate_cluster</code> and <code>get_cluster_from_json</code>. Importantly, currently only on-demand instances are supported. This will change in the near future. The most interesting utility is probably <code>manager.launch_all(command)</code>, which basically runs a custom command on each machine. You can use this command to massage your cluster into your desired state. In general, all of the machines in your cluster must have all the Python packages you need installed with <code>pip</code>.</p>
+<p>Importantly, if you are using on demand instances, creating a cluster only needs to happen once. Once you have saved the cluster configs to a json, the next time you want to run a job and use this cluster, you can just do: </p>
+<pre><code class="language-python">from pyquokka.utils import QuokkaClusterManager
+manager = QuokkaClusterManager(key_name = YOUR_KEY, key_location = ABSOLUTE_PATH_TO_KEY, security_group= SECURITY_GROUP_ID)
+cluster = manager.get_cluster_from_json(&quot;config.json&quot;)
+</code></pre>
+<p>This will work if the cluster is either fully stopped or fully running, i.e. every machine must be in either stopped or running state. If the cluster is running, this assumes it was started by running the <code>get_cluster_from_json</code> command! <strong>Please do not manually start the instances and try to use <code>get_cluster_from_json</code> to connect to a cluster.</strong></p>
+<p>Quokka also plans to extend support to Docker/Kubernetes based deployments based on KubeRay. (Contributions welcome!) Of course, there are plans to support GCP and Azure. The best way to make sure that happens is by sending me a message on email or <a href="https://discord.gg/YKbK2TVk">Discord</a>. </p>
+<h2 id="the-hard-way-diy">The hard way, DIY</h2>
+<p>Of course, you might wonder if you can set up the cluster yourself without using <code>pyquokka.utils</code>. Indeed you might not trust my setup -- am I stealing your data? Apart from reassuring you that I have little interest in your data, you can also try to manually setup the cluster yourself.</p>
+<p>Well it shouldn't be so hard to do this. These are the steps you have to follow: </p>
+<ul>
+<li>I assume you have your own security group and AMI image that abide by the requirements listed above. Feel free to open only specific ports, but Quokka might not work if you do. A telling sign there's a firewall problem is if Quokka hangs at launch.</li>
+<li>Please do make sure the Python version across the cluster is the same as the Python version on your laptop or whatever machine that will be submitting jobs to this cluster. </li>
+<li>Now launch a Ray cluster with the security group and AMI image. It's quite simple. Just install Ray on each machine in the cluster, and run <code>ray start</code> on the machine you choose to be the master. Now it will spit out a command you should run on the remaining machines. Go run that command on each remaining machine to setup the workers. <strong>Important: the Ray version across the cluster must also match the Ray version on your laptop.</strong></li>
+<li>You must install Redis server on the master machine. </li>
+</ul>
+<pre><code class="language-bash">curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+
+echo &quot;deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main&quot; | sudo tee /etc/apt/sources.list.d/redis.list
+
+sudo apt-get update
+sudo apt-get install redis
+</code></pre>
+<ul>
+<li>Now <code>pip install pyquokka</code> on all the machines in your cluster. That should automatically install all the dependencies you need. Of course if your workflow requires other packages like <code>PyTorch</code>, you need to pip install those as well.</li>
+<li>Now start the Redis server on the master. Quokka requires some interesting configs for this, which is in Quokka's github repo under pyquokka folder, redis.conf. Copy that file onto the master and start the Redis server: <code>redis-server redis.conf --port 6800 --protected-mode no&amp;</code> </li>
+<li>You also need to copy the Flight Server file to each worker machine. You can find flight.py in pyquokka folder and copy that to each worker machine in the home directory.</li>
+<li>Now run <code>aws configure</code> on each of the machines across the cluster assuming you will be reading data from S3.</li>
+<li>If your instance comes with NVME SSDs, mount the NVME SSD onto <code>/data</code>: <code>sudo mkfs.ext4 -E nodiscard /dev/nvme0n1; sudo mount /dev/nvme0n1 /data;</code> Otherwise just make a directory called <code>/data</code>. Give read and write privleges to this folder: <code>sudo chmod -R a+rw /data/</code>.</li>
+<li>You should be done. You should now make a json file that describes the cluster:</li>
+</ul>
+<pre><code class="language-json">{&quot;instance_ids&quot;: {&quot;0&quot;: &quot;i-0cb3e260d80acf9e1&quot;, &quot;1&quot;: &quot;i-02f307f57aa9217aa&quot;, &quot;2&quot;: &quot;i-09a5a93e7726b2eee&quot;, &quot;3&quot;: &quot;i-0af7018eba5c4bf17&quot;}, &quot;cpu_count_per_instance&quot;: 8}
+</code></pre>
+<p>Now you can use this Json file to get a Quokka cluster as described above. </p>
+<p>The hard way is not expected to work right away. In fact I would expect it not: definitely send me a message on <a href="https://discord.gg/6ujVV9HAg3">Discord</a> or email me if this doesn't work. </p>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+    <nav class="md-footer__inner md-grid" aria-label="Footer" >
+      
+        
+        <a href="../install/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Installation" rel="prev">
+          <div class="md-footer__button md-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+          </div>
+          <div class="md-footer__title">
+            <div class="md-ellipsis">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              Installation
+            </div>
+          </div>
+        </a>
+      
+      
+        
+        <a href="../different/" class="md-footer__link md-footer__link--next" aria-label="Next: How is Quokka different from ...?" rel="next">
+          <div class="md-footer__title">
+            <div class="md-ellipsis">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              How is Quokka different from ...?
+            </div>
+          </div>
+          <div class="md-footer__button md-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4Z"/></svg>
+          </div>
+        </a>
+      
+    </nav>
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    <script id="__config" type="application/json">{"base": "..", "features": [], "search": "../assets/javascripts/workers/search.5bf1dace.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.config.lang": "en", "search.config.pipeline": "trimmer, stopWordFilter", "search.config.separator": "[\\s\\-]+", "search.placeholder": "Search", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version.title": "Select version"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.078830c0.min.js"></script>
+      
+    
+  </body>
+</html>

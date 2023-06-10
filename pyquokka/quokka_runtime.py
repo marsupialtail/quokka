@@ -190,7 +190,7 @@ class TaskGraph:
         source_placement_strategy = self.actor_placement_strategy[source_node_id]
         
 
-        if type(source_placement_strategy) == CustomChannelsStrategy:
+        if type(source_placement_strategy) == CustomChannelsStrategy or type(source_placement_strategy) == TaggedCustomChannelsStrategy:
             source_total_channels = self.get_total_channels_from_placement_strategy(source_placement_strategy, self.actor_types[source_node_id])
         elif type(source_placement_strategy) == DatasetStrategy:
             source_total_channels = source_placement_strategy.total_channels
@@ -199,7 +199,7 @@ class TaskGraph:
         else:
             raise Exception("source strategy not supported")
 
-        if type(target_placement_strategy) == CustomChannelsStrategy:
+        if type(source_placement_strategy) == CustomChannelsStrategy or type(source_placement_strategy) == TaggedCustomChannelsStrategy:
             target_total_channels = self.get_total_channels_from_placement_strategy(target_placement_strategy, "exec")
         elif type(target_placement_strategy) == SingleChannelStrategy:
             target_total_channels = 1

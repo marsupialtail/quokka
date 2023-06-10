@@ -187,7 +187,7 @@ class SuperFastSortExecutor(Executor):
             yield result
 
 class OutputExecutor(Executor):
-    def __init__(self, filepath, format, prefix = "part", region = "local", row_group_size = 5500000) -> None:
+    def __init__(self, filepath, format, prefix = "part", region = "local", row_group_size = 5000000) -> None:
         self.num = 0
         assert format == "csv" or format == "parquet"
         self.format = format
@@ -317,6 +317,7 @@ class BroadcastJoinExecutor(Executor):
         
     def done(self,executor_id):
         return
+        
 
 # this is an inner join executor that must return outputs in a sorted order based on sorted_col
 # the operator will maintain the sortedness of the probe side
@@ -367,6 +368,70 @@ class BuildProbeJoinExecutor(Executor):
                 self.state = self.state.sort(self.right_on)
             self.phase = "probe"
             result = batch.join(self.state,left_on = self.left_on, right_on = self.right_on ,how= self.how)
+            if self.key_to_keep == "right":
+                result = result.rename({self.left_on: self.right_on})
+            return result
+    
+    def done(self,executor_id):
+        pass
+
+# this is an inner join executor that must return outputs in a sorted order based on sorted_col
+# the operator will maintain the sortedness of the probe side
+# 0/left is probe, 1/right is build.
+class DiskBuildProbeJoinExecutor(Executor):
+
+    def __init__(self, on = None, left_on = None, right_on = None, how = "inner", key_to_keep = "left", spill_dir = "/data"):
+        import secrets
+        import string
+        if on is not None:
+            assert left_on is None and right_on is None
+            self.left_on = on
+            self.right_on = on
+        else:
+            assert left_on is not None and right_on is not None
+            self.left_on = left_on
+            self.right_on = right_on
+        
+        self.phase = "build"
+        assert how in {"inner", "left", "semi", "anti"}
+        self.how = how
+        self.key_to_keep = key_to_keep
+        self.things_seen = []
+        self.count = 0
+        self.spill_dir = spill_dir
+        self.prefix = ''.join(secrets.choice(string.ascii_uppercase + string.ascii_lowercase) for i in range(7))
+
+    def execute(self,batches, stream_id, executor_id):
+        # state compaction
+        batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
+        if len(batches) == 0:
+            return
+        batch = polars.concat(batches)
+        self.things_seen.append((stream_id, len(batches)))
+
+        # build
+        if stream_id == 1:
+            assert self.phase == "build", (self.left_on, self.right_on, self.things_seen)
+            
+            # batch.write_ipc(f"{self.spill_dir}/build_{self.prefix}_{executor_id}_{self.count}.arrow")
+            batch.write_parquet(f"{self.spill_dir}/build_{self.prefix}_{executor_id}_{self.count}.parquet")
+            self.count += 1
+                           
+        # probe
+        elif stream_id == 0:
+            if self.count == 0:
+                if self.how == "anti":
+                    return batch
+                else:
+                    return
+            
+            self.phase = "probe"
+            results = []
+            for i in range(self.count):
+                # results.append(batch.lazy().join(polars.scan_ipc(f"{self.spill_dir}/build_{self.prefix}_{executor_id}_{i}.arrow"),left_on = self.left_on, right_on = self.right_on ,how= self.how))
+                results.append(batch.lazy().join(polars.scan_parquet(f"{self.spill_dir}/build_{self.prefix}_{executor_id}_{i}.parquet"),left_on = self.left_on, right_on = self.right_on ,how= self.how))
+            result = polars.concat(results).collect()
+
             if self.key_to_keep == "right":
                 result = result.rename({self.left_on: self.right_on})
             return result
@@ -445,6 +510,7 @@ class SQLAggExecutor(Executor):
         self.state = None
     
     def execute(self, batches, stream_id, executor_id):
+        
         batch = pa.concat_tables(batches)
         self.state = batch if self.state is None else pa.concat_tables([self.state, batch])
 

@@ -1,0 +1,2445 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      <link rel="icon" href="../quokka.png">
+      <meta name="generator" content="mkdocs-1.4.0, mkdocs-material-8.5.5">
+    
+    
+      
+        <title>TaskGraph API (Contribute to Quokka) - Quokka</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.80dcb947.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.cbb835fc.min.css">
+        
+          
+          
+          <meta name="theme-color" content="#8bc34b">
+        
+      
+      
+
+    
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="" data-md-color-primary="light-green" data-md-color-accent="">
+  
+    
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#advanced-tutorials" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Quokka" class="md-header__button md-logo" aria-label="Quokka" data-md-component="logo">
+      
+  <img src="../quokka.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Quokka
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              TaskGraph API (Contribute to Quokka)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/marsupialtail/quokka" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Quokka" class="md-nav__button md-logo" aria-label="Quokka" data-md-component="logo">
+      
+  <img src="../quokka.png" alt="logo">
+
+    </a>
+    Quokka
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/marsupialtail/quokka" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        Home
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../started/" class="md-nav__link">
+        Cartoons
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../install/" class="md-nav__link">
+        Installation
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cloud/" class="md-nav__link">
+        Setting Up Cloud Cluster
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../different/" class="md-nav__link">
+        How is Quokka different from ...?
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+    
+  
+  
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_6" type="checkbox" id="__nav_6" checked>
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6">
+          Tutorials
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Tutorials" data-md-level="1">
+        <label class="md-nav__title" for="__nav_6">
+          <span class="md-nav__icon md-icon"></span>
+          Tutorials
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../simple/" class="md-nav__link">
+        DataStream API (Use Quokka)
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+    
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          TaskGraph API (Contribute to Quokka)
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        TaskGraph API (Contribute to Quokka)
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-0-addition" class="md-nav__link">
+    Lesson 0: Addition
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-1-joins" class="md-nav__link">
+    Lesson 1: Joins
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-2-more-inputs-readers-more-joins" class="md-nav__link">
+    Lesson 2: More inputs readers, more joins
+  </a>
+  
+    <nav class="md-nav" aria-label="Lesson 2: More inputs readers, more joins">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lesson-21-json-joins" class="md-nav__link">
+    Lesson 2.1: JSON Joins
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lesson-22-json-and-csv-joins" class="md-nav__link">
+    Lesson 2.2: JSON and CSV Joins
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lesson-31-putting-it-all-together-using-stages" class="md-nav__link">
+    Lesson 3.1: Putting it all together &amp; using stages
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lesson-32-putting-it-all-together-using-batch-functions" class="md-nav__link">
+    Lesson 3.2: Putting it all together &amp; using batch functions
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7" type="checkbox" id="__nav_7" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7">
+          API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="API Reference" data-md-level="1">
+        <label class="md-nav__title" for="__nav_7">
+          <span class="md-nav__icon md-icon"></span>
+          API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_1" type="checkbox" id="__nav_7_1" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_1">
+          QuokkaContext API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="QuokkaContext API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_1">
+          <span class="md-nav__icon md-icon"></span>
+          QuokkaContext API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/quokka_context/" class="md-nav__link">
+        QuokkaContext
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/set_config/" class="md-nav__link">
+        QuokkaContext.set_config
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/get_config/" class="md-nav__link">
+        QuokkaContext.get_config
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_csv/" class="md-nav__link">
+        QuokkaContext.read_csv
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_parquet/" class="md-nav__link">
+        QuokkaContext.read_parquet
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_iceberg/" class="md-nav__link">
+        QuokkaContext.read_iceberg
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_delta/" class="md-nav__link">
+        QuokkaContext.read_delta
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_dataset/" class="md-nav__link">
+        QuokkaContext.read_dataset
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/read_ray_dataset/" class="md-nav__link">
+        QuokkaContext.read_ray_dataset
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/from_polars/" class="md-nav__link">
+        QuokkaContext.from_polars
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/from_pandas/" class="md-nav__link">
+        QuokkaContext.from_pandas
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quokka_context/from_arrow/" class="md-nav__link">
+        QuokkaContext.from_arrow
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_2" type="checkbox" id="__nav_7_2" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_2">
+          DataStream API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="DataStream API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_2">
+          <span class="md-nav__icon md-icon"></span>
+          DataStream API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/collect/" class="md-nav__link">
+        DataStream.collect
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/compute/" class="md-nav__link">
+        DataStream.compute
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/explain/" class="md-nav__link">
+        DataStream.explain
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/write_csv/" class="md-nav__link">
+        DataStream.write_csv
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/write_parquet/" class="md-nav__link">
+        DataStream.write_parquet
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/filter/" class="md-nav__link">
+        DataStream.filter
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/filter_sql/" class="md-nav__link">
+        DataStream.filter_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/select/" class="md-nav__link">
+        DataStream.select
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/drop/" class="md-nav__link">
+        DataStream.drop
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/rename/" class="md-nav__link">
+        DataStream.rename
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/transform/" class="md-nav__link">
+        DataStream.transform
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/transform_sql/" class="md-nav__link">
+        DataStream.transform_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/with_columns/" class="md-nav__link">
+        DataStream.with_columns
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/with_columns_sql/" class="md-nav__link">
+        DataStream.with_columns_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/union/" class="md-nav__link">
+        DataStream.union
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/distinct/" class="md-nav__link">
+        DataStream.distinct
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/gramian/" class="md-nav__link">
+        DataStream.gramian
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/stateful_transform/" class="md-nav__link">
+        DataStream.stateful_transform
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/join/" class="md-nav__link">
+        DataStream.join
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/groupby/" class="md-nav__link">
+        DataStream.groupby
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/top_k/" class="md-nav__link">
+        DataStream.top_k
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/count_distinct/" class="md-nav__link">
+        DataStream.count_distinct
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/agg/" class="md-nav__link">
+        DataStream.agg
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/agg/" class="md-nav__link">
+        DataStream.aggregate
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/agg_sql/" class="md-nav__link">
+        DataStream.agg_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/count/" class="md-nav__link">
+        DataStream.count
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/sum/" class="md-nav__link">
+        DataStream.sum
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/mean/" class="md-nav__link">
+        DataStream.mean
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/min/" class="md-nav__link">
+        DataStream.min
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/max/" class="md-nav__link">
+        DataStream.max
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/grouped_agg/" class="md-nav__link">
+        GroupedDataStream.agg
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/grouped_agg/" class="md-nav__link">
+        GroupedDataStream.aggregate
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/grouped_agg_sql/" class="md-nav__link">
+        GroupedDataStream.agg_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../datastream/grouped_count_distinct/" class="md-nav__link">
+        GroupedDataStream.count_distinct
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_3" type="checkbox" id="__nav_7_3" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_3">
+          DataSet API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="DataSet API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_3">
+          <span class="md-nav__icon md-icon"></span>
+          DataSet API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dataset/to_df/" class="md-nav__link">
+        DataSet.to_df
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dataset/to_ray_dataset/" class="md-nav__link">
+        DataSet.to_ray_dataset
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../dataset/to_arrow_refs/" class="md-nav__link">
+        DataSet.to_arrow_refs
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_4" type="checkbox" id="__nav_7_4" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_4">
+          Expression API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Expression API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_4">
+          <span class="md-nav__icon md-icon"></span>
+          Expression API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_4_1" type="checkbox" id="__nav_7_4_1" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_4_1">
+          Strings
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Strings" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_4_1">
+          <span class="md-nav__icon md-icon"></span>
+          Strings
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_to_uppercase/" class="md-nav__link">
+        Expression.str.to_uppercase
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_to_lowercase/" class="md-nav__link">
+        Expression.str.to_lowercase
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_contains/" class="md-nav__link">
+        Expression.str.contains
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_starts_with/" class="md-nav__link">
+        Expression.str.starts_with
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_ends_with/" class="md-nav__link">
+        Expression.str.ends_with
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_length/" class="md-nav__link">
+        Expression.str.length
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_json_extract/" class="md-nav__link">
+        Expression.str.json_extract
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_strptime/" class="md-nav__link">
+        Expression.str.strptime
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/str_hash/" class="md-nav__link">
+        Expression.str.hash
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_4_2" type="checkbox" id="__nav_7_4_2" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_4_2">
+          Temporal
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Temporal" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_4_2">
+          <span class="md-nav__icon md-icon"></span>
+          Temporal
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_hour/" class="md-nav__link">
+        Expression.dt.hour
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_minute/" class="md-nav__link">
+        Expression.dt.minute
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_second/" class="md-nav__link">
+        Expression.dt.second
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_weekday/" class="md-nav__link">
+        Expression.dt.weekday
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_millisecond/" class="md-nav__link">
+        Expression.dt.millisecond
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_microsecond/" class="md-nav__link">
+        Expression.dt.microsecond
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_week/" class="md-nav__link">
+        Expression.dt.week
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_month/" class="md-nav__link">
+        Expression.dt.month
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_year/" class="md-nav__link">
+        Expression.dt.year
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_offset_by/" class="md-nav__link">
+        Expression.dt.offset_by
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../expression/dt_strftime/" class="md-nav__link">
+        Expression.dt.strftime
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5" type="checkbox" id="__nav_7_5" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5">
+          QuokkaClusterManager API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="QuokkaClusterManager API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_5">
+          <span class="md-nav__icon md-icon"></span>
+          QuokkaClusterManager API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5_1" type="checkbox" id="__nav_7_5_1" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5_1">
+          EC2Cluster
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="EC2Cluster" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_5_1">
+          <span class="md-nav__icon md-icon"></span>
+          EC2Cluster
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/ec2cluster_to_json/" class="md-nav__link">
+        EC2Cluster.to_json
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5_2" type="checkbox" id="__nav_7_5_2" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5_2">
+          LocalCluster
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="LocalCluster" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_5_2">
+          <span class="md-nav__icon md-icon"></span>
+          LocalCluster
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/localcluster/" class="md-nav__link">
+        LocalCluster
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5_3" type="checkbox" id="__nav_7_5_3" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5_3">
+          QuokkaClusterManager
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="QuokkaClusterManager" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_5_3">
+          <span class="md-nav__icon md-icon"></span>
+          QuokkaClusterManager
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/quokka_cluster_manager/" class="md-nav__link">
+        QuokkaClusterManager
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/create_cluster/" class="md-nav__link">
+        QuokkaClusterManager.create_cluster
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/stop_cluster/" class="md-nav__link">
+        QuokkaClusterManager.stop_cluster
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/terminate_cluster/" class="md-nav__link">
+        QuokkaClusterManager.terminate_cluster
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/get_cluster_from_json/" class="md-nav__link">
+        QuokkaClusterManager.get_cluster_from_json
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/get_cluster_from_ray.md" class="md-nav__link">
+        QuokkaClusterManager.get_cluster_from_ray
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://www.rottnestisland.com" class="md-nav__link">
+        Visit Rottnest
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-0-addition" class="md-nav__link">
+    Lesson 0: Addition
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-1-joins" class="md-nav__link">
+    Lesson 1: Joins
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#lesson-2-more-inputs-readers-more-joins" class="md-nav__link">
+    Lesson 2: More inputs readers, more joins
+  </a>
+  
+    <nav class="md-nav" aria-label="Lesson 2: More inputs readers, more joins">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lesson-21-json-joins" class="md-nav__link">
+    Lesson 2.1: JSON Joins
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lesson-22-json-and-csv-joins" class="md-nav__link">
+    Lesson 2.2: JSON and CSV Joins
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lesson-31-putting-it-all-together-using-stages" class="md-nav__link">
+    Lesson 3.1: Putting it all together &amp; using stages
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lesson-32-putting-it-all-together-using-batch-functions" class="md-nav__link">
+    Lesson 3.2: Putting it all together &amp; using batch functions
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  <a href="https://github.com/marsupialtail/quokka/edit/master/docs/tutorial.md" title="Edit this page" class="md-content__button md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25Z"/></svg>
+  </a>
+
+
+<h1 id="advanced-tutorials">Advanced Tutorials</h1>
+<p>This section is for learning how to use Quokka's graph level API. This is expected for use cases where the DataStream API cannot satisfy your needs. Most users are not expected to program at this level. You should contact me: zihengw@stanford.edu or hit me up on <a href="https://discord.gg/6ujVV9HAg3">Discord</a> if you want to do this.</p>
+<p>You should probably stop reading now, unless you are a Stanford undergrad or masters student (or somebody else) who somehow decided to work with me on Quokka. <strong>You should read this tutorial if you want to add a new executor or input reader into Quokka.</strong> You should probably read up on the <a href="../started/">Cartoons</a> section first, and then come back here. You probably should also first run the <a href="../simple/">DataStream Tutorial</a> to make sure Quokka actually works on your machine.</p>
+<p>The code for the tutorials can be found under <code>apps/tutorials</code>. They might perform meaningless tasks or perform tasks which you shoudn't necessarily use Quokka for, but they will showcase how Quokka works. </p>
+<p>I wrote Quokka. As a result I might take some things for granted that you might not. If you spot a typo or find some sections too difficult to understand, I would appreciate your feedback! Better yet, the docs are also open source under quokka/docs, so you can also make a PR.</p>
+<h2 id="lesson-0-addition">Lesson 0: Addition</h2>
+<p>Let's walk through our first Quokka program. This first example defines an input reader which produces a stream of numbers, and a stateful operator which adds them up. Let's first look at the import section. In general when you are writing a Quokka program, you will need to import <code>TaskGraph</code>, <code>LocalCluster</code> and <code>Executor</code>. <code>TaskGraph</code> is the main object that you will use to define your program. <code>LocalCluster</code> is the execution context for the program, which you can replace with an <code>EC2Cluster</code> made from <code>QuokkaClusterManager</code>. <code>Executor</code> is an abstract class which you should extend to implement your own executors. Quokka also provides canned executors which you call import from <code>pyquokka.executors</code> such as <code>join</code>.</p>
+<pre><code class="language-python">from pyquokka.quokka_runtime import TaskGraph
+from pyquokka.utils import LocalCluster
+from pyquokka.executors import Executor
+from pyquokka.target_info import TargetInfo, PassThroughPartitioner
+from pyquokka.placement_strategy import SingleChannelStrategy
+import sqlglot
+import time
+import polars
+</code></pre>
+<p>Quokka provides many optimized input readers for different input data formats. However, in this tutorial we are going to define a custom input reader class to showcase how the input reader works. The mindset here is that there will be many <strong>channels</strong> of this input reader spread across your cluster, and each channel will have its own copy of an object of this class. They will all be initialized in the same way, but each channel can produce its own data. An input reader object can be initialized with arbitrary arguments. The initialization will be performed locally before shipping the object over the network to the executors (in your code), so you need to make sure that the object can be pickled. This means that you can't initialize the object with a socket or a file descriptor.</p>
+<pre><code class="language-python">class SimpleDataset:
+    # we define limit here, which is the max number we will generate
+    def __init__(self, limit) -&gt; None:
+        self.limit = limit
+        self.num_channels = None
+</code></pre>
+<p>The key to implementing an input reader object lies in the <code>get_own_state</code> method implementation. This method will be called by the runtime once it decided how many channels this input reader will have. Armed with this information as well as the arguments passed to the object's constructor, the method should return a dictionary which maps channel ids to <em>what the channel is assigned to produce</em>. In this example, we will have N channels, and each channel will produce numbers k, k + N, k + 2N, all the way up to the limit. The <code>get_own_state</code> method will be called locally by the runtime after the object is initialized (not in your code though). If the method adds some state variables to the object, then they should be picklable too.</p>
+<p>Now what does "<em>what the channel is assigned to produce</em>" even mean? It is supposed to be a list of arbitrary picklable objects, though I'd recommend to keep it simple and stick to primitive types and at most tuples. What should these objects be? They are going to be fed as input arguments to the <code>execute</code> method, which will be executed by the channels across the cluster on their own copy of the input reader object. In this dead simple example, the list just contains the numbers a channel is supposed to produce, and the <code>execute</code> method simply wraps the number in a Polars DataFrame and spits it out. In more complicated examples, such as a CSV reader, the list typically contains the file names and offsets of the CSV files the channel is supposed to read. The <code>execute</code> method then reads the correct portion of the correct CSV file and returns the data.</p>
+<p>The mental model should be that the <code>get_own_state</code> method, executed once locally on the client, determines what each channel is supposed to produce, and the <code>execute</code> method, executed on each channel across the cluster, actually produces the data. On channel <em>x</em>, the execute method is called <code>len(channel_info[x])</code> times, once for each of the values in the list, in order. The return value of the <code>execute</code> method is always None followed by the data item, which can be a <strong>Pyarrow table of Polars Dataframe</strong>. If you really want to know why the None is required, email me and I'll explain over coffee.</p>
+<pre><code class="language-python">
+    def get_own_state(self, num_channels):
+        channel_info = {}
+        for channel in range(num_channels):
+            channel_info[channel] = [i for i in range(channel, self.limit, num_channels)]
+        return channel_info
+
+    def execute(self, channel, state = None):
+        curr_number = state
+        return None, polars.DataFrame({&quot;number&quot;: [curr_number]})
+
+</code></pre>
+<p>Oh and by the way, remember we said you can't have unpicklable class attributes like sockets and file descriptors in the constructor and <code>get_own_state</code>? The right way to initialize these things is to set the attribute to None in the constructor and assign an actual value in the <code>execute</code> method. But since that method will be called more than once, you should put a guard to see if it has already been initialized, like this:</p>
+<pre><code class="language-python">    def __init__():
+        ...
+        self.s3 = None
+
+    def execute():
+        if self.s3 is None:
+            self.s3 = s3.client(...)
+        ...
+</code></pre>
+<p>Now that we defined the input reader, we are going to define the executor. Similar to the input reader, we define a Python class. There will be multiple channels of this executor, each holding its own copy of this object. The executor exposes two important methods, <code>execute</code> and <code>done</code>, which might produce outputs for more downstream executors. <code>execute</code> is called whenever upstream input reader channels have produced some input batches for the channel to process. <code>done</code> is called when the channel knows it will no longer receive any more inputs and has already processed all the inputs it has. Our executor here adds up all the elements in an input stream and returns the sum. </p>
+<p>The execute method takes three arguments. Before we talk about what they are let's (re)visit this excellent cartoon. </p>
+<p style="text-align:center;"><img src="../quokkas-channel.svg" width=800></p>
+
+<p>In Quokka we have executors and input readers, which we refer to as <strong>actors</strong>. Each actor can have multiple channels, e.g. we have bushes and trees as own input readers, each with two channels. The execute method on an executor is called when an upstream actor has batches for the executor to process.</p>
+<p>The first argument <code>batches</code>, is a list of <strong>Apache Arrow Tables</strong> from the upstream actor. <strong>The items in the batch could have come from one channel, several, or all of them of this actor!</strong> However it could not contain mixed batches from multiple actors. If we take the perspective of one of the quokka channels, this list could contain either acorns or leaves, but not both.</p>
+<p>The second argument <code>stream_id</code> is used to identify which source input reader/executor the batches came from. In this example we only have one input source so we can ignore this argument. Each upstream actor source is identified by an integer, which you can specify when hooking up the TaskGraph.</p>
+<p>The third argument <code>channel</code> denotes the channel id of the channel executing the object. Similar to the argument for the input reader. Here we also don't use this argument. This could be useful, e.g. when each channel writes output data to a shared file system and you want to ensure the written files have unique names.</p>
+<p>The code for our executor is pretty simple. We initialize a sum variable to None in the constructor. In the execute method, we add up the batches and store the result in the sum variable. In the done method, we print the sum and return it. Note that both <code>execute</code> and <code>done</code> methods can optionally return data to downstream actors. In this example it doesn't make sense for the <code>execute</code> to return anything as you don't know the sum until the last batch has been processed. However, the <code>done</code> method can return the sum.</p>
+<p><strong>The return type for the <code>execute</code> and <code>done</code> methods must be Pyarrow Table of Polars Dataframe. </strong></p>
+<pre><code class="language-python">class AddExecutor(Executor):
+    def __init__(self) -&gt; None:
+        self.sum = None
+    def execute(self,batches,stream_id, channel):
+        for batch in batches:
+            self.sum = polars.from_arrow(batch) if self.sum is None else self.sum + polars.from_arrow(batch)
+
+    def done(self,channel):
+        print(&quot;I am executor &quot;, channel, &quot; my sum is &quot;, self.sum)
+        return self.sum
+</code></pre>
+<p>Now that we have defined our input reader and stateful operator, we can hook them up together in a TaskGraph. Defining the TaskGraph requires a cluster object, which is <code>LocalCluster</code> here but can be an <code>EC2Cluster</code> for cloud deployments. </p>
+<p>Now let's hook up the TaskGraph. This programming model should remind you strongly of Tensorflow, if you had the good fortune of trying to use Tensorflow 1.0. The TaskGraph exposes <code>new_input_reader_node</code>, <code>new_non_blocking_node</code> and <code>new_blocking_node</code> APIs. The first one is used to define an input reader, the second one is used to define a "normal" executor, and the third one is used to define the last executor in the TaskGraph (i.e. the grey/gold quokka in the cartoon). Whereas the return values of <code>non_blocking_node</code> will be pushed to downstream executors, the return values of <code>blocking_node</code> will be collected in a Dataset object.</p>
+<p>In our example, the sum executor is the last executor, so we just use <code>new_blocking_node</code>, like this:</p>
+<pre><code class="language-python">task_graph = TaskGraph(cluster)
+reader = SimpleDataset(80)
+numbers = task_graph.new_input_reader_node(reader)
+
+executor = AddExecutor()
+sum = task_graph.new_blocking_node({0:numbers},executor, placement_strategy = SingleChannelStrategy(), source_target_info={0:TargetInfo(partitioner = PassThroughPartitioner(), 
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = None,
+                                    batch_funcs = [])})
+
+task_graph.create()
+
+start = time.time()
+task_graph.run()
+print(&quot;total time &quot;, time.time() - start)
+
+print(ray.get(sum.to_df.remote()))
+</code></pre>
+<p>Let's talk about the arguments to <code>new_blocking_node</code> one by one.</p>
+<ul>
+<li>The first argument to <code>new_blocking_node</code> is a dictionary. The values are the upstream actors you'd like the executor to receive data from. The keys are arbitrary integers, which you can use to identify the source actor in the <code>execute</code> method. Those integers will be passed as the <code>stream_id</code> argument to the <code>execute</code> method. In our example, we only have one upstream actor, so we just use <code>0</code> as the key.</li>
+<li>The second argument is the executor object. In this case, this is the AddExecutor that we defined above. Quokka provides a variety of built-in executors (for example for performing joins), which can be found in the /pyquokka/executors/ folder.</li>
+<li>
+<p>The third argument is the placement strategy of the executor, which determines how many channels the executor will have. In our example, we use <code>SingleChannelStrategy</code>, which means the executor will have one channel. If we use <code>CustomChannelsStrategy(n)</code>, the executor will have n channels on each TaskManager.</p>
+<p>What is a TaskManager? It can be interpretted as a thread pool. Each TaskManager holds channels from different actors and decide how to schedule their execution. There are separate TaskManagers for input readers and executors. The number of TaskManagers is determined by the <code>io_per_node</code> and <code>exec_per_node</code> keyword arugments to the <code>TaskGraph()</code> constructor.</p>
+</li>
+<li>
+<p>What is the <code>source_target_info</code>? It's time for another schematic. </p>
+</li>
+</ul>
+<p style="text-align:center;"><img src="../targetinfo.svg" width=800></p>
+
+<p>The <code>execute</code> method for both input readers and executors could produce a PyArrow Table of Polars Dataframe to be pushed to downstream actors. How does Quokka generate separate messages for the different channels in a downstream actor? Please look at the schematic ^.</p>
+<p>First, filters are applied, specified by a <a href="https://github.com/tobymao/sqlglot">SQLGlot</a> predicate. In our example, we use <code>sqlglot.exp.TRUE</code>, which means no filter is applied. Then a partitioner is applied to split the filtered data into data for each channel. In our example, we use <code>PassThroughPartitioner</code>, which means a channel in the target actor gets all the data from a range of channels in the source actor, assuming the source actor has more channels. Other partitioners include BroadcastPartitioner and HashPartitioner. </p>
+<p style="text-align:center;"><img src="../partitioners.svg" width=800></p>
+
+<p>After the partitioner is applied, a series of functions (<code>batch_funcs</code>) are applied to each message destined for a downstream channel. In our example, we use <code>[]</code>, which means no functions are applied. You can supply any arbitrary list of Python functions with Polars Dataframe input and Polars Dataframe output, though you have to make sure that the columns you need in a later function must be in the executor output or generated by a previous function. Examples of batch_funcs can be found in the TPC-H examples written in the TaskGraph API. These examples can be found at /apps/graph_api/tutorials/.</p>
+<p>Finally, a projection is applied to the data. In our example, we use <code>None</code>, which means no projection is applied. If you want to select only certain columns of the data, you can supply a list with column names. Again, make sure that the column names you supply exist after applying the filters and batch funcs to the data.</p>
+<p><code>new_blocking_node</code> returns <code>sum</code>, a Quokka Dataset object. It has a <code>to_df</code> method which returns a Polars Dataframe, once the TaskGraph has been run. To run the TaskGraph, we call <code>task_graph.create()</code> to initialize it, and then <code>task_graph.run()</code>. Since Quokka uses Ray, we need to call <code>ray.get(sum.to_df.remote())</code> in order to fetch the output data.</p>
+<h2 id="lesson-1-joins">Lesson 1: Joins</h2>
+<p>If you think the first lesson was too complicated, it proably was. This is because we had to define custom input readers and stateful operators. Hopefully in the process you learned a few things about how Quokka works.</p>
+<p>In most scenarios, it is my hope that you don't have to define custom objects, and use canned implementations which you can just import. This is similar to how Tensorflow or Pytorch works. If you know how to import <code>torch.nn.Conv2d</code>, you get the idea. </p>
+<p>Here, we are going to take two CSVs on disk, join them, and count the number of records in the result: <code>select count(*) from a and b where a.key = b.key</code>. You can use the a.csv and b.csv provided in the apps/tutorials folder, or you can supply your own and change the CSV input reader arguments appropriately.</p>
+<p>Without further ado, here's the code:</p>
+<pre><code class="language-python">import time
+from pyquokka.quokka_runtime import TaskGraph
+from pyquokka.executors import JoinExecutor, CountExecutor
+from pyquokka.target_info import TargetInfo, PassThroughPartitioner, HashPartitioner
+from pyquokka.placement_strategy import SingleChannelStrategy
+from pyquokka.dataset import InputDiskCSVDataset
+import sqlglot
+import pandas as pd
+import ray
+
+from pyquokka.utils import LocalCluster, QuokkaClusterManager
+
+manager = QuokkaClusterManager()
+cluster = LocalCluster()
+
+task_graph = TaskGraph(cluster)
+
+a_reader = InputDiskCSVDataset(&quot;a.csv&quot;, header = True, stride =  1024)
+b_reader = InputDiskCSVDataset(&quot;b.csv&quot;, header = True ,  stride =  1024)
+a = task_graph.new_input_reader_node(a_reader)
+b = task_graph.new_input_reader_node(b_reader)
+
+join_executor = JoinExecutor(left_on=&quot;key_a&quot;, right_on = &quot;key_b&quot;)
+joined = task_graph.new_non_blocking_node({0:a,1:b},join_executor,
+    source_target_info={0:TargetInfo(partitioner = HashPartitioner(&quot;key_a&quot;), 
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = [&quot;key_a&quot;],
+                                    batch_funcs = []), 
+                        1:TargetInfo(partitioner = HashPartitioner(&quot;key_b&quot;),
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = [&quot;key_b&quot;],
+                                    batch_funcs = [])})
+count_executor = CountExecutor()
+count = task_graph.new_blocking_node({0:joined},count_executor, placement_strategy= SingleChannelStrategy(),
+    source_target_info={0:TargetInfo(partitioner = PassThroughPartitioner(),
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = None,
+                                    batch_funcs = [])})
+
+task_graph.create()
+start = time.time()
+task_graph.run()
+print(&quot;total time &quot;, time.time() - start)
+
+print(ray.get(count.to_df.remote()))
+
+a = pd.read_csv(&quot;a.csv&quot;,names=[&quot;key&quot;,&quot;val1&quot;,&quot;val2&quot;])
+b = pd.read_csv(&quot;b.csv&quot;,names=[&quot;key&quot;,&quot;val1&quot;,&quot;val2&quot;])
+print(len(a.merge(b,on=&quot;key&quot;,how=&quot;inner&quot;)))
+
+</code></pre>
+<p>Note here we defined a <code>new_nonblocking_node</code> for the join operator and a <code>new_blocking_node</code> for the count operator. We see that <code>new_nonblocking_node</code> takes in pretty much the same arguments as <code>new_blocking_node</code>, with the difference being it returns an executor that can be used as sources for downstream actors. </p>
+<p>Quokka by default will execute the join in a pipelined parallel fashion with the count. As a result, the input reader, join and count actors are all executing concurrently in the system. The count operator will return the count as a single number which will be stored in a Dataset object.</p>
+<p>You can try to play around with this example to test out what the <code>predicate</code>, <code>projection</code> and <code>batch_funcs</code> do. For example, try to set a predicate which filters out rows with <code>val1 &gt; 0.5</code>: <code>sqlglot.parse_one("val1 &gt; 0.5")</code>. You can also try to set a projection on one of the TargetInfos which only returns the <code>key_a</code> column: <code>["key_a"]</code>. </p>
+<h2 id="lesson-2-more-inputs-readers-more-joins">Lesson 2: More inputs readers, more joins</h2>
+<h3 id="lesson-21-json-joins">Lesson 2.1: JSON Joins</h3>
+<p>We are again going to be dealing with joins. This time, though, we are going to join data from two JSONs on disk. As in lesson 1, we are then going to count the records in the result. You can use the a.json and b.json provided in the apps/tutorials folder, or, as in lesson 1, you can supply your own and change the JSON reader accordingly.</p>
+<p>Here's the code:</p>
+<pre><code class="language-python">import time
+from pyquokka.quokka_runtime import TaskGraph
+from pyquokka.executors import JoinExecutor, CountExecutor
+from pyquokka.target_info import TargetInfo, PassThroughPartitioner, HashPartitioner
+from pyquokka.placement_strategy import SingleChannelStrategy
+from pyquokka.dataset import InputDiskJSONDataset
+import sqlglot
+import pandas as pd
+import pyarrow as pa
+import ray
+
+from pyquokka.utils import LocalCluster, QuokkaClusterManager
+
+manager = QuokkaClusterManager()
+cluster = LocalCluster()
+
+task_graph = TaskGraph(cluster)
+
+
+schema_a = pa.schema([
+    pa.field('key_a', pa.int64()),
+    pa.field('val1_a', pa.float64()),
+    pa.field('val2_a', pa.float64())
+])
+
+schema_b = pa.schema([
+    pa.field('key_b', pa.int64()),
+    pa.field('val1_b', pa.float64()),
+    pa.field('val2_b', pa.float64())
+])
+
+
+a_reader = InputDiskJSONDataset(&quot;a.json&quot;, schema=schema_a)
+b_reader = InputDiskJSONDataset(&quot;b.json&quot;, schema=schema_b)
+
+a = task_graph.new_input_reader_node(a_reader)
+b = task_graph.new_input_reader_node(b_reader)
+
+join_executor = JoinExecutor(left_on=&quot;key_a&quot;, right_on = &quot;key_b&quot;)
+joined = task_graph.new_non_blocking_node({0:a,1:b},join_executor,
+    source_target_info={0:TargetInfo(partitioner = HashPartitioner(&quot;key_a&quot;), 
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = [&quot;key_a&quot;],
+                                    batch_funcs = []), 
+                        1:TargetInfo(partitioner = HashPartitioner(&quot;key_b&quot;),
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = [&quot;key_b&quot;],
+                                    batch_funcs = [])})
+count_executor = CountExecutor()
+count = task_graph.new_blocking_node({0:joined},count_executor, placement_strategy= SingleChannelStrategy(),
+    source_target_info={0:TargetInfo(partitioner = PassThroughPartitioner(),
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = None,
+                                    batch_funcs = [])})
+
+task_graph.create()
+start = time.time()
+task_graph.run()
+print(&quot;total time &quot;, time.time() - start)
+
+print(ray.get(count.to_df.remote()))
+
+import json
+a = json.read_json(&quot;a.json&quot;)
+b = json.read_json(&quot;b.json&quot;)
+a = a.to_pandas()
+b = b.to_pandas()
+print(len(a.merge(b,left_on=&quot;key_a&quot;, right_on = &quot;key_b&quot;, how=&quot;inner&quot;)))
+
+</code></pre>
+<p>Notice how when creating <code>a_reader</code> and <code>b_reader</code>, we specify a pyarrow schema. This can be important if you want the values JSON file to be parsed as specific types. When using the <code>InputJSONDiskReader</code> with an explicit schema, make sure to specify a valid pyarrow schema, so the parser does not throw an error. We do not have to use an explicit schema, however. See the next lesson for this. </p>
+<h3 id="lesson-22-json-and-csv-joins">Lesson 2.2: JSON and CSV Joins</h3>
+<p>We will now be joining a JSON file and a CSV on disk. The code is the following:</p>
+<pre><code class="language-python3">
+import time
+from pyquokka.quokka_runtime import TaskGraph
+from pyquokka.executors import JoinExecutor, CountExecutor
+from pyquokka.target_info import TargetInfo, PassThroughPartitioner, HashPartitioner
+from pyquokka.placement_strategy import SingleChannelStrategy
+from pyquokka.dataset import InputDiskCSVDataset, InputDiskJSONDataset
+import sqlglot
+import pandas as pd
+import ray
+
+from pyquokka.utils import LocalCluster, QuokkaClusterManager
+
+manager = QuokkaClusterManager()
+cluster = LocalCluster()
+
+task_graph = TaskGraph(cluster)
+
+a_reader = InputDiskJSONDataset(&quot;a.json&quot;)
+b_reader = InputDiskCSVDataset(&quot;b.csv&quot;, header = True ,  stride =  1024)
+
+a = task_graph.new_input_reader_node(a_reader)
+b = task_graph.new_input_reader_node(b_reader)
+
+join_executor = JoinExecutor(left_on=&quot;key_a&quot;, right_on = &quot;key_b&quot;)
+joined = task_graph.new_non_blocking_node({0:a,1:b},join_executor,
+    source_target_info={0:TargetInfo(partitioner = HashPartitioner(&quot;key_a&quot;), 
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = [&quot;key_a&quot;],
+                                    batch_funcs = []), 
+                        1:TargetInfo(partitioner = HashPartitioner(&quot;key_b&quot;),
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = [&quot;key_b&quot;],
+                                    batch_funcs = [])})
+count_executor = CountExecutor()
+count = task_graph.new_blocking_node({0:joined},count_executor, placement_strategy= SingleChannelStrategy(),
+    source_target_info={0:TargetInfo(partitioner = PassThroughPartitioner(),
+                                    predicate = sqlglot.exp.TRUE,
+                                    projection = None,
+                                    batch_funcs = [])})
+
+task_graph.create()
+start = time.time()
+task_graph.run()
+print(&quot;total time &quot;, time.time() - start)
+
+print(ray.get(count.to_df.remote()))
+
+import json
+a = json.read_json(&quot;a.json&quot;)
+a = a.to_pandas()
+a[&quot;key_a&quot;] = a[&quot;key_a&quot;].astype(str)
+b = pd.read_csv(&quot;b.csv&quot;,names=[&quot;key_b&quot;,&quot;val1&quot;,&quot;val2&quot;])
+print(len(a.merge(b,left_on=&quot;key_a&quot;, right_on = &quot;key_b&quot;, how=&quot;inner&quot;)))
+
+</code></pre>
+<p>Here, we are using our <code>InputDiskJSONReader</code> as the <code>a_reader</code> and our <code>InputDiskCSVReader</code> as the <code>b_reader</code>. Notice how we are not using an explicit pyarrow schema for the JSON input reader here. We simply let the input reader infer the data type of the values present in our JSON file. </p>
+<h3 id="lesson-31-putting-it-all-together-using-stages">Lesson 3.1: Putting it all together &amp; using stages</h3>
+<p>Previously, we have seen how we can define input readers and executors, how we can use built-in input readers in order read data from CSV and JSON files and finally how to join this data. Let's put it all together now and see the TaskGraph API in action! In this lesson, we will be writing a TaskGraph API implementation of the TPC-H 4 query. The code for this lesson can be found in /apps/graph_api/tutorial/lesson3.1.py.</p>
+<p>We start off by reading the data from an input source, namely two tables called lineitem and orders tables, and we create new input reader nodes for them.</p>
+<pre><code class="language-python3">
+lineitem_csv_reader = InputDiskCSVDataset(&quot;lineitem.tbl&quot;, header = True, sep = &quot;|&quot;, stride=16 * 1024 * 1024)
+orders_csv_reader = InputDiskCSVDataset(&quot;orders.tbl&quot;, header = True, sep = &quot;|&quot;, stride=16 * 1024 * 1024)
+lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, stage = -1)
+orders = task_graph.new_input_reader_node(orders_csv_reader)
+</code></pre>
+<p>Notice that we specify a stage for the lineitem input reader node. We do not explicitly specify a stage for the orders input reader node, since the default stage is set to be 0. Therefore, the input reader node processing the lineitem table and the input reader node processing the orders table are set to different stages. Setting these stages correctly will be necessary for the next node in the graph, where we join the two tables. In order to do so, we specify one of Quokka's built-in join executors, namely the <code>BuildProbeJoinExecutor</code>, and provide it the columns on which we want to perform the join.</p>
+<pre><code class="language-python3">join_executor = BuildProbeJoinExecutor(left_on=&quot;o_orderkey&quot;,right_on=&quot;l_orderkey&quot;, how=&quot;semi&quot;)
+</code></pre>
+<p>Since we are conducting a build-probe join, we need to specify a build table and a probe table, or, in Quokka's case, a build stream and a probe stream. This is where stages come in handy. When performing joins of this form, the build stream needs to be of a lower stage than the stage of the probe stream. In our example, we therefore see that the stream reading the lineitem table is the build stream (with stage=-1), while the stream reading the orders table will be the probe stream (with stage=0). </p>
+<p>We then feed this executor into another <code>new_non_blocking_node</code>, which will carry out the join. Notice that we also apply a predicate and a projection.</p>
+<pre><code class="language-python3">output_stream = task_graph.new_non_blocking_node({0:orders,1:lineitem},join_executor,
+    source_target_info={0:TargetInfo(partitioner = HashPartitioner(&quot;o_orderkey&quot;), 
+                                    predicate = sqlglot.parse_one(&quot;o_orderdate between date '1993-07-01' and date '1993-09-30'&quot;),
+                                    projection = [&quot;o_orderkey&quot;, &quot;o_orderpriority&quot;],
+                                    batch_funcs = []), 
+                        1:TargetInfo(partitioner = HashPartitioner(&quot;l_orderkey&quot;),
+                                    predicate = sqlglot.parse_one(&quot;l_commitdate &lt; l_receiptdate&quot;),
+                                    projection = [&quot;l_orderkey&quot;],
+                                    batch_funcs = [])})
+</code></pre>
+<p>The resulting joined node now takes on the larger stage of the two streams used to perform the join. Consequently, our join node takes on the stage 0. If we need to perform multiple joins, where one join relies on the output of another join, we need to keep this in mind. An example of where we set the stages in order to perform multiple joins can be found in /apps/graph_api/tutorials/tpch-3.py </p>
+<p>In the last stage of the query, we want to aggregate the joined data, counting the rows left, grouping them by <code>o_orderpriority</code> and sorting them by <code>o_orderpriority</code>. To do this we specify another built-in Quokka executor, namely the SQLAggExecutor.</p>
+<pre><code class="language-python3">agg_executor = SQLAggExecutor([&quot;o_orderpriority&quot;], [(&quot;o_orderpriority&quot;, &quot;asc&quot;)], &quot;count(*) as order_count&quot;)
+</code></pre>
+<p>Finally, we specify a <code>new_blocking_node</code>, the node in the graph representing this aggregation step.</p>
+<pre><code class="language-python3">agged = task_graph.new_blocking_node({0:output_stream}, agg_executor, placement_strategy = SingleChannelStrategy(), 
+    source_target_info={0:TargetInfo(
+        partitioner = BroadcastPartitioner(),
+        predicate = None,
+        projection = None,
+        batch_funcs = []
+    )})
+</code></pre>
+<p>We can now measure the time that it took for Quokka to run this query and print out the resulting data:</p>
+<pre><code class="language-python3">task_graph.create()
+start = time.time()
+task_graph.run()
+print(&quot;total time &quot;, time.time() - start)
+
+print(ray.get(qc.dataset_manager.to_df.remote(agged)))
+</code></pre>
+<h3 id="lesson-32-putting-it-all-together-using-batch-functions">Lesson 3.2: Putting it all together &amp; using batch functions</h3>
+<p>Let us now take a look at another TaskGraph API implementation of a TPC-H query, namely the TPC-H 6 query. First, we create input readers in order to read in the data. For this query, we only need to read one table, so we specify a <code>new_input_reader_node</code> for the lineitem table.</p>
+<pre><code class="language-python3">lineitem_csv_reader = InputDiskCSVDataset(&quot;lineitem.tbl&quot;, header = True, sep = &quot;|&quot;, stride=16 * 1024 * 1024)
+lineitem = task_graph.new_input_reader_node(lineitem_csv_reader, stage=-1)
+</code></pre>
+<p>As the next step in the query, we want to calculate the total revenue generated by a specific set of lineitems. However, there is no column keeping track of the revenue. Rather, we need to compute the revenue for each row by mulitplying the <code>l_extendedprice</code> with <code>1 - l_discount</code>. We do so by writing a custom function.</p>
+<pre><code class="language-python3">def batch_func(df):
+    df = df.with_columns(((df[&quot;l_extendedprice&quot;] * df[&quot;l_discount&quot;])).alias(&quot;revenue&quot;))
+    return df
+</code></pre>
+<p>This function will be applied to each batch that we process in the next operation of the query: aggregating all the revenues. We first specify an aggregator executor.</p>
+<pre><code class="language-python3">agg_executor = SQLAggExecutor([], None, &quot;sum(revenue) as revenue&quot;)
+</code></pre>
+<p>And then we pass this agg_executor, along with our custom function, as input to a <code>new_blocking_node</code>. In addition, we also apply a predicate.</p>
+<pre><code class="language-python3">agged = task_graph.new_blocking_node({0:lineitem}, agg_executor, placement_strategy = SingleChannelStrategy(), 
+    source_target_info={0:TargetInfo(
+        partitioner = BroadcastPartitioner(),
+        predicate = sqlglot.parse_one(&quot;l_shipdate between date '1994-01-01' and date '1994-12-31' and l_discount between 0.05 and 0.07 and l_quantity &lt;= 23.99&quot;),
+        projection = None,
+        batch_funcs = [batch_func]
+    )})
+</code></pre>
+<p>This node will now process the data in the order described earlier in the tutorial: We first apply filters. Then we partition the data. Next, we execute our batch function on each batch of data and finally we carry out the projection. As the last step, our <code>agg_executor</code> will process the data.</p>
+<p>There are many other examples of TPC-H queries implemented in the TaskGraph API. Feel free to take a look at them (in the /apps/tutorials/graph_api/ folder) to learn more!</p>
+<p>This is it for now. I unfortunately can't find too much time to write tutorials, but I hope this is enough to get you started. If you have any questions, feel free to reach out to me on the Quokka Discord server. </p>
+<p>You can always check out how the Quokka canned executors and input readers work, in <code>pyquokka/executors.py</code> and <code>pyquokka/dataset.py</code>. If you are feeling particularly audacious, you can try implementing a new input reader! </p>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+    <nav class="md-footer__inner md-grid" aria-label="Footer" >
+      
+        
+        <a href="../simple/" class="md-footer__link md-footer__link--prev" aria-label="Previous: DataStream API (Use Quokka)" rel="prev">
+          <div class="md-footer__button md-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+          </div>
+          <div class="md-footer__title">
+            <div class="md-ellipsis">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              DataStream API (Use Quokka)
+            </div>
+          </div>
+        </a>
+      
+      
+        
+        <a href="../quokka_context/quokka_context/" class="md-footer__link md-footer__link--next" aria-label="Next: QuokkaContext" rel="next">
+          <div class="md-footer__title">
+            <div class="md-ellipsis">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              QuokkaContext
+            </div>
+          </div>
+          <div class="md-footer__button md-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4Z"/></svg>
+          </div>
+        </a>
+      
+    </nav>
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    <script id="__config" type="application/json">{"base": "..", "features": [], "search": "../assets/javascripts/workers/search.5bf1dace.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.config.lang": "en", "search.config.pipeline": "trimmer, stopWordFilter", "search.config.separator": "[\\s\\-]+", "search.placeholder": "Search", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version.title": "Select version"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.078830c0.min.js"></script>
+      
+    
+  </body>
+</html>

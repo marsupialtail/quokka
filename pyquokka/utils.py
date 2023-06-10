@@ -283,8 +283,8 @@ class QuokkaClusterManager:
         pool = multiprocessing.Pool(multiprocessing.cpu_count())        
         pool.starmap(execute_script, [(self.key_location, public_ip) for public_ip in public_ips])
 
-        self.launch_all("aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
-        self.launch_all("aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
+        self.launch_all("/home/ubuntu/.local/bin/aws configure set aws_secret_access_key " + str(aws_access_key), public_ips, "Failed to set AWS access key")
+        self.launch_all("/home/ubuntu/.local/bin/aws configure set aws_access_key_id " + str(aws_access_id), public_ips, "Failed to set AWS access id")
 
         print("----Completed aws access key setting----")
         # cluster must have same ray version as client.
@@ -304,7 +304,7 @@ class QuokkaClusterManager:
         self.launch_all("export GLIBC_TUNABLES=glibc.malloc.trim_threshold=524288", public_ips, "Failed to set malloc limit")
         self.launch_all("nohup python3 -u flight.py > foo.out 2> foo.err < /dev/null &", public_ips, "Failed to start flight servers on workers.")
 
-    def create_cluster(self, aws_access_key, aws_access_id, num_instances, instance_type = "i3.2xlarge", ami="ami-0530ca8899fac469f", requirements = [], spill_dir = "/data", volume_size = 8):
+    def create_cluster(self, aws_access_key, aws_access_id, instance_types = None, amis = None, requirements = [], spill_dir = "/data", volume_size = 8):
 
         """
         Create a Ray cluster configured to run Quokka applications.
@@ -335,25 +335,45 @@ class QuokkaClusterManager:
 
         start_time = time.time()
         ec2 = boto3.client("ec2")
-        vcpu_per_node = ec2.describe_instance_types(InstanceTypes=[instance_type])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
-        waiter = ec2.get_waiter('instance_running')
-        res = ec2.run_instances(
-            BlockDeviceMappings=[
-                {
-                    'DeviceName': ec2.describe_images(ImageIds=[ami])['Images'][0]['RootDeviceName'],
-                    'Ebs': {
-                        'DeleteOnTermination': True,
-                        'VolumeSize': volume_size,
-                        'VolumeType': 'gp3'
+
+        assert instance_types is not None, "Please specify instance types."
+        assert type(instance_types) == dict, "instance_types must be a dictionary, e.g. {'i3.2xlarge':4} or {'i3.2xlarge':4, 'c6i.4xlarge':2}"
+        assert amis is not None, "Please specify AMIs."
+        assert type(amis) == dict, "amis must be a dictionary, e.g. {'i3.2xlarge':'ami-0530ca8899fac469f'} or {'i3.2xlarge':'ami-0530ca8899fac469f', 'c6i.4xlarge':'ami-0530ca8899fac469f'}"
+
+        public_ips = []
+        private_ips = []
+        instance_ids = []
+        tags = {}
+
+        for instance_type in instance_types:
+
+            num_instances = instance_types[instance_type]
+            ami = amis[instance_type]
+
+            vcpu_per_node = ec2.describe_instance_types(InstanceTypes=[instance_type])['InstanceTypes'][0]['VCpuInfo']['DefaultVCpus']
+            waiter = ec2.get_waiter('instance_running')
+            res = ec2.run_instances(
+                BlockDeviceMappings=[
+                    {
+                        'DeviceName': ec2.describe_images(ImageIds=[ami])['Images'][0]['RootDeviceName'],
+                        'Ebs': {
+                            'DeleteOnTermination': True,
+                            'VolumeSize': volume_size,
+                            'VolumeType': 'gp3'
+                        }
                     }
-                }
-            ],
-            ImageId=ami, InstanceType = instance_type, SecurityGroupIds = [self.security_group], KeyName=self.key_name ,MaxCount=num_instances, MinCount=num_instances)
-        instance_ids = [res['Instances'][i]['InstanceId'] for i in range(num_instances)] 
-        waiter.wait(InstanceIds=instance_ids)
-        a = ec2.describe_instances(InstanceIds = instance_ids)
-        public_ips = [a['Reservations'][0]['Instances'][i]['PublicIpAddress'] for i in range(num_instances)]
-        private_ips = [a['Reservations'][0]['Instances'][i]['PrivateIpAddress'] for i in range(num_instances)]
+                ],
+                ImageId=ami, InstanceType = instance_type, SecurityGroupIds = [self.security_group], KeyName=self.key_name ,MaxCount=num_instances, MinCount=num_instances)
+            instance_instance_ids = [res['Instances'][i]['InstanceId'] for i in range(num_instances)] 
+            waiter.wait(InstanceIds=instance_instance_ids)
+            a = ec2.describe_instances(InstanceIds = instance_instance_ids)
+            instance_public_ips = [a['Reservations'][0]['Instances'][i]['PublicIpAddress'] for i in range(num_instances)]
+            instance_private_ips = [a['Reservations'][0]['Instances'][i]['PrivateIpAddress'] for i in range(num_instances)]
+            tags[instance_type] = instance_private_ips
+            public_ips.extend(instance_public_ips)
+            private_ips.extend(instance_private_ips)
+            instance_ids.extend(instance_instance_ids)
 
         self.check_instance_alive(public_ips)
 
@@ -363,7 +383,7 @@ class QuokkaClusterManager:
 
         print("Launching of Quokka cluster used: ", time.time() - start_time)
 
-        return EC2Cluster(public_ips, private_ips, instance_ids, vcpu_per_node, spill_dir)  
+        return EC2Cluster(public_ips, private_ips, instance_ids, vcpu_per_node, spill_dir, tags = tags)  
     
     def start_cluster(self, cluster_json):
 

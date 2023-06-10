@@ -1,0 +1,2280 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      <link rel="icon" href="../../quokka.png">
+      <meta name="generator" content="mkdocs-1.4.0, mkdocs-material-8.5.5">
+    
+    
+      
+        <title>DataStream.with_columns - Quokka</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.80dcb947.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.cbb835fc.min.css">
+        
+          
+          
+          <meta name="theme-color" content="#8bc34b">
+        
+      
+      
+
+    
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce((e,_)=>(e<<5)-e+_.charCodeAt(0),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="" data-md-color-primary="light-green" data-md-color-accent="">
+  
+    
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#datastreamwith_columns" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Quokka" class="md-header__button md-logo" aria-label="Quokka" data-md-component="logo">
+      
+  <img src="../../quokka.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2Z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Quokka
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              DataStream.with_columns
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.516 6.516 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5Z"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/marsupialtail/quokka" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Quokka" class="md-nav__button md-logo" aria-label="Quokka" data-md-component="logo">
+      
+  <img src="../../quokka.png" alt="logo">
+
+    </a>
+    Quokka
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/marsupialtail/quokka" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc.--><path d="M439.55 236.05 244 40.45a28.87 28.87 0 0 0-40.81 0l-40.66 40.63 51.52 51.52c27.06-9.14 52.68 16.77 43.39 43.68l49.66 49.66c34.23-11.8 61.18 31 35.47 56.69-26.49 26.49-70.21-2.87-56-37.34L240.22 199v121.85c25.3 12.54 22.26 41.85 9.08 55a34.34 34.34 0 0 1-48.55 0c-17.57-17.6-11.07-46.91 11.25-56v-123c-20.8-8.51-24.6-30.74-18.64-45L142.57 101 8.45 235.14a28.86 28.86 0 0 0 0 40.81l195.61 195.6a28.86 28.86 0 0 0 40.8 0l194.69-194.69a28.86 28.86 0 0 0 0-40.81z"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        Home
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../started/" class="md-nav__link">
+        Cartoons
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../install/" class="md-nav__link">
+        Installation
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../cloud/" class="md-nav__link">
+        Setting Up Cloud Cluster
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../different/" class="md-nav__link">
+        How is Quokka different from ...?
+      </a>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_6" type="checkbox" id="__nav_6" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_6">
+          Tutorials
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Tutorials" data-md-level="1">
+        <label class="md-nav__title" for="__nav_6">
+          <span class="md-nav__icon md-icon"></span>
+          Tutorials
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../simple/" class="md-nav__link">
+        DataStream API (Use Quokka)
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/" class="md-nav__link">
+        TaskGraph API (Contribute to Quokka)
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+    
+  
+  
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7" type="checkbox" id="__nav_7" checked>
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7">
+          API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="API Reference" data-md-level="1">
+        <label class="md-nav__title" for="__nav_7">
+          <span class="md-nav__icon md-icon"></span>
+          API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_1" type="checkbox" id="__nav_7_1" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_1">
+          QuokkaContext API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="QuokkaContext API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_1">
+          <span class="md-nav__icon md-icon"></span>
+          QuokkaContext API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quokka_context/quokka_context/" class="md-nav__link">
+        QuokkaContext
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quokka_context/set_config/" class="md-nav__link">
+        QuokkaContext.set_config
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quokka_context/get_config/" class="md-nav__link">
+        QuokkaContext.get_config
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quokka_context/read_csv/" class="md-nav__link">
+        QuokkaContext.read_csv
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quokka_context/read_parquet/" class="md-nav__link">
+        QuokkaContext.read_parquet
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quokka_context/read_iceberg/" class="md-nav__link">
+        QuokkaContext.read_iceberg
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quokka_context/read_delta/" class="md-nav__link">
+        QuokkaContext.read_delta
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quokka_context/read_dataset/" class="md-nav__link">
+        QuokkaContext.read_dataset
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quokka_context/read_ray_dataset/" class="md-nav__link">
+        QuokkaContext.read_ray_dataset
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quokka_context/from_polars/" class="md-nav__link">
+        QuokkaContext.from_polars
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quokka_context/from_pandas/" class="md-nav__link">
+        QuokkaContext.from_pandas
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quokka_context/from_arrow/" class="md-nav__link">
+        QuokkaContext.from_arrow
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+    
+  
+  
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_2" type="checkbox" id="__nav_7_2" checked>
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_2">
+          DataStream API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="DataStream API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_2">
+          <span class="md-nav__icon md-icon"></span>
+          DataStream API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../collect/" class="md-nav__link">
+        DataStream.collect
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../compute/" class="md-nav__link">
+        DataStream.compute
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../explain/" class="md-nav__link">
+        DataStream.explain
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../write_csv/" class="md-nav__link">
+        DataStream.write_csv
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../write_parquet/" class="md-nav__link">
+        DataStream.write_parquet
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../filter/" class="md-nav__link">
+        DataStream.filter
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../filter_sql/" class="md-nav__link">
+        DataStream.filter_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../select/" class="md-nav__link">
+        DataStream.select
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../drop/" class="md-nav__link">
+        DataStream.drop
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../rename/" class="md-nav__link">
+        DataStream.rename
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../transform/" class="md-nav__link">
+        DataStream.transform
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../transform_sql/" class="md-nav__link">
+        DataStream.transform_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+    
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" data-md-toggle="toc" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          DataStream.with_columns
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        DataStream.with_columns
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#pyquokka.datastream.DataStream.with_columns" class="md-nav__link">
+    pyquokka.datastream.DataStream.with_columns
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../with_columns_sql/" class="md-nav__link">
+        DataStream.with_columns_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../union/" class="md-nav__link">
+        DataStream.union
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../distinct/" class="md-nav__link">
+        DataStream.distinct
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gramian/" class="md-nav__link">
+        DataStream.gramian
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../stateful_transform/" class="md-nav__link">
+        DataStream.stateful_transform
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../join/" class="md-nav__link">
+        DataStream.join
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../groupby/" class="md-nav__link">
+        DataStream.groupby
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../top_k/" class="md-nav__link">
+        DataStream.top_k
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../count_distinct/" class="md-nav__link">
+        DataStream.count_distinct
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agg/" class="md-nav__link">
+        DataStream.agg
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agg/" class="md-nav__link">
+        DataStream.aggregate
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../agg_sql/" class="md-nav__link">
+        DataStream.agg_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../count/" class="md-nav__link">
+        DataStream.count
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../sum/" class="md-nav__link">
+        DataStream.sum
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mean/" class="md-nav__link">
+        DataStream.mean
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../min/" class="md-nav__link">
+        DataStream.min
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../max/" class="md-nav__link">
+        DataStream.max
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../grouped_agg/" class="md-nav__link">
+        GroupedDataStream.agg
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../grouped_agg/" class="md-nav__link">
+        GroupedDataStream.aggregate
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../grouped_agg_sql/" class="md-nav__link">
+        GroupedDataStream.agg_sql
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../grouped_count_distinct/" class="md-nav__link">
+        GroupedDataStream.count_distinct
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_3" type="checkbox" id="__nav_7_3" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_3">
+          DataSet API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="DataSet API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_3">
+          <span class="md-nav__icon md-icon"></span>
+          DataSet API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dataset/to_df/" class="md-nav__link">
+        DataSet.to_df
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dataset/to_ray_dataset/" class="md-nav__link">
+        DataSet.to_ray_dataset
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../dataset/to_arrow_refs/" class="md-nav__link">
+        DataSet.to_arrow_refs
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_4" type="checkbox" id="__nav_7_4" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_4">
+          Expression API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Expression API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_4">
+          <span class="md-nav__icon md-icon"></span>
+          Expression API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_4_1" type="checkbox" id="__nav_7_4_1" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_4_1">
+          Strings
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Strings" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_4_1">
+          <span class="md-nav__icon md-icon"></span>
+          Strings
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/str_to_uppercase/" class="md-nav__link">
+        Expression.str.to_uppercase
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/str_to_lowercase/" class="md-nav__link">
+        Expression.str.to_lowercase
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/str_contains/" class="md-nav__link">
+        Expression.str.contains
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/str_starts_with/" class="md-nav__link">
+        Expression.str.starts_with
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/str_ends_with/" class="md-nav__link">
+        Expression.str.ends_with
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/str_length/" class="md-nav__link">
+        Expression.str.length
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/str_json_extract/" class="md-nav__link">
+        Expression.str.json_extract
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/str_strptime/" class="md-nav__link">
+        Expression.str.strptime
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/str_hash/" class="md-nav__link">
+        Expression.str.hash
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_4_2" type="checkbox" id="__nav_7_4_2" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_4_2">
+          Temporal
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="Temporal" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_4_2">
+          <span class="md-nav__icon md-icon"></span>
+          Temporal
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/dt_hour/" class="md-nav__link">
+        Expression.dt.hour
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/dt_minute/" class="md-nav__link">
+        Expression.dt.minute
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/dt_second/" class="md-nav__link">
+        Expression.dt.second
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/dt_weekday/" class="md-nav__link">
+        Expression.dt.weekday
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/dt_millisecond/" class="md-nav__link">
+        Expression.dt.millisecond
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/dt_microsecond/" class="md-nav__link">
+        Expression.dt.microsecond
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/dt_week/" class="md-nav__link">
+        Expression.dt.week
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/dt_month/" class="md-nav__link">
+        Expression.dt.month
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/dt_year/" class="md-nav__link">
+        Expression.dt.year
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/dt_offset_by/" class="md-nav__link">
+        Expression.dt.offset_by
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../expression/dt_strftime/" class="md-nav__link">
+        Expression.dt.strftime
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5" type="checkbox" id="__nav_7_5" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5">
+          QuokkaClusterManager API Reference
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="QuokkaClusterManager API Reference" data-md-level="2">
+        <label class="md-nav__title" for="__nav_7_5">
+          <span class="md-nav__icon md-icon"></span>
+          QuokkaClusterManager API Reference
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5_1" type="checkbox" id="__nav_7_5_1" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5_1">
+          EC2Cluster
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="EC2Cluster" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_5_1">
+          <span class="md-nav__icon md-icon"></span>
+          EC2Cluster
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/ec2cluster_to_json/" class="md-nav__link">
+        EC2Cluster.to_json
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5_2" type="checkbox" id="__nav_7_5_2" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5_2">
+          LocalCluster
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="LocalCluster" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_5_2">
+          <span class="md-nav__icon md-icon"></span>
+          LocalCluster
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/localcluster/" class="md-nav__link">
+        LocalCluster
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+      
+        <input class="md-nav__toggle md-toggle" data-md-toggle="__nav_7_5_3" type="checkbox" id="__nav_7_5_3" >
+      
+      
+      
+      
+        <label class="md-nav__link" for="__nav_7_5_3">
+          QuokkaClusterManager
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <nav class="md-nav" aria-label="QuokkaClusterManager" data-md-level="3">
+        <label class="md-nav__title" for="__nav_7_5_3">
+          <span class="md-nav__icon md-icon"></span>
+          QuokkaClusterManager
+        </label>
+        <ul class="md-nav__list" data-md-scrollfix>
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/quokka_cluster_manager/" class="md-nav__link">
+        QuokkaClusterManager
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/create_cluster/" class="md-nav__link">
+        QuokkaClusterManager.create_cluster
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/stop_cluster/" class="md-nav__link">
+        QuokkaClusterManager.stop_cluster
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/terminate_cluster/" class="md-nav__link">
+        QuokkaClusterManager.terminate_cluster
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/get_cluster_from_json/" class="md-nav__link">
+        QuokkaClusterManager.get_cluster_from_json
+      </a>
+    </li>
+  
+
+            
+          
+            
+              
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/get_cluster_from_ray.md" class="md-nav__link">
+        QuokkaClusterManager.get_cluster_from_ray
+      </a>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+            
+          
+        </ul>
+      </nav>
+    </li>
+  
+
+    
+      
+      
+      
+
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="https://www.rottnestisland.com" class="md-nav__link">
+        Visit Rottnest
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#pyquokka.datastream.DataStream.with_columns" class="md-nav__link">
+    pyquokka.datastream.DataStream.with_columns
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  <a href="https://github.com/marsupialtail/quokka/edit/master/docs/datastream/with_columns.md" title="Edit this page" class="md-content__button md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20.71 7.04c.39-.39.39-1.04 0-1.41l-2.34-2.34c-.37-.39-1.02-.39-1.41 0l-1.84 1.83 3.75 3.75M3 17.25V21h3.75L17.81 9.93l-3.75-3.75L3 17.25Z"/></svg>
+  </a>
+
+
+<h1 id="datastreamwith_columns">DataStream.with_columns</h1>
+
+
+<div class="doc doc-object doc-function">
+
+
+<a id="pyquokka.datastream.DataStream.with_columns"></a>
+  <div class="doc doc-contents first">
+  
+      <p>This will create new columns from certain columns in the dataframe. This is similar to Polars <code>with_columns</code>, Spark <code>with_columns</code>, etc. As usual,
+this function is not in-place, and will return a new DataStream, with the new column.</p>
+<p>This is a separate API from <code>transform</code> because the semantics allow for projection and predicate pushdown through this node, 
+since the original columns are all preserved. Use this instead of <code>transform</code> if possible.</p>
+<p>The arguments are a bit different from Polars <code>with_columns</code>. You need to specify a dictionary where key is new column name and value is either a Quokka
+Expression or a Python function (lambda function or regular function). I think this is better than the Polars way and removes the possibility of having 
+column names colliding.</p>
+<p>The preferred way is to supply Quokka Expressions for things that the Expression syntax supports. 
+In case a function is supplied, it must assume a single input, which is a Polars DataFrame. Please look at the examples. </p>
+<p>A DataStream is implemented as a stream of batches. In the runtime, your function will be applied to each of those batches. The function must
+take as input a Polars DataFrame and produce a Polars DataFrame. This is a different mental model from Pandas or Polars <code>df.apply</code>, 
+where the function is written for each row. <strong>The function's output must be a Polars Series (or DataFrame with one column)! </strong>
+Of course you can call Polars or Pandas apply inside of this function if you have to do things row by row.</p>
+<p>You can use whatever libraries you have installed in your Python environment in this function. If you are using this on a
+cloud cluster, you have to make sure the necessary libraries are installed on each machine. You can use the <code>utils</code> package in pyquokka to help
+you do this, in particular you can use <code>mananger.install_python_package(cluster, package_name)</code>.</p>
+<p>Importantly, your function can take full advantage of Polars' columnar APIs to make use of SIMD and other forms of speedy goodness. 
+You can even use Polars LazyFrame abstractions inside of this function. Of course, for ultimate flexbility, you are more than welcome to convert 
+the Polars DataFrame to a Pandas DataFrame and use <code>df.apply</code>. Just remember to convert it back to a Polars DataFrame with only the result column in the end!</p>
+
+  <p><strong>Parameters:</strong></p>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Description</th>
+        <th>Default</th>
+      </tr>
+    </thead>
+    <tbody>
+        <tr>
+          <td><code>new_columns</code></td>
+          <td>
+                <code>dict</code>
+          </td>
+          <td><p>A dictionary of column names to UDFs or Expressions. The UDFs must take as input a Polars DataFrame and output a Polars DataFrame.
+The UDFs must not have expectations on the length of its input.</p></td>
+          <td>
+              <em>required</em>
+          </td>
+        </tr>
+        <tr>
+          <td><code>required_columns</code></td>
+          <td>
+                <code>list or set</code>
+          </td>
+          <td><p>The names of the columns that are required for all your function. If this is not specified then Quokka assumes
+all the columns are required for your function. Early projection past this function becomes impossible. If you specify this and you got it wrong,
+you will get an error at runtime. This is only required for UDFs. If you use Quokka Expressions, then Quokka will automatically figure out the required columns.</p></td>
+          <td>
+                <code>set()</code>
+          </td>
+        </tr>
+        <tr>
+          <td><code>foldable</code></td>
+          <td>
+                <code>bool</code>
+          </td>
+          <td><p>Whether or not the function can be executed as part of the batch post-processing of the previous operation in the
+execution graph. This is set to True by default. Correctly setting this flag requires some insight into how Quokka works. Lightweight</p></td>
+          <td>
+                <code>True</code>
+          </td>
+        </tr>
+    </tbody>
+  </table>
+
+<details class="return">
+  <summary>Return</summary>
+  <p>A new DataStream with new columns made by the user defined functions.</p>
+</details>
+<p><strong>Examples:</strong></p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">d</span> <span class="o">=</span> <span class="n">qc</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="s2">&quot;lineitem.csv&quot;</span><span class="p">)</span>
+</code></pre></div>
+    <p>You can use Polars APIs inside of custom lambda functions: </p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">d</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">with_columns</span><span class="p">({</span><span class="s2">&quot;high&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:(</span><span class="n">x</span><span class="p">[</span><span class="s2">&quot;o_orderpriority&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;1-URGENT&quot;</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="s2">&quot;o_orderpriority&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;2-HIGH&quot;</span><span class="p">),</span> <span class="s2">&quot;low&quot;</span><span class="p">:</span> <span class="k">lambda</span> <span class="n">x</span><span class="p">:(</span><span class="n">x</span><span class="p">[</span><span class="s2">&quot;o_orderpriority&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;5-LOW&quot;</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="s2">&quot;o_orderpriority&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;4-NOT SPECIFIED&quot;</span><span class="p">)},</span> <span class="n">required_columns</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;o_orderpriority&quot;</span><span class="p">})</span>
+</code></pre></div>
+    <p>You can also use Quokka Expressions. You don't need to specify required columns if you use only Quokka Expressions:</p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">d</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">with_columns</span><span class="p">({</span><span class="s2">&quot;high&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;o_orderpriority&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;1-URGENT&quot;</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;o_orderpriority&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;2-HIGH&quot;</span><span class="p">),</span> <span class="s2">&quot;low&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;o_orderpriority&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;5-LOW&quot;</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;o_orderpriority&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;4-NOT SPECIFIED&quot;</span><span class="p">)})</span>
+</code></pre></div>
+    <p>Or mix the two. You then have to specify required columns again. It is the set of columns required for <em>all</em> your functions.</p>
+    <div class="highlight"><pre><span></span><code><span class="gp">&gt;&gt;&gt; </span><span class="n">d</span> <span class="o">=</span> <span class="n">d</span><span class="o">.</span><span class="n">with_columns</span><span class="p">({</span><span class="s2">&quot;high&quot;</span><span class="p">:</span> <span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:(</span><span class="n">x</span><span class="p">[</span><span class="s2">&quot;o_orderpriority&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;1-URGENT&quot;</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">x</span><span class="p">[</span><span class="s2">&quot;o_orderpriority&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;2-HIGH&quot;</span><span class="p">),</span> <span class="s2">&quot;low&quot;</span><span class="p">:</span> <span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;o_orderpriority&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;5-LOW&quot;</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">d</span><span class="p">[</span><span class="s2">&quot;o_orderpriority&quot;</span><span class="p">]</span> <span class="o">==</span> <span class="s2">&quot;4-NOT SPECIFIED&quot;</span><span class="p">)},</span> <span class="n">required_columns</span> <span class="o">=</span> <span class="p">{</span><span class="s2">&quot;o_orderpriority&quot;</span><span class="p">})</span>
+</code></pre></div>
+
+      <details class="quote">
+        <summary>Source code in <code>pyquokka/datastream.py</code></summary>
+        <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">1209</span>
+<span class="normal">1210</span>
+<span class="normal">1211</span>
+<span class="normal">1212</span>
+<span class="normal">1213</span>
+<span class="normal">1214</span>
+<span class="normal">1215</span>
+<span class="normal">1216</span>
+<span class="normal">1217</span>
+<span class="normal">1218</span>
+<span class="normal">1219</span>
+<span class="normal">1220</span>
+<span class="normal">1221</span>
+<span class="normal">1222</span>
+<span class="normal">1223</span>
+<span class="normal">1224</span>
+<span class="normal">1225</span>
+<span class="normal">1226</span>
+<span class="normal">1227</span>
+<span class="normal">1228</span>
+<span class="normal">1229</span>
+<span class="normal">1230</span>
+<span class="normal">1231</span>
+<span class="normal">1232</span>
+<span class="normal">1233</span>
+<span class="normal">1234</span>
+<span class="normal">1235</span>
+<span class="normal">1236</span>
+<span class="normal">1237</span>
+<span class="normal">1238</span>
+<span class="normal">1239</span>
+<span class="normal">1240</span>
+<span class="normal">1241</span>
+<span class="normal">1242</span>
+<span class="normal">1243</span>
+<span class="normal">1244</span>
+<span class="normal">1245</span>
+<span class="normal">1246</span>
+<span class="normal">1247</span>
+<span class="normal">1248</span>
+<span class="normal">1249</span>
+<span class="normal">1250</span>
+<span class="normal">1251</span>
+<span class="normal">1252</span>
+<span class="normal">1253</span>
+<span class="normal">1254</span>
+<span class="normal">1255</span>
+<span class="normal">1256</span>
+<span class="normal">1257</span>
+<span class="normal">1258</span>
+<span class="normal">1259</span>
+<span class="normal">1260</span>
+<span class="normal">1261</span>
+<span class="normal">1262</span>
+<span class="normal">1263</span>
+<span class="normal">1264</span>
+<span class="normal">1265</span>
+<span class="normal">1266</span>
+<span class="normal">1267</span>
+<span class="normal">1268</span>
+<span class="normal">1269</span>
+<span class="normal">1270</span>
+<span class="normal">1271</span>
+<span class="normal">1272</span>
+<span class="normal">1273</span>
+<span class="normal">1274</span>
+<span class="normal">1275</span>
+<span class="normal">1276</span>
+<span class="normal">1277</span>
+<span class="normal">1278</span>
+<span class="normal">1279</span>
+<span class="normal">1280</span>
+<span class="normal">1281</span>
+<span class="normal">1282</span>
+<span class="normal">1283</span>
+<span class="normal">1284</span>
+<span class="normal">1285</span>
+<span class="normal">1286</span>
+<span class="normal">1287</span>
+<span class="normal">1288</span>
+<span class="normal">1289</span>
+<span class="normal">1290</span>
+<span class="normal">1291</span>
+<span class="normal">1292</span>
+<span class="normal">1293</span>
+<span class="normal">1294</span>
+<span class="normal">1295</span>
+<span class="normal">1296</span>
+<span class="normal">1297</span>
+<span class="normal">1298</span>
+<span class="normal">1299</span>
+<span class="normal">1300</span>
+<span class="normal">1301</span>
+<span class="normal">1302</span>
+<span class="normal">1303</span>
+<span class="normal">1304</span>
+<span class="normal">1305</span>
+<span class="normal">1306</span>
+<span class="normal">1307</span>
+<span class="normal">1308</span>
+<span class="normal">1309</span>
+<span class="normal">1310</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span> <span class="nf">with_columns</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">new_columns</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">required_columns</span><span class="o">=</span><span class="nb">set</span><span class="p">(),</span> <span class="n">foldable</span><span class="o">=</span><span class="kc">True</span><span class="p">):</span>
+
+    <span class="sd">&quot;&quot;&quot;</span>
+
+<span class="sd">    This will create new columns from certain columns in the dataframe. This is similar to Polars `with_columns`, Spark `with_columns`, etc. As usual,</span>
+<span class="sd">    this function is not in-place, and will return a new DataStream, with the new column.</span>
+
+<span class="sd">    This is a separate API from `transform` because the semantics allow for projection and predicate pushdown through this node, </span>
+<span class="sd">    since the original columns are all preserved. Use this instead of `transform` if possible.</span>
+
+<span class="sd">    The arguments are a bit different from Polars `with_columns`. You need to specify a dictionary where key is new column name and value is either a Quokka</span>
+<span class="sd">    Expression or a Python function (lambda function or regular function). I think this is better than the Polars way and removes the possibility of having </span>
+<span class="sd">    column names colliding.</span>
+
+<span class="sd">    The preferred way is to supply Quokka Expressions for things that the Expression syntax supports. </span>
+<span class="sd">    In case a function is supplied, it must assume a single input, which is a Polars DataFrame. Please look at the examples. </span>
+
+<span class="sd">    A DataStream is implemented as a stream of batches. In the runtime, your function will be applied to each of those batches. The function must</span>
+<span class="sd">    take as input a Polars DataFrame and produce a Polars DataFrame. This is a different mental model from Pandas or Polars `df.apply`, </span>
+<span class="sd">    where the function is written for each row. **The function&#39;s output must be a Polars Series (or DataFrame with one column)! **</span>
+<span class="sd">    Of course you can call Polars or Pandas apply inside of this function if you have to do things row by row.</span>
+
+<span class="sd">    You can use whatever libraries you have installed in your Python environment in this function. If you are using this on a</span>
+<span class="sd">    cloud cluster, you have to make sure the necessary libraries are installed on each machine. You can use the `utils` package in pyquokka to help</span>
+<span class="sd">    you do this, in particular you can use `mananger.install_python_package(cluster, package_name)`.</span>
+
+<span class="sd">    Importantly, your function can take full advantage of Polars&#39; columnar APIs to make use of SIMD and other forms of speedy goodness. </span>
+<span class="sd">    You can even use Polars LazyFrame abstractions inside of this function. Of course, for ultimate flexbility, you are more than welcome to convert </span>
+<span class="sd">    the Polars DataFrame to a Pandas DataFrame and use `df.apply`. Just remember to convert it back to a Polars DataFrame with only the result column in the end!</span>
+
+<span class="sd">    Args:</span>
+<span class="sd">        new_columns (dict): A dictionary of column names to UDFs or Expressions. The UDFs must take as input a Polars DataFrame and output a Polars DataFrame.</span>
+<span class="sd">            The UDFs must not have expectations on the length of its input.</span>
+<span class="sd">        required_columns (list or set): The names of the columns that are required for all your function. If this is not specified then Quokka assumes</span>
+<span class="sd">            all the columns are required for your function. Early projection past this function becomes impossible. If you specify this and you got it wrong,</span>
+<span class="sd">            you will get an error at runtime. This is only required for UDFs. If you use Quokka Expressions, then Quokka will automatically figure out the required columns.</span>
+<span class="sd">        foldable (bool): Whether or not the function can be executed as part of the batch post-processing of the previous operation in the</span>
+<span class="sd">            execution graph. This is set to True by default. Correctly setting this flag requires some insight into how Quokka works. Lightweight</span>
+
+<span class="sd">    Return:</span>
+<span class="sd">        A new DataStream with new columns made by the user defined functions.</span>
+
+<span class="sd">    Examples:</span>
+
+<span class="sd">        &gt;&gt;&gt; d = qc.read_csv(&quot;lineitem.csv&quot;)</span>
+
+<span class="sd">        You can use Polars APIs inside of custom lambda functions: </span>
+
+<span class="sd">        &gt;&gt;&gt; d = d.with_columns({&quot;high&quot;: lambda x:(x[&quot;o_orderpriority&quot;] == &quot;1-URGENT&quot;) | (x[&quot;o_orderpriority&quot;] == &quot;2-HIGH&quot;), &quot;low&quot;: lambda x:(x[&quot;o_orderpriority&quot;] == &quot;5-LOW&quot;) | (x[&quot;o_orderpriority&quot;] == &quot;4-NOT SPECIFIED&quot;)}, required_columns = {&quot;o_orderpriority&quot;})</span>
+
+<span class="sd">        You can also use Quokka Expressions. You don&#39;t need to specify required columns if you use only Quokka Expressions:</span>
+
+<span class="sd">        &gt;&gt;&gt; d = d.with_columns({&quot;high&quot;: (d[&quot;o_orderpriority&quot;] == &quot;1-URGENT&quot;) | (d[&quot;o_orderpriority&quot;] == &quot;2-HIGH&quot;), &quot;low&quot;: (d[&quot;o_orderpriority&quot;] == &quot;5-LOW&quot;) | (d[&quot;o_orderpriority&quot;] == &quot;4-NOT SPECIFIED&quot;)})</span>
+
+<span class="sd">        Or mix the two. You then have to specify required columns again. It is the set of columns required for *all* your functions.</span>
+
+<span class="sd">        &gt;&gt;&gt; d = d.with_columns({&quot;high&quot;: (lambda x:(x[&quot;o_orderpriority&quot;] == &quot;1-URGENT&quot;) | (x[&quot;o_orderpriority&quot;] == &quot;2-HIGH&quot;), &quot;low&quot;: (d[&quot;o_orderpriority&quot;] == &quot;5-LOW&quot;) | (d[&quot;o_orderpriority&quot;] == &quot;4-NOT SPECIFIED&quot;)}, required_columns = {&quot;o_orderpriority&quot;})</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="k">assert</span> <span class="nb">type</span><span class="p">(</span><span class="n">required_columns</span><span class="p">)</span> <span class="o">==</span> <span class="nb">set</span>
+
+    <span class="c1"># fix the new column ordering</span>
+    <span class="n">new_column_names</span> <span class="o">=</span> <span class="nb">list</span><span class="p">(</span><span class="n">new_columns</span><span class="o">.</span><span class="n">keys</span><span class="p">())</span>
+
+    <span class="n">sql_statement</span> <span class="o">=</span> <span class="s2">&quot;select *&quot;</span>
+
+    <span class="k">for</span> <span class="n">new_column</span> <span class="ow">in</span> <span class="n">new_columns</span><span class="p">:</span>
+        <span class="k">assert</span> <span class="n">new_column</span> <span class="ow">not</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="p">,</span> <span class="s2">&quot;For now new columns cannot have same names as existing columns&quot;</span>
+        <span class="n">transform</span> <span class="o">=</span> <span class="n">new_columns</span><span class="p">[</span><span class="n">new_column</span><span class="p">]</span>
+        <span class="k">assert</span> <span class="nb">type</span><span class="p">(</span><span class="n">transform</span><span class="p">)</span> <span class="o">==</span> <span class="nb">type</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span><span class="mi">1</span><span class="p">)</span> <span class="ow">or</span> <span class="nb">type</span><span class="p">(</span><span class="n">transform</span><span class="p">)</span> <span class="o">==</span> <span class="n">Expression</span><span class="p">,</span> <span class="s2">&quot;Transform must be a function or a Quokka Expression&quot;</span>
+        <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">transform</span><span class="p">)</span> <span class="o">==</span> <span class="n">Expression</span><span class="p">:</span>
+            <span class="n">required_columns</span> <span class="o">=</span> <span class="n">required_columns</span><span class="o">.</span><span class="n">union</span><span class="p">(</span><span class="n">transform</span><span class="o">.</span><span class="n">required_columns</span><span class="p">())</span>
+            <span class="n">sql_statement</span> <span class="o">+=</span> <span class="s2">&quot;, &quot;</span> <span class="o">+</span> <span class="n">transform</span><span class="o">.</span><span class="n">sql</span><span class="p">()</span> <span class="o">+</span> <span class="s2">&quot; as &quot;</span> <span class="o">+</span> <span class="n">new_column</span> 
+
+        <span class="k">else</span><span class="p">:</span>
+            <span class="c1"># detected an arbitrary function. If required columns are not specified, assume all columns are required</span>
+            <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">required_columns</span><span class="p">)</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+                <span class="n">required_columns</span> <span class="o">=</span> <span class="nb">set</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">polars_func</span><span class="p">(</span><span class="n">batch</span><span class="p">):</span>
+
+        <span class="n">con</span> <span class="o">=</span> <span class="n">duckdb</span><span class="o">.</span><span class="n">connect</span><span class="p">()</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s1">&#39;PRAGMA threads=</span><span class="si">%d</span><span class="s1">&#39;</span> <span class="o">%</span> <span class="mi">8</span><span class="p">)</span>
+        <span class="k">if</span> <span class="n">sql_statement</span> <span class="o">!=</span> <span class="s2">&quot;select *&quot;</span><span class="p">:</span> <span class="c1"># if there are any columns to add</span>
+            <span class="n">batch_arrow</span> <span class="o">=</span> <span class="n">batch</span><span class="o">.</span><span class="n">to_arrow</span><span class="p">()</span>
+            <span class="n">batch</span> <span class="o">=</span> <span class="n">polars</span><span class="o">.</span><span class="n">from_arrow</span><span class="p">(</span><span class="n">con</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="n">sql_statement</span> <span class="o">+</span> <span class="s2">&quot; from batch_arrow&quot;</span><span class="p">)</span><span class="o">.</span><span class="n">arrow</span><span class="p">())</span>
+
+        <span class="n">batch</span> <span class="o">=</span> <span class="n">batch</span><span class="o">.</span><span class="n">with_columns</span><span class="p">([</span><span class="n">polars</span><span class="o">.</span><span class="n">Series</span><span class="p">(</span><span class="n">name</span><span class="o">=</span><span class="n">column_name</span><span class="p">,</span> <span class="n">values</span><span class="o">=</span><span class="n">new_columns</span><span class="p">[</span><span class="n">column_name</span><span class="p">](</span><span class="n">batch</span><span class="p">))</span> <span class="k">for</span> <span class="n">column_name</span> <span class="ow">in</span> <span class="n">new_column_names</span> <span class="k">if</span> <span class="nb">type</span><span class="p">(</span><span class="n">new_columns</span><span class="p">[</span><span class="n">column_name</span><span class="p">])</span> <span class="o">==</span> <span class="nb">type</span><span class="p">(</span><span class="k">lambda</span> <span class="n">x</span><span class="p">:</span><span class="mi">1</span><span class="p">)])</span>
+        <span class="k">return</span> <span class="n">batch</span>
+
+    <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">quokka_context</span><span class="o">.</span><span class="n">new_stream</span><span class="p">(</span>
+        <span class="n">sources</span><span class="o">=</span><span class="p">{</span><span class="mi">0</span><span class="p">:</span> <span class="bp">self</span><span class="p">},</span>
+        <span class="n">partitioners</span><span class="o">=</span><span class="p">{</span><span class="mi">0</span><span class="p">:</span> <span class="n">PassThroughPartitioner</span><span class="p">()},</span>
+        <span class="n">node</span><span class="o">=</span><span class="n">MapNode</span><span class="p">(</span>
+            <span class="n">schema</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="o">+</span> <span class="n">new_column_names</span><span class="p">,</span>
+            <span class="n">schema_mapping</span><span class="o">=</span><span class="p">{</span>
+                <span class="o">**</span><span class="p">{</span><span class="n">new_column</span><span class="p">:</span> <span class="p">{</span><span class="o">-</span><span class="mi">1</span><span class="p">:</span> <span class="n">new_column</span><span class="p">}</span> <span class="k">for</span> <span class="n">new_column</span> <span class="ow">in</span> <span class="n">new_column_names</span><span class="p">},</span> <span class="o">**</span><span class="p">{</span><span class="n">col</span><span class="p">:</span> <span class="p">{</span><span class="mi">0</span><span class="p">:</span> <span class="n">col</span><span class="p">}</span> <span class="k">for</span> <span class="n">col</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">schema</span><span class="p">}},</span>
+            <span class="n">required_columns</span><span class="o">=</span><span class="p">{</span><span class="mi">0</span><span class="p">:</span> <span class="n">required_columns</span><span class="p">},</span>
+            <span class="n">function</span><span class="o">=</span><span class="n">polars_func</span><span class="p">,</span>
+            <span class="n">foldable</span><span class="o">=</span><span class="n">foldable</span><span class="p">),</span>
+        <span class="n">schema</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">schema</span> <span class="o">+</span> <span class="n">new_column_names</span><span class="p">,</span>
+        <span class="nb">sorted</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">sorted</span>
+        <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+      </details>
+  </div>
+
+</div>
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+    <nav class="md-footer__inner md-grid" aria-label="Footer" >
+      
+        
+        <a href="../transform_sql/" class="md-footer__link md-footer__link--prev" aria-label="Previous: DataStream.transform_sql" rel="prev">
+          <div class="md-footer__button md-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11h12Z"/></svg>
+          </div>
+          <div class="md-footer__title">
+            <div class="md-ellipsis">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              DataStream.transform_sql
+            </div>
+          </div>
+        </a>
+      
+      
+        
+        <a href="../with_columns_sql/" class="md-footer__link md-footer__link--next" aria-label="Next: DataStream.with_columns_sql" rel="next">
+          <div class="md-footer__title">
+            <div class="md-ellipsis">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              DataStream.with_columns_sql
+            </div>
+          </div>
+          <div class="md-footer__button md-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11H4Z"/></svg>
+          </div>
+        </a>
+      
+    </nav>
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": [], "search": "../../assets/javascripts/workers/search.5bf1dace.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.config.lang": "en", "search.config.pipeline": "trimmer, stopWordFilter", "search.config.separator": "[\\s\\-]+", "search.placeholder": "Search", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version.title": "Select version"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.078830c0.min.js"></script>
+      
+    
+  </body>
+</html>

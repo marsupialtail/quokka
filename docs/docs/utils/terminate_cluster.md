@@ -1,3 +1,4 @@
-# QuokkaClusterManager.terminate_cluster
+# terminate_cluster
 
-::: pyquokka.utils.QuokkaClusterManager.terminate_cluster
+
+::: pyquokka.utils.terminate_cluster

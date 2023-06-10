@@ -657,6 +657,10 @@ class ExecTaskManager(TaskManager):
                     
                     # print("next task reqs", [new_input_reqs] + input_requirements[1:])
                     next_task = ExecutorTask(actor_id, channel_id, state_seq + 1, out_seq, [new_input_reqs] + input_requirements[1:])
+                    lineage = pickle.dumps((source_actor_id, source_channel_seqs))
+                    for source_channel_id in source_channel_seqs:
+                        max_seq = max(source_channel_seqs[source_channel_id])
+                        self.EWT.set(transaction, pickle.dumps((source_actor_id, source_channel_id)), max_seq)
 
                 else:
                     output = self.function_objects[actor_id, channel_id].done(channel_id)
@@ -667,8 +671,8 @@ class ExecTaskManager(TaskManager):
                     last_output_seq = out_seq - 1
                     # print("DONE", actor_id, channel_id)
                     self.DST.set(transaction, pickle.dumps((actor_id, channel_id)), last_output_seq)
-                            
                     next_task = None
+                    lineage = None
 
                 if self.configs["checkpoint_interval"] is not None and state_seq % self.configs["checkpoint_interval"] == 0:
                     self.function_objects[actor_id, channel_id].checkpoint(self.checkpoint_bucket, actor_id, channel_id, state_seq)
@@ -681,10 +685,6 @@ class ExecTaskManager(TaskManager):
                 # this way of logging the lineage probably use less space than a Polars table actually.                        
 
                 self.EST.set(transaction, pickle.dumps((actor_id, channel_id)), state_seq)                    
-                lineage = pickle.dumps((source_actor_id, source_channel_seqs))
-                for source_channel_id in source_channel_seqs:
-                    max_seq = max(source_channel_seqs[source_channel_id])
-                    self.EWT.set(transaction, pickle.dumps((source_actor_id, source_channel_id)), max_seq)
                 self.state_commit(transaction, actor_id, channel_id, state_seq, lineage)
                 self.task_commit(transaction, candidate_task, next_task)
                 
