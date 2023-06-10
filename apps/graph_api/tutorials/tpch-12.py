@@ -17,15 +17,12 @@ import polars
 import ray
 import sqlglot
 
-manager = QuokkaClusterManager(key_name = "oregon-neurodb", key_location = "/home/ziheng/Downloads/oregon-neurodb.pem")
-cluster = manager.get_cluster_from_json("config.json")
-cluster.tag_instance("172.31.36.8", "A")
-cluster.tag_instance("172.31.40.55", "A")
-cluster.tag_instance("172.31.36.75", "B")
-cluster.tag_instance("172.31.47.89", "")
-# cluster = LocalCluster()
-qc = QuokkaContext(cluster)
-# qc.set_config("memory_limit", 0.01)
+manager = QuokkaClusterManager(key_name = "quokka", key_location = "/home/ziheng/Downloads/quokka.pem")
+# manager.start_cluster("mixed.json")
+cluster = manager.get_cluster_from_json("mixed.json")
+qc = QuokkaContext(cluster, 4, 2)
+reader_tag =  "A4"
+joiner_tag = "A42" # "A4"
 
 task_graph = TaskGraph(qc)
 
@@ -53,9 +50,10 @@ elif sys.argv[1] == "parquet":
     z = s3.list_objects_v2(Bucket="tpc-h-parquet-100-native-mine", Prefix="orders.parquet")
     files = ["tpc-h-parquet-100-native-mine/" + i['Key'] for i in z['Contents'] if i['Key'].endswith(".parquet")]
     orders_parquet_reader = InputEC2ParquetDataset(files,columns = ['o_orderkey','o_orderpriority'])
-    lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, stage = -1, placement_strategy = TaggedCustomChannelsStrategy(2, "A"))
-    orders = task_graph.new_input_reader_node(orders_parquet_reader, placement_strategy = TaggedCustomChannelsStrategy(2, "B"))
-      
+    lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, stage = -1, placement_strategy = TaggedCustomChannelsStrategy(1, reader_tag))
+    orders = task_graph.new_input_reader_node(orders_parquet_reader, placement_strategy = TaggedCustomChannelsStrategy(1, reader_tag))
+    # lineitem = task_graph.new_input_reader_node(lineitem_parquet_reader, stage = -1)
+    # orders = task_graph.new_input_reader_node(orders_parquet_reader)
 
 join_executor = BuildProbeJoinExecutor(left_on="o_orderkey",right_on="l_orderkey")
 
@@ -79,8 +77,8 @@ else:
                             1:TargetInfo(partitioner = HashPartitioner("l_orderkey"),
                                         predicate = sqlglot.parse_one("l_commitdate < l_receiptdate and l_shipdate < l_commitdate "),
                                         projection = ["l_orderkey","l_shipmode"],
-                                        batch_funcs = [])})
-
+                                        # batch_funcs = [])})
+                                        batch_funcs = [])}, placement_strategy = TaggedCustomChannelsStrategy(1,joiner_tag))
 agg_executor = SQLAggExecutor(["l_shipmode"], None, "sum(high_sum) as high, sum(low_sum) as low")
 
 agged = task_graph.new_blocking_node({0:output_stream},  agg_executor, placement_strategy = SingleChannelStrategy(), 
@@ -90,7 +88,6 @@ agged = task_graph.new_blocking_node({0:output_stream},  agg_executor, placement
         projection = None,
         batch_funcs = [batch_func]
     )})
-
 task_graph.create()
 start = time.time()
 task_graph.run()

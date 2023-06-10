@@ -17,12 +17,13 @@ if mode == "DISK":
     cluster = LocalCluster()
 elif mode == "S3":
     manager = QuokkaClusterManager(key_name = "oregon-neurodb", key_location = "/home/ziheng/Downloads/oregon-neurodb.pem")
-    cluster = manager.get_cluster_from_json("config.json")
+    #cluster = manager.get_cluster_from_json("config.json")
+    cluster = manager.get_cluster_from_json("mixed.json")
 else:
     raise Exception
 
-qc = QuokkaContext(cluster,2,2)
-qc.set_config("fault_tolerance", True)
+qc = QuokkaContext(cluster,2, 1)
+qc.set_config("fault_tolerance", False)
 
 if mode == "DISK":
     if format == "csv":
@@ -126,9 +127,11 @@ def do_2():
     european_nations = nation.join(europe, left_on="n_regionkey",right_on="r_regionkey").select(["n_name","n_nationkey"])
     d = supplier.join(european_nations, left_on="s_nationkey", right_on="n_nationkey")
     d = partsupp.join(d, left_on="ps_suppkey", right_on="s_suppkey")
-    f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"}).rename({"ps_supplycost_min":"min_cost","ps_partkey":"europe_key"}).compute()
+    f = d.groupby("ps_partkey").aggregate({"ps_supplycost":"min"}).rename({"ps_supplycost_min":"min_cost","ps_partkey":"europe_key"})
 
-    k = qc.read_dataset(f).join(part, left_on="europe_key", right_on="p_partkey", suffix="_3")
+    k = f.join(part, left_on="europe_key", right_on="p_partkey", suffix="_3")
+    d = qc.read_parquet(s3_path_parquet + "supplier.parquet/*").join(european_nations, left_on="s_nationkey", right_on="n_nationkey")
+    d = qc.read_parquet(s3_path_parquet + "partsupp.parquet/*").join(d, left_on="ps_suppkey", right_on="s_suppkey")
     d = d.join(k, left_on="ps_supplycost", right_on="min_cost", suffix="_2")
     d = d.filter_sql("""europe_key = ps_partkey and p_size = 15 and p_type like '%BRASS' """)
     d = d.select(["s_acctbal", "s_name", "n_name", "europe_key", "p_mfgr", "s_address", "s_phone", "s_comment"])
@@ -556,7 +559,7 @@ def approx_quantile():
 # print_and_time(covariance)
 # print_and_time(approx_quantile)
 
-from tpch_ref import *
+# from tpch_ref import *
 
 # print(do_1())
 # print(do_1_1())
@@ -571,9 +574,9 @@ print_and_time(do_7_sql)
 print_and_time(do_8)
 print_and_time(do_9)
 print_and_time(do_10)
-# print_and_time(do_11)
-# print_and_time(do_12)
-# print_and_time(do_12_sql)
+print_and_time(do_11)
+print_and_time(do_12)
+print_and_time(do_12_sql)
 # print_and_time(do_13) 
 # print_and_time(do_14)
 # print_and_time(do_15)

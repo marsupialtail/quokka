@@ -1,13 +1,13 @@
 import polars
 polars.Config().set_tbl_cols(10)
-lineitem_arrow = polars.read_csv("/home/ziheng/tpc-h/lineitem.tbl", sep = "|", has_header=True).to_arrow()
-orders_arrow = polars.read_csv("/home/ziheng/tpc-h/orders.tbl", sep = "|", has_header=True).to_arrow()
-customer_arrow = polars.read_csv("/home/ziheng/tpc-h/customer.tbl", sep = "|", has_header=True).to_arrow()
-region_arrow = polars.read_csv("/home/ziheng/tpc-h/region.tbl", sep = "|", has_header=True).to_arrow()
-part_arrow = polars.read_csv("/home/ziheng/tpc-h/part.tbl", sep = "|", has_header=True).to_arrow()
-partsupp_arrow = polars.read_csv("/home/ziheng/tpc-h/partsupp.tbl", sep = "|", has_header=True).to_arrow()
-supplier_arrow = polars.read_csv("/home/ziheng/tpc-h/supplier.tbl", sep = "|", has_header=True).to_arrow()
-nation_arrow = polars.read_csv("/home/ziheng/tpc-h/nation.tbl", sep = "|", has_header=True).to_arrow()
+lineitem_arrow = polars.read_csv("/home/ziheng/tpc-h/lineitem.tbl", separator = "|", has_header=True).to_arrow()
+orders_arrow = polars.read_csv("/home/ziheng/tpc-h/orders.tbl", separator = "|", has_header=True).to_arrow()
+customer_arrow = polars.read_csv("/home/ziheng/tpc-h/customer.tbl", separator = "|", has_header=True).to_arrow()
+region_arrow = polars.read_csv("/home/ziheng/tpc-h/region.tbl", separator = "|", has_header=True).to_arrow()
+part_arrow = polars.read_csv("/home/ziheng/tpc-h/part.tbl", separator = "|", has_header=True).to_arrow()
+partsupp_arrow = polars.read_csv("/home/ziheng/tpc-h/partsupp.tbl", separator = "|", has_header=True).to_arrow()
+supplier_arrow = polars.read_csv("/home/ziheng/tpc-h/supplier.tbl", separator = "|", has_header=True).to_arrow()
+nation_arrow = polars.read_csv("/home/ziheng/tpc-h/nation.tbl", separator = "|", has_header=True).to_arrow()
 
 import duckdb
 con = duckdb.connect()

@@ -1,4 +1,5 @@
 import time
+from pyquokka import QuokkaContext
 from pyquokka.quokka_runtime import TaskGraph
 from pyquokka.executors import JoinExecutor, CountExecutor
 from pyquokka.target_info import TargetInfo, PassThroughPartitioner, HashPartitioner
@@ -10,10 +11,9 @@ import ray
 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 
-manager = QuokkaClusterManager()
 cluster = LocalCluster()
-
-task_graph = TaskGraph(cluster)
+qc = QuokkaContext(cluster)
+task_graph = TaskGraph(qc)
 
 a_reader = InputDiskCSVDataset("a.csv", header = True, stride =  1024)
 b_reader = InputDiskCSVDataset("b.csv", header = True ,  stride =  1024)
