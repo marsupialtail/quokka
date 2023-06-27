@@ -14,6 +14,9 @@ import yaml
 import subprocess
 import argparse
 
+from redis import Redis
+
+
 def preexec_function():
     # Ignore the SIGINT signal by setting the handler to the standard
     # signal handler SIG_IGN.
@@ -91,7 +94,7 @@ class EC2Cluster:
 
 
 class LocalCluster:
-    def __init__(self) -> None:
+    def __init__(self, **kwargs) -> None:
 
         """
         Creates a local cluster on your machine. This is useful for testing purposes. This not should be necessary because `QuokkaContext` will automatically
@@ -132,7 +135,18 @@ class LocalCluster:
             self.flight_process = subprocess.Popen(["python3", flight_file], preexec_fn = preexec_function)
         except:
             raise Exception("Could not start flight server properly. Check if there is already something using port 5005, kill it if necessary. Use lsof -i:5005")
-        self.redis_process = subprocess.Popen(["redis-server" , pyquokka_loc + "redis.conf", "--port 6800", "--protected-mode no"], preexec_fn=preexec_function)
+
+        if 'docker_redis_enabled' in kwargs :
+            redis_host = "127.0.0.1"
+            redis_port = 6800
+            redis_instance = Redis(redis_host, port=redis_port, socket_connect_timeout=1)
+            try:
+                redis_instance.ping()
+            except:
+                raise Exception(f"Could not connect to local redis server at: {redis_host}:{redis_port}")
+        else:
+            self.redis_process = subprocess.Popen(["redis-server" , pyquokka_loc + "redis.conf", "--port 6800", "--protected-mode no"], preexec_fn=preexec_function)
+
         self.leader_public_ip = "localhost"
         self.leader_private_ip = ray.get_runtime_context().gcs_address.split(":")[0]
         self.public_ips = {0:"localhost"}
