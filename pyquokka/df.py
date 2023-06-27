@@ -62,7 +62,7 @@ class QuokkaContext:
 
         self.sql_config= {"optimize_joins" : True, "s3_csv_materialize_threshold" : 10 * 1048576, "disk_csv_materialize_threshold" : 1048576,
                       "s3_parquet_materialize_threshold" : 10 * 1048576, "disk_parquet_materialize_threshold" : 1048576}
-        self.exec_config = {"hbq_path": "/data/", "fault_tolerance": False, "memory_limit": 0.25, "max_pipeline_batches": 30, 
+        self.exec_config = {"hbq_path": "/data/", "fault_tolerance": False, "memory_limit": 0.1, "max_pipeline_batches": 30, 
                         "checkpoint_interval": None, "checkpoint_bucket": "quokka-checkpoint", "batch_attempt": 20, "max_pipeline": 3}
 
         self.latest_node_id = 0
@@ -410,7 +410,7 @@ class QuokkaContext:
         self.latest_node_id += 1
         return DataStream(self, schema, self.latest_node_id - 1)
 
-    def read_parquet(self, table_location: str):
+    def read_parquet(self, table_location: str, nthreads = 4, name_column = None):
 
         """
         Read Parquet. It can be a single Parquet or a list of Parquets. It can be Parquet(s) on disk
@@ -418,6 +418,9 @@ class QuokkaContext:
 
         Args:
             table_location (str): where the Parquet(s) are. This mostly mimics Spark behavior. Look at the examples.
+            nthreads (int): number of threads to use when reading Parquet(s). Default is 4.
+            name_column (str): this adds the option to add a column to the DataStream that represents the filename the row came from.
+                this is useful if each file is a category and you didn't also store the category name in the file.
 
         Return:
             DataStream.
@@ -470,7 +473,11 @@ class QuokkaContext:
                 assert len(files) > 0, "could not find any parquet files. make sure they end with .parquet"
                 if sum(sizes) < self.sql_config["s3_parquet_materialize_threshold"] and len(files) == 1:
                     df = polars.from_arrow(pq.read_table(files[0], filesystem = S3FileSystem()))
-                    return return_materialized_stream(df)
+                    if name_column is not None:
+                        assert name_column not in df.columns, "name_column already exists in Parquet columns"
+                        return return_materialized_stream(df.with_columns(polars.lit(files[0].split("/")[-1].replace(".parquet",""))).alias(name_column))
+                    else:
+                        return return_materialized_stream(df)
                 
                 try:
                     f = pq.ParquetFile(S3FileSystem().open_input_file(files[0]))
@@ -478,8 +485,11 @@ class QuokkaContext:
                 except:
                     raise Exception("schema discovery failed for Parquet dataset at location {}. Please raise Github issue.".format(table_location))
                 
+                if name_column is not None:
+                    assert name_column not in schema, "name_column already exists in Parquet columns"
+                    schema.append(name_column)
                 token = ray.get(self.catalog.register_s3_parquet_source.remote(files[0], len(sizes)))
-                self.nodes[self.latest_node_id] = InputS3ParquetNode(files, schema)
+                self.nodes[self.latest_node_id] = InputS3ParquetNode(files, schema, nthreads = nthreads, name_column = name_column)
                 self.nodes[self.latest_node_id].set_catalog_id(token)
             else:
                 try:
@@ -494,16 +504,25 @@ class QuokkaContext:
                 size = response['ContentLength']
                 if size < self.sql_config["s3_parquet_materialize_threshold"]:
                     df = polars.from_arrow(pq.read_table(table_location, filesystem = S3FileSystem()))
-                    return return_materialized_stream(df)
+                    if name_column is not None:
+                        assert name_column not in df.columns, "name_column already exists in Parquet columns"
+                        return return_materialized_stream(df.with_columns(polars.lit(key.split("/")[-1].replace(".parquet",""))).alias(name_column))
+                    else:
+                        return return_materialized_stream(df)
                 
                 token = ray.get(self.catalog.register_s3_parquet_source.remote(bucket + "/" + key, 1))
-                self.nodes[self.latest_node_id] = InputS3ParquetNode([table_location], schema)
+                if name_column is not None:
+                    assert name_column not in schema, "name_column already exists in Parquet columns"
+                    schema.append(name_column)
+                self.nodes[self.latest_node_id] = InputS3ParquetNode([table_location], schema, nthreads = nthreads, name_column = name_column)
                 self.nodes[self.latest_node_id].set_catalog_id(token)
 
             # self.nodes[self.latest_node_id].set_placement_strategy(CustomChannelsStrategy(2))
         else:
             if type(self.cluster) == EC2Cluster:
                 raise NotImplementedError("Does not support reading local dataset with S3 cluster. Must use S3 bucket.")
+            if name_column is not None:
+                raise NotImplementedError("Does not support name_column for local dataset yet.")
             
             if "*" in table_location:
                 table_location = table_location[:-1]
@@ -768,11 +787,12 @@ class QuokkaContext:
         self.latest_node_id += 1
         return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
 
-    def read_sorted_parquet(self, table_location: str, sorted_by: str, schema = None):
+    def read_sorted_parquet(self, table_location: str, sorted_by: str,  nthreads = 4, sort_order = "stride"):
         assert type(sorted_by) == str
-        stream = self.read_parquet(table_location)
+        assert sort_order in ["stride", "range"]
+        stream = self.read_parquet(table_location, nthreads = nthreads)
         assert sorted_by in stream.schema, f"sorted_by column {sorted_by} not in schema {stream.schema}"
-        return OrderedStream(stream, {sorted_by : "stride"})
+        return OrderedStream(stream, {sorted_by : sort_order})
     
     def read_sorted_csv(self, table_location: str,sorted_by: str, schema = None, has_header = False, sep=","):
         assert type(sorted_by) == str
@@ -851,8 +871,10 @@ class QuokkaContext:
                 partitioners[source], sqlglot.exp.TRUE, None, [])
 
         self.latest_node_id += 1
-
-        return DataStream(self, schema, self.latest_node_id - 1, sorted, materialized)
+        if sorted is None:
+            return DataStream(self, schema, self.latest_node_id - 1, sorted, materialized)
+        else:
+            return OrderedStream(DataStream(self, schema, self.latest_node_id - 1, sorted, materialized), sorted)
 
     '''
     This defines a dataset object which is used by the optimizer. 

@@ -318,12 +318,14 @@ class InputLanceNode(SourceNode):
         
 
 class InputS3ParquetNode(SourceNode):
-    def __init__(self, files, schema, predicate = None, projection = None) -> None:
+    def __init__(self, files, schema, predicate = None, projection = None, nthreads = 4, name_column = None) -> None:
         super().__init__(schema)
         
         self.files = files
         self.predicate = predicate
         self.projection = projection
+        self.nthreads = nthreads
+        self.name_column = name_column
 
     def set_cardinality(self, catalog):
 
@@ -339,9 +341,9 @@ class InputS3ParquetNode(SourceNode):
             assert len(self.output_sorted_reqs) == 1
             key = list(self.output_sorted_reqs.keys())[0]
             val = self.output_sorted_reqs[key]
-            parquet_reader = InputSortedEC2ParquetDataset(self.files, key, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate, mode=val)
+            parquet_reader = InputSortedEC2ParquetDataset(self.files, key, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate, mode=val, workers = self.nthreads, name_column=self.name_column)
         else:
-            parquet_reader = InputEC2ParquetDataset(self.files, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate)
+            parquet_reader = InputEC2ParquetDataset(self.files, columns = list(self.projection) if self.projection is not None else None, filters = self.predicate, workers = self.nthreads, name_column=self.name_column)
         node = task_graph.new_input_reader_node(parquet_reader, self.stage, self.placement_strategy)
         return node
     

@@ -13,7 +13,7 @@ class UDFExecutor:
     def execute(self,batches,stream_id, executor_id):
         batches = [i for i in batches if i is not None]
         if len(batches) > 0:
-            return self.udf(polars.concat(batches, rechunk=False))
+            return self.udf(polars.from_arrow(pa.concat_tables(batches)))
         else:
             return None
 

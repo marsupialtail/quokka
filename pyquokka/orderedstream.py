@@ -5,10 +5,10 @@ class OrderedStream(DataStream):
         super().__init__(datastream.quokka_context, datastream.schema, datastream.source_node_id, sorted_reqs, datastream.materialized)
     
     def __str__(self):
-        return "OrderedStream[" + ",".join(self.schema) + "] order by {}".format(self.sorted_reqs.keys())
+        return "OrderedStream[" + ",".join(self.schema) + "] order by {}".format(self.sorted)
 
     def __repr__(self):
-        return "OrderedStream[" + ",".join(self.schema) + "] order by {}".format(self.sorted_reqs.keys())
+        return "OrderedStream[" + ",".join(self.schema) + "] order by {}".format(self.sorted)
 
     def shift(self, n, by = None, fill_value=None):
         """
@@ -35,109 +35,67 @@ class OrderedStream(DataStream):
         )
     
     def pattern_recognize(self, anchors, duration_limits, partition_by = None):
+        raise Exception("Not implemented yet")
+    
+
+    def stateful_transform(self, executor: Executor, new_schema: list, required_columns: set,
+                           by = None, placement_strategy = CustomChannelsStrategy(1)):
 
         """
-        experimental API.
-        """
 
-        query = "select "
-        curr_alias = 0
-        for anchor in anchors:
-            assert type(anchor) == Expression or type(anchor) == str
-            if type(anchor) == Expression:
-                anchor = anchor.sql()
-            columns = set(i.name for i in anchor.find_all(
-            sqlglot.expressions.Column))
-            for column in columns:
-                assert column in self.schema, "Tried to define an anchor using a column not in the schema {}".format(column)
-            query += anchor + " as __anchor_{}, ".format(curr_alias)
-            curr_alias += 1
-            assert "__anchor_{}".format(curr_alias) not in self.schema, "Column called __anchor_{} already exists in the schema".format(curr_alias)
-        query = query[:-2] + " from batch_arrow"
+        **EXPERIMENTAL API** 
 
-        for duration_limit in duration_limits:
-            assert(type(duration_limit) == int or type(duration_limit) == float)
+        This is like `transform`, except you can use a stateful object as your transformation function. This is useful for example, if you want to run
+        a heavy Pytorch model on each batch coming in, and you don't want to reload this model for each function call. Remember the `transform` API only
+        supports stateless transformations. You could also implement much more complicated stateful transformations, like implementing your own aggregation
+        function if you are not satisfied with Quokka's default operator's performance.
 
-        duration_buffer = sum(duration_limits)
-        assert len(duration_limits) == len(anchors) - 1
+        This API is still being finalized. A version of it that takes multiple input streams is also going to be added. This is the part of the DataStream level 
+        api that is closest to the underlying execution engine. Quokka's underlying execution engine basically executes a series of stateful transformations
+        on batches of data. The difficulty here is how much of that underlying API to expose here so it's still useful without the user having to understand 
+        how the Quokka runtime works. To that end, we have to come up with suitable partitioner and placement strategy abstraction classes and interfaces.
 
-        class CEPExecutor(Executor):
-            def __init__(self) -> None:
-                import ldbpy
-                self.state = None
-                self.cep = ldbpy.CEP(duration_limits)
-                self.con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
-                self.num_anchors = len(anchors)
+        If you are interested in helping us hammer out this API, please talke to me: zihengw@stanford.edu.
 
-            def execute(self,batches,stream_id, executor_id):
-                from pyarrow.cffi import ffi
-                os.environ["OMP_NUM_THREADS"] = "8"
-         
-                arrow_batch = pa.concat_tables(batches)
-                # you can only process up to the duration_buffer, the rest needs to be cached
-                if self.state is not None:
-                    arrow_batch = pa.concat_tables([self.state, arrow_batch])
-                
-                if len(arrow_batch) > duration_buffer:
-                    self.state = arrow_batch[-duration_buffer:]
-                    arrow_batch = arrow_batch[: -duration_buffer]
-                else:
-                    self.state = arrow_batch
-                    return
-            
-                result = polars.from_arrow(self.con.execute(query).arrow())
-                array_ptrs = []
-                schema_ptrs = []
-                c_schemas = []
-                c_arrays = []
-                list_of_arrs = []
-                for anchor in range(self.num_anchors):
-                    index = result.select(polars.arg_where(polars.col("__anchor_{}".format(anchor))))
-                    list_of_arrs.append(index.to_arrow()["__anchor_{}".format(anchor)].combine_chunks())
-                    c_schema = ffi.new("struct ArrowSchema*")
-                    c_array = ffi.new("struct ArrowArray*")
-                    c_schemas.append(c_schema)
-                    c_arrays.append(c_array)
-                    schema_ptr = int(ffi.cast("uintptr_t", c_schema))
-                    array_ptr = int(ffi.cast("uintptr_t", c_array))
-                    list_of_arrs[-1]._export_to_c(array_ptr, schema_ptr)
-                    array_ptrs.append(array_ptr)
-                    schema_ptrs.append(schema_ptr)
+        Args:
+            executor (pyquokka.executors.Executor): The stateful executor. It must be a subclass of `pyquokka.executors.Executor`, and expose the `execute` 
+                and `done` functions. More details forthcoming.
+            new_schema (list): The names of the columns of the Polars DataFrame that the transformation function produces. 
+            required_columns (list or set): The names of the columns that are required for this transformation. This argument is made mandatory
+                because it's often trivial to supply and can often greatly speed things up.
 
-                result = self.cep.do_arrow_batch(array_ptrs, schema_ptrs)
-                del c_schemas
-                del c_arrays
-                # print("TIME", time.time() - start)
-                
-            def done(self,executor_id):
-                from pyarrow.cffi import ffi
-                if self.state is None:
-                    return 
-
-                arrow_batch = self.state
-                self.state = None
-                result = polars.from_arrow(self.con.execute(query).arrow())
-                array_ptrs = []
-                schema_ptrs = []
-                c_schemas = []
-                c_arrays = []
-                list_of_arrs = []
-                for anchor in range(self.num_anchors):
-                    index = result.select(polars.arg_where(polars.col("__anchor_{}".format(anchor))))
-                    list_of_arrs.append(index.to_arrow()["__anchor_{}".format(anchor)].combine_chunks())
-                    c_schema = ffi.new("struct ArrowSchema*")
-                    c_array = ffi.new("struct ArrowArray*")
-                    c_schemas.append(c_schema)
-                    c_arrays.append(c_array)
-                    schema_ptr = int(ffi.cast("uintptr_t", c_schema))
-                    array_ptr = int(ffi.cast("uintptr_t", c_array))
-                    list_of_arrs[-1]._export_to_c(array_ptr, schema_ptr)
-                    array_ptrs.append(array_ptr)
-                    schema_ptrs.append(schema_ptr)
-
-                result = self.cep.do_arrow_batch(array_ptrs, schema_ptrs)
-
+        Return:
+            A transformed DataStream.
         
+        Examples:
+            Check the code for the `gramian` function.
+        """
+        if type(required_columns) == list:
+            required_columns = set(required_columns)
+        assert type(required_columns) == set
+        assert issubclass(type(executor), Executor), "user defined executor must be an instance of a \
+            child class of the Executor class defined in pyquokka.executors. You must override the execute and done methods."
+
+        select_stream = self.select(required_columns)
+
+        custom_node = StatefulNode(
+            schema=new_schema,
+            # cannot push through any predicates or projections!
+            schema_mapping={col: {-1: col} for col in new_schema},
+            required_columns={0: required_columns},
+            operator=executor,
+            assume_sorted={0:True}
+        )
+
+        custom_node.set_placement_strategy(placement_strategy)
+
+        return self.quokka_context.new_stream(
+            sources={0: select_stream},
+            partitioners={0: PassThroughPartitioner() if by is None else HashPartitioner(by)},
+            node=custom_node,
+            schema=new_schema,
+            
+        )
 
     def join_asof(self, right, on=None, left_on=None, right_on=None, by=None, left_by = None, right_by = None, suffix="_2"):
 

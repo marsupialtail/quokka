@@ -1,147 +1,102 @@
-import pyarrow as pa
-import pyarrow.csv as csv
-import pyarrow.parquet as pq
-import pyarrow.dataset as ds
-import json
-import pyarrow.json as pajson
-from io import BytesIO
-import boto3
-import os
-import redis
-from collections import deque
-import polars
-import gc
-from pyarrow.fs import S3FileSystem, LocalFileSystem
-from pyarrow.dataset import FileSystemDataset, ParquetFileFormat
-from pyquokka.sql_utils import filters_to_expression
-import multiprocessing
-import concurrent.futures
-import time
-import warnings
-import random
-import ray
-import math
-import asyncio
-import numpy as np
+from pyquokka.dataset.base_dataset import *
 
-# computes the overlap of two intervals (a1, a2) and (b1, b2)
-def overlap(a, b):
-    return max(-1, min(a[1], b[1]) - max(a[0], b[0]))
+class InputEC2ParquetDataset:
 
-# this is actually fault tolerant, since the dataframe is pickled and stored in Redis
-# this is obviously not efficient in a cloud environment, but the intended use is for local development anyways
-class InputPolarsDataset:
+    # filter pushdown could be profitable in the future, especially when you can skip entire Parquet files
+    # but when you can't it seems like you still read in the entire thing anyways
+    # might as well do the filtering at the Pandas step. Also you need to map filters to the DNF form of tuples, which could be
+    # an interesting project in itself. Time for an intern?
 
-    def __init__(self, df):
-        self.df = df
+    def __init__(self, files = None, columns=None, filters=None, workers = 4, name_column = None) -> None:
+
+        self.files = files
+
+        self.num_channels = None
+        self.columns = columns
+        self.filters = filters
+
+        self.length = 0
+        self.workers = workers
+
+        self.s3 = None
+        self.iterator = None
+        self.count = 0
+
+        # the uniqueness constraint of name_column is deferred to higher levels of the stack
+        self.name_column = name_column
+        if self.name_column is not None and self.columns is not None and self.name_column in self.columns:
+            self.columns.remove(self.name_column)
 
     def get_own_state(self, num_channels):
-        assert num_channels == 1
-        return {0: [0]}
-
-    def execute(self, mapper_id, state=None):
-        return None, self.df
-
-# this is the only non fault tolerant operator here. This is because the Ray object store is not fault tolerant and not replayable.
-class InputRayDataset:
-
-    # objects_dict is a dictionary of IP address to a list of Ray object references
-    def __init__(self, objects_dict):
-        self.objects_dict = objects_dict
-
-    def execute(self, mapper_id, state=None):
-        # state will be a tuple of IP, index
-        try:
-            # print("Getting object from {} at index {}.".format(state[0], state[1]), self.objects_dict[state[0]][state[1]])
-            result = ray.get(ray.cloudpickle.loads(self.objects_dict[state[0]][state[1]]), timeout=10)
-            # print(result)
-        except:
-            raise Exception("Unable to get object from {} at index {}.".format(state[0], state[1]))
-        
-        return None, result
-
-# this dataset will generate a sequence of numbers, from 0 to limit. 
-class InputRestGetAPIDataset:
-    def __init__(self, url, arguments, headers, projection, batch_size = 10000) -> None:
-        
-        self.url = url
-        self.headers = headers
-        self.arguments = arguments
-        self.projection = projection
-
-        # how many requests each execute will fetch.
-        self.batch_size = batch_size
-
-    def get_own_state(self, num_channels):
-        channel_info = {}
-
-        # stride the arguments across the channels in chunks of batch_size
+        self.num_channels = num_channels
+        self.files = [i.replace("s3://", "") for i in self.files]
+        channel_infos = {}
         for channel in range(num_channels):
-            channel_info[channel] = [(i, i+self.batch_size) for i in range(channel * self.batch_size, len(self.arguments), num_channels*self.batch_size)]
-        print(channel_info)
-        return channel_info
+            my_files = [self.files[k] for k in range(channel, len(self.files), self.num_channels)]
+            channel_infos[channel] = []
+            for pos in range(0, len(my_files), self.workers):
+                channel_infos[channel].append( my_files[pos : pos + self.workers])
+        return channel_infos
 
-    def execute(self, channel, state = None):
-        import aiohttp
-        async def get(url, session):
-            try:
-                async with session.get(url=self.url + url, headers = self.headers) as response:
-                    resp = await response.json()
-                    for projection in self.projection:
-                        if projection not in resp:
-                            resp[projection] = None
-                    return resp
-            except Exception as e:
-                print("Unable to get url {} due to {}.".format(url, e.__class__))
 
-        async def main(urls):
-            async with aiohttp.ClientSession() as session:
-                ret = await asyncio.gather(*[get(url, session) for url in urls])
-            return ret
+    def execute(self, mapper_id, files_to_do=None):
 
-        results = asyncio.run(main(self.arguments[state[0]: state[1]]))
-        # find the first non-None result
-        results = [i for i in results if i is not None] 
+        if self.s3 is None:
+            self.s3 = S3FileSystem()
+            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
 
-        return None, polars.from_records(results).select(self.projection)
+        def download(file):
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                result = pq.read_table( file, columns=self.columns, filters=self.filters, use_threads= True, filesystem = self.s3)
+                if self.name_column is not None:
+                    result = result.append_column(self.name_column, pa.array([file.split("/")[-1].replace(".parquet","")] * len(result)))
+                return result
 
-class InputRestPostAPIDataset:
-    def __init__(self, url, arguments, headers, projection, batch_size = 1000) -> None:
+        assert self.num_channels is not None
+
+        if files_to_do is None:
+            raise Exception("dynamic lineage for inputs not supported anymore")
+
+        if len(files_to_do) == 0:
+            return None, None
         
-        self.url = url
-        self.headers = headers
-        self.arguments = arguments
-        self.projection = projection
-        self.batch_size = batch_size
+        # this will return things out of order, but that's ok!
+
+        future_to_url = {self.executor.submit(download, file): file for file in files_to_do}
+        dfs = []
+        for future in concurrent.futures.as_completed(future_to_url):
+            dfs.append(future.result())
+        
+        return None, pa.concat_tables(dfs)
+
+class InputParquetDataset:
+
+    def __init__(self, filename, columns=None, filters = None) -> None:
+
+        self.filename = filename
+        self.num_channels = None
+        self.columns = columns
+        if filters is not None:
+            if type(filters) == list:
+                self.filters = filters_to_expression(filters)
+            elif type(filters) == ds.Expression:
+                self.filters = filters
+            else:
+                raise Exception("cannot understand filters format.")
+        else:
+            self.filters = None
+        
+        self.parquet_file = None
 
     def get_own_state(self, num_channels):
-        channel_info = {}
-
-        # stride the arguments across the channels in chunks of batch_size
-        for channel in range(num_channels):
-            channel_info[channel] = [(i, i+self.batch_size) for i in range(channel * self.batch_size, len(self.arguments), num_channels*self.batch_size)]
-        print(channel_info)
-        return channel_info
-
-    def execute(self, channel, state = None):
-        import aiohttp
-        async def get(data, session):
-            try:
-                async with session.post(url=self.url, data = json.dumps(data), headers = self.headers) as response:
-                    resp = await response.json()
-                    return polars.from_records(resp['result'])
-            except Exception as e:
-                print("Unable to post url {} payload {} headers {} due to {}.".format(self.url, json.dumps(data), json.dumps(self.headers), e.__class__))
-
-        async def main(datas):
-            async with aiohttp.ClientSession() as session:
-                ret = await asyncio.gather(*[get(data, session) for data in datas])
-            return ret
         
-        results = asyncio.run(main(self.arguments[state[0]: state[1]]))
-        # find the first non-None result
-        results = polars.concat([i for i in results if i is not None]).select(self.projection)
-        return None, results
+        return {0 : [self.filename]}
+
+    def execute(self, mapper_id, filename = None):
+        
+        dataset = ds.dataset(filename)
+        return None, dataset.to_table(filter= self.filters,columns=self.columns )
 
 class InputLanceDataset:
 
@@ -245,321 +200,7 @@ class InputLanceDataset:
         
         return None, result
         
-class InputEC2ParquetDataset:
 
-    # filter pushdown could be profitable in the future, especially when you can skip entire Parquet files
-    # but when you can't it seems like you still read in the entire thing anyways
-    # might as well do the filtering at the Pandas step. Also you need to map filters to the DNF form of tuples, which could be
-    # an interesting project in itself. Time for an intern?
-
-    def __init__(self, files = None, columns=None, filters=None) -> None:
-
-        self.files = files
-
-        self.num_channels = None
-        self.columns = columns
-        self.filters = filters
-
-        self.length = 0
-        self.workers = 4
-
-        self.s3 = None
-        self.iterator = None
-        self.count = 0
-
-    def get_own_state(self, num_channels):
-        self.num_channels = num_channels
-        self.files = [i.replace("s3://", "") for i in self.files]
-        channel_infos = {}
-        for channel in range(num_channels):
-            my_files = [self.files[k] for k in range(channel, len(self.files), self.num_channels)]
-            channel_infos[channel] = []
-            for pos in range(0, len(my_files), self.workers):
-                channel_infos[channel].append( my_files[pos : pos + self.workers])
-        return channel_infos
-
-
-    def execute(self, mapper_id, files_to_do=None):
-
-        if self.s3 is None:
-            self.s3 = S3FileSystem()
-            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
-
-        def download(file):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                if self.columns is not None:
-                    return pq.read_table( file, columns=self.columns, filters=self.filters, use_threads= True, filesystem = self.s3)
-                else:
-                    return pq.read_table( file, filters=self.filters, use_threads= True, filesystem = self.s3)
-
-        assert self.num_channels is not None
-
-        if files_to_do is None:
-            raise Exception("dynamic lineage for inputs not supported anymore")
-
-        if len(files_to_do) == 0:
-            return None, None
-        
-        # this will return things out of order, but that's ok!
-
-        future_to_url = {self.executor.submit(download, file): file for file in files_to_do}
-        dfs = []
-        for future in concurrent.futures.as_completed(future_to_url):
-            dfs.append(future.result())
-        
-        return None, pa.concat_tables(dfs)
-
-
-class InputSortedEC2ParquetDataset:
-
-    def __init__(self, files, partitioner, columns=None, filters=None, mode = "stride") -> None:
-
-        self.files = files
-        self.partitioner = partitioner
-
-        self.num_channels = None
-        self.columns = columns
-        self.filters = filters
-
-        self.length = 0
-        self.workers = 1
-
-        self.s3 = None
-        self.iterator = None
-        self.count = 0
-        self.bounds = None
-
-        assert mode in ["stride", "range"]
-        self.mode = mode
-
-    def _get_bounds(self, num_channels):
-        
-        channel_infos = {}
-        fragments = []
-        self.num_channels = num_channels
-        s3fs = S3FileSystem()
-        dataset = ds.dataset(self.files, format = "parquet", filesystem=s3fs )
-        for fragment in dataset.get_fragments():
-            field_index = fragment.physical_schema.get_field_index(self.partitioner)
-            metadata = fragment.metadata
-            min_timestamp = None
-            max_timestamp = None
-            for row_group_index in range(metadata.num_row_groups):
-                stats = metadata.row_group(row_group_index).column(field_index).statistics
-                # Parquet files can be created without statistics
-                if stats is None:
-                    raise Exception("Copartitioned Parquet files must have statistics!")
-                row_group_max = stats.max
-                row_group_min = stats.min
-                if max_timestamp is None or row_group_max > max_timestamp:
-                    max_timestamp = row_group_max
-                if min_timestamp is None or row_group_min < min_timestamp:
-                    min_timestamp = row_group_min
-            assert min_timestamp is not None and max_timestamp is not None 
-            fragments.append((fragment.path, min_timestamp, max_timestamp))
-            
-        fragments = sorted(fragments, key = lambda x: x[1])
-        for k in range(1, len(fragments)):
-            assert overlap([fragments[k-1][1], fragments[k-1][2]], [fragments[k][1], fragments[k][2]]) <= 0, \
-                "positive overlap, data is not sorted!"
-
-        fragments_per_channel = math.ceil(len(fragments) / num_channels)
-
-        if self.mode == "range":
-            channel_bounds = {}
-            for channel in range(num_channels):
-                channel_infos[channel] = fragments[channel * fragments_per_channel : channel * fragments_per_channel + fragments_per_channel]
-                channel_bounds[channel] = (channel_infos[channel][0][1], channel_infos[channel][-1][-1])
-
-            self.bounds = channel_infos
-            return channel_bounds
-        elif self.mode == "stride":
-            for channel in range(num_channels):
-                channel_infos[channel] = []
-                for k in range(channel * self.workers, len(fragments), num_channels * self.workers):
-                    for j in range(self.workers):
-                        if k + j < len(fragments):
-                            channel_infos[channel].append(fragments[k + j])
-            self.bounds = channel_infos
-            return {}
-    
-    def get_own_state(self, num_channels):
-
-        channel_bounds = self._get_bounds(num_channels)
-        self.channel_bounds = channel_bounds
-
-        assert self.bounds is not None
-        channel_infos = {}
-        for channel in self.bounds:
-            my_files = [k[0] for k in self.bounds[channel]]
-            channel_infos[channel] = []
-            for pos in range(0, len(my_files), self.workers):
-                channel_infos[channel].append( my_files[pos : pos + self.workers])
-        
-        del self.bounds
-        return channel_infos
-
-    def execute(self, mapper_id, files_to_do=None):
-
-        if self.s3 is None:
-            self.s3 = S3FileSystem()
-            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
-
-        def download(file):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                return pq.read_table(file, columns=self.columns, filters=self.filters, use_threads= False, filesystem = self.s3)
-
-        assert self.num_channels is not None
-
-        if files_to_do is None:
-            raise Exception("dynamic lineage for inputs not supported anymore")
-
-        if len(files_to_do) == 0:
-            return None, None
-        
-        # we must not return things out of order
-
-        future_to_url = {self.executor.submit(download, files_to_do[i]): i for i in range(len(files_to_do))}
-        dfs = []
-        for future in concurrent.futures.as_completed(future_to_url):
-            dfs.append((future.result(), future_to_url[future]))
-        
-        sorted_dfs = sorted(dfs, key = lambda x: x[1])
-        
-        return None, pa.concat_tables([k[0] for k in sorted_dfs])
-
-class InputEC2CoPartitionedSortedParquetDataset:
-
-    def __init__(self, bucket, prefix, partitioner, columns=None, filters=None) -> None:
-
-        self.bucket = bucket
-        self.prefix = prefix
-        self.partitioner = partitioner
-        assert self.prefix is not None
-
-        self.num_channels = None
-        self.columns = columns
-        self.filters = filters
-
-        self.length = 0
-        self.workers = 4
-
-        self.s3 = None
-        self.iterator = None
-        self.count = 0
-        self.bounds = None
-
-    def get_bounds(self, num_channels, channel_bounds):
-
-        def overlap(a, b):
-            return max(-1, min(a[1], b[1]) - max(a[0], b[0]))
-        
-        channel_infos = {channel: [] for channel in channel_bounds}
-        assert len(channel_bounds) == num_channels, "must provide bounds for all the channel"
-        self.num_channels = num_channels
-        s3fs = S3FileSystem()
-        dataset = ds.dataset(self.bucket + "/" + self.prefix, format = "parquet", filesystem=s3fs )
-        for fragment in dataset.get_fragments():
-            field_index = fragment.physical_schema.get_field_index(self.partitioner)
-            metadata = fragment.metadata
-            min_timestamp = None
-            max_timestamp = None
-            for row_group_index in range(metadata.num_row_groups):
-                stats = metadata.row_group(row_group_index).column(field_index).statistics
-                # Parquet files can be created without statistics
-                if stats is None:
-                    raise Exception("Copartitioned Parquet files must have statistics!")
-                row_group_max = stats.max
-                row_group_min = stats.min
-                if max_timestamp is None or row_group_max > max_timestamp:
-                    max_timestamp = row_group_max
-                if min_timestamp is None or row_group_min < min_timestamp:
-                    min_timestamp = row_group_min
-            assert min_timestamp is not None and max_timestamp is not None 
-
-            # find which channel you belong. This is inclusive interval intersection.
-            for channel in channel_bounds:
-                if overlap([min_timestamp, max_timestamp], channel_bounds[channel]) >= 0:
-                    channel_infos[channel].append((fragment.path, min_timestamp, max_timestamp))
-            
-        for channel in channel_infos:
-            channel_infos[channel] = sorted(channel_infos[channel], key = lambda x : x[1])
-            for k in range(1, len(channel_infos[channel])):
-                assert overlap([channel_infos[channel][k-1][1], channel_infos[channel][k-1][2]], \
-                    [channel_infos[channel][k][1], channel_infos[channel][k][2]]) <= 0, "positive overlap, data is not sorted!"
-        
-        self.bounds = channel_infos
-    
-    def get_own_state(self, num_channels):
-
-        assert self.bounds is not None
-        channel_infos = {}
-        for channel in self.bounds:
-            my_files = [k[0] for k in self.bounds[channel]]
-            channel_infos[channel] = []
-            for pos in range(0, len(my_files), self.workers):
-                channel_infos[channel].append( my_files[pos : pos + self.workers])
-        
-        del self.bounds
-        return channel_infos
-    
-    def execute(self, mapper_id, files_to_do=None):
-
-        if self.s3 is None:
-            self.s3 = S3FileSystem()
-            self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.workers)
-
-        def download(file):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                return pq.read_table(file, columns=self.columns, filters=self.filters, use_threads= False, use_legacy_dataset = True, filesystem = self.s3)
-
-        assert self.num_channels is not None
-
-        if files_to_do is None:
-            raise Exception("dynamic lineage for inputs not supported anymore")
-
-        if len(files_to_do) == 0:
-            return None, None
-        
-        # this will return things out of order, but that's ok!
-
-        future_to_url = {self.executor.submit(download, file): file for file in files_to_do}
-        dfs = []
-        for future in concurrent.futures.as_completed(future_to_url):
-            dfs.append(future.result())
-        
-        return None, pa.concat_tables(dfs)
-
-class InputParquetDataset:
-
-    def __init__(self, filename, columns=None, filters = None) -> None:
-
-        self.filename = filename
-        self.num_channels = None
-        self.columns = columns
-        if filters is not None:
-            if type(filters) == list:
-                self.filters = filters_to_expression(filters)
-            elif type(filters) == ds.Expression:
-                self.filters = filters
-            else:
-                raise Exception("cannot understand filters format.")
-        else:
-            self.filters = None
-        
-        self.parquet_file = None
-
-    def get_own_state(self, num_channels):
-        
-        return {0 : [self.filename]}
-
-    def execute(self, mapper_id, filename = None):
-        
-        dataset = ds.dataset(filename)
-        return None, dataset.to_table(filter= self.filters,columns=self.columns )
 
 # this works for a directoy of objects.
 class InputS3FilesDataset:
@@ -1001,7 +642,6 @@ class FakeFile:
     def seek(self):
         raise NotImplementedError
 
-# this should work for 1 CSV up to multiple
 # this should work for 1 CSV up to multiple
 class InputS3CSVDataset:
     def __init__(self, bucket, names = None, prefix = None, key = None, sep=",", stride=2e8, header = False, window = 1024 * 4, columns = None, sort_info = None) -> None:
