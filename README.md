@@ -1,34 +1,51 @@
+<div align="center">
 <p align="center">
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/quokka-banner.png?raw=true" alt="Title"/>
-</p>
 
-<div align="center">
+**Distributed, fault-tolerant, fast time-series feature engine for trillions of events.<br/>**
+**Built on Python with DuckDB, Polars, Ray, Arrow, Redis and SQLGlot. Understands CSV, Parquet, Lance, Iceberg, Delta (WIP).**
 
-[![Join Discord](https://img.shields.io/badge/-Join%20Quokka%20Discord-blue?logo=discord)](https://discord.gg/6ujVV9HAg3)
+<a href="https://discord.gg/6ujVV9HAg3" style="display:inline-block;">
+    <img src="https://img.shields.io/badge/-Join%20Quokka%20Discord-blue?logo=discord" alt="Join Discord" height="30px"/>
+</a>
 <a href="https://marsupialtail.github.io/quokka/">
-    <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/badge.svg" alt="rust docs"/>
+    <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/badge.svg" alt="rust docs" height="30px"/>
 </a>
 <a href="https://pypi.org/project/pyquokka/">
-    <img src="https://img.shields.io/pypi/v/pyquokka.svg" alt="PyPi Latest Release"/>
+    <img src="https://img.shields.io/pypi/v/pyquokka.svg" alt="PyPi Latest Release" height="30px"/>
 </a>
-
+</p>
 </div>
 
-If you like what you see, please give us a star! 🙏 
+If you would like to support Quokka, please give us a star! 🙏 
 
-## What?
+## Showcases
 
-Quokka is an **open-source push-based vectorized query engine**. Inspired by recent high performance database designs at Snowflake, DuckDB and SingleStore etc., it is meant to be much more performant than blocking-shuffle based alternatives like SparkSQL. On test TPC-H queries, Quokka currently is often several times faster than open-source SparkSQL and an order of magnitude faster than Dask. 
+* **Tick-level backtesting:** backtest a trading strategy against SIP trade stream for the last five years in 10 minutes.
+
+* **Vector embedding analytics:** easily add new input readers in Python.
+
+* **Approximate quantiles for 10000 columns:** easily integrate with Arrow-compatible C++ Plugins.
+
+* **TPC-H:** Several times faster than SparkSQL in many TPC-H queries. (EMR, not DBR!)
 
 <p align="center">
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/tpch-parquet.svg?raw=true" alt="Title"/>
 </p>
 
+## What is Quokka?
+
+In technical terms, Quokka is a push-based distributed query engine with lineage-based fault tolerance.
+
+In practical terms, Quokka is a tool for you to run custom stateful and windowed computation over terabytes of historical time series data.
+
+Inspired by recent high performance database designs at Snowflake, DuckDB and SingleStore etc., it is meant to be much more performant than blocking-shuffle based alternatives like SparkSQL. On test TPC-H queries, Quokka currently is often several times faster than open-source SparkSQL and an order of magnitude faster than Dask. 
+
 Unlike most other database engines, Quokka is implemented completely in Python and is meant to be easily extensible for new operations and use cases, e.g. time series analytics and feature engineering. 
 
 Quokka operates on DataStreams, which are basically Spark RDDs except data partitions can be produced serially. A data partition can be consumed immediately after it's produced, unlike Spark where all the partitions have to be present in the RDD before the shuffle happens. This allows Quokka to pipeline multiple shuffles and I/O, leading to large performance gains.
 
-## How?
+## Install Quokka
 
 Quokka requires Redis > 6.2. You can install latest Redis using: 
 
