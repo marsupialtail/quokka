@@ -2,7 +2,7 @@
 <p align="center">
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/quokka-banner.png?raw=true" alt="Title"/>
 
-**Distributed, fault-tolerant, fast time-series feature engine for trillions of events.<br/>**
+**Distributed, fault-tolerant, fast time-series processing engine for trillions of events.<br/>**
 **Built on Python with DuckDB, Polars, Ray, Arrow, Redis and SQLGlot. Understands CSV, Parquet, Lance, Iceberg, Delta (WIP).**
 
 <a href="https://discord.gg/6ujVV9HAg3" style="display:inline-block;">
