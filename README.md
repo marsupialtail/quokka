@@ -40,7 +40,7 @@ If you would like to support Quokka, please give us a star! 🙏
 
 In technical terms, Quokka is a push-based distributed query engine with lineage-based fault tolerance.
 
-In practical terms, Quokka is a tool for you to run custom stateful and windowed computation over terabytes of historical time series data.
+In practical terms, Quokka is a tool for you to run **custom stateful and windowed computation over terabytes of historical time series data**.
 
 Inspired by recent high performance database designs at Snowflake, DuckDB and SingleStore etc., it is meant to be much more performant than blocking-shuffle based alternatives like SparkSQL. On test TPC-H queries, Quokka currently is often several times faster than open-source SparkSQL and an order of magnitude faster than Dask. 
 
