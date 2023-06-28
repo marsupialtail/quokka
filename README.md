@@ -23,7 +23,7 @@ If you would like to support Quokka, please give us a star! 🙏
 
 * **Tick-level backtesting:** backtest a trading strategy against SIP trade stream for the last five years in 10 minutes.
 
-* **Vector embedding analytics:** easily add new input readers in Python.
+* **Vector embedding analytics:** easily add new input readers in Python, like for the [Lance](https://github.com/lancedb/lance) format.
 
 * **Approximate quantiles for 10000 columns:** easily integrate with Arrow-compatible C++ Plugins.
 
@@ -32,6 +32,8 @@ If you would like to support Quokka, please give us a star! 🙏
 <p align="center">
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/tpch-parquet.svg?raw=true" alt="Title"/>
 </p>
+
+* **Detect iceberg orders in quote stream (upcoming): ** use complex event processing to easily detect iceberg order in the MBO stream.
 
 ## What is Quokka?
 
