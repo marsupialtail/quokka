@@ -33,7 +33,7 @@ If you would like to support Quokka, please give us a star! 🙏
   <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/tpch-parquet.svg?raw=true" alt="Title"/>
 </p>
 
-* **Detect iceberg orders in quote stream (upcoming): ** use complex event processing to easily detect iceberg order in the MBO stream.
+* **Detect iceberg orders in quote stream (upcoming):** use complex event processing to easily detect iceberg order in the MBO stream.
 
 ## What is Quokka?
 
