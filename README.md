@@ -38,17 +38,15 @@ If you would like to support Quokka, please give us a star! 🙏
 
 ## What is Quokka?
 
-In technical terms, Quokka is a push-based distributed query engine with lineage-based fault tolerance.
+In technical terms, Quokka is a **push-based distributed query engine with lineage-based fault tolerance**.
 
-In practical terms, Quokka is a tool for you to run **custom stateful and windowed computation over terabytes of historical time series data**.
+In practical terms, Quokka is a tool for you to run **custom stateful and windowed computation over terabytes of historical time series data**. It supports regular SQL like filter, selection and joins with relational optimizations like predicate pushdown, early selection and join reordering, but truly excels on time series workloads like complicated windows, asof/range joins, complex pattern recognition (SPL transactions, EQL sequence, SQL Match_Recognize) and custom stateful computations like building a limit order book or testing online learning strategies.
 
-Inspired by recent high performance database designs at Snowflake, DuckDB and SingleStore etc., it is meant to be much more performant than blocking-shuffle based alternatives like SparkSQL. On test TPC-H queries, Quokka currently is often several times faster than open-source SparkSQL and an order of magnitude faster than Dask. 
-
-Unlike most other database engines, Quokka is implemented completely in Python and is meant to be easily extensible for new operations and use cases, e.g. time series analytics and feature engineering. 
+Unlike most other query engines, Quokka is implemented completely in Python and is meant to be easily extensible for new operations and use cases, e.g. time series analytics and feature engineering. It is truly simple to extend, because *all* you have to do is raise a Github issue and more likely than not I'll write the operator for you.
 
 Quokka operates on DataStreams, which are basically Spark RDDs except data partitions can be produced serially. A data partition can be consumed immediately after it's produced, unlike Spark where all the partitions have to be present in the RDD before the shuffle happens. This allows Quokka to pipeline multiple shuffles and I/O, leading to large performance gains.
 
-## Install Quokka
+## Quick Start
 
 Quokka requires Redis > 6.2. You can install latest Redis using: 
 
@@ -66,7 +64,58 @@ pip3 install pyquokka
 ~~~
 **Docs**: https://marsupialtail.github.io/quokka/
 
-Quokka offers a DataStream API that resembles Spark's DataFrame API:
+Quokka offers a DataStream API that resembles Spark's DataFrame API. You can create a DataStream from a Polars Dataframe easily for local testing. 
+
+~~~python
+>>> from pyquokka import QuokkaContext
+>>> qc = QuokkaContext()
+>>> import polars
+>>> a = polars.from_dict({"a":[1,1,2,2], "b":['{"my_field": "quack"}','{"my_field": "quack"}','{"my_field": "quack"}','{"my_field": "quack"}']})
+>>> a
+shape: (4, 2)
+┌─────┬───────────────────────┐
+│ a   ┆ b                     │
+│ --- ┆ ---                   │
+│ i64 ┆ str                   │
+╞═════╪═══════════════════════╡
+│ 1   ┆ {"my_field": "quack"} │
+│ 1   ┆ {"my_field": "quack"} │
+│ 2   ┆ {"my_field": "quack"} │
+│ 2   ┆ {"my_field": "quack"} │
+└─────┴───────────────────────┘
+>>> b = qc.from_polars(a)
+>>> b
+DataStream[a,b]
+
+# DataStreams are lazy, you must call collect to get the values, like a Polars LazyFrame or Spark DataFrame.
+>>> b.collect()
+shape: (4, 2)
+┌─────┬───────────────────────┐
+│ a   ┆ b                     │
+│ --- ┆ ---                   │
+│ i64 ┆ str                   │
+╞═════╪═══════════════════════╡
+│ 1   ┆ {"my_field": "quack"} │
+│ 1   ┆ {"my_field": "quack"} │
+│ 2   ┆ {"my_field": "quack"} │
+│ 2   ┆ {"my_field": "quack"} │
+└─────┴───────────────────────┘
+
+# Quokka supports filtering by a SQL statement directly
+>>> b.filter_sql("a==1").collect()
+shape: (2, 2)
+┌─────┬───────────────────────┐
+│ a   ┆ b                     │
+│ --- ┆ ---                   │
+│ i64 ┆ str                   │
+╞═════╪═══════════════════════╡
+│ 1   ┆ {"my_field": "quack"} │
+│ 1   ┆ {"my_field": "quack"} │
+└─────┴───────────────────────┘
+
+~~~
+
+Currently Quokka supports reading data from CSV/Parquet on disk/S3, Apache Iceberg through AWS Glue and Ray Datasets, though theoretically any data source can be supported: Delta Lake/Hudi, S3 bucket of images, transactional database CDC endpoints etc. If you have some esoteric data source that you want to run analytics on, please send me a challenge as a Github issue, or better yet make a pull request. The following code showcases some more of Quokka's APIs.
 
 ~~~python
 >>> lineitem = qc.read_parquet(s3_path_parquet + "lineitem.parquet/*")
@@ -81,8 +130,6 @@ Quokka offers a DataStream API that resembles Spark's DataFrame API:
 >>> d = d.compute()
 >>> dataset = d.to_ray_dataset()
 ~~~
-
-Currently Quokka supports reading data from CSV/Parquet on disk/S3 and Apache Iceberg through Glue, though theoretically any data source can be supported: Delta Lake/Hudi, S3 bucket of images, transactional database CDC endpoints etc. If you have some esoteric data source that you want to run analytics on, please send me a challenge as a Github issue, or better yet make a pull request.
 
 ## Fineprint
 
