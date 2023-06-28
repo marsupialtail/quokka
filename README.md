@@ -6,13 +6,13 @@
 **Built on Python with DuckDB, Polars, Ray, Arrow, Redis and SQLGlot. Understands CSV, Parquet, Lance, Iceberg, Delta (WIP).**
 
 <a href="https://discord.gg/6ujVV9HAg3" style="display:inline-block;">
-    <img src="https://img.shields.io/badge/-Join%20Quokka%20Discord-blue?logo=discord" alt="Join Discord" height="30px"/>
+    <img src="https://img.shields.io/badge/-Join%20Quokka%20Discord-blue?logo=discord" alt="Join Discord" height="25px"/>
 </a>
 <a href="https://marsupialtail.github.io/quokka/">
-    <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/badge.svg" alt="rust docs" height="30px"/>
+    <img src="https://github.com/marsupialtail/quokka/blob/master/docs/docs/badge.svg" alt="rust docs" height="25px"/>
 </a>
 <a href="https://pypi.org/project/pyquokka/">
-    <img src="https://img.shields.io/pypi/v/pyquokka.svg" alt="PyPi Latest Release" height="30px"/>
+    <img src="https://img.shields.io/pypi/v/pyquokka.svg" alt="PyPi Latest Release" height="25px"/>
 </a>
 </p>
 </div>
