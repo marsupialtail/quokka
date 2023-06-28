@@ -4,7 +4,7 @@
 
 **Distributed, fault-tolerant, fast time-series processing engine for trillions of events.<br/>**
 **Built on Python with [DuckDB](https://github.com/duckdb/duckdb), [Polars](https://github.com/pola-rs/polars), [Ray](https://github.com/ray-project/ray), [Arrow](https://github.com/apache/arrow), [Redis](https://github.com/redis/redis) and [SQLGlot](https://github.com/tobymao/sqlglot).<br/>**
-**Understands CSV, Parquet, JSON, Ethereum Logs, Lance, Iceberg, Delta (WIP).**
+**Understands CSV, Parquet, JSON, EVM Logs, Lance, Iceberg, Delta (WIP).**
 
 <a href="https://discord.gg/6ujVV9HAg3" style="display:inline-block;">
     <img src="https://img.shields.io/badge/-Join%20Quokka%20Discord-blue?logo=discord" alt="Join Discord" height="25px"/>
@@ -82,16 +82,16 @@ Quokka offers a DataStream API that resembles Spark's DataFrame API:
 >>> dataset = d.to_ray_dataset()
 ~~~
 
-Currently Quokka supports reading data from CSV/Parquet on disk/S3 and Apache Iceberg through Glue, though theoretically any data source can be supported: Delta Lake/Hudi, S3 bucket of images, Ethereum blockchain through web3 APIs, transactional database CDC endpoints etc. If you have some esoteric data source that you want to run analytics on, please send me a challenge as a Github issue. 
+Currently Quokka supports reading data from CSV/Parquet on disk/S3 and Apache Iceberg through Glue, though theoretically any data source can be supported: Delta Lake/Hudi, S3 bucket of images, transactional database CDC endpoints etc. If you have some esoteric data source that you want to run analytics on, please send me a challenge as a Github issue, or better yet make a pull request.
 
 ## Fineprint
 
 Quokka should not be used as a replacement for SparkSQL (it doesn't parse SQL directly yet, though it is on the roadmap). Instead you can play with it to see if it can give you better performance for your use cases. Another strength of Quokka is that it's Python-native, so you will never have to worry about JVM errors when you start using hairy UDFs with custom Python packages.
 
-Quokka stands on the shoulders of giants. It uses [Ray](https://github.com/ray-project/ray) for task scheduling, Redis for lineage logging, [Polars](https://github.com/pola-rs/polars) and DuckDB for relational algebra kernels and [Apache Arrow](https://github.com/apache/arrow) for I/O. All of those are backed by efficient C++/Rust implementations. Quokka is a high-performance way of piecing them all together.
+Quokka stands on the shoulders of giants. It uses [Ray](https://github.com/ray-project/ray) for task scheduling, Redis for lineage logging, [Polars](https://github.com/pola-rs/polars) and DuckDB for relational algebra kernels and [Apache Arrow](https://github.com/apache/arrow) for I/O. All of those are backed by efficient C++/Rust implementations. 
 
 Please refer to the [docs](https://marsupialtail.github.io/quokka/) and examples in the apps directory. 
 
-For any questions/concerns/just want to chat: zihengw@stanford.edu, or join the [Discord](https://discord.gg/6ujVV9HAg3) channel. Please do reach out before you use Quokka for anything real -- the code is currently written by a single underpaid PhD student, who is nevertheless happy to make Quokka work for your very specific use case.
+For any questions/concerns/just want to chat: zihengw@stanford.edu, or join the [Discord](https://discord.gg/6ujVV9HAg3) channel. Please do reach out before you use Quokka for anything real. Please raise a Github issue if you encounter any issues.
 
-Please raise a Github issue if you encounter any issues.
+Shoutout to Emanuel Adamiak and Sarah Fujimori, who contributed significantly to this project. Also huge thanks to my advisor, Alex Aiken, as well as Tim Tully, Matei Zaharia, Peter Kraft, Qian Li and Toby Mao for all the help throughput the years. 
