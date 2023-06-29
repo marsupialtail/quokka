@@ -26,7 +26,7 @@ If you would like to support Quokka, please give us a star! 🙏
 
 * **[Vector embedding analytics](https://blog.lancedb.com/why-dataframe-libraries-need-to-understand-vector-embeddings-291343efd5c8):** easily add new input readers in Python, like for the [Lance](https://github.com/lancedb/lance) format.
 
-* **Approximate quantiles for 10000 float columns and 1 million rows in two minutes:** easily integrate with Arrow-compatible C++ Plugins.
+* **Approximate quantiles for 10000 float columns:** easily integrate with Arrow-compatible C++ Plugins.
 
 * **TPC-H:** Several times faster than SparkSQL in many TPC-H queries. (EMR, not DBR!)
 
