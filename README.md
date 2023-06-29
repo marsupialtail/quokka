@@ -22,11 +22,11 @@ If you would like to support Quokka, please give us a star! 🙏
 
 ## Showcases
 
-* **[Tick-level backtesting](https://github.com/marsupialtail/quokka/blob/master/blog/backtest.md):** backtest a mid-high trading strategy against SIP trade stream for the last five years in 10 minutes.
+* **[Tick-level backtesting](https://github.com/marsupialtail/quokka/blob/master/blog/backtest.md):** backtest a mid-high frequency trading strategy against SIP trade stream for the last four years in 10 minutes.
 
 * **[Vector embedding analytics](https://blog.lancedb.com/why-dataframe-libraries-need-to-understand-vector-embeddings-291343efd5c8):** easily add new input readers in Python, like for the [Lance](https://github.com/lancedb/lance) format.
 
-* **Approximate quantiles for 10000 columns:** easily integrate with Arrow-compatible C++ Plugins.
+* **Approximate quantiles for 10000 float columns and 1 million rows in two minutes:** easily integrate with Arrow-compatible C++ Plugins.
 
 * **TPC-H:** Several times faster than SparkSQL in many TPC-H queries. (EMR, not DBR!)
 
