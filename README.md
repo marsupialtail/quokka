@@ -35,6 +35,7 @@ If you would like to support Quokka, please give us a star! 🙏
 </p>
 
 * **Detect iceberg orders in quote stream (upcoming):** use complex event processing to easily detect iceberg order in the MBO stream.
+* **Backtest an online learning algorithm on clickstream data (upcoming):** test incremental training algorithms on historical data.
 
 ## What is Quokka?
 
