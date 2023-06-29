@@ -77,7 +77,7 @@ class InputSortedEC2ParquetDataset:
 
         for k in range(1, len(fragments)):
             assert overlap([fragments[k-1][1], fragments[k-1][2]], [fragments[k][1], fragments[k][2]]) <= 0, \
-                "positive overlap, data is not sorted!"
+                "positive overlap, data is not sorted! {} {} {} {}".format(fragments[k-1][0], fragments[k-1][1], fragments[k-1][2], fragments[k][0], fragments[k][1], fragments[k][2])
 
         fragments_per_channel = math.ceil(len(fragments) / num_channels)
 

@@ -787,10 +787,10 @@ class QuokkaContext:
         self.latest_node_id += 1
         return DataStream(self, df.columns, self.latest_node_id - 1, materialized=True)
 
-    def read_sorted_parquet(self, table_location: str, sorted_by: str,  nthreads = 4, sort_order = "stride"):
+    def read_sorted_parquet(self, table_location: str, sorted_by: str,  nthreads = 4, sort_order = "stride", name_col = None):
         assert type(sorted_by) == str
         assert sort_order in ["stride", "range"]
-        stream = self.read_parquet(table_location, nthreads = nthreads)
+        stream = self.read_parquet(table_location, nthreads = nthreads, name_column=name_col)
         assert sorted_by in stream.schema, f"sorted_by column {sorted_by} not in schema {stream.schema}"
         return OrderedStream(stream, {sorted_by : sort_order})
     

@@ -34,9 +34,23 @@ class OrderedStream(DataStream):
             schema=self.schema,
         )
     
-    def pattern_recognize(self, anchors, duration_limits, partition_by = None):
-        raise Exception("Not implemented yet")
-    
+    def pattern_recognize(self, time_col, events, maxspan, by):
+        
+        # we are going to use the cer method from the cep_utils module
+        if by is None:
+            raise Exception("You must specify a key by column for pattern_recognize currently.")
+        
+        assert time_col in self.sorted
+        assert by in self.schema
+
+        executor = CEPExecutor(events, maxspan, time_col, by)
+        if executor.prefilter != sqlglot.exp.FALSE:
+            filtered_stream = self.filter_sql(executor.prefilter)
+        else:
+            filtered_stream = self
+        
+        return filtered_stream.stateful_transform(executor, ["event_number", "first_event_timestamp", "last_event_timestamp"],
+                                                        required_columns = executor.touched_columns.union({time_col, by}), by = by, placement_strategy = CustomChannelsStrategy(1))
 
     def stateful_transform(self, executor: Executor, new_schema: list, required_columns: set,
                            by = None, placement_strategy = CustomChannelsStrategy(1)):
