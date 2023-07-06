@@ -137,6 +137,8 @@ class Coordinator:
         execute_handles = {worker : self.node_handles[worker].execute.remote() for worker in self.node_handles}
         execute_handles_list = list(execute_handles.values())
         
+        stage_timer = time.time()
+
         while True:
             time.sleep(0.01)
 
@@ -150,8 +152,17 @@ class Coordinator:
                     # wipe task manager state after execution of a TaskGraph.
                     self.r.set("finish-execution",  1)
                     assert all(ray.get(execute_handles_list))
+                    old_stage = self.r.get("current-execution-stage")
+                    print("STAGE {} took {} seconds".format(old_stage, time.time() - stage_timer))
                     return
+                
+                old_stage = self.r.get("current-execution-stage")
                 self.update_execution_stage()
+                new_stage = self.r.get("current-execution-stage")
+                if new_stage != old_stage:
+                    print("STAGE {} took {} seconds".format(old_stage, time.time() - stage_timer))
+                    stage_timer = time.time()
+                    
 
             except ray.exceptions.RayActorError:
                 print("detected failure")

@@ -287,6 +287,41 @@ class SessionWindowExecutor(Executor):
         
             return result
 
+class BroadcastAsofJoinExecutor(Executor):
+    # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
+    # batch func must return a list of dfs too
+    def __init__(self, small_quotes, time_col_trades = 'time', time_col_quotes = 'time', symbol_col_trades = 'symbol', symbol_col_quotes = 'symbol', suffix = "_right"):
+
+        self.suffix = suffix
+
+        assert type(small_table) == polars.DataFrame
+        self.state = small_table
+
+        self.time_col_trades = time_col_trades
+        self.time_col_quotes = time_col_quotes
+        self.symbol_col_trades = symbol_col_trades
+        self.symbol_col_quotes = symbol_col_quotes
+        
+        assert self.small_on in self.state.columns
+    
+    def checkpoint(self, conn, actor_id, channel_id, seq):
+        pass
+    
+    def restore(self, conn, actor_id, channel_id, seq):
+        pass
+
+    # the execute function signature does not change. stream_id will be a [0 - (length of InputStreams list - 1)] integer
+    def execute(self,batches, stream_id, executor_id):
+        # state compaction
+        batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
+        if len(batches) == 0:
+            return
+        batch = polars.concat(batches)
+        return batch.join(self.state, left_on = self.big_on, right_on = self.small_on, how = self.how, suffix = self.suffix)
+        
+    def done(self,executor_id):
+        return
+
 class SortedAsofExecutor(Executor):
     def __init__(self, time_col_trades = 'time', time_col_quotes = 'time', symbol_col_trades = 'symbol', symbol_col_quotes = 'symbol', suffix = "_right") -> None:
         self.trade_state = None

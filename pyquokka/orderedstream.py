@@ -138,15 +138,19 @@ class OrderedStream(DataStream):
         assert right_by in right.schema
 
         new_schema = self.schema.copy()
-        if self.materialized:
-            schema_mapping = {col: {-1: col} for col in self.schema}
-        else:
-            schema_mapping = {col: {0: col} for col in self.schema}
+        # if self.materialized:
+        #     schema_mapping = {col: {-1: col} for col in self.schema}
+        # else:
+        #     schema_mapping = {col: {0: col} for col in self.schema}
 
-        if right.materialized:
-            right_table_id = -1
-        else:
-            right_table_id = 1
+        schema_mapping = schema_mapping = {col: {0: col} for col in self.schema}
+
+        # if right.materialized:
+        #     right_table_id = -1
+        # else:
+        #     right_table_id = 1
+        
+        right_table_id = 1
 
         rename_dict = {}
 
@@ -170,7 +174,7 @@ class OrderedStream(DataStream):
         if len(rename_dict) > 0:
             right = right.rename(rename_dict)
 
-
+        # print("new schema", new_schema)
         executor = SortedAsofExecutor(left_on, right_on, left_by, right_by, suffix)
 
         return self.quokka_context.new_stream(
