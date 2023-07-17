@@ -3,12 +3,26 @@ import duckdb
 import pyquokka
 import json
 from collections import deque
+import re # for fixing filter formatting
 
 from pyquokka.df import * 
 
 supported_aggs = ['count', 'sum', 'avg', 'min', 'max'] 
 
+date_regex = '[0-9]{4}-[0-9]{2}-[0-9]{2}'
+def format_date(matchobj):
+    """
+    DuckDB generated plans sometimes include filters with incorrect formatting that aren't valid SQL, ex. n_nation=BRAZIL or l_shipdate<1994-01-01. This function is a helper function for reformatting these filters, in particular replacing a substring of the format ####-##-## (matching the date_regex) with date '####-##-##'.
+    """
+    return "date '" + matchobj.group(0) + "'"
+
 def get_new_var_name(var_names):
+    """
+    Args:
+        var_names: variable names that have already been used.
+
+    During code generation each node in the plan is assigned a variable whose value will hold the result of computing the query up to that node. This function should return a new variable name that differs from all of the previously used names. Currently it is hardcoded to return v_1, v_2, etc., but in the future can be modified to generate a more descriptive name based on node type.
+    """
     return 'v_'+str(len(var_names)+1)
 
 def get_new_col_name(schema):
@@ -18,6 +32,11 @@ def get_new_col_name(schema):
     return 'col_' + str(i)
 
 def rewrite_aliases(cols, aliases):
+    """
+    Args:
+        cols (string): list of columns
+        aliases (dict): mapping of column aliases
+    """
     for alias in aliases:
         cols = cols.replace(alias, aliases[alias])
     return cols
@@ -28,9 +47,16 @@ def is_agg(col):
             return True
     return False
 
-# Given a list of columns, give an alias to each column 
-# Update aliases with #index->alias, formula->alias
 def name_aliases(cols, aliases, schema, indices=None):
+    """
+    Args:
+        cols (list): list of columns
+        aliases (dict): dict to update with alias mappings
+        schema (string)
+        indices (list): Pass this argument in when we want to update numbered ordering of columns (i.e. when computing a projection or scan node).
+
+    Given a list of columns, give an alias to each column. Update aliases with #index->alias, formula->alias. Used for adding new columns and computing aggregations.
+    """
     # As long as we update the Datastream object after this function call, changes to given schema don't need to persist
     new_schema = schema
     col_aliases = []
@@ -47,13 +73,18 @@ def name_aliases(cols, aliases, schema, indices=None):
 
 def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, qc, print_code=True):
     """
+    This function emits code to compute a single node.
+
     Args:
-        var_names: node id number -> name of variable
-        var_values: name -> value
-        aliases: 
+        var_names (dict): node id number -> name of variable
+        var_values (dict): name of variable -> value
+        aliases (dict): string->string
             #int -> name ('#3' -> 'n_nationkey'),
-            formula -> name ('l_partkey + 1' -> 'col1')
+            formula -> name (e.g. 'l_partkey + 1' -> 'col1'),
             'count_star()' -> 'count(*)'
+
+            The first mapping is needed because DuckDB plan generation sometimes represents columns via a numbered ordering in projection nodes, but since this makes the plan difficult to read and parse (and may lead to producing an incorrect result) we plan to try to get rid of this behavior in the future. For now, we update this mapping in projection and scan nodes.
+
         tables (dict): mapping of table name (string) to Quokka Datastream
         table_prefixes (dict): prefix of columns that identifies which table they belong to, e.g.
        {
@@ -66,6 +97,7 @@ def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, qc, 
         'r': 'region',
         'n': 'nation'
         }
+
         This is needed because DuckDB plans currently don't include the table name in the READ_PARQUET nodes. Clearly this fix may not extend to other schemas besides TPC-H, so we will find a better solution in the future. 
         qc: QuokkaContext
         print_code: print generated code if this flag is set, otherwise don't print anything. 
@@ -87,6 +119,7 @@ def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, qc, 
             cols = rewrite_aliases(extra_info[0].strip(), aliases).split('\n')
 
             ####### TEMPORARY FOR TPC-H #######
+            # Since DuckDB plans currently don't include the table name in scan nodes
             table = table_prefixes[cols[0].split('_')[0]]
             ###################################
             child = tables[table]
@@ -121,6 +154,7 @@ def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, qc, 
         if node['name'] in ['PARQUET_SCAN', 'READ_PARQUET ']:
             if len(extra_info) >= 2 and 'Filters' in extra_info[1]:
                 filters = extra_info[1].strip()
+                filters = re.sub(date_regex, format_date, filters) #reformat dates in filters
                 if 'EC' in extra_info[1]: # if there's no infoseparator
                     filters = filters.split('EC')[0].strip()
                 filters = filters.split('\n')
@@ -129,7 +163,7 @@ def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, qc, 
                     if print_code:
                         filter_stmt = var_name + ' = ' + var_name + '.filter_sql("' + f + '")'
                         code += filter_stmt + '\n'
-                    # there are some formatting issues for filter where 'r_name = ASIA', etc. won't work, so we'll comment this out for now as filtering doesn't change the schema
+                    # (TODO) there are some formatting issues for filter where 'r_name = ASIA', etc. won't work, so we can comment this out for now. Because of this generated code of queries involving filters may not run (but can be easily manually fixed). We will fix the formatting in the future.
                     if not print_code: result = result.filter_sql(f)
         if print_code and len(selected_columns) > 0:
             select_stmt = var_name + ' = ' + var_name + '.select(' + str(selected_columns) + ')'
@@ -152,6 +186,8 @@ def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, qc, 
                 
     elif node['name'] == 'FILTER':
         filters = node['extra_info'].split('[INFOSEPARATOR]')[0].strip().split('\n')
+
+        filters = re.sub(date_regex, format_date, filters) #reformat dates in filters
         child_name = var_names[node['children'][0]['id']]
         child = var_values[child_name]
         result = child
@@ -170,7 +206,7 @@ def emit_code(node, var_names, var_values, aliases, tables, table_prefixes, qc, 
     elif node['name'] == 'HASH_JOIN':
         extra_info = node['extra_info'].split('\n')
         how = extra_info[0].lower()
-        # Only allow inner joins for now, there's a bug with semi joins in the plan 
+        # TODO Only allow inner joins for now, there's a bug with semi joins in the plan
         assert how in ['inner'], how+ ' joins not supported'
         
         left_key = extra_info[1].split(' = ')[0]
@@ -254,7 +290,7 @@ def generate_code_from_plan(plan, tables, qc, table_prefixes = {
         'n': 'nation'
         }):
     
-    #Reverse topologically sort
+    #Reverse topologically sort and assign ids to nodes
     node = plan[0]
     nodes = deque([node])
     i = 0
@@ -365,6 +401,6 @@ def generate_code(query, data_path, table_prefixes = {
 
     plan = obj['children'][0]['children']
     
-    print("Finished plan generation, beginning code generation")
+    print("Finished plan generation, beginning computation")
     
     generate_code_from_plan(plan, tables, qc, table_prefixes)

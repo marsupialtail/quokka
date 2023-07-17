@@ -3,10 +3,10 @@ mode = 'DISK'
 format_ = 'parquet'
 
 query_no = 1
-query_path = '' + str(query_no) + '.sql'
+query_path = '' + str(query_no) + '.sql' # TODO: update the first '' with a path to folder of queries
 with open(query_path, 'r') as f:
     query = f.read()
-data_path=""
+data_path="" # TODO: update this variable
 
 generate_code(query, data_path, table_prefixes = {
         'l': 'lineitem',
