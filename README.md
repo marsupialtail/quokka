@@ -4,7 +4,7 @@
 
 **Making data lakes work for time series.<br/>**
 **Built on Python with [DuckDB](https://github.com/duckdb/duckdb), [Polars](https://github.com/pola-rs/polars), [Ray](https://github.com/ray-project/ray), [Arrow](https://github.com/apache/arrow), [Redis](https://github.com/redis/redis) and [SQLGlot](https://github.com/tobymao/sqlglot).<br/>**
-**Understands CSV, Parquet, JSON, EVM Logs, Lance, Iceberg, Delta (WIP).**
+# **Quokka's Focus: [New Blog Post](https://github.com/marsupialtail/quokka/blob/master/blog/time.md) <br/>**
 
 <a href="https://discord.gg/6ujVV9HAg3" style="display:inline-block;">
     <img src="https://img.shields.io/badge/-Join%20Quokka%20Discord-blue?logo=discord" alt="Join Discord" height="25px"/>
