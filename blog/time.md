@@ -1,6 +1,6 @@
 # Making Data Lakes Work for Time Series
 
-I have been working on Quokka for almost two years now. It started as a generic query engine, or a Python version of SparkSQL. When I started out, I didn't really have a specific application in mind, except maybe publish a paper to further my PhD. Having failed at that (repeatedly) , I am happy to announce that I've settled on a calling for Quokka -- making data lakes work for observability. 
+I have been working on Quokka for almost two years now. It started as a generic query engine, or a Python version of SparkSQL. When I started out, I didn't really have a specific application in mind, except maybe publish a paper to further my PhD. Having failed at that (repeatedly), I am happy to announce that I've settled on a calling for Quokka -- making data lakes work for observability. 
 
 Observability = time series data like metrics, logs and traces typically used for debugging or application performance monitoring. Quokka is now 100% focused on solving what I believe is the core issue in observability data management today -- **building a unified PB-scale data store for time series data on object storage**.
 
