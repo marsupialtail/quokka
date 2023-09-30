@@ -4,7 +4,7 @@ from schema import *
 mode = "DISK"
 format = "parquet"
 disk_path = "/home/ziheng/tpc-h/"
-#disk_path = "s3://yugan/tpc-h-out/"
+#disk_path= "s3://yugan/tpc-h-out/"
 s3_path_csv = "s3://tpc-h-csv/"
 s3_path_parquet = "s3://tpc-h-sf100-parquet/"
 
