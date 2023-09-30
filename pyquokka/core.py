@@ -502,7 +502,8 @@ class ExecTaskManager(TaskManager):
             candidate_tasks = self.NTT.lrange(self.r, str(self.node_id), 0, -1)
             # we don't need to make sure that the exec tasks respect stages because our input requirements now contain that information
             # that combined with input task stages should gurantee that exec task stages are respected.
-            # candidate_tasks = [candidate_task for candidate_task in candidate_tasks if self.ast[pickle.loads(candidate_task)[1][0]] <= self.current_stage]
+            if self.configs["blocking"]:
+                candidate_tasks = [candidate_task for candidate_task in candidate_tasks if self.ast[pickle.loads(candidate_task)[1][0]] <= self.current_stage]
             length = len(candidate_tasks)
             if length == 0:
                 continue
@@ -672,7 +673,7 @@ class ExecTaskManager(TaskManager):
                     # print("DONE", actor_id, channel_id)
                     self.DST.set(transaction, pickle.dumps((actor_id, channel_id)), last_output_seq)
                     next_task = None
-                    lineage = pickle.dumps((-1, -1))
+                    # lineage = pickle.dumps((-1, -1))
 
                 if self.configs["checkpoint_interval"] is not None and state_seq % self.configs["checkpoint_interval"] == 0:
                     self.function_objects[actor_id, channel_id].checkpoint(self.checkpoint_bucket, actor_id, channel_id, state_seq)

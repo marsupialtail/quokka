@@ -1519,8 +1519,9 @@ class DataStream:
                 schema_mapping[col] = {right_table_id: col}
         
         # you only need the key column on the RHS! select overloads in DataStream or Polars DataFrame runtime polymorphic
-        # if how == "semi" or how == "anti":
-        #    right = right.select([right_on, "l_suppkey"])
+        if how == "semi" or how == "anti":
+            # right = right.select([right_on, "l_suppkey"])
+            right = right.select([right_on])
         
         if len(rename_dict) > 0:
             right = right.rename(rename_dict)

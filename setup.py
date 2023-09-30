@@ -31,7 +31,7 @@ setup(
             'protobuf',
             'ray>=2.0.0',
             'psutil',
-            'polars>=0.17.0', # latest version of Polars generally
+            'polars>=0.16.17', # latest version of Polars generally
             'sqlglot>=11.4.2',
             'graphviz',
             'tqdm',

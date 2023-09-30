@@ -17,13 +17,14 @@ if mode == "DISK":
     cluster = LocalCluster()
 elif mode == "S3":
     manager = QuokkaClusterManager(key_name = "zihengw", key_location = "/home/ziheng/Downloads/zihengw.pem")
-    manager.start_cluster("config.json")
-    cluster = manager.get_cluster_from_json("config.json")
+    manager.start_cluster("16.json")
+    cluster = manager.get_cluster_from_json("16.json")
 else:
     raise Exception
 
 qc = QuokkaContext(cluster,2, 1)
 qc.set_config("fault_tolerance", True)
+qc.set_config("blocking", False)
 
 if mode == "DISK":
     if format == "csv":
@@ -573,6 +574,29 @@ def print_and_time(f):
     end = time.time()
     print("query execution time: ", end - start)
 
+
+def run_and_kill_after(f, ip, t ):
+    import multiprocessing
+    def killer():
+        # Your code here
+        count = 0
+        while count < t:
+            time.sleep(1)
+            count += 1
+        command = 'ssh -i /home/ubuntu/zihengw.pem ubuntu@' + ip + ' "/home/ubuntu/.local/bin/ray stop"'
+        os.system(command)
+    process = multiprocessing.Process(target = killer)
+    process.start()
+    start = time.time()
+    print(f())
+    end = time.time()
+    print("query execution time: ", end - start)
+    command = "/home/ubuntu/.local/bin/ray start --address=172.31.6.223:6380 --redis-password='5241590000000000'"
+    launch_command = "ssh -oStrictHostKeyChecking=no -oConnectTimeout=5 -i /home/ubuntu/zihengw.pem ubuntu@" + ip + " '" + command.replace("'", "'\"'\"'") + "' "
+    os.system(launch_command)
+    process.terminate()
+    process.join()
+
 def covariance():
 
     return lineitem.gramian(["l_quantity", "l_extendedprice", "l_discount", "l_tax"]).collect()
@@ -585,12 +609,13 @@ def approx_quantile():
 # print_and_time(approx_quantile)
 
 # from tpch_ref import *
-
 queries = [None, do_1_sql, do_2, do_3_sql, do_4_sql, do_5_sql, do_6_sql, do_7_sql, do_8, do_9, 
            do_10, do_11, do_12_sql, do_13, do_14, do_15, do_16, do_17, do_18, do_19, do_20, None, do_22]
 runtimes_16 = [
-    9.414733887, 8.524564743, 11.81241179, 15.07827894, 15.61281188, 3.801096042, 10.98091658, 15.76024667, 20.19576486, 12.24378769,
+    None, 9.414733887, 8.524564743, 11.81241179, 15.07827894, 15.61281188, 3.801096042, 10.98091658, 15.76024667, 20.19576486, 12.24378769,
     4.671283484, 7.170949459, 10.30586807, 4.768202782, 5.819543203, 4.011099577, 23.80364641, 45.20878259, 13.02822073, 17.94240602, 51.86622826, 4.550808748]
+
+print_and_time(queries[int(sys.argv[1])])
 # print(do_1())
 # print(do_1_1())
 # print(do_1_2())
@@ -602,7 +627,8 @@ runtimes_16 = [
 # print_and_time(do_6_sql)
 # print_and_time(do_7_sql)
 # print_and_time(do_8)
-print_and_time(do_9)
+# print_and_time(do_9)
+# run_and_kill_after(queries[int(sys.argv[1])], '18.236.218.228', runtimes_16[int(sys.argv[1])] // 2)
 # print_and_time(do_10)
 # print_and_time(do_11)
 # print_and_time(do_12)
