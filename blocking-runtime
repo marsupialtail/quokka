@@ -1,0 +1,848 @@
+done; done
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0:  96%|██████████████████████████████████████████████▏ | 154/160 [00:05<00:00, 40.52it/s](Coordinator pid=143690) STAGE b'-2' took 8.460535526275635 seconds
+(Coordinator pid=143690) STAGE b'-2' took 8.460535526275635 seconds
+(Coordinator pid=143690) STAGE b'-1' took 0.4926798343658447 seconds
+(Coordinator pid=143690) STAGE b'-1' took 0.4926798343658447 seconds
+Processing input source 0: 100%|████████████████████████████████████████████████| 160/160 [00:09<00:00, 17.68it/s]
+run time  9.04961633682251
+shape: (4, 10)
+┌───────────┬───────────┬───────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
+│ l_returnf ┆ l_linesta ┆ sum_qty   ┆ sum_base ┆ sum_disc ┆ sum_char ┆ avg_qty  ┆ avg_pric ┆ avg_disc ┆ count_or │
+│ lag       ┆ tus       ┆ ---       ┆ _price   ┆ _price   ┆ ge       ┆ ---      ┆ e        ┆ ---      ┆ der      │
+│ ---       ┆ ---       ┆ f64       ┆ ---      ┆ ---      ┆ ---      ┆ f64      ┆ ---      ┆ f64      ┆ ---      │
+│ str       ┆ str       ┆           ┆ f64      ┆ f64      ┆ f64      ┆          ┆ f64      ┆          ┆ f64      │
+╞═══════════╪═══════════╪═══════════╪══════════╪══════════╪══════════╪══════════╪══════════╪══════════╪══════════╡
+│ A         ┆ F         ┆ 3.7751e9  ┆ 5.6608e1 ┆ 5.3777e1 ┆ 5.5928e1 ┆ 25.49937 ┆ 38236.11 ┆ 0.050002 ┆ 1.480478 │
+│           ┆           ┆           ┆ 2        ┆ 2        ┆ 2        ┆          ┆ 6984     ┆          ┆ 81e8     │
+│ R         ┆ F         ┆ 3.7757e9  ┆ 5.6616e1 ┆ 5.3785e1 ┆ 5.5937e1 ┆ 25.50006 ┆ 38236.69 ┆ 0.050001 ┆ 1.480672 │
+│           ┆           ┆           ┆ 2        ┆ 2        ┆ 2        ┆ 6        ┆ 7258     ┆          ┆ 61e8     │
+│ N         ┆ O         ┆ 7.4363e9  ┆ 1.1151e1 ┆ 1.0593e1 ┆ 1.1017e1 ┆ 25.50000 ┆ 38237.22 ┆ 0.049998 ┆ 2.916196 │
+│           ┆           ┆           ┆ 3        ┆ 3        ┆ 3        ┆ 9        ┆ 7646     ┆          ┆ 17e8     │
+│ N         ┆ F         ┆ 9.8553062 ┆ 1.4777e1 ┆ 1.4038e1 ┆ 1.4600e1 ┆ 25.50155 ┆ 38237.19 ┆ 0.049985 ┆ 3.86459e │
+│           ┆           ┆ e7        ┆ 1        ┆ 1        ┆ 1        ┆ 7        ┆ 9389     ┆          ┆ 6        │
+└───────────┴───────────┴───────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┘
+query execution time:  9.786194086074829
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0:  98%|██████████████████████████████████████████████▊ | 156/160 [00:05<00:00, 35.50it/s](Coordinator pid=144489) STAGE b'-2' took 8.15440583229065 seconds
+(Coordinator pid=144489) STAGE b'-2' took 8.15440583229065 seconds
+Processing input source 0: 100%|████████████████████████████████████████████████| 160/160 [00:08<00:00, 18.47it/s]
+run time  8.663057804107666
+(Coordinator pid=144489) STAGE b'-1' took 0.4859306812286377 seconds
+(Coordinator pid=144489) STAGE b'-1' took 0.4859306812286377 seconds
+shape: (4, 10)
+┌───────────┬───────────┬───────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
+│ l_returnf ┆ l_linesta ┆ sum_qty   ┆ sum_base ┆ sum_disc ┆ sum_char ┆ avg_qty  ┆ avg_pric ┆ avg_disc ┆ count_or │
+│ lag       ┆ tus       ┆ ---       ┆ _price   ┆ _price   ┆ ge       ┆ ---      ┆ e        ┆ ---      ┆ der      │
+│ ---       ┆ ---       ┆ f64       ┆ ---      ┆ ---      ┆ ---      ┆ f64      ┆ ---      ┆ f64      ┆ ---      │
+│ str       ┆ str       ┆           ┆ f64      ┆ f64      ┆ f64      ┆          ┆ f64      ┆          ┆ f64      │
+╞═══════════╪═══════════╪═══════════╪══════════╪══════════╪══════════╪══════════╪══════════╪══════════╪══════════╡
+│ R         ┆ F         ┆ 3.7757e9  ┆ 5.6616e1 ┆ 5.3785e1 ┆ 5.5937e1 ┆ 25.50006 ┆ 38236.69 ┆ 0.050001 ┆ 1.480672 │
+│           ┆           ┆           ┆ 2        ┆ 2        ┆ 2        ┆ 6        ┆ 7258     ┆          ┆ 61e8     │
+│ A         ┆ F         ┆ 3.7751e9  ┆ 5.6608e1 ┆ 5.3777e1 ┆ 5.5928e1 ┆ 25.49937 ┆ 38236.11 ┆ 0.050002 ┆ 1.480478 │
+│           ┆           ┆           ┆ 2        ┆ 2        ┆ 2        ┆          ┆ 6984     ┆          ┆ 81e8     │
+│ N         ┆ O         ┆ 7.4363e9  ┆ 1.1151e1 ┆ 1.0593e1 ┆ 1.1017e1 ┆ 25.50000 ┆ 38237.22 ┆ 0.049998 ┆ 2.916196 │
+│           ┆           ┆           ┆ 3        ┆ 3        ┆ 3        ┆ 9        ┆ 7646     ┆          ┆ 17e8     │
+│ N         ┆ F         ┆ 9.8553062 ┆ 1.4777e1 ┆ 1.4038e1 ┆ 1.4600e1 ┆ 25.50155 ┆ 38237.19 ┆ 0.049985 ┆ 3.86459e │
+│           ┆           ┆ e7        ┆ 1        ┆ 1        ┆ 1        ┆ 7        ┆ 9389     ┆          ┆ 6        │
+└───────────┴───────────┴───────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┘
+query execution time:  9.424317121505737
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0:  98%|██████████████████████████████████████████████▊ | 156/160 [00:05<00:00, 37.45it/s](Coordinator pid=145299) STAGE b'-2' took 8.199076414108276 seconds
+(Coordinator pid=145299) STAGE b'-2' took 8.199076414108276 seconds
+Processing input source 0: 100%|████████████████████████████████████████████████| 160/160 [00:08<00:00, 18.27it/s]
+run time  8.757716655731201
+(Coordinator pid=145299) STAGE b'-1' took 0.49226856231689453 seconds
+(Coordinator pid=145299) STAGE b'-1' took 0.49226856231689453 seconds
+shape: (4, 10)
+┌───────────┬───────────┬───────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
+│ l_returnf ┆ l_linesta ┆ sum_qty   ┆ sum_base ┆ sum_disc ┆ sum_char ┆ avg_qty  ┆ avg_pric ┆ avg_disc ┆ count_or │
+│ lag       ┆ tus       ┆ ---       ┆ _price   ┆ _price   ┆ ge       ┆ ---      ┆ e        ┆ ---      ┆ der      │
+│ ---       ┆ ---       ┆ f64       ┆ ---      ┆ ---      ┆ ---      ┆ f64      ┆ ---      ┆ f64      ┆ ---      │
+│ str       ┆ str       ┆           ┆ f64      ┆ f64      ┆ f64      ┆          ┆ f64      ┆          ┆ f64      │
+╞═══════════╪═══════════╪═══════════╪══════════╪══════════╪══════════╪══════════╪══════════╪══════════╪══════════╡
+│ A         ┆ F         ┆ 3.7751e9  ┆ 5.6608e1 ┆ 5.3777e1 ┆ 5.5928e1 ┆ 25.49937 ┆ 38236.11 ┆ 0.050002 ┆ 1.480478 │
+│           ┆           ┆           ┆ 2        ┆ 2        ┆ 2        ┆          ┆ 6984     ┆          ┆ 81e8     │
+│ R         ┆ F         ┆ 3.7757e9  ┆ 5.6616e1 ┆ 5.3785e1 ┆ 5.5937e1 ┆ 25.50006 ┆ 38236.69 ┆ 0.050001 ┆ 1.480672 │
+│           ┆           ┆           ┆ 2        ┆ 2        ┆ 2        ┆ 6        ┆ 7258     ┆          ┆ 61e8     │
+│ N         ┆ O         ┆ 7.4363e9  ┆ 1.1151e1 ┆ 1.0593e1 ┆ 1.1017e1 ┆ 25.50000 ┆ 38237.22 ┆ 0.049998 ┆ 2.916196 │
+│           ┆           ┆           ┆ 3        ┆ 3        ┆ 3        ┆ 9        ┆ 7646     ┆          ┆ 17e8     │
+│ N         ┆ F         ┆ 9.8553062 ┆ 1.4777e1 ┆ 1.4038e1 ┆ 1.4600e1 ┆ 25.50155 ┆ 38237.19 ┆ 0.049985 ┆ 3.86459e │
+│           ┆           ┆ e7        ┆ 1        ┆ 1        ┆ 1        ┆ 7        ┆ 9389     ┆          ┆ 6        │
+└───────────┴───────────┴───────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┴──────────┘
+query execution time:  9.46674108505249
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0:  95%|███████████████████████████████████████████████▎  | 35/37 [00:01<00:00, 28.41it/s(Coordinator pid=146100) STAGE b'-5' took 2.2366015911102295 seconds                       | 0/160 [00:02<?, ?it/s]
+(Coordinator pid=146100) STAGE b'-5' took 2.2366015911102295 seconds█████████▎    | 29/32 [00:01<00:00, 24.11it/s]
+                                                                                                                 (Coordinator pid=146100) STAGE b'-4' took 5.492813587188721 seconds████████████▊ | 156/160 [00:06<00:00, 38.21it/s]
+(Coordinator pid=146100) STAGE b'-4' took 5.492813587188721 seconds
+(Coordinator pid=146100) STAGE b'-3' took 5.193032264709473 seconds
+(Coordinator pid=146100) STAGE b'-3' took 5.193032264709473 seconds
+(Coordinator pid=146100) STAGE b'-2' took 0.4763038158416748 seconds
+(Coordinator pid=146100) STAGE b'-2' took 0.4763038158416748 seconds
+(Coordinator pid=146100) STAGE b'-1' took 0.29355311393737793 seconds
+(Coordinator pid=146100) STAGE b'-1' took 0.29355311393737793 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 37/37 [00:13<00:00,  2.70it/s]
+Processing input source 1: 100%|████████████████████████████████████████████████| 160/160 [00:13<00:00, 11.66it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 32/32 [00:13<00:00,  2.33it/s]
+run time  13.721880197525024
+shape: (10, 4)
+┌────────────┬─────────────┬────────────────┬─────────────┐
+│ l_orderkey ┆ o_orderdate ┆ o_shippriority ┆ revenue     │
+│ ---        ┆ ---         ┆ ---            ┆ ---         │
+│ i64        ┆ date        ┆ i32            ┆ f64         │
+╞════════════╪═════════════╪════════════════╪═════════════╡
+│ 249739810  ┆ 1995-02-28  ┆ 0              ┆ 492136.8537 │
+│ 165214338  ┆ 1995-03-09  ┆ 0              ┆ 485645.5293 │
+│ 507274210  ┆ 1995-03-10  ┆ 0              ┆ 485256.2467 │
+│ 202071367  ┆ 1995-03-12  ┆ 0              ┆ 474746.4068 │
+│ …          ┆ …           ┆ …              ┆ …           │
+│ 100810368  ┆ 1995-02-28  ┆ 0              ┆ 467932.7645 │
+│ 74015523   ┆ 1995-03-14  ┆ 0              ┆ 467786.8027 │
+│ 402772582  ┆ 1995-03-10  ┆ 0              ┆ 463367.0665 │
+│ 367111712  ┆ 1995-03-01  ┆ 0              ┆ 462559.3977 │
+└────────────┴─────────────┴────────────────┴─────────────┘
+query execution time:  14.879730463027954
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0:  92%|█████████████████████████████████████████████▉    | 34/37 [00:01<00:00, 33.04it/s(Coordinator pid=147455) STAGE b'-5' took 2.059662342071533 seconds                        | 0/160 [00:02<?, ?it/s]
+(Coordinator pid=147455) STAGE b'-5' took 2.059662342071533 seconds█████████████▍ | 31/32 [00:01<00:00, 21.50it/s]
+                                                                                                                 (Coordinator pid=147455) STAGE b'-4' took 5.178411245346069 seconds████████████▊ | 156/160 [00:06<00:00, 40.97it/s]
+(Coordinator pid=147455) STAGE b'-4' took 5.178411245346069 seconds
+(Coordinator pid=147455) STAGE b'-3' took 5.115250825881958 seconds
+(Coordinator pid=147455) STAGE b'-3' took 5.115250825881958 seconds
+(Coordinator pid=147455) STAGE b'-2' took 0.45624375343322754 seconds
+(Coordinator pid=147455) STAGE b'-2' took 0.45624375343322754 seconds
+(Coordinator pid=147455) STAGE b'-1' took 0.2736515998840332 seconds
+(Coordinator pid=147455) STAGE b'-1' took 0.2736515998840332 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 37/37 [00:13<00:00,  2.81it/s]
+Processing input source 1: 100%|████████████████████████████████████████████████| 160/160 [00:13<00:00, 12.14it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 32/32 [00:13<00:00,  2.43it/s]
+run time  13.1786630153656
+shape: (10, 4)
+┌────────────┬─────────────┬────────────────┬─────────────┐
+│ l_orderkey ┆ o_orderdate ┆ o_shippriority ┆ revenue     │
+│ ---        ┆ ---         ┆ ---            ┆ ---         │
+│ i64        ┆ date        ┆ i32            ┆ f64         │
+╞════════════╪═════════════╪════════════════╪═════════════╡
+│ 249739810  ┆ 1995-02-28  ┆ 0              ┆ 492136.8537 │
+│ 165214338  ┆ 1995-03-09  ┆ 0              ┆ 485645.5293 │
+│ 507274210  ┆ 1995-03-10  ┆ 0              ┆ 485256.2467 │
+│ 202071367  ┆ 1995-03-12  ┆ 0              ┆ 474746.4068 │
+│ …          ┆ …           ┆ …              ┆ …           │
+│ 100810368  ┆ 1995-02-28  ┆ 0              ┆ 467932.7645 │
+│ 74015523   ┆ 1995-03-14  ┆ 0              ┆ 467786.8027 │
+│ 402772582  ┆ 1995-03-10  ┆ 0              ┆ 463367.0665 │
+│ 367111712  ┆ 1995-03-01  ┆ 0              ┆ 462559.3977 │
+└────────────┴─────────────┴────────────────┴─────────────┘
+query execution time:  14.346364259719849
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0:  95%|███████████████████████████████████████████████▎  | 35/37 [00:01<00:00, 25.37it/s(Coordinator pid=148780) STAGE b'-5' took 2.3106770515441895 seconds                       | 0/160 [00:02<?, ?it/s]
+(Coordinator pid=148780) STAGE b'-5' took 2.3106770515441895 seconds██████████████| 32/32 [00:01<00:00, 28.18it/s]
+                                                                                                                 (Coordinator pid=148780) STAGE b'-4' took 5.207674026489258 seconds█████████████▍| 158/160 [00:06<00:00, 27.09it/s]
+(Coordinator pid=148780) STAGE b'-4' took 5.207674026489258 seconds
+(Coordinator pid=148780) STAGE b'-3' took 5.041907548904419 seconds
+(Coordinator pid=148780) STAGE b'-3' took 5.041907548904419 seconds
+(Coordinator pid=148780) STAGE b'-2' took 0.45448946952819824 seconds
+(Coordinator pid=148780) STAGE b'-2' took 0.45448946952819824 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 37/37 [00:13<00:00,  2.78it/s]
+Processing input source 1: 100%|████████████████████████████████████████████████| 160/160 [00:13<00:00, 12.01it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 32/32 [00:13<00:00,  2.40it/s]
+run time  13.324238300323486
+(Coordinator pid=148780) STAGE b'-1' took 0.29666638374328613 seconds
+(Coordinator pid=148780) STAGE b'-1' took 0.29666638374328613 seconds
+shape: (10, 4)
+┌────────────┬─────────────┬────────────────┬─────────────┐
+│ l_orderkey ┆ o_orderdate ┆ o_shippriority ┆ revenue     │
+│ ---        ┆ ---         ┆ ---            ┆ ---         │
+│ i64        ┆ date        ┆ i32            ┆ f64         │
+╞════════════╪═════════════╪════════════════╪═════════════╡
+│ 249739810  ┆ 1995-02-28  ┆ 0              ┆ 492136.8537 │
+│ 165214338  ┆ 1995-03-09  ┆ 0              ┆ 485645.5293 │
+│ 507274210  ┆ 1995-03-10  ┆ 0              ┆ 485256.2467 │
+│ 202071367  ┆ 1995-03-12  ┆ 0              ┆ 474746.4068 │
+│ …          ┆ …           ┆ …              ┆ …           │
+│ 100810368  ┆ 1995-02-28  ┆ 0              ┆ 467932.7645 │
+│ 74015523   ┆ 1995-03-14  ┆ 0              ┆ 467786.8027 │
+│ 402772582  ┆ 1995-03-10  ┆ 0              ┆ 463367.0665 │
+│ 367111712  ┆ 1995-03-01  ┆ 0              ┆ 462559.3977 │
+└────────────┴─────────────┴────────────────┴─────────────┘
+query execution time:  14.511726379394531
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0:  97%|███████████████████████████████████████████████▍ | 31/32 [00:00<00:00, 107.64it/s(Coordinator pid=150080) STAGE b'-9' took 0.5089230537414551 seconds                        | 0/37 [00:00<?, ?it/s]
+(Coordinator pid=150080) STAGE b'-9' took 0.5089230537414551 seconds                      | 0/160 [00:00<?, ?it/s]
+Processing input source 3:   0%|                                                           | 0/32 [00:00<?, ?it/s(Coordinator pid=150080) STAGE b'-8' took 0.24605727195739746 seconds                       | 0/37 [00:00<?, ?it/s]
+Processing input source 2:   0%|                                                          | 0/160 [00:00<?, ?it/s]
+(Coordinator pid=150080) STAGE b'-8' took 0.24605727195739746 seconds                      | 0/32 [00:00<?, ?it/s(Coordinator pid=150080) STAGE b'-7' took 1.304077386856079 seconds██████▌         | 30/37 [00:01<00:00, 99.85it/s]
+Processing input source 2:   0%|                                                          | 0/160 [00:01<?, ?it/s(Coordinator pid=150080) STAGE b'-7' took 1.304077386856079 seconds████████████████| 37/37 [00:02<00:00, 32.51it/s]
+Processing input source 2:   0%|                                                          | 0/160 [00:02<?, ?it/s(Coordinator pid=150080) STAGE b'-6' took 0.38752007484436035 seconds                       | 0/32 [00:02<?, ?it/s]
+(Coordinator pid=150080) STAGE b'-6' took 0.38752007484436035 seconds                     | 0/160 [00:02<?, ?it/s]
+Processing input source 3:   0%|                                                           | 0/32 [00:02<?, ?it/s(Coordinator pid=150080) STAGE b'-5' took 9.868113040924072 seconds
+(Coordinator pid=150080) STAGE b'-5' took 9.868113040924072 seconds████████████▍| 158/160 [00:11<00:00,  5.75it/s]
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:20<00:00,  1.10it/s(Coordinator pid=150080) STAGE b'-4' took 8.243863582611084 seconds████████████████| 37/37 [00:19<00:00, 32.51it/s]
+Processing input source 2: 100%|████████████████████████████████████████████████| 160/160 [00:12<00:00,  3.88it/s(Coordinator pid=150080) STAGE b'-4' took 8.243863582611084 seconds                         | 0/32 [00:20<?, ?it/s]
+                                                                                                                 (Coordinator pid=150080) STAGE b'-3' took 0.3352217674255371 seconds                        | 0/32 [00:20<?, ?it/s]
+(Coordinator pid=150080) STAGE b'-3' took 0.3352217674255371 seconds
+(Coordinator pid=150080) STAGE b'-2' took 0.556323766708374 seconds█████████▍    | 29/32 [00:20<00:00, 221.17it/s]
+(Coordinator pid=150080) STAGE b'-2' took 0.556323766708374 seconds
+(Coordinator pid=150080) STAGE b'-1' took 0.35348081588745117 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:21<00:00,  1.47it/s]
+Processing input source 1: 100%|██████████████████████████████████████████████████| 37/37 [00:21<00:00,  1.70it/s]
+Processing input source 2: 100%|████████████████████████████████████████████████| 160/160 [00:21<00:00,  7.33it/s]
+Processing input source 3: 100%|██████████████████████████████████████████████████| 32/32 [00:21<00:00,  1.47it/s]
+run time  21.828187227249146
+(Coordinator pid=150080) STAGE b'-1' took 0.35348081588745117 seconds
+shape: (5, 2)
+┌───────────┬──────────┐
+│ n_name    ┆ revenue  │
+│ ---       ┆ ---      │
+│ str       ┆ f64      │
+╞═══════════╪══════════╡
+│ VIETNAM   ┆ 5.3107e9 │
+│ INDIA     ┆ 5.2961e9 │
+│ JAPAN     ┆ 5.2822e9 │
+│ CHINA     ┆ 5.2709e9 │
+│ INDONESIA ┆ 5.2703e9 │
+└───────────┴──────────┘
+query execution time:  22.828709840774536
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0:  91%|█████████████████████████████████████████████▎    | 29/32 [00:00<00:00, 98.39it/s(Coordinator pid=151320) STAGE b'-9' took 0.5751469135284424 seconds                        | 0/37 [00:00<?, ?it/s]
+Processing input source 2:   0%|                                                          | 0/160 [00:00<?, ?it/s(Coordinator pid=151320) STAGE b'-9' took 0.5751469135284424 seconds                        | 0/37 [00:00<?, ?it/s]
+Processing input source 2:   0%|                                                          | 0/160 [00:00<?, ?it/s(Coordinator pid=151320) STAGE b'-8' took 0.21172070503234863 seconds                       | 0/37 [00:00<?, ?it/s]
+(Coordinator pid=151320) STAGE b'-8' took 0.21172070503234863 seconds                     | 0/160 [00:00<?, ?it/s]
+Processing input source 3:   0%|                                                           | 0/32 [00:00<?, ?it/s(Coordinator pid=151320) STAGE b'-7' took 1.239255666732788 seconds████████████████| 37/37 [00:02<00:00, 38.05it/s]
+(Coordinator pid=151320) STAGE b'-7' took 1.239255666732788 seconds                       | 0/160 [00:02<?, ?it/s]
+Processing input source 3:   0%|                                                           | 0/32 [00:02<?, ?it/s(Coordinator pid=151320) STAGE b'-6' took 0.4076848030090332 seconds
+(Coordinator pid=151320) STAGE b'-6' took 0.4076848030090332 seconds                      | 0/160 [00:02<?, ?it/s]
+Processing input source 3:   0%|                                                           | 0/32 [00:02<?, ?it/s(Coordinator pid=151320) STAGE b'-5' took 9.041997909545898 seconds
+(Coordinator pid=151320) STAGE b'-5' took 9.041997909545898 seconds█████████████| 160/160 [00:11<00:00,  5.34it/s]
+Processing input source 3:   0%|                                                           | 0/32 [00:11<?, ?it/s(Coordinator pid=151320) STAGE b'-4' took 7.9223127365112305 seconds
+(Coordinator pid=151320) STAGE b'-4' took 7.9223127365112305 seconds
+Processing input source 3:   0%|                                                           | 0/32 [00:19<?, ?it/s(Coordinator pid=151320) STAGE b'-3' took 0.4009861946105957 seconds
+(Coordinator pid=151320) STAGE b'-3' took 0.4009861946105957 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:20<00:00,  1.10it/s](Coordinator pid=151320) STAGE b'-2' took 0.5323073863983154 seconds██████████████| 37/37 [00:19<00:00, 38.05it/s]
+(Coordinator pid=151320) STAGE b'-2' took 0.5323073863983154 seconds
+(Coordinator pid=151320) STAGE b'-1' took 0.34819531440734863 seconds
+(Coordinator pid=151320) STAGE b'-1' took 0.34819531440734863 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:20<00:00,  1.54it/s]
+Processing input source 1: 100%|██████████████████████████████████████████████████| 37/37 [00:20<00:00,  1.78it/s]
+Processing input source 2: 100%|████████████████████████████████████████████████| 160/160 [00:20<00:00,  7.71it/s]
+Processing input source 3: 100%|██████████████████████████████████████████████████| 32/32 [00:20<00:00,  1.54it/s]
+run time  20.767821073532104
+shape: (5, 2)
+┌───────────┬──────────┐
+│ n_name    ┆ revenue  │
+│ ---       ┆ ---      │
+│ str       ┆ f64      │
+╞═══════════╪══════════╡
+│ VIETNAM   ┆ 5.3107e9 │
+│ INDIA     ┆ 5.2961e9 │
+│ JAPAN     ┆ 5.2822e9 │
+│ CHINA     ┆ 5.2709e9 │
+│ INDONESIA ┆ 5.2703e9 │
+└───────────┴──────────┘
+query execution time:  21.729679346084595
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0:  94%|█████████████████████████████████████████████▉   | 30/32 [00:00<00:00, 114.69it/s(Coordinator pid=152554) STAGE b'-9' took 0.508526086807251 seconds                         | 0/37 [00:00<?, ?it/s]
+(Coordinator pid=152554) STAGE b'-9' took 0.508526086807251 seconds                       | 0/160 [00:00<?, ?it/s]
+Processing input source 3:   0%|                                                           | 0/32 [00:00<?, ?it/s(Coordinator pid=152554) STAGE b'-8' took 0.20252728462219238 seconds                       | 0/37 [00:00<?, ?it/s]
+Processing input source 2:   0%|                                                          | 0/160 [00:00<?, ?it/s(Coordinator pid=152554) STAGE b'-8' took 0.20252728462219238 seconds                       | 0/37 [00:00<?, ?it/s]
+Processing input source 2:   0%|                                                          | 0/160 [00:00<?, ?it/s]
+(Coordinator pid=152554) STAGE b'-7' took 1.2535231113433838 seconds███▋         | 30/37 [00:01<00:00, 106.03it/s(Coordinator pid=152554) STAGE b'-7' took 1.2535231113433838 seconds███████████████| 37/37 [00:02<00:00, 34.24it/s]
+Processing input source 2:   0%|                                                          | 0/160 [00:02<?, ?it/s(Coordinator pid=152554) STAGE b'-6' took 0.33749890327453613 seconds                       | 0/32 [00:02<?, ?it/s]
+(Coordinator pid=152554) STAGE b'-6' took 0.33749890327453613 seconds                     | 0/160 [00:02<?, ?it/s]
+Processing input source 3:   0%|                                                           | 0/32 [00:02<?, ?it/s(Coordinator pid=152554) STAGE b'-5' took 9.028772115707397 seconds
+(Coordinator pid=152554) STAGE b'-5' took 9.028772115707397 seconds████████████ | 157/160 [00:09<00:00,  9.52it/s]
+Processing input source 3:   0%|                                                           | 0/32 [00:11<?, ?it/s(Coordinator pid=152554) STAGE b'-4' took 7.818482160568237 seconds
+(Coordinator pid=152554) STAGE b'-4' took 7.818482160568237 seconds█████████████| 160/160 [00:11<00:00,  5.55it/s]
+Processing input source 3:   0%|                                                           | 0/32 [00:19<?, ?it/s(Coordinator pid=152554) STAGE b'-3' took 0.6047837734222412 seconds
+(Coordinator pid=152554) STAGE b'-3' took 0.6047837734222412 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:20<00:00,  1.14it/s](Coordinator pid=152554) STAGE b'-2' took 0.5551400184631348 seconds██████████████| 37/37 [00:20<00:00, 34.24it/s]
+(Coordinator pid=152554) STAGE b'-2' took 0.5551400184631348 seconds
+(Coordinator pid=152554) STAGE b'-1' took 0.32392430305480957 seconds
+(Coordinator pid=152554) STAGE b'-1' took 0.32392430305480957 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:20<00:00,  1.54it/s]
+Processing input source 1: 100%|██████████████████████████████████████████████████| 37/37 [00:20<00:00,  1.78it/s]
+Processing input source 2: 100%|████████████████████████████████████████████████| 160/160 [00:20<00:00,  7.71it/s]
+Processing input source 3: 100%|██████████████████████████████████████████████████| 32/32 [00:20<00:00,  1.54it/s]
+run time  20.744556188583374
+shape: (5, 2)
+┌───────────┬──────────┐
+│ n_name    ┆ revenue  │
+│ ---       ┆ ---      │
+│ str       ┆ f64      │
+╞═══════════╪══════════╡
+│ VIETNAM   ┆ 5.3107e9 │
+│ INDIA     ┆ 5.2961e9 │
+│ JAPAN     ┆ 5.2822e9 │
+│ CHINA     ┆ 5.2709e9 │
+│ INDONESIA ┆ 5.2703e9 │
+└───────────┴──────────┘
+query execution time:  21.683582305908203
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Processing input source 0:  99%|███████████████████████████████████████████████▍| 158/160 [00:02<00:00, 54.83it/s](Coordinator pid=153801) STAGE b'-2' took 3.4115278720855713 seconds
+(Coordinator pid=153801) STAGE b'-2' took 3.4115278720855713 seconds
+Processing input source 0: 100%|████████████████████████████████████████████████| 160/160 [00:03<00:00, 41.54it/s]
+run time  3.853539228439331
+(Coordinator pid=153801) STAGE b'-1' took 0.4244801998138428 seconds
+(Coordinator pid=153801) STAGE b'-1' took 0.4244801998138428 seconds
+shape: (1, 1)
+┌───────────┐
+│ revenue   │
+│ ---       │
+│ f64       │
+╞═══════════╡
+│ 1.2330e10 │
+└───────────┘
+query execution time:  4.423946142196655
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Processing input source 0:  99%|███████████████████████████████████████████████▍| 158/160 [00:02<00:00, 52.01it/s](Coordinator pid=154519) STAGE b'-2' took 3.3903512954711914 seconds
+(Coordinator pid=154519) STAGE b'-2' took 3.3903512954711914 seconds
+Processing input source 0: 100%|████████████████████████████████████████████████| 160/160 [00:03<00:00, 41.73it/s]
+run time  3.8359322547912598
+(Coordinator pid=154519) STAGE b'-1' took 0.4277043342590332 seconds
+(Coordinator pid=154519) STAGE b'-1' took 0.4277043342590332 seconds
+shape: (1, 1)
+┌───────────┐
+│ revenue   │
+│ ---       │
+│ f64       │
+╞═══════════╡
+│ 1.2330e10 │
+└───────────┘
+query execution time:  4.383140325546265
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Processing input source 0:  97%|██████████████████████████████████████████████▌ | 155/160 [00:02<00:00, 78.65it/s](Coordinator pid=155218) STAGE b'-2' took 3.5975635051727295 seconds
+(Coordinator pid=155218) STAGE b'-2' took 3.5975635051727295 seconds
+(Coordinator pid=155218) STAGE b'-1' took 0.44994521141052246 seconds
+(Coordinator pid=155218) STAGE b'-1' took 0.44994521141052246 seconds
+Processing input source 0: 100%|████████████████████████████████████████████████| 160/160 [00:04<00:00, 38.51it/s]
+run time  4.156455993652344
+shape: (1, 1)
+┌───────────┐
+│ revenue   │
+│ ---       │
+│ f64       │
+╞═══════════╡
+│ 1.2330e10 │
+└───────────┘
+query execution time:  4.7265965938568115
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0:   9%|████▊                                              | 3/32 [00:00<00:03,  8.72it/s(Coordinator pid=155914) STAGE b'-7' took 0.4407980442047119 seconds                       | 0/160 [00:00<?, ?it/s]
+(Coordinator pid=155914) STAGE b'-7' took 0.4407980442047119 seconds                       | 0/32 [00:00<?, ?it/s]
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:00<00:00, 73.02it/s(Coordinator pid=155914) STAGE b'-6' took 0.21718049049377441 seconds                      | 0/160 [00:00<?, ?it/s]
+(Coordinator pid=155914) STAGE b'-6' took 0.21718049049377441 seconds                      | 0/32 [00:00<?, ?it/s]
+Processing input source 3:   0%|                                                           | 0/37 [00:00<?, ?it/s(Coordinator pid=155914) STAGE b'-5' took 6.1620848178863525 seconds███████████▊ | 156/160 [00:04<00:00, 46.67it/s]
+(Coordinator pid=155914) STAGE b'-5' took 6.1620848178863525 seconds██████████▉   | 30/32 [00:03<00:00,  5.76it/s]
+Processing input source 3:   0%|                                                           | 0/37 [00:06<?, ?it/s(Coordinator pid=155914) STAGE b'-4' took 1.9353806972503662 seconds
+(Coordinator pid=155914) STAGE b'-4' took 1.9353806972503662 seconds██████████████| 32/32 [00:06<00:00,  2.18it/s]
+Processing input source 3:   0%|                                                           | 0/37 [00:08<?, ?it/s(Coordinator pid=155914) STAGE b'-3' took 1.682802438735962 seconds
+(Coordinator pid=155914) STAGE b'-3' took 1.682802438735962 seconds
+(Coordinator pid=155914) STAGE b'-2' took 2.747004985809326 seconds████████████▎  | 35/37 [00:10<00:00, 39.61it/s]
+(Coordinator pid=155914) STAGE b'-2' took 2.747004985809326 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:13<00:00,  2.37it/s]
+Processing input source 1: 100%|████████████████████████████████████████████████| 160/160 [00:13<00:00, 11.84it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 32/32 [00:13<00:00,  2.37it/s]
+Processing input source 3: 100%|██████████████████████████████████████████████████| 37/37 [00:13<00:00,  2.74it/s]
+run time  13.521255016326904
+(Coordinator pid=155914) STAGE b'-1' took 0.3093864917755127 seconds
+(Coordinator pid=155914) STAGE b'-1' took 0.3093864917755127 seconds
+shape: (4, 4)
+┌─────────────┬─────────────┬────────┬──────────┐
+│ supp_nation ┆ cust_nation ┆ l_year ┆ volume   │
+│ ---         ┆ ---         ┆ ---    ┆ ---      │
+│ str         ┆ str         ┆ i32    ┆ f64      │
+╞═════════════╪═════════════╪════════╪══════════╡
+│ FRANCE      ┆ GERMANY     ┆ 1995   ┆ 5.2961e9 │
+│ FRANCE      ┆ GERMANY     ┆ 1996   ┆ 5.3140e9 │
+│ GERMANY     ┆ FRANCE      ┆ 1995   ┆ 5.2861e9 │
+│ GERMANY     ┆ FRANCE      ┆ 1996   ┆ 5.3247e9 │
+└─────────────┴─────────────┴────────┴──────────┘
+query execution time:  14.663889646530151
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:00<00:00, 88.11it/s](Coordinator pid=157125) STAGE b'-7' took 0.40233659744262695 seconds                     | 0/160 [00:00<?, ?it/s]
+Processing input source 2:   0%|                                                           | 0/32 [00:00<?, ?it/s(Coordinator pid=157125) STAGE b'-7' took 0.40233659744262695 seconds                      | 0/160 [00:00<?, ?it/s]
+Processing input source 2:   0%|                                                           | 0/32 [00:00<?, ?it/s(Coordinator pid=157125) STAGE b'-6' took 0.1579291820526123 seconds                       | 0/160 [00:00<?, ?it/s]
+(Coordinator pid=157125) STAGE b'-6' took 0.1579291820526123 seconds                       | 0/32 [00:00<?, ?it/s]
+Processing input source 3:   0%|                                                           | 0/37 [00:00<?, ?it/s(Coordinator pid=157125) STAGE b'-5' took 6.178792238235474 seconds████████████▊ | 156/160 [00:04<00:00, 38.17it/s]
+(Coordinator pid=157125) STAGE b'-5' took 6.178792238235474 seconds█████████████▍ | 31/32 [00:03<00:00,  8.42it/s]
+Processing input source 3:   0%|                                                           | 0/37 [00:06<?, ?it/s(Coordinator pid=157125) STAGE b'-4' took 2.076033592224121 seconds
+(Coordinator pid=157125) STAGE b'-4' took 2.076033592224121 seconds
+Processing input source 3:   0%|                                                           | 0/37 [00:08<?, ?it/s(Coordinator pid=157125) STAGE b'-3' took 1.8589222431182861 seconds
+(Coordinator pid=157125) STAGE b'-3' took 1.8589222431182861 seconds
+(Coordinator pid=157125) STAGE b'-2' took 2.8633625507354736 seconds██████████████| 37/37 [00:10<00:00, 24.91it/s]
+(Coordinator pid=157125) STAGE b'-2' took 2.8633625507354736 seconds
+(Coordinator pid=157125) STAGE b'-1' took 0.2904171943664551 seconds
+(Coordinator pid=157125) STAGE b'-1' took 0.2904171943664551 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:13<00:00,  2.30it/s]
+Processing input source 1: 100%|████████████████████████████████████████████████| 160/160 [00:13<00:00, 11.49it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 32/32 [00:13<00:00,  2.30it/s]
+Processing input source 3: 100%|██████████████████████████████████████████████████| 37/37 [00:13<00:00,  2.66it/s]
+run time  13.932467460632324
+shape: (4, 4)
+┌─────────────┬─────────────┬────────┬──────────┐
+│ supp_nation ┆ cust_nation ┆ l_year ┆ volume   │
+│ ---         ┆ ---         ┆ ---    ┆ ---      │
+│ str         ┆ str         ┆ i32    ┆ f64      │
+╞═════════════╪═════════════╪════════╪══════════╡
+│ FRANCE      ┆ GERMANY     ┆ 1995   ┆ 5.2961e9 │
+│ FRANCE      ┆ GERMANY     ┆ 1996   ┆ 5.3140e9 │
+│ GERMANY     ┆ FRANCE      ┆ 1995   ┆ 5.2861e9 │
+│ GERMANY     ┆ FRANCE      ┆ 1996   ┆ 5.3247e9 │
+└─────────────┴─────────────┴────────┴──────────┘
+query execution time:  15.082963228225708
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0:   9%|████▊                                              | 3/32 [00:00<00:02,  9.86it/s(Coordinator pid=158341) STAGE b'-7' took 0.41791558265686035 seconds                      | 0/160 [00:00<?, ?it/s]
+(Coordinator pid=158341) STAGE b'-7' took 0.41791558265686035 seconds                      | 0/32 [00:00<?, ?it/s]
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:00<00:00, 81.35it/s(Coordinator pid=158341) STAGE b'-6' took 0.14518022537231445 seconds                      | 0/160 [00:00<?, ?it/s]
+(Coordinator pid=158341) STAGE b'-6' took 0.14518022537231445 seconds                      | 0/32 [00:00<?, ?it/s]
+Processing input source 3:   0%|                                                           | 0/37 [00:00<?, ?it/s(Coordinator pid=158341) STAGE b'-5' took 5.475144863128662 seconds██████████████| 160/160 [00:06<00:00, 15.09it/s]
+(Coordinator pid=158341) STAGE b'-5' took 5.475144863128662 seconds███████████████| 32/32 [00:04<00:00,  5.57it/s]
+Processing input source 3:   0%|                                                           | 0/37 [00:06<?, ?it/s(Coordinator pid=158341) STAGE b'-4' took 1.977846622467041 seconds
+(Coordinator pid=158341) STAGE b'-4' took 1.977846622467041 seconds
+Processing input source 3:   0%|                                                           | 0/37 [00:08<?, ?it/s(Coordinator pid=158341) STAGE b'-3' took 1.6956403255462646 seconds
+(Coordinator pid=158341) STAGE b'-3' took 1.6956403255462646 seconds
+(Coordinator pid=158341) STAGE b'-2' took 2.819620370864868 seconds█████████▌     | 33/37 [00:09<00:00, 49.65it/s]
+(Coordinator pid=158341) STAGE b'-2' took 2.819620370864868 seconds
+(Coordinator pid=158341) STAGE b'-1' took 0.289539098739624 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:12<00:00,  2.48it/s]
+Processing input source 1: 100%|████████████████████████████████████████████████| 160/160 [00:12<00:00, 12.38it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 32/32 [00:12<00:00,  2.48it/s]
+Processing input source 3: 100%|██████████████████████████████████████████████████| 37/37 [00:12<00:00,  2.86it/s]
+run time  12.923674583435059
+(Coordinator pid=158341) STAGE b'-1' took 0.289539098739624 seconds
+shape: (4, 4)
+┌─────────────┬─────────────┬────────┬──────────┐
+│ supp_nation ┆ cust_nation ┆ l_year ┆ volume   │
+│ ---         ┆ ---         ┆ ---    ┆ ---      │
+│ str         ┆ str         ┆ i32    ┆ f64      │
+╞═════════════╪═════════════╪════════╪══════════╡
+│ FRANCE      ┆ GERMANY     ┆ 1995   ┆ 5.2961e9 │
+│ FRANCE      ┆ GERMANY     ┆ 1996   ┆ 5.3140e9 │
+│ GERMANY     ┆ FRANCE      ┆ 1995   ┆ 5.2861e9 │
+│ GERMANY     ┆ FRANCE      ┆ 1996   ┆ 5.3247e9 │
+└─────────────┴─────────────┴────────┴──────────┘
+query execution time:  14.077080965042114
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0: 100%|█████████████████████████████████████████████████| 32/32 [00:00<00:00, 192.73it/s(Coordinator pid=159552) STAGE b'-6' took 0.5057909488677979 seconds                        | 0/32 [00:00<?, ?it/s]
+(Coordinator pid=159552) STAGE b'-6' took 0.5057909488677979 seconds                       | 0/37 [00:00<?, ?it/s]
+Processing input source 3:   0%|                                                           | 0/32 [00:00<?, ?it/s(Coordinator pid=159552) STAGE b'-5' took 2.069700002670288 seconds████████████▉   | 30/32 [00:01<00:00, 19.67it/s]
+Processing input source 2:  97%|████████████████████████████████████████████████▋ | 36/37 [00:02<00:00, 16.64it/s(Coordinator pid=159552) STAGE b'-5' took 2.069700002670288 seconds████████████████| 32/32 [00:02<00:00, 18.50it/s]
+Processing input source 4:   0%|                                                          | 0/160 [00:02<?, ?it/s(Coordinator pid=159552) STAGE b'-4' took 10.70760464668274 seconds
+(Coordinator pid=159552) STAGE b'-4' took 10.70760464668274 seconds                       | 0/160 [00:02<?, ?it/s]
+(Coordinator pid=159552) STAGE b'-3' took 5.576815128326416 seconds
+(Coordinator pid=159552) STAGE b'-3' took 5.576815128326416 seconds████████████▍| 158/160 [00:11<00:00,  8.47it/s]
+(Coordinator pid=159552) STAGE b'-2' took 0.463944673538208 seconds
+(Coordinator pid=159552) STAGE b'-2' took 0.463944673538208 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:19<00:00,  1.63it/s]
+Processing input source 1: 100%|██████████████████████████████████████████████████| 32/32 [00:19<00:00,  1.63it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 37/37 [00:19<00:00,  1.88it/s]
+Processing input source 3: 100%|██████████████████████████████████████████████████| 32/32 [00:19<00:00,  1.63it/s]
+Processing input source 4: 100%|████████████████████████████████████████████████| 160/160 [00:19<00:00,  8.13it/s]
+run time  19.674596548080444
+(Coordinator pid=159552) STAGE b'-1' took 0.3203439712524414 seconds
+(Coordinator pid=159552) STAGE b'-1' took 0.3203439712524414 seconds
+shape: (2, 3)
+┌────────┬────────────┬───────────────────┐
+│ o_year ┆ volume_sum ┆ brazil_volume_sum │
+│ ---    ┆ ---        ┆ ---               │
+│ i32    ┆ f64        ┆ f64               │
+╞════════╪════════════╪═══════════════════╡
+│ 1995   ┆ 4.4523e9   ┆ 1.7602e8          │
+│ 1996   ┆ 4.4670e9   ┆ 1.7410e8          │
+└────────┴────────────┴───────────────────┘
+query execution time:  20.893325805664062
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0:  28%|██████████████▎                                    | 9/32 [00:00<00:00, 50.33it/s(Coordinator pid=161307) STAGE b'-6' took 0.4368460178375244 seconds                        | 0/32 [00:00<?, ?it/s]
+(Coordinator pid=161307) STAGE b'-6' took 0.4368460178375244 seconds                       | 0/37 [00:00<?, ?it/s]
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:00<00:00, 99.87it/s(Coordinator pid=161307) STAGE b'-5' took 2.0432357788085938 seconds█████████████▍ | 31/32 [00:01<00:00, 21.24it/s]
+(Coordinator pid=161307) STAGE b'-5' took 2.0432357788085938 seconds████████▌     | 33/37 [00:01<00:00, 37.83it/s]
+Processing input source 3:  94%|██████████████████████████████████████████████▉   | 30/32 [00:01<00:00, 21.82it/s(Coordinator pid=161307) STAGE b'-4' took 9.853209733963013 seconds                        | 0/160 [00:02<?, ?it/s]
+(Coordinator pid=161307) STAGE b'-4' took 9.853209733963013 seconds███████████████| 37/37 [00:02<00:00, 14.26it/s]
+(Coordinator pid=161307) STAGE b'-3' took 5.407037258148193 seconds
+(Coordinator pid=161307) STAGE b'-3' took 5.407037258148193 seconds████████████▍| 158/160 [00:10<00:00, 11.77it/s]
+(Coordinator pid=161307) STAGE b'-2' took 0.5307936668395996 seconds
+(Coordinator pid=161307) STAGE b'-2' took 0.5307936668395996 seconds
+(Coordinator pid=161307) STAGE b'-1' took 0.3566017150878906 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:18<00:00,  1.71it/s]
+Processing input source 1: 100%|██████████████████████████████████████████████████| 32/32 [00:18<00:00,  1.71it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 37/37 [00:18<00:00,  1.98it/s]
+Processing input source 3: 100%|██████████████████████████████████████████████████| 32/32 [00:18<00:00,  1.71it/s]
+Processing input source 4: 100%|████████████████████████████████████████████████| 160/160 [00:18<00:00,  8.54it/s]
+run time  18.732138872146606
+(Coordinator pid=161307) STAGE b'-1' took 0.3566017150878906 seconds
+shape: (2, 3)
+┌────────┬────────────┬───────────────────┐
+│ o_year ┆ volume_sum ┆ brazil_volume_sum │
+│ ---    ┆ ---        ┆ ---               │
+│ i32    ┆ f64        ┆ f64               │
+╞════════╪════════════╪═══════════════════╡
+│ 1995   ┆ 4.4523e9   ┆ 1.7602e8          │
+│ 1996   ┆ 4.4670e9   ┆ 1.7410e8          │
+└────────┴────────────┴───────────────────┘
+query execution time:  19.907209634780884
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:00<00:00, 99.62it/s(Coordinator pid=163102) STAGE b'-6' took 0.46028900146484375 seconds                       | 0/32 [00:00<?, ?it/s]
+(Coordinator pid=163102) STAGE b'-6' took 0.46028900146484375 seconds                      | 0/37 [00:00<?, ?it/s]
+Processing input source 3:   0%|                                                           | 0/32 [00:00<?, ?it/s(Coordinator pid=163102) STAGE b'-5' took 1.8737459182739258 seconds██████████▎    | 29/32 [00:01<00:00, 24.36it/s]
+Processing input source 2:  97%|████████████████████████████████████████████████▋ | 36/37 [00:02<00:00, 27.38it/s(Coordinator pid=163102) STAGE b'-5' took 1.8737459182739258 seconds███████████████| 32/32 [00:02<00:00, 12.01it/s]
+Processing input source 4:   0%|                                                          | 0/160 [00:02<?, ?it/s(Coordinator pid=163102) STAGE b'-4' took 9.99778127670288 seconds
+(Coordinator pid=163102) STAGE b'-4' took 9.99778127670288 seconds                        | 0/160 [00:02<?, ?it/s]
+(Coordinator pid=163102) STAGE b'-3' took 5.0739426612854 seconds
+(Coordinator pid=163102) STAGE b'-3' took 5.0739426612854 seconds██████████████▍| 158/160 [00:10<00:00, 10.29it/s]
+(Coordinator pid=163102) STAGE b'-2' took 0.4109170436859131 seconds
+(Coordinator pid=163102) STAGE b'-2' took 0.4109170436859131 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:18<00:00,  1.77it/s]
+Processing input source 1: 100%|██████████████████████████████████████████████████| 32/32 [00:18<00:00,  1.77it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 37/37 [00:18<00:00,  2.04it/s]
+Processing input source 3: 100%|██████████████████████████████████████████████████| 32/32 [00:18<00:00,  1.77it/s]
+Processing input source 4: 100%|████████████████████████████████████████████████| 160/160 [00:18<00:00,  8.83it/s]
+run time  18.12135338783264
+(Coordinator pid=163102) STAGE b'-1' took 0.2773270606994629 seconds
+(Coordinator pid=163102) STAGE b'-1' took 0.2773270606994629 seconds
+shape: (2, 3)
+┌────────┬────────────┬───────────────────┐
+│ o_year ┆ volume_sum ┆ brazil_volume_sum │
+│ ---    ┆ ---        ┆ ---               │
+│ i32    ┆ f64        ┆ f64               │
+╞════════╪════════════╪═══════════════════╡
+│ 1995   ┆ 4.4523e9   ┆ 1.7602e8          │
+│ 1996   ┆ 4.4670e9   ┆ 1.7410e8          │
+└────────┴────────────┴───────────────────┘
+query execution time:  19.320938110351562
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0:  91%|█████████████████████████████████████████████▎    | 29/32 [00:01<00:00, 62.83it/s(Coordinator pid=164787) STAGE b'-10' took 1.1539199352264404 seconds                       | 0/32 [00:01<?, ?it/s]
+(Coordinator pid=164787) STAGE b'-10' took 1.1539199352264404 seconds                      | 0/32 [00:01<?, ?it/s]
+Processing input source 3:   0%|                                                          | 0/160 [00:01<?, ?it/s(Coordinator pid=164787) STAGE b'-9' took 1.3999266624450684 seconds███████████████| 32/32 [00:02<00:00, 31.89it/s]
+(Coordinator pid=164787) STAGE b'-9' took 1.3999266624450684 seconds                       | 0/32 [00:02<?, ?it/s]
+Processing input source 3:   0%|                                                          | 0/160 [00:02<?, ?it/s(Coordinator pid=164787) STAGE b'-8' took 0.5911116600036621 seconds                        | 0/37 [00:02<?, ?it/s]
+Processing input source 2:  97%|███████████████████████████████████████████████▍ | 31/32 [00:02<00:00, 109.15it/s(Coordinator pid=164787) STAGE b'-8' took 0.5911116600036621 seconds                       | 0/160 [00:03<?, ?it/s]
+Processing input source 4:   0%|                                                           | 0/37 [00:03<?, ?it/s]
+Processing input source 3:   0%|                                                          | 0/160 [00:03<?, ?it/s]
+Processing input source 4:   0%|                                                           | 0/37 [00:03<?, ?it/s(Coordinator pid=164787) STAGE b'-7' took 0.14567255973815918 seconds                      | 0/160 [00:03<?, ?it/s](Coordinator pid=164787) STAGE b'-7' took 0.14567255973815918 seconds                                            (Coordinator pid=164787) STAGE b'-6' took 0.2215588092803955 seconds
+(Coordinator pid=164787) STAGE b'-6' took 0.2215588092803955 seconds                       | 0/37 [00:03<?, ?it/s]
+Processing input source 3:   0%|                                                          | 0/160 [00:03<?, ?it/s(Coordinator pid=164787) STAGE b'-5' took 11.915263652801514 seconds                        | 0/37 [00:03<?, ?it/s]
+(Coordinator pid=164787) STAGE b'-5' took 11.915263652801514 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:20<00:00,  1.01s/it(Coordinator pid=164787) STAGE b'-4' took 6.029160499572754 seconds████████████████| 32/32 [00:20<00:00, 31.89it/s]
+(Coordinator pid=164787) STAGE b'-4' took 6.029160499572754 seconds███████████████| 32/32 [00:20<00:00,  1.28it/s]
+                                                                                                                 (Coordinator pid=164787) STAGE b'-3' took 1.300321102142334 seconds                         | 0/37 [00:21<?, ?it/s]
+(Coordinator pid=164787) STAGE b'-3' took 1.300321102142334 seconds
+(Coordinator pid=164787) STAGE b'-2' took 4.357670307159424 seconds
+(Coordinator pid=164787) STAGE b'-2' took 4.357670307159424 seconds████████████▎  | 35/37 [00:22<00:00, 54.67it/s]
+(Coordinator pid=164787) STAGE b'-1' took 0.3220057487487793 seconds
+(Coordinator pid=164787) STAGE b'-1' took 0.3220057487487793 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:27<00:00,  1.16it/s]
+Processing input source 1: 100%|██████████████████████████████████████████████████| 32/32 [00:27<00:00,  1.16it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 32/32 [00:27<00:00,  1.16it/s]
+Processing input source 3: 100%|████████████████████████████████████████████████| 160/160 [00:27<00:00,  5.81it/s]
+Processing input source 4: 100%|██████████████████████████████████████████████████| 37/37 [00:27<00:00,  1.34it/s]
+run time  27.525079488754272
+shape: (175, 3)
+┌─────────┬────────┬────────────┐
+│ nation  ┆ o_year ┆ amount_sum │
+│ ---     ┆ ---    ┆ ---        │
+│ str     ┆ i32    ┆ f64        │
+╞═════════╪════════╪════════════╡
+│ ALGERIA ┆ 1998   ┆ 2.7464e9   │
+│ ALGERIA ┆ 1997   ┆ 4.7051e9   │
+│ ALGERIA ┆ 1996   ┆ 4.6911e9   │
+│ ALGERIA ┆ 1995   ┆ 4.6922e9   │
+│ …       ┆ …      ┆ …          │
+│ VIETNAM ┆ 1995   ┆ 4.6921e9   │
+│ VIETNAM ┆ 1994   ┆ 4.7055e9   │
+│ VIETNAM ┆ 1993   ┆ 4.7087e9   │
+│ VIETNAM ┆ 1992   ┆ 4.6815e9   │
+└─────────┴────────┴────────────┘
+query execution time:  28.466060638427734
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:00<00:00, 66.81it/s(Coordinator pid=166165) STAGE b'-10' took 0.8866448402404785 seconds                       | 0/32 [00:00<?, ?it/s]
+(Coordinator pid=166165) STAGE b'-10' took 0.8866448402404785 seconds                      | 0/32 [00:00<?, ?it/s]
+Processing input source 3:   0%|                                                          | 0/160 [00:00<?, ?it/s(Coordinator pid=166165) STAGE b'-9' took 1.127875566482544 seconds█████████▊      | 28/32 [00:01<00:00, 82.69it/s]
+(Coordinator pid=166165) STAGE b'-9' took 1.127875566482544 seconds                        | 0/32 [00:01<?, ?it/s]
+Processing input source 3:   0%|                                                          | 0/160 [00:01<?, ?it/s(Coordinator pid=166165) STAGE b'-8' took 0.6396057605743408 seconds                        | 0/37 [00:01<?, ?it/s]
+(Coordinator pid=166165) STAGE b'-8' took 0.6396057605743408 seconds████████████▍ | 31/32 [00:02<00:00, 84.95it/s]
+Processing input source 3:   0%|                                                          | 0/160 [00:02<?, ?it/s(Coordinator pid=166165) STAGE b'-7' took 0.12341952323913574 seconds                       | 0/37 [00:02<?, ?it/s]
+(Coordinator pid=166165) STAGE b'-7' took 0.12341952323913574 seconds
+Processing input source 3:   0%|                                                          | 0/160 [00:02<?, ?it/s(Coordinator pid=166165) STAGE b'-6' took 0.22574424743652344 seconds                       | 0/37 [00:02<?, ?it/s]
+                                                                                                                 (Coordinator pid=166165) STAGE b'-6' took 0.22574424743652344 seconds                      | 0/160 [00:02<?, ?it/s]
+Processing input source 4:   0%|                                                           | 0/37 [00:02<?, ?it/s]
+Processing input source 3:   0%|                                                          | 0/160 [00:03<?, ?it/s]
+Processing input source 4:   0%|                                                           | 0/37 [00:03<?, ?it/s(Coordinator pid=166165) STAGE b'-5' took 10.848740339279175 seconds█████████████| 160/160 [00:13<00:00,  5.22it/s](Coordinator pid=166165) STAGE b'-5' took 10.848740339279175 seconds                       | 0/37 [00:13<?, ?it/s(Coordinator pid=166165) STAGE b'-4' took 5.74806547164917 seconds
+(Coordinator pid=166165) STAGE b'-4' took 5.74806547164917 seconds                         | 0/37 [00:13<?, ?it/s]
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:20<00:00, 66.81it/s(Coordinator pid=166165) STAGE b'-3' took 1.2814466953277588 seconds███████████████| 32/32 [00:20<00:00,  1.15it/s]
+(Coordinator pid=166165) STAGE b'-3' took 1.2814466953277588 seconds██████████████| 32/32 [00:20<00:00,  1.04it/s]
+(Coordinator pid=166165) STAGE b'-2' took 4.020555019378662 seconds
+(Coordinator pid=166165) STAGE b'-2' took 4.020555019378662 seconds█████████████▋ | 36/37 [00:20<00:00, 35.58it/s]
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:25<00:00,  1.27it/s]
+Processing input source 1: 100%|██████████████████████████████████████████████████| 32/32 [00:25<00:00,  1.27it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 32/32 [00:25<00:00,  1.27it/s]
+Processing input source 3: 100%|████████████████████████████████████████████████| 160/160 [00:25<00:00,  6.33it/s]
+Processing input source 4: 100%|██████████████████████████████████████████████████| 37/37 [00:25<00:00,  1.46it/s]
+run time  25.297314643859863
+(Coordinator pid=166165) STAGE b'-1' took 0.3662137985229492 seconds
+(Coordinator pid=166165) STAGE b'-1' took 0.3662137985229492 seconds
+shape: (175, 3)
+┌─────────┬────────┬────────────┐
+│ nation  ┆ o_year ┆ amount_sum │
+│ ---     ┆ ---    ┆ ---        │
+│ str     ┆ i32    ┆ f64        │
+╞═════════╪════════╪════════════╡
+│ ALGERIA ┆ 1998   ┆ 2.7464e9   │
+│ ALGERIA ┆ 1997   ┆ 4.7051e9   │
+│ ALGERIA ┆ 1996   ┆ 4.6911e9   │
+│ ALGERIA ┆ 1995   ┆ 4.6922e9   │
+│ …       ┆ …      ┆ …          │
+│ VIETNAM ┆ 1995   ┆ 4.6921e9   │
+│ VIETNAM ┆ 1994   ┆ 4.7055e9   │
+│ VIETNAM ┆ 1993   ┆ 4.7087e9   │
+│ VIETNAM ┆ 1992   ┆ 4.6815e9   │
+└─────────┴────────┴────────────┘
+query execution time:  26.24628973007202
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Logical plan could not be viewed, most likely because you are running .explain() on AWS instance without proper X tunneling.
+Processing input source 0:  94%|██████████████████████████████████████████████▉   | 30/32 [00:00<00:00, 67.23it/s(Coordinator pid=167539) STAGE b'-10' took 0.9906749725341797 seconds                       | 0/32 [00:00<?, ?it/s]
+(Coordinator pid=167539) STAGE b'-10' took 0.9906749725341797 seconds                      | 0/32 [00:00<?, ?it/s]
+Processing input source 3:   0%|                                                          | 0/160 [00:00<?, ?it/s(Coordinator pid=167539) STAGE b'-9' took 1.014495611190796 seconds████████████████| 32/32 [00:01<00:00, 50.27it/s]
+(Coordinator pid=167539) STAGE b'-9' took 1.014495611190796 seconds                        | 0/32 [00:01<?, ?it/s]
+Processing input source 3:   0%|                                                          | 0/160 [00:01<?, ?it/s(Coordinator pid=167539) STAGE b'-8' took 1.1835429668426514 seconds                        | 0/37 [00:01<?, ?it/s]
+(Coordinator pid=167539) STAGE b'-8' took 1.1835429668426514 seconds██████████████| 32/32 [00:03<00:00, 23.50it/s]
+(Coordinator pid=167539) STAGE b'-7' took 0.12073111534118652 seconds                     | 0/160 [00:03<?, ?it/s]
+(Coordinator pid=167539) STAGE b'-7' took 0.12073111534118652 seconds                      | 0/37 [00:03<?, ?it/s]
+                                                                                                                 (Coordinator pid=167539) STAGE b'-6' took 0.2228231430053711 seconds
+(Coordinator pid=167539) STAGE b'-6' took 0.2228231430053711 seconds
+Processing input source 3:   0%|                                                          | 0/160 [00:03<?, ?it/s(Coordinator pid=167539) STAGE b'-5' took 11.627768516540527 seconds                        | 0/37 [00:03<?, ?it/s]
+(Coordinator pid=167539) STAGE b'-5' took 11.627768516540527 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:20<00:00,  1.04s/it(Coordinator pid=167539) STAGE b'-4' took 5.539465427398682 seconds████████████████| 32/32 [00:20<00:00, 50.27it/s]
+(Coordinator pid=167539) STAGE b'-4' took 5.539465427398682 seconds███████████████| 32/32 [00:20<00:00, 23.50it/s]
+Processing input source 3: 100%|████████████████████████████████████████████████| 160/160 [00:15<00:00,  4.54it/s(Coordinator pid=167539) STAGE b'-3' took 1.2715206146240234 seconds                        | 0/37 [00:20<?, ?it/s]
+(Coordinator pid=167539) STAGE b'-3' took 1.2715206146240234 seconds
+(Coordinator pid=167539) STAGE b'-2' took 4.125187635421753 seconds
+(Coordinator pid=167539) STAGE b'-2' took 4.125187635421753 seconds██████████▉    | 34/37 [00:21<00:00, 54.75it/s]
+(Coordinator pid=167539) STAGE b'-1' took 0.35761404037475586 seconds
+(Coordinator pid=167539) STAGE b'-1' took 0.35761404037475586 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:26<00:00,  1.21it/s]
+Processing input source 1: 100%|██████████████████████████████████████████████████| 32/32 [00:26<00:00,  1.21it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 32/32 [00:26<00:00,  1.21it/s]
+Processing input source 3: 100%|████████████████████████████████████████████████| 160/160 [00:26<00:00,  6.03it/s]
+Processing input source 4: 100%|██████████████████████████████████████████████████| 37/37 [00:26<00:00,  1.39it/s]
+run time  26.545856475830078
+shape: (175, 3)
+┌─────────┬────────┬────────────┐
+│ nation  ┆ o_year ┆ amount_sum │
+│ ---     ┆ ---    ┆ ---        │
+│ str     ┆ i32    ┆ f64        │
+╞═════════╪════════╪════════════╡
+│ ALGERIA ┆ 1998   ┆ 2.7464e9   │
+│ ALGERIA ┆ 1997   ┆ 4.7051e9   │
+│ ALGERIA ┆ 1996   ┆ 4.6911e9   │
+│ ALGERIA ┆ 1995   ┆ 4.6922e9   │
+│ …       ┆ …      ┆ …          │
+│ VIETNAM ┆ 1995   ┆ 4.6921e9   │
+│ VIETNAM ┆ 1994   ┆ 4.7055e9   │
+│ VIETNAM ┆ 1993   ┆ 4.7087e9   │
+│ VIETNAM ┆ 1992   ┆ 4.6815e9   │
+└─────────┴────────┴────────────┘
+query execution time:  27.503363132476807
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Processing input source 0:  88%|███████████████████████████████████████████▊      | 28/32 [00:02<00:00, 38.77it/s(Coordinator pid=168938) STAGE b'-6' took 2.891953945159912 seconds                        | 0/160 [00:02<?, ?it/s]
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:02<00:00, 15.59it/s(Coordinator pid=168938) STAGE b'-6' took 2.891953945159912 seconds                        | 0/160 [00:02<?, ?it/s]
+Processing input source 2:   0%|                                                           | 0/37 [00:02<?, ?it/s(Coordinator pid=168938) STAGE b'-5' took 2.229221820831299 seconds                        | 0/160 [00:05<?, ?it/s]
+(Coordinator pid=168938) STAGE b'-5' took 2.229221820831299 seconds█████████████▋ | 36/37 [00:04<00:00, 33.28it/s]
+                                                                                                                 (Coordinator pid=168938) STAGE b'-4' took 4.489929676055908 seconds████████████▌ | 155/160 [00:08<00:00, 53.68it/s]
+(Coordinator pid=168938) STAGE b'-4' took 4.489929676055908 seconds
+(Coordinator pid=168938) STAGE b'-3' took 4.089324474334717 seconds
+(Coordinator pid=168938) STAGE b'-3' took 4.089324474334717 seconds
+(Coordinator pid=168938) STAGE b'-2' took 0.6735694408416748 seconds
+(Coordinator pid=168938) STAGE b'-2' took 0.6735694408416748 seconds
+(Coordinator pid=168938) STAGE b'-1' took 0.2716641426086426 seconds
+(Coordinator pid=168938) STAGE b'-1' took 0.2716641426086426 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:14<00:00,  2.17it/s]
+Processing input source 1: 100%|████████████████████████████████████████████████| 160/160 [00:14<00:00, 10.83it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 37/37 [00:14<00:00,  2.51it/s]
+run time  14.770437002182007
+shape: (20, 8)
+┌───────────┬──────────────┬──────────────┬───────────┬──────────────┬──────────────┬──────────────┬─────────────┐
+│ c_acctbal ┆ c_address    ┆ c_comment    ┆ c_custkey ┆ c_name       ┆ c_phone      ┆ n_name       ┆ revenue     │
+│ ---       ┆ ---          ┆ ---          ┆ ---       ┆ ---          ┆ ---          ┆ ---          ┆ ---         │
+│ f64       ┆ str          ┆ str          ┆ i64       ┆ str          ┆ str          ┆ str          ┆ f64         │
+╞═══════════╪══════════════╪══════════════╪═══════════╪══════════════╪══════════════╪══════════════╪═════════════╡
+│ 927.18    ┆ hxPXtdJ84fyO ┆ packages are ┆ 7450894   ┆ Customer#007 ┆ 11-833-256-7 ┆ ARGENTINA    ┆ 936768.8469 │
+│           ┆ re7gMSCv2rzB ┆ inside the   ┆           ┆ 450894       ┆ 879          ┆              ┆             │
+│           ┆ vt cw5G3…    ┆ finally …    ┆           ┆              ┆              ┆              ┆             │
+│ 1286.48   ┆ tC7c8bZ7     ┆ p furiously  ┆ 9739771   ┆ Customer#009 ┆ 23-281-450-4 ┆ JORDAN       ┆ 842966.5285 │
+│           ┆ By6nEoHRL    ┆ deposits?    ┆           ┆ 739771       ┆ 794          ┆              ┆             │
+│           ┆              ┆ deposits a…  ┆           ┆              ┆              ┆              ┆             │
+│ 6704.13   ┆ 20IDf0Fx1ahS ┆ e carefully  ┆ 4571035   ┆ Customer#004 ┆ 33-138-285-3 ┆ UNITED       ┆ 838705.6168 │
+│           ┆ qImFXAEMSopH ┆ across the   ┆           ┆ 571035       ┆ 770          ┆ KINGDOM      ┆             │
+│           ┆ x3ic,h8L…    ┆ quickly i…   ┆           ┆              ┆              ┆              ┆             │
+│ 2674.86   ┆ q5TskwlicGP  ┆ al           ┆ 637855    ┆ Customer#000 ┆ 26-852-120-2 ┆ MOZAMBIQUE   ┆ 812034.3778 │
+│           ┆              ┆ instructions ┆           ┆ 637855       ┆ 850          ┆              ┆             │
+│           ┆              ┆ sleep        ┆           ┆              ┆              ┆              ┆             │
+│           ┆              ┆ blithely. …  ┆           ┆              ┆              ┆              ┆             │
+│ …         ┆ …            ┆ …            ┆ …         ┆ …            ┆ …            ┆ …            ┆ …           │
+│ 5462.22   ┆ X9PvpAssUMko ┆ carefully    ┆ 4926817   ┆ Customer#004 ┆ 32-610-751-1 ┆ RUSSIA       ┆ 758756.8533 │
+│           ┆ i            ┆ unusual      ┆           ┆ 926817       ┆ 595          ┆              ┆             │
+│           ┆              ┆ deposits     ┆           ┆              ┆              ┆              ┆             │
+│           ┆              ┆ haggl…       ┆           ┆              ┆              ┆              ┆             │
+│ 3257.68   ┆ l1KV7LZ3ih7c ┆ ly ironic    ┆ 319150    ┆ Customer#000 ┆ 20-837-276-7 ┆ IRAN         ┆ 757235.8949 │
+│           ┆ gjuQUo0iXJTb ┆ requests.    ┆           ┆ 319150       ┆ 259          ┆              ┆             │
+│           ┆ wlIvIzw…     ┆ ironic       ┆           ┆              ┆              ┆              ┆             │
+│           ┆              ┆ depos…       ┆           ┆              ┆              ┆              ┆             │
+│ 3062.0    ┆ 1PrX23NPGc   ┆ unts after   ┆ 5894188   ┆ Customer#005 ┆ 12-372-345-6 ┆ BRAZIL       ┆ 756482.0641 │
+│           ┆ 81N8nMG771nG ┆ the slyly    ┆           ┆ 894188       ┆ 045          ┆              ┆             │
+│           ┆ SNGHDrWR6…   ┆ sly depende… ┆           ┆              ┆              ┆              ┆             │
+│ 3726.64   ┆ j4HWo86pMyWy ┆ ckly among   ┆ 3387028   ┆ Customer#003 ┆ 15-880-219-8 ┆ ETHIOPIA     ┆ 755937.5757 │
+│           ┆ m            ┆ the          ┆           ┆ 387028       ┆ 399          ┆              ┆             │
+│           ┆              ┆ furiously    ┆           ┆              ┆              ┆              ┆             │
+│           ┆              ┆ unusual…     ┆           ┆              ┆              ┆              ┆             │
+└───────────┴──────────────┴──────────────┴───────────┴──────────────┴──────────────┴──────────────┴─────────────┘
+query execution time:  15.682291030883789
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:02<00:00, 20.77it/s(Coordinator pid=170175) STAGE b'-6' took 2.0927789211273193 seconds                       | 0/160 [00:02<?, ?it/s]
+(Coordinator pid=170175) STAGE b'-6' took 2.0927789211273193 seconds                       | 0/37 [00:02<?, ?it/s]
+                                                                                                                 (Coordinator pid=170175) STAGE b'-5' took 2.3083693981170654 seconds                       | 0/160 [00:04<?, ?it/s]
+(Coordinator pid=170175) STAGE b'-5' took 2.3083693981170654 seconds██████████████| 37/37 [00:03<00:00, 38.10it/s]
+                                                                                                                 (Coordinator pid=170175) STAGE b'-4' took 4.5733723640441895 seconds████████████▍| 158/160 [00:08<00:00, 31.36it/s]
+(Coordinator pid=170175) STAGE b'-4' took 4.5733723640441895 seconds
+(Coordinator pid=170175) STAGE b'-3' took 4.269574880599976 seconds
+(Coordinator pid=170175) STAGE b'-3' took 4.269574880599976 seconds
+(Coordinator pid=170175) STAGE b'-2' took 0.6912713050842285 seconds
+(Coordinator pid=170175) STAGE b'-2' took 0.6912713050842285 seconds
+(Coordinator pid=170175) STAGE b'-1' took 0.2683291435241699 seconds
+(Coordinator pid=170175) STAGE b'-1' took 0.2683291435241699 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:14<00:00,  2.24it/s]
+Processing input source 1: 100%|████████████████████████████████████████████████| 160/160 [00:14<00:00, 11.21it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 37/37 [00:14<00:00,  2.59it/s]
+run time  14.280452489852905
+shape: (20, 8)
+┌───────────┬──────────────┬──────────────┬───────────┬──────────────┬──────────────┬──────────────┬─────────────┐
+│ c_acctbal ┆ c_address    ┆ c_comment    ┆ c_custkey ┆ c_name       ┆ c_phone      ┆ n_name       ┆ revenue     │
+│ ---       ┆ ---          ┆ ---          ┆ ---       ┆ ---          ┆ ---          ┆ ---          ┆ ---         │
+│ f64       ┆ str          ┆ str          ┆ i64       ┆ str          ┆ str          ┆ str          ┆ f64         │
+╞═══════════╪══════════════╪══════════════╪═══════════╪══════════════╪══════════════╪══════════════╪═════════════╡
+│ 927.18    ┆ hxPXtdJ84fyO ┆ packages are ┆ 7450894   ┆ Customer#007 ┆ 11-833-256-7 ┆ ARGENTINA    ┆ 936768.8469 │
+│           ┆ re7gMSCv2rzB ┆ inside the   ┆           ┆ 450894       ┆ 879          ┆              ┆             │
+│           ┆ vt cw5G3…    ┆ finally …    ┆           ┆              ┆              ┆              ┆             │
+│ 1286.48   ┆ tC7c8bZ7     ┆ p furiously  ┆ 9739771   ┆ Customer#009 ┆ 23-281-450-4 ┆ JORDAN       ┆ 842966.5285 │
+│           ┆ By6nEoHRL    ┆ deposits?    ┆           ┆ 739771       ┆ 794          ┆              ┆             │
+│           ┆              ┆ deposits a…  ┆           ┆              ┆              ┆              ┆             │
+│ 6704.13   ┆ 20IDf0Fx1ahS ┆ e carefully  ┆ 4571035   ┆ Customer#004 ┆ 33-138-285-3 ┆ UNITED       ┆ 838705.6168 │
+│           ┆ qImFXAEMSopH ┆ across the   ┆           ┆ 571035       ┆ 770          ┆ KINGDOM      ┆             │
+│           ┆ x3ic,h8L…    ┆ quickly i…   ┆           ┆              ┆              ┆              ┆             │
+│ 2674.86   ┆ q5TskwlicGP  ┆ al           ┆ 637855    ┆ Customer#000 ┆ 26-852-120-2 ┆ MOZAMBIQUE   ┆ 812034.3778 │
+│           ┆              ┆ instructions ┆           ┆ 637855       ┆ 850          ┆              ┆             │
+│           ┆              ┆ sleep        ┆           ┆              ┆              ┆              ┆             │
+│           ┆              ┆ blithely. …  ┆           ┆              ┆              ┆              ┆             │
+│ …         ┆ …            ┆ …            ┆ …         ┆ …            ┆ …            ┆ …            ┆ …           │
+│ 5462.22   ┆ X9PvpAssUMko ┆ carefully    ┆ 4926817   ┆ Customer#004 ┆ 32-610-751-1 ┆ RUSSIA       ┆ 758756.8533 │
+│           ┆ i            ┆ unusual      ┆           ┆ 926817       ┆ 595          ┆              ┆             │
+│           ┆              ┆ deposits     ┆           ┆              ┆              ┆              ┆             │
+│           ┆              ┆ haggl…       ┆           ┆              ┆              ┆              ┆             │
+│ 3257.68   ┆ l1KV7LZ3ih7c ┆ ly ironic    ┆ 319150    ┆ Customer#000 ┆ 20-837-276-7 ┆ IRAN         ┆ 757235.8949 │
+│           ┆ gjuQUo0iXJTb ┆ requests.    ┆           ┆ 319150       ┆ 259          ┆              ┆             │
+│           ┆ wlIvIzw…     ┆ ironic       ┆           ┆              ┆              ┆              ┆             │
+│           ┆              ┆ depos…       ┆           ┆              ┆              ┆              ┆             │
+│ 3062.0    ┆ 1PrX23NPGc   ┆ unts after   ┆ 5894188   ┆ Customer#005 ┆ 12-372-345-6 ┆ BRAZIL       ┆ 756482.0641 │
+│           ┆ 81N8nMG771nG ┆ the slyly    ┆           ┆ 894188       ┆ 045          ┆              ┆             │
+│           ┆ SNGHDrWR6…   ┆ sly depende… ┆           ┆              ┆              ┆              ┆             │
+│ 3726.64   ┆ j4HWo86pMyWy ┆ ckly among   ┆ 3387028   ┆ Customer#003 ┆ 15-880-219-8 ┆ ETHIOPIA     ┆ 755937.5757 │
+│           ┆ m            ┆ the          ┆           ┆ 387028       ┆ 399          ┆              ┆             │
+│           ┆              ┆ furiously    ┆           ┆              ┆              ┆              ┆             │
+│           ┆              ┆ unusual…     ┆           ┆              ┆              ┆              ┆             │
+└───────────┴──────────────┴──────────────┴───────────┴──────────────┴──────────────┴──────────────┴─────────────┘
+query execution time:  15.174073457717896
+Instances are already running
+EC2 Cluster leader public IP 54.184.171.81 private IP 172.31.6.223
+Processing input source 0:  94%|██████████████████████████████████████████████▉   | 30/32 [00:01<00:00, 49.66it/s(Coordinator pid=171412) STAGE b'-6' took 1.6396381855010986 seconds                       | 0/160 [00:01<?, ?it/s]
+(Coordinator pid=171412) STAGE b'-6' took 1.6396381855010986 seconds                       | 0/37 [00:01<?, ?it/s]
+                                                                                                                 (Coordinator pid=171412) STAGE b'-5' took 2.4833991527557373 seconds                       | 0/160 [00:04<?, ?it/s]
+(Coordinator pid=171412) STAGE b'-5' took 2.4833991527557373 seconds█████████▉    | 34/37 [00:02<00:00, 64.02it/s]
+                                                                                                                 (Coordinator pid=171412) STAGE b'-4' took 4.514767169952393 seconds████████████▏ | 154/160 [00:07<00:00, 56.86it/s]
+(Coordinator pid=171412) STAGE b'-4' took 4.514767169952393 seconds
+(Coordinator pid=171412) STAGE b'-3' took 4.1981360912323 seconds
+(Coordinator pid=171412) STAGE b'-3' took 4.1981360912323 seconds
+(Coordinator pid=171412) STAGE b'-2' took 0.6880078315734863 seconds
+(Coordinator pid=171412) STAGE b'-2' took 0.6880078315734863 seconds
+(Coordinator pid=171412) STAGE b'-1' took 0.2700328826904297 seconds
+Processing input source 0: 100%|██████████████████████████████████████████████████| 32/32 [00:13<00:00,  2.32it/s]
+Processing input source 1: 100%|████████████████████████████████████████████████| 160/160 [00:13<00:00, 11.59it/s]
+Processing input source 2: 100%|██████████████████████████████████████████████████| 37/37 [00:13<00:00,  2.68it/s]
+run time  13.808735847473145
+(Coordinator pid=171412) STAGE b'-1' took 0.2700328826904297 seconds
+shape: (20, 8)
+┌───────────┬──────────────┬──────────────┬───────────┬──────────────┬──────────────┬──────────────┬─────────────┐
+│ c_acctbal ┆ c_address    ┆ c_comment    ┆ c_custkey ┆ c_name       ┆ c_phone      ┆ n_name       ┆ revenue     │
+│ ---       ┆ ---          ┆ ---          ┆ ---       ┆ ---          ┆ ---          ┆ ---          ┆ ---         │
+│ f64       ┆ str          ┆ str          ┆ i64       ┆ str          ┆ str          ┆ str          ┆ f64         │
+╞═══════════╪══════════════╪══════════════╪═══════════╪══════════════╪══════════════╪══════════════╪═════════════╡
+│ 927.18    ┆ hxPXtdJ84fyO ┆ packages are ┆ 7450894   ┆ Customer#007 ┆ 11-833-256-7 ┆ ARGENTINA    ┆ 936768.8469 │
+│           ┆ re7gMSCv2rzB ┆ inside the   ┆           ┆ 450894       ┆ 879          ┆              ┆             │
+│           ┆ vt cw5G3…    ┆ finally …    ┆           ┆              ┆              ┆              ┆             │
+│ 1286.48   ┆ tC7c8bZ7     ┆ p furiously  ┆ 9739771   ┆ Customer#009 ┆ 23-281-450-4 ┆ JORDAN       ┆ 842966.5285 │
+│           ┆ By6nEoHRL    ┆ deposits?    ┆           ┆ 739771       ┆ 794          ┆              ┆             │
+│           ┆              ┆ deposits a…  ┆           ┆              ┆              ┆              ┆             │
+│ 6704.13   ┆ 20IDf0Fx1ahS ┆ e carefully  ┆ 4571035   ┆ Customer#004 ┆ 33-138-285-3 ┆ UNITED       ┆ 838705.6168 │
+│           ┆ qImFXAEMSopH ┆ across the   ┆           ┆ 571035       ┆ 770          ┆ KINGDOM      ┆             │
+│           ┆ x3ic,h8L…    ┆ quickly i…   ┆           ┆              ┆              ┆              ┆             │
+│ 2674.86   ┆ q5TskwlicGP  ┆ al           ┆ 637855    ┆ Customer#000 ┆ 26-852-120-2 ┆ MOZAMBIQUE   ┆ 812034.3778 │
+│           ┆              ┆ instructions ┆           ┆ 637855       ┆ 850          ┆              ┆             │
+│           ┆              ┆ sleep        ┆           ┆              ┆              ┆              ┆             │
+│           ┆              ┆ blithely. …  ┆           ┆              ┆              ┆              ┆             │
+│ …         ┆ …            ┆ …            ┆ …         ┆ …            ┆ …            ┆ …            ┆ …           │
+│ 5462.22   ┆ X9PvpAssUMko ┆ carefully    ┆ 4926817   ┆ Customer#004 ┆ 32-610-751-1 ┆ RUSSIA       ┆ 758756.8533 │
+│           ┆ i            ┆ unusual      ┆           ┆ 926817       ┆ 595          ┆              ┆             │
+│           ┆              ┆ deposits     ┆           ┆              ┆              ┆              ┆             │
+│           ┆              ┆ haggl…       ┆           ┆              ┆              ┆              ┆             │
+│ 3257.68   ┆ l1KV7LZ3ih7c ┆ ly ironic    ┆ 319150    ┆ Customer#000 ┆ 20-837-276-7 ┆ IRAN         ┆ 757235.8949 │
+│           ┆ gjuQUo0iXJTb ┆ requests.    ┆           ┆ 319150       ┆ 259          ┆              ┆             │
+│           ┆ wlIvIzw…     ┆ ironic       ┆           ┆              ┆              ┆              ┆             │
+│           ┆              ┆ depos…       ┆           ┆              ┆              ┆              ┆             │
+│ 3062.0    ┆ 1PrX23NPGc   ┆ unts after   ┆ 5894188   ┆ Customer#005 ┆ 12-372-345-6 ┆ BRAZIL       ┆ 756482.0641 │
+│           ┆ 81N8nMG771nG ┆ the slyly    ┆           ┆ 894188       ┆ 045          ┆              ┆             │
+│           ┆ SNGHDrWR6…   ┆ sly depende… ┆           ┆              ┆              ┆              ┆             │
+│ 3726.64   ┆ j4HWo86pMyWy ┆ ckly among   ┆ 3387028   ┆ Customer#003 ┆ 15-880-219-8 ┆ ETHIOPIA     ┆ 755937.5757 │
+│           ┆ m            ┆ the          ┆           ┆ 387028       ┆ 399          ┆              ┆             │
+│           ┆              ┆ furiously    ┆           ┆              ┆              ┆              ┆             │
+│           ┆              ┆ unusual…     ┆           ┆              ┆              ┆              ┆             │
+└───────────┴──────────────┴──────────────┴───────────┴──────────────┴──────────────┴──────────────┴─────────────┘
+query execution time:  14.704533100128174
+
