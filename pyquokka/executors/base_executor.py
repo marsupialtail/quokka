@@ -1,5 +1,5 @@
 import os
-# os.environ["POLARS_MAX_THREADS"] = "2" 
+# os.environ["POLARS_MAX_THREADS"] = "1" 
 import polars
 import pandas as pd
 os.environ['ARROW_DEFAULT_MEMORY_POOL'] = 'system'

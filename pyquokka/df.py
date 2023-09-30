@@ -62,7 +62,7 @@ class QuokkaContext:
 
         self.sql_config= {"optimize_joins" : True, "s3_csv_materialize_threshold" : 10 * 1048576, "disk_csv_materialize_threshold" : 1048576,
                       "s3_parquet_materialize_threshold" : 10 * 1048576, "disk_parquet_materialize_threshold" : 1048576}
-        self.exec_config = {"hbq_path": "/data/", "fault_tolerance": False, "memory_limit": 0.1, "max_pipeline_batches": 30, 
+        self.exec_config = {"hbq_path": "/data/", "fault_tolerance": False, "memory_limit": 0.1, "max_pipeline_batches": 30, "blocking" : False, 
                         "checkpoint_interval": None, "checkpoint_bucket": "quokka-checkpoint", "batch_attempt": 20, "max_pipeline": 300}
 
         self.latest_node_id = 0
@@ -1556,10 +1556,16 @@ class QuokkaContext:
 
                     # set probe to be the parent with the largest cardinality
                     probe = max(estimated_cardinality, key=estimated_cardinality.get)
-                    self.execution_nodes[parents[probe]].assign_stage(node.stage)
+                    if not self.exec_config["blocking"]:
+                        self.execution_nodes[parents[probe]].assign_stage(node.stage )
+                    else:
+                        self.execution_nodes[parents[probe]].assign_stage(node.stage - 1)
                     for parent in parents:
                         if parent != probe:
-                            self.execution_nodes[parents[parent]].assign_stage(node.stage - 1)
+                            if not self.exec_config["blocking"]:
+                                self.execution_nodes[parents[parent]].assign_stage(node.stage - 1)
+                            else:
+                                self.execution_nodes[parents[parent]].assign_stage(node.stage - 2)
                     
                     # you are now responsible for arranging the joinspec in the right order!
                     # you should have a join_specs attribute
@@ -1595,14 +1601,21 @@ class QuokkaContext:
                     join_spec = node.join_specs[0]
                     # in a semi, anti or left join, 0 needs to be probe.
                     node.join_specs = [(join_spec[0], [(0, join_spec[1][0]), (1, join_spec[1][1])])] 
-                    self.execution_nodes[parents[0]].assign_stage(node.stage)
-                    self.execution_nodes[parents[1]].assign_stage(node.stage - 1)
+                    if not self.exec_config["blocking"]:
+                        self.execution_nodes[parents[0]].assign_stage(node.stage)
+                        self.execution_nodes[parents[1]].assign_stage(node.stage - 1)
+                    else:
+                        self.execution_nodes[parents[0]].assign_stage(node.stage - 1)
+                        self.execution_nodes[parents[1]].assign_stage(node.stage - 2)
 
             
             else:
                 # for other nodes we currently don't do anything
                 for parent in parents:
-                    self.execution_nodes[parents[parent]].assign_stage(node.stage)
+                    if not self.exec_config["blocking"]:
+                        self.execution_nodes[parents[parent]].assign_stage(node.stage)
+                    else:
+                        self.execution_nodes[parents[parent]].assign_stage(node.stage - 1)
         
         for parent in parents:
             self.__determine_stages__(parents[parent])
