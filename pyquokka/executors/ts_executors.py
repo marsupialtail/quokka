@@ -288,8 +288,7 @@ class SessionWindowExecutor(Executor):
             return result
 
 class BroadcastAsofJoinExecutor(Executor):
-    # batch func here expects a list of dfs. This is a quark of the fact that join results could be a list of dfs.
-    # batch func must return a list of dfs too
+    # the broadcast asof join only supports if you are proving the quotes 
     def __init__(self, small_quotes, time_col_trades = 'time', time_col_quotes = 'time', symbol_col_trades = 'symbol', symbol_col_quotes = 'symbol', suffix = "_right"):
 
         self.suffix = suffix

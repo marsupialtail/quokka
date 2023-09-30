@@ -1,12 +1,12 @@
 from pyquokka.df import * 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
-mode = "S3"
+mode = "DISK"
 format = "parquet"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path = "s3://yugan/tpc-h-out/"
 s3_path_csv = "s3://tpc-h-csv/"
-s3_path_parquet = "s3://tpc-h-parquet-100-native-mine/"
+s3_path_parquet = "s3://tpc-h-sf100-parquet/"
 
 import pyarrow as pa
 import pyarrow.compute as compute
@@ -16,14 +16,14 @@ polars.Config().set_tbl_cols(10)
 if mode == "DISK":
     cluster = LocalCluster()
 elif mode == "S3":
-    manager = QuokkaClusterManager(key_name = "oregon-neurodb", key_location = "/home/ziheng/Downloads/oregon-neurodb.pem")
-    #cluster = manager.get_cluster_from_json("config.json")
-    cluster = manager.get_cluster_from_json("mixed.json")
+    manager = QuokkaClusterManager(key_name = "zihengw", key_location = "/home/ziheng/Downloads/zihengw.pem")
+    manager.start_cluster("config.json")
+    cluster = manager.get_cluster_from_json("config.json")
 else:
     raise Exception
 
 qc = QuokkaContext(cluster,2, 1)
-qc.set_config("fault_tolerance", False)
+qc.set_config("fault_tolerance", True)
 
 if mode == "DISK":
     if format == "csv":
@@ -509,6 +509,31 @@ def do_21():
     d.explain()
     return d.collect()
 
+def do_21_sql():
+
+    # qc.set_config("optimize_joins", False)
+    u_0 = lineitem.filter_sql("l_receiptdate > l_commitdate").select(["l_orderkey", "l_suppkey"])
+    d = u_0.join(orders.filter_sql("o_orderstatus = 'F'").select(["o_orderkey"]), left_on="l_orderkey", right_on="o_orderkey", how="inner")
+    d = d.join(supplier.filter_sql("s_nationkey = 20").select(["s_suppkey", "s_name"]), left_on="l_suppkey", right_on="s_suppkey", how="inner")
+
+    u_1 = qc.read_parquet(s3_path_parquet + "lineitem.parquet/*").select(["l_orderkey", "l_suppkey"])
+    # u_1 = qc.read_parquet(disk_path + "lineitem.parquet").select(["l_orderkey", "l_suppkey"])
+    d = d.join(u_1, left_on="l_orderkey", right_on="l_orderkey", how="semi", suffix = "_2")
+    print(u_1)
+
+    u_2 = qc.read_parquet(s3_path_parquet + "lineitem.parquet/*").filter_sql("l_receiptdate > l_commitdate").select(["l_orderkey", "l_suppkey"])
+    # u_2 = qc.read_parquet(disk_path + "lineitem.parquet").filter_sql("l_receiptdate > l_commitdate").select(["l_orderkey", "l_suppkey"])
+   
+    d = d.join(u_2, left_on="l_orderkey", right_on="l_orderkey", how="anti", suffix = "_3")
+
+    d = d.groupby("s_name").agg_sql("count(*) AS numwait").top_k(["numwait", "s_name"], 100, descending=[True,False])
+
+    d.explain()
+    # qc.set_config("optimize_joins", False)
+    return d.collect()
+    
+    
+
 def do_22():
     u_0 = customer.filter_sql("""
         c_acctbal > 0.00
@@ -561,22 +586,27 @@ def approx_quantile():
 
 # from tpch_ref import *
 
+queries = [None, do_1_sql, do_2, do_3_sql, do_4_sql, do_5_sql, do_6_sql, do_7_sql, do_8, do_9, 
+           do_10, do_11, do_12_sql, do_13, do_14, do_15, do_16, do_17, do_18, do_19, do_20, None, do_22]
+runtimes_16 = [
+    9.414733887, 8.524564743, 11.81241179, 15.07827894, 15.61281188, 3.801096042, 10.98091658, 15.76024667, 20.19576486, 12.24378769,
+    4.671283484, 7.170949459, 10.30586807, 4.768202782, 5.819543203, 4.011099577, 23.80364641, 45.20878259, 13.02822073, 17.94240602, 51.86622826, 4.550808748]
 # print(do_1())
 # print(do_1_1())
 # print(do_1_2())
-print_and_time(do_1_sql)
-print_and_time(do_2)
-print_and_time(do_3_sql)
-print_and_time(do_4_sql)
-print_and_time(do_5_sql)
-print_and_time(do_6_sql)
-print_and_time(do_7_sql)
-print_and_time(do_8)
+# print_and_time(do_1_sql)
+# print_and_time(do_2)
+# print_and_time(do_3_sql)
+# print_and_time(do_4_sql)
+# print_and_time(do_5_sql)
+# print_and_time(do_6_sql)
+# print_and_time(do_7_sql)
+# print_and_time(do_8)
 print_and_time(do_9)
-print_and_time(do_10)
-print_and_time(do_11)
-print_and_time(do_12)
-print_and_time(do_12_sql)
+# print_and_time(do_10)
+# print_and_time(do_11)
+# print_and_time(do_12)
+# print_and_time(do_12_sql)
 # print_and_time(do_13) 
 # print_and_time(do_14)
 # print_and_time(do_15)
@@ -585,6 +615,7 @@ print_and_time(do_12_sql)
 # print_and_time(do_18)
 # print_and_time(do_19)
 # print_and_time(do_20)
+# print_and_time(do_21_sql)
 # print_and_time(do_22)
 
 

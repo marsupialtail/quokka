@@ -462,6 +462,7 @@ class JoinNode(TaskNode):
 
         key_to_keep = "left" if left_key in self.schema else "right"
         operator = BuildProbeJoinExecutor(None, left_key, right_key, join_type, key_to_keep)
+        # operator = ExpBuildProbeJoinExecutor(None, left_key, right_key, join_type, key_to_keep)
         # operator = DiskBuildProbeJoinExecutor(None, left_key, right_key, join_type, key_to_keep)
 
         left_parent_target_info = parent_source_info[left_parent]
@@ -486,6 +487,7 @@ class JoinNode(TaskNode):
             # left parent is always the probe. right parent is always the build
             key_to_keep = "left" if left_key in self.schema else "right"
             operator = BuildProbeJoinExecutor(None, left_key, right_key, join_type, key_to_keep)
+            # operator = ExpBuildProbeJoinExecutor(None, left_key, right_key, join_type, key_to_keep)
             # operator = DiskBuildProbeJoinExecutor(None, left_key, right_key, join_type, key_to_keep)
 
             assert  parent_nodes[left_parent] in joined_parents

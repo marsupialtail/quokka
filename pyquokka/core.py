@@ -672,7 +672,7 @@ class ExecTaskManager(TaskManager):
                     # print("DONE", actor_id, channel_id)
                     self.DST.set(transaction, pickle.dumps((actor_id, channel_id)), last_output_seq)
                     next_task = None
-                    lineage = None
+                    lineage = pickle.dumps((-1, -1))
 
                 if self.configs["checkpoint_interval"] is not None and state_seq % self.configs["checkpoint_interval"] == 0:
                     self.function_objects[actor_id, channel_id].checkpoint(self.checkpoint_bucket, actor_id, channel_id, state_seq)

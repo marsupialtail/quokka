@@ -313,7 +313,7 @@ group by
 order by
         revenue desc
 limit
-        20
+        20;
 
 -- query11
 
@@ -343,7 +343,7 @@ group by
                                 and n_name = 'GERMANY'
                 )
 order by
-        value desc
+        value desc;
 
 -- query12
 
@@ -397,7 +397,7 @@ group by
         c_count
 order by
         custdist desc,
-        c_count desc
+        c_count desc;
 
 --query 14
 
@@ -413,7 +413,7 @@ from
 where
         l_partkey = p_partkey
         and l_shipdate >= date '1995-09-01'
-        and l_shipdate < date '1995-09-01' + interval '1' month
+        and l_shipdate < date '1995-09-01' + interval '1' month;
 
 --query 15
 
@@ -449,7 +449,7 @@ where
                         revenue
         )
 order by
-        s_suppkey
+        s_suppkey;
 
 -- query16
 
@@ -482,7 +482,7 @@ order by
         supplier_cnt desc,
         p_brand,
         p_type,
-        p_size
+        p_size;
 
 --query 17
 
@@ -502,7 +502,7 @@ where
                         lineitem
                 where
                         l_partkey = p_partkey
-        )
+        );
 
 -- query 18
 
@@ -539,7 +539,7 @@ order by
         o_totalprice desc,
         o_orderdate
 limit
-        100
+        100;
 
 -- query 19
 
@@ -577,7 +577,7 @@ where
                 and p_size between 1 and 15
                 and l_shipmode in ('AIR', 'AIR REG')
                 and l_shipinstruct = 'DELIVER IN PERSON'
-        )
+        );
 
 --query 20
 
@@ -617,7 +617,7 @@ where
         and s_nationkey = n_nationkey
         and n_name = 'CANADA'
 order by
-        s_name
+        s_name;
 
 --query 21
 
@@ -661,7 +661,7 @@ order by
         numwait desc,
         s_name
 limit
-        100
+        100;
 
 
 --query 22
@@ -702,4 +702,4 @@ from
 group by
         cntrycode
 order by
-        cntrycode
+        cntrycode;

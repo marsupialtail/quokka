@@ -80,8 +80,9 @@ class Catalog:
 
 
     def estimate_cardinality(self, table_id, predicate, filters_list = None):
+        
         assert issubclass(type(predicate) , sqlglot.exp.Expression)
-
+        # print(filters_list)
         sample = self.samples[table_id]
         if filters_list is not None:
             assert type(filters_list) == list

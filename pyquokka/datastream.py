@@ -1423,9 +1423,6 @@ class DataStream:
         Join a DataStream with another DataStream. This may result in a distributed hash join or a broadcast join depending on cardinality estimates.
 
 
-
-        
-
         Args:
             right (DataStream): the DataStream to join to.
             on (str): You could either specify this, if the join column has the same name in this DataStream and `right`, or `left_on` and `right_on` 
@@ -1522,8 +1519,8 @@ class DataStream:
                 schema_mapping[col] = {right_table_id: col}
         
         # you only need the key column on the RHS! select overloads in DataStream or Polars DataFrame runtime polymorphic
-        if how == "semi" or how == "anti":
-            right = right.select([right_on])
+        # if how == "semi" or how == "anti":
+        #    right = right.select([right_on, "l_suppkey"])
         
         if len(rename_dict) > 0:
             right = right.rename(rename_dict)
@@ -1549,6 +1546,7 @@ class DataStream:
                 node=JoinNode(
                     schema=new_schema,
                     schema_mapping=schema_mapping,
+                    # required_columns={0: {left_on, "l_suppkey"}, 1: {right_on, "l_suppkey"}} if how in {"semi","anti"} else {0: {left_on}, 1: {right_on}},
                     required_columns={0: {left_on}, 1: {right_on}},
                     join_spec=(how, {0: left_on, 1: right_on}),
                     assume_sorted=assume_sorted),

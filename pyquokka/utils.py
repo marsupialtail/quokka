@@ -405,8 +405,16 @@ class QuokkaClusterManager:
         with open(cluster_json, "r") as f:
             cluster_info = json.load(f)
         instance_ids = list(cluster_info['instance_ids'].values())
-        ec2.start_instances(InstanceIds = instance_ids)
-        self._initialize_instances(instance_ids, cluster_info["spill_dir"])
+        
+        a = ec2.describe_instances(InstanceIds = instance_ids)
+        reservations = a['Reservations']
+        states = [reservation['Instances'][i]['State']['Name'] for reservation in reservations for i in range(len(reservation['Instances']))]
+        if "running" in states:
+            assert all([state == "running" for state in states]), "Some instances are not running but others are. Please check your instances."
+            print("Instances are already running")
+        else:
+            ec2.start_instances(InstanceIds = instance_ids)
+            self._initialize_instances(instance_ids, cluster_info["spill_dir"])
 
     
     def get_cluster_from_json(self, json_file):

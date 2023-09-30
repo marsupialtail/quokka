@@ -349,6 +349,7 @@ class BuildProbeJoinExecutor(Executor):
         if len(batches) == 0:
             return
         batch = polars.concat(batches)
+        
         self.things_seen.append((stream_id, len(batches)))
 
         # build
@@ -374,6 +375,80 @@ class BuildProbeJoinExecutor(Executor):
     
     def done(self,executor_id):
         pass
+
+class ExpBuildProbeJoinExecutor(Executor):
+
+    def __init__(self, on = None, left_on = None, right_on = None, how = "inner", key_to_keep = "left"):
+
+        self.state = None
+
+        if on is not None:
+            assert left_on is None and right_on is None
+            self.left_on = on
+            self.right_on = on
+        else:
+            assert left_on is not None and right_on is not None
+            self.left_on = left_on
+            self.right_on = right_on
+        
+        self.phase = "build"
+        assert how in {"inner", "left", "semi", "anti"}
+        self.how = how
+        self.key_to_keep = key_to_keep
+        self.things_seen = []
+
+    def execute(self,batches, stream_id, executor_id):
+        # state compaction
+        batches = [polars.from_arrow(i) for i in batches if i is not None and len(i) > 0]
+        if len(batches) == 0:
+            return
+        batch = polars.concat(batches)
+        
+        self.things_seen.append((stream_id, len(batches)))
+
+        # build
+        if stream_id == 1:
+            assert self.phase == "build", (self.left_on, self.right_on, self.things_seen)
+            self.state = batch if self.state is None else self.state.vstack(batch, in_place = True)
+               
+        # probe
+        elif stream_id == 0:
+            
+            if self.state is None:
+                if self.how == "anti":
+                    return batch
+                else:
+                    return
+            # print("STATE LEN", len(self.state))
+            if self.phase == "build":
+                self.state = self.state.sort(self.right_on)
+            
+            self.phase = "probe"
+
+            if self.how == "semi":
+                con = duckdb.connect()
+                con = con.execute("PRAGMA threads=8;")
+                d = batch.to_arrow()
+                u1 = self.state.to_arrow()
+                result = polars.from_arrow(con.execute("select * from d semi join u1 on d.l_orderkey = u1.l_orderkey and d.l_suppkey <> u1.l_suppkey").arrow())
+
+            elif self.how == "anti":
+                con = duckdb.connect()
+                con = con.execute("PRAGMA threads=8;")
+                d = batch.to_arrow()
+                u2 = self.state.to_arrow()
+                result = polars.from_arrow(con.execute("select * from d anti join u2 on d.l_orderkey = u2.l_orderkey and d.l_suppkey <> u2.l_suppkey").arrow())
+
+            else:
+                result = batch.join(self.state,left_on = self.left_on, right_on = self.right_on ,how= self.how)
+
+            if self.key_to_keep == "right":
+                result = result.rename({self.left_on: self.right_on})
+            return result
+    
+    def done(self,executor_id):
+        pass
+
 
 # this is an inner join executor that must return outputs in a sorted order based on sorted_col
 # the operator will maintain the sortedness of the probe side
