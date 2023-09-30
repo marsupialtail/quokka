@@ -1,0 +1,26 @@
+digraph "logical-plan" {
+	graph [rankdir=BT]
+	node [shape=box]
+	2 [label="2<class 'pyquokka.logical.StatefulNode'>
+0
+Parents:{0: 0, 1: 1}
+Targets:
+	3 partitioner: pass_thru           predicate: TRUE           projection:
+None          batch_funcs: []"]
+	0 [label="0 <class 'pyquokka.logical.InputPolarsNode'>
+0
+Targets:
+	2 partitioner: symbol
+	  predicate: TRUE
+	  projection: {'price', 'size', 'symbol', 'time'}
+	 batch_funcs: []"]
+	0 -> 2 [label=None]
+	1 [label="1 <class 'pyquokka.logical.InputPolarsNode'>
+0
+Targets:
+	2 partitioner: symbol
+	  predicate: TRUE
+	  projection: {'asize', 'is_nbbo', 'bid', 'symbol', 'seq', 'ask', 'bsize', 'time'}
+	 batch_funcs: []"]
+	1 -> 2 [label=None]
+}
