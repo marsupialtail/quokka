@@ -347,7 +347,7 @@ class TaskGraph:
             lineages = []
             batched_source_channel_seqs = {}
             batches = 0
-            B = 128
+            B = self.context.exec_config["static_lineage"]
             for df in input_reqs:
                 source_actor_id = df["source_actor_id"][0]
                 source_channels = df["source_channel_id"].to_list()
