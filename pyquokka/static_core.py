@@ -94,7 +94,6 @@ class TaskManager:
         self.SAT = SortedActorsTable()
         self.PFT = PartitionFunctionTable()
         self.AST = ActorStageTable()
-        self.EWT = ExecutorWatermarkTable()
 
         # populate this dictionary from the initial assignment 
             
@@ -150,24 +149,17 @@ class TaskManager:
         self.mappings[target_actor_id] = mapping
 
         def partition_fn(predicate_fn, partitioner_fn, batch_funcs, projection, num_target_channels, x, source_channel):
+
             if x is None:
                 return {}
+
             start = time.time()
-            # x could be either a pyarrow table of a polars dataframe
+            # print(predicate_fn)
             if type(predicate_fn) == str:
                 con = duckdb.connect().execute('PRAGMA threads=%d' % 8)
-                batch_arrow = x.to_arrow() if type(x) == polars.DataFrame else x
-                x = con.execute(predicate_fn).arrow()
-                try:
-                    x = polars.from_arrow(x)
-                except:
-                    x = polars.from_pandas(x.to_pandas())
+                batch_arrow = x.to_arrow()
+                x = polars.from_arrow(con.execute(predicate_fn).arrow())
             else:
-                if type(x) != polars.DataFrame:
-                    try:
-                        x = polars.from_arrow(x)
-                    except:
-                        x = polars.from_pandas(x.to_pandas())
                 x = x.filter(predicate_fn)
             # print("filter time", time.time() - start)
 
@@ -203,7 +195,7 @@ class TaskManager:
             try:
                 target_info.predicate = sql_utils.evaluate(target_info.predicate)
             except:
-                target_info.predicate = "select * from batch_arrow where " + target_info.predicate.sql(dialect = "duckdb") 
+                target_info.predicate = "select * from batch_arrow where " + target_info.predicate.sql() 
             partition_function = partial(partition_fn, target_info.predicate, target_info.partitioner, target_info.batch_funcs, target_info.projection, number_target_channels)
 
             if source_actor_id not in self.partition_fns:
@@ -256,7 +248,7 @@ class TaskManager:
     
     def set_flight_configs(self, client):
 
-        message = pyarrow.py_buffer(pickle.dumps({"mem_limit" : self.configs["memory_limit"], "max_batches" : self.configs["max_pipeline_batches"], "actor_stages": self.ast, "batch_attempt": self.configs["batch_attempt"]}))
+        message = pyarrow.py_buffer(pickle.dumps({"mem_limit" : self.configs["memory_limit"], "max_batches" : self.configs["max_pipeline_batches"], "actor_stages": self.ast}))
         action = pyarrow.flight.Action("set_configs", message)
         for result in list(client.do_action(action)):
             if result.body.to_pybytes().decode("utf-8") != "True":
@@ -286,10 +278,15 @@ class TaskManager:
         partition_fns = self.partition_fns[source_actor_id]
 
         start_convert = time.time()
-        if output is None:
+        if type(output) == pyarrow.Table:
+            output = polars.from_arrow(output)
+        elif type(output) == polars.internals.DataFrame:
+            pass
+        elif output is None:
             pass
         else:
-            assert type(output) == pyarrow.Table or type(output) == polars.DataFrame, "push data type {} not understood".format(type(output))
+            print(output)
+            raise Exception("push data type not understood")
 
         print_if_profile("convert time", time.time() - start_convert)
 
@@ -339,7 +336,7 @@ class TaskManager:
 
                 client = self.actor_flight_clients[target_actor_id][target_channel_id]
 
-                # print("pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
+                print_if_debug("pushing", source_actor_id, source_channel_id, seq, target_actor_id, target_channel_id, len(batches[0]))
 
                 try:
                     if not self.check_puttable(client):
@@ -458,8 +455,8 @@ class ExecTaskManager(TaskManager):
         if output is not None:
             if type(output) == pyarrow.Table:
                 output = polars.from_arrow(output)
-            assert type(output) == polars.DataFrame or type(output) == types.GeneratorType
-            if type(output) == polars.DataFrame:
+            assert type(output) == polars.internals.DataFrame or type(output) == types.GeneratorType
+            if type(output) == polars.internals.DataFrame:
                 output = [output]
             
             for data in output:
@@ -517,8 +514,7 @@ class ExecTaskManager(TaskManager):
             candidate_tasks = self.NTT.lrange(self.r, str(self.node_id), 0, -1)
             # we don't need to make sure that the exec tasks respect stages because our input requirements now contain that information
             # that combined with input task stages should gurantee that exec task stages are respected.
-            if self.configs["blocking"] or self.configs["static_lineage"] is not None:
-                candidate_tasks = [candidate_task for candidate_task in candidate_tasks if self.ast[pickle.loads(candidate_task)[1][0]] <= self.current_stage]
+            candidate_tasks = [candidate_task for candidate_task in candidate_tasks if self.ast[pickle.loads(candidate_task)[1][0]] <= self.current_stage]
             length = len(candidate_tasks)
             if length == 0:
                 continue
@@ -571,7 +567,7 @@ class ExecTaskManager(TaskManager):
                             names.append(name)
                         else:
                             chunks_list[-1].append(chunk)
-                            # print("creating multi-chunk")
+                            print("creating multi-chunk")
 
                     except StopIteration:
                         break
@@ -593,7 +589,7 @@ class ExecTaskManager(TaskManager):
                     state_seq = candidate_task.state_seq
                     out_seq = candidate_task.out_seq
                     output = None
-                    
+                
                 transaction = self.r.pipeline()
                     
                 if self.process_output(actor_id, channel_id, output, transaction, state_seq, out_seq) == -1:
@@ -609,14 +605,15 @@ class ExecTaskManager(TaskManager):
                 else:
                     next_task = TapedExecutorTask(actor_id, channel_id, state_seq + 1, out_seq + 1, candidate_task.last_state_seq)
 
+                # this way of logging the lineage probably use less space than a Polars table actually.
 
                 self.EST.set(transaction, pickle.dumps((actor_id, channel_id)), state_seq)
                 self.task_commit(transaction, candidate_task, next_task)
+                
                 executed = transaction.execute()
                 #if not all(executed):
                 #    raise Exception(executed)
             
-                # if it's a done task this garbage collection shouldn't happen cause you didn't use any inputs.
                 message = pyarrow.py_buffer(pickle.dumps(input_names))
                 action = pyarrow.flight.Action("cache_garbage_collect", message)
                 for result in list(self.flight_client.do_action(action)):
@@ -662,7 +659,7 @@ class IOTaskManager(TaskManager):
             # this probably doesn't have to be done transactionally, but why not.
             # lineage can be None for taped tasks, since no need to put lineage anymore.
             # if lineage is not None:
-            #    self.LT.set(transaction, name_prefix, lineage)
+                # self.LT.set(transaction, name_prefix, lineage)
             self.GIT.sadd(transaction, pickle.dumps((actor_id, channel_id)), out_seq)
 
     def execute(self):
@@ -698,26 +695,23 @@ class IOTaskManager(TaskManager):
 
             if task_type == "input":
                 
-                # candidate_task = InputTask.from_tuple(tup)
-                # actor_id = candidate_task.actor_id
-                # channel_id = candidate_task.channel_id
+                candidate_task = InputTask.from_tuple(tup)
+                actor_id = candidate_task.actor_id
+                channel_id = candidate_task.channel_id
 
-                # if (actor_id, channel_id) not in self.function_objects:
-                #     self.function_objects[actor_id, channel_id] = ray.cloudpickle.loads(self.FOT.get(self.r, actor_id))
+                if (actor_id, channel_id) not in self.function_objects:
+                    self.function_objects[actor_id, channel_id] = ray.cloudpickle.loads(self.FOT.get(self.r, actor_id))
 
-                # functionObject = self.function_objects[actor_id, channel_id]
+                functionObject = self.function_objects[actor_id, channel_id]
                 
-                # start = time.time()
+                start = time.time()
 
-                # next_task, output, seq, lineage = candidate_task.execute(functionObject)
+                next_task, output, seq, lineage = candidate_task.execute(functionObject)
 
-                # print_if_profile("read time", time.time() - start)
-                raise Exception("only taped input tasks are supported now. Raise Github issue with this error message.")
+                print_if_profile("read time", time.time() - start)
             
             elif task_type == "inputtape":
                 candidate_task = TapedInputTask.from_tuple(tup)
-                
-
                 actor_id = candidate_task.actor_id
                 channel_id = candidate_task.channel_id
                 
@@ -773,7 +767,7 @@ class ReplayTaskManager(TaskManager):
         for seq in seqs:
 
             targets = plan.filter(polars.col('seq') == seq).select(["target_actor_id", "target_channel_id"])
-            target_mask_list = targets.groupby('target_actor_id').all().to_dicts()
+            target_mask_list = targets.groupby('target_actor_id').agg_list().to_dicts()
             target_mask = {k['target_actor_id'] : k['target_channel_id'] for k in target_mask_list}
 
             # figure out a pythonic way to convert a dataframe to a dict of lists

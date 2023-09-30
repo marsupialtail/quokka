@@ -1,7 +1,7 @@
 from pyquokka.df import * 
 from pyquokka.utils import LocalCluster, QuokkaClusterManager
 from schema import * 
-mode = "DISK"
+mode = "S3"
 format = "parquet"
 disk_path = "/home/ziheng/tpc-h/"
 #disk_path= "s3://yugan/tpc-h-out/"
@@ -17,14 +17,15 @@ if mode == "DISK":
     cluster = LocalCluster()
 elif mode == "S3":
     manager = QuokkaClusterManager(key_name = "zihengw", key_location = "/home/ziheng/Downloads/zihengw.pem")
-    manager.start_cluster("16.json")
-    cluster = manager.get_cluster_from_json("16.json")
+    manager.start_cluster("config.json")
+    cluster = manager.get_cluster_from_json("config.json")
 else:
     raise Exception
 
 qc = QuokkaContext(cluster,2, 1)
 qc.set_config("fault_tolerance", True)
 qc.set_config("blocking", False)
+qc.set_config("static_lineage", 8)
 
 if mode == "DISK":
     if format == "csv":

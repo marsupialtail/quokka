@@ -59,8 +59,6 @@ class TaskGraph:
             return 1
         elif type(placement_strategy) == CustomChannelsStrategy:
             return self.context.cluster.num_node * placement_strategy.channels_per_node * (self.context.io_per_node if node_type == 'input' else self.context.exec_per_node)
-        elif type(placement_strategy) == TaggedCustomChannelsStrategy:
-            return len(self.context.cluster.tags[placement_strategy.tag]) * placement_strategy.channels_per_node * (self.context.io_per_node if node_type == 'input' else self.context.exec_per_node)
         elif type(placement_strategy) == DatasetStrategy:
             return placement_strategy.total_channels
         else:
@@ -127,7 +125,7 @@ class TaskGraph:
         if placement_strategy is None:
             placement_strategy = CustomChannelsStrategy(1)
         
-        assert type(placement_strategy) in [SingleChannelStrategy, CustomChannelsStrategy, TaggedCustomChannelsStrategy]
+        assert type(placement_strategy) in [SingleChannelStrategy, CustomChannelsStrategy]
         
         channel_info = reader.get_own_state(self.get_total_channels_from_placement_strategy(placement_strategy, 'input'))
         # print(channel_info)
@@ -152,11 +150,10 @@ class TaskGraph:
             channel_locs[count] = node
             self.limits[self.current_actor] = {0: len(lineages)}
         
-        elif type(placement_strategy) == CustomChannelsStrategy or type(placement_strategy) == TaggedCustomChannelsStrategy:
+        elif type(placement_strategy) == CustomChannelsStrategy:
             limits = {}
-            nodes = sorted(self.context.io_nodes) if type(placement_strategy) == CustomChannelsStrategy else sorted(self.context.tag_io_nodes[placement_strategy.tag])
-
-            for node in nodes:
+            for node in sorted(self.context.io_nodes):
+                
                 for channel in range(placement_strategy.channels_per_node):
 
                     if count in channel_info:
@@ -164,6 +161,7 @@ class TaskGraph:
                     else:
                         lineages = []
                     limits[count] = len(lineages)
+
                     if len(lineages) > 0:
                         vals = {pickle.dumps((self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
                         input_task = TapedInputTask(self.current_actor, count, [i for i in range(len(lineages))])
@@ -197,7 +195,7 @@ class TaskGraph:
         source_placement_strategy = self.actor_placement_strategy[source_node_id]
         
 
-        if type(source_placement_strategy) == CustomChannelsStrategy or type(source_placement_strategy) == TaggedCustomChannelsStrategy:
+        if type(source_placement_strategy) == CustomChannelsStrategy:
             source_total_channels = self.get_total_channels_from_placement_strategy(source_placement_strategy, self.actor_types[source_node_id])
         elif type(source_placement_strategy) == DatasetStrategy:
             source_total_channels = source_placement_strategy.total_channels
@@ -206,7 +204,7 @@ class TaskGraph:
         else:
             raise Exception("source strategy not supported")
 
-        if type(source_placement_strategy) == CustomChannelsStrategy or type(source_placement_strategy) == TaggedCustomChannelsStrategy:
+        if type(target_placement_strategy) == CustomChannelsStrategy:
             target_total_channels = self.get_total_channels_from_placement_strategy(target_placement_strategy, "exec")
         elif type(target_placement_strategy) == SingleChannelStrategy:
             target_total_channels = 1
@@ -224,11 +222,11 @@ class TaskGraph:
         def partition_key_str(key, data, source_channel, num_target_channels):
 
             result = {}
-            assert type(data) == polars.DataFrame
+            assert type(data) == polars.internals.DataFrame
             if "int" in str(data[key].dtype).lower():
-                partitions = data.with_columns(polars.Series(name="__partition__", values=(data[key] % num_target_channels))).partition_by("__partition__")
+                partitions = data.with_column(polars.Series(name="__partition__", values=(data[key] % num_target_channels))).partition_by("__partition__")
             elif data[key].dtype == polars.datatypes.Utf8 or data[key].dtype == polars.datatypes.Float32 or data[key].dtype == polars.datatypes.Float64:
-                partitions = data.with_columns(polars.Series(name="__partition__", values=(data[key].hash() % num_target_channels))).partition_by("__partition__")
+                partitions = data.with_column(polars.Series(name="__partition__", values=(data[key].hash() % num_target_channels))).partition_by("__partition__")
             else:
                 print(data[key])
                 raise Exception("partition key type not supported")
@@ -242,8 +240,8 @@ class TaskGraph:
 
             per_channel_range = total_range // num_target_channels
             result = {}
-            assert type(data) == polars.DataFrame
-            partitions = data.with_columns(polars.Series(name="__partition__", values=((data[key] - 1) // per_channel_range))).partition_by("__partition__")
+            assert type(data) == polars.internals.DataFrame
+            partitions = data.with_column(polars.Series(name="__partition__", values=((data[key] - 1) // per_channel_range))).partition_by("__partition__")
             for partition in partitions:
                 target = partition["__partition__"][0]
                 result[target] = partition.drop("__partition__")   
@@ -342,82 +340,68 @@ class TaskGraph:
         
         if len(assume_sorted) > 0:
             self.SAT.set(pipe, self.current_actor, pickle.dumps(assume_sorted))
-        
-        if self.context.exec_config["static_lineage"] is not None:
-            lineages = []
-            batched_source_channel_seqs = {}
-            batches = 0
-            B = 128
-            for df in input_reqs:
-                source_actor_id = df["source_actor_id"][0]
-                source_channels = df["source_channel_id"].to_list()
-                assert source_actor_id in self.limits 
-                max_limit = max(self.limits[source_actor_id].values())
-                # for k in range(max_limit):
-                #     source_channel_seqs = {source_channel_id : [k] for source_channel_id in source_channels if k < self.limits[source_actor_id][source_channel_id]}
-                #     lineages.append((source_actor_id, source_channel_seqs))
-                for k in range(max_limit):
-                    for source_channel_id in source_channels:
-                        if k < self.limits[source_actor_id][source_channel_id]:
-                            if source_channel_id in batched_source_channel_seqs:
-                                batched_source_channel_seqs[source_channel_id].append(k)
-                            else:
-                                batched_source_channel_seqs[source_channel_id] = [k]
-                            batches += 1
-                            if batches == B:
-                                lineages.append((source_actor_id, deepcopy(batched_source_channel_seqs)))
-                                batches = 0
-                                batched_source_channel_seqs = {}
-                if len(batched_source_channel_seqs) > 0:
-                    lineages.append((source_actor_id, deepcopy(batched_source_channel_seqs)))
-                    batches = 0
-                    batched_source_channel_seqs = {}
+
+        lineages = []
+        batched_source_channel_seqs = {}
+        batches = 0
+        B = 128
+        for df in input_reqs:
+            source_actor_id = df["source_actor_id"][0]
+            source_channels = df["source_channel_id"].to_list()
+            assert source_actor_id in self.limits 
+            max_limit = max(self.limits[source_actor_id].values())
+            # for k in range(max_limit):
+            #     source_channel_seqs = {source_channel_id : [k] for source_channel_id in source_channels if k < self.limits[source_actor_id][source_channel_id]}
+            #     lineages.append((source_actor_id, source_channel_seqs))
+            for k in range(max_limit):
+                for source_channel_id in source_channels:
+                    if k < self.limits[source_actor_id][source_channel_id]:
+                        if source_channel_id in batched_source_channel_seqs:
+                            batched_source_channel_seqs[source_channel_id].append(k)
+                        else:
+                            batched_source_channel_seqs[source_channel_id] = [k]
+                        batches += 1
+                        if batches == B:
+                            lineages.append((source_actor_id, deepcopy(batched_source_channel_seqs)))
+                            batches = 0
+                            batched_source_channel_seqs = {}
+            if len(batched_source_channel_seqs) > 0:
+                lineages.append((source_actor_id, deepcopy(batched_source_channel_seqs)))
+                batches = 0
+                batched_source_channel_seqs = {}
+            
+            # source_channel_seqs = {source_channel_id : [k for k in range(self.limits[source_actor_id][source_channel_id])] for source_channel_id in source_channels}
+            # lineages.append((source_actor_id, source_channel_seqs))
+
+        # print(lineages)
         channel_locs = {}
         if type(placement_strategy) == SingleChannelStrategy:
 
             node = self.context.leader_compute_nodes[0]
-            if self.context.exec_config["static_lineage"] is None:
-                exec_task = ExecutorTask(self.current_actor, 0, 0, 0, input_reqs)
-                self.NTT.rpush(pipe, node, exec_task.reduce())
-            else:
-                self.NTT.lpush(self.r, node, TapedExecutorTask(self.current_actor, 0, 0, 0, len(lineages) - 1).reduce())
-                vals = {pickle.dumps(('s', self.current_actor, 0, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
-                self.LT.mset(pipe, vals)
-                self.limits[self.current_actor] = {0: len(lineages) + 1}
-            
+            self.NTT.lpush(self.r, node, TapedExecutorTask(self.current_actor, 0, 0, 0, len(lineages) - 1).reduce())
+            vals = {pickle.dumps(('s', self.current_actor, 0, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
+            self.LT.mset(pipe, vals)
             channel_locs[0] = node
-            
             self.CLT.set(pipe, pickle.dumps((self.current_actor, 0)), self.context.node_locs[node])
             self.IRT.set(pipe, pickle.dumps((self.current_actor, 0, -1)), pickle.dumps(input_reqs))
+            self.limits[self.current_actor] = {0: len(lineages) + 1}
 
-        elif type(placement_strategy) == CustomChannelsStrategy or type(placement_strategy) == TaggedCustomChannelsStrategy:
-            if self.context.exec_config["static_lineage"] is None:
-                nodes = sorted(self.context.compute_nodes) if type(placement_strategy) == CustomChannelsStrategy else sorted(self.context.tag_compute_nodes[placement_strategy.tag])
-                count = 0
-                for node in nodes:
-                    for channel in range(placement_strategy.channels_per_node):
-                        exec_task = ExecutorTask(self.current_actor, count, 0, 0, input_reqs)
-                        channel_locs[count] = node
-                        self.NTT.rpush(pipe, node, exec_task.reduce())
-                        self.CLT.set(pipe, pickle.dumps((self.current_actor, count)), self.context.node_locs[node])
-                        self.IRT.set(pipe, pickle.dumps((self.current_actor, count, -1)), pickle.dumps(input_reqs))
-                        count += 1
-            else:
-                limits = {}
-                count = 0
-                for node in sorted(self.context.compute_nodes):
-                    for channel in range(placement_strategy.channels_per_node):
-                        exec_task = ExecutorTask(self.current_actor, count, 0, 0, input_reqs)
-                        channel_locs[count] = node
-                        self.NTT.lpush(self.r, node, TapedExecutorTask(self.current_actor, count, 0, 0, len(lineages) - 1).reduce())
-                        vals = {pickle.dumps(('s', self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
-                        self.LT.mset(pipe, vals)
-                        self.CLT.set(pipe, pickle.dumps((self.current_actor, count)), self.context.node_locs[node])
-                        self.IRT.set(pipe, pickle.dumps((self.current_actor, count, -1)), pickle.dumps(input_reqs))
-                        limits[count] = len(lineages) + 1
-                        count += 1
-                self.limits[self.current_actor] = limits
-
+        elif type(placement_strategy) == CustomChannelsStrategy:
+            
+            limits = {}
+            count = 0
+            for node in sorted(self.context.compute_nodes):
+                for channel in range(placement_strategy.channels_per_node):
+                    exec_task = ExecutorTask(self.current_actor, count, 0, 0, input_reqs)
+                    channel_locs[count] = node
+                    self.NTT.lpush(self.r, node, TapedExecutorTask(self.current_actor, count, 0, 0, len(lineages) - 1).reduce())
+                    vals = {pickle.dumps(('s', self.current_actor, count, seq)) : pickle.dumps(lineages[seq]) for seq in range(len(lineages))}
+                    self.LT.mset(pipe, vals)
+                    self.CLT.set(pipe, pickle.dumps((self.current_actor, count)), self.context.node_locs[node])
+                    self.IRT.set(pipe, pickle.dumps((self.current_actor, count, -1)), pickle.dumps(input_reqs))
+                    limits[count] = len(lineages) + 1
+                    count += 1
+            self.limits[self.current_actor] = limits
         else:
             raise Exception("placement strategy not supported")
         
@@ -452,36 +436,37 @@ class TaskGraph:
         
     def run(self):
 
-        from tqdm import tqdm
+        def progress():
+            from tqdm import tqdm
 
-        execute_handle = self.context.coordinator.execute.remote()          
+            input_partitions = {}
+            pbars = {k: tqdm(total = self.input_partitions[k]) for k in self.input_partitions}
+            curr_source = 0
+            for k in pbars:
+                pbars[k].set_description("Processing input source " + str(curr_source))
+                input_partitions[k] = self.input_partitions[k]
+                curr_source += 1
 
-        input_partitions = {}
-        pbars = {k: tqdm(total = self.input_partitions[k]) for k in self.input_partitions}
-        curr_source = 0
-        for k in pbars:
-            pbars[k].set_description("Processing input source " + str(curr_source))
-            input_partitions[k] = self.input_partitions[k]
-            curr_source += 1
-
-        while True:
-            time.sleep(0.1)
-            try:
-                finished, unfinished = ray.wait([execute_handle], timeout= 0.01)
-                if len(finished) > 0:
-                    ray.get(execute_handle)
+            while True:
+                time.sleep(0.5)
+                current_partitions = {k : 0 for k in input_partitions}
+                ntt = self.NTT.to_dict(self.r)
+                ios = {k: ntt[k] for k in ntt if 'input' in str(ntt[k])}
+                for node in ios:
+                    for task in ios[node]:
+                        actor_id = task[1][0]
+                        current_partitions[actor_id] += len(task[1][2])
+                for k in current_partitions:
+                    pbars[k].update(input_partitions[k] - current_partitions[k])
+                input_partitions = current_partitions
+                if not any(input_partitions.values()):
                     break
-            except:
-                raise Exception("Error in execution")
-            current_partitions = {k : 0 for k in input_partitions}
-            ntt = self.NTT.to_dict(self.r)
-            ios = {k: ntt[k] for k in ntt if 'input' in str(ntt[k])}
-            for node in ios:
-                for task in ios[node]:
-                    actor_id = task[1][0]
-                    current_partitions[actor_id] += len(task[1][2])
-            for k in current_partitions:
-                pbars[k].update(input_partitions[k] - current_partitions[k])
-            input_partitions = current_partitions
-            # if not any(input_partitions.values()):
-            #     break
+
+
+        import threading
+        if not PROFILE:
+            new_thread = threading.Thread(target = progress)
+            new_thread.start()
+        ray.get(self.context.coordinator.execute.remote())
+        if not PROFILE:
+            new_thread.join()
